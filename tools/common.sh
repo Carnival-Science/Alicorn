@@ -62,4 +62,13 @@ alicorn_odin_with_linker_flags() {
 	fi
 }
 
-. "$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE:-$0}")" && pwd -P)/accesskit.sh"
+# Most callers are under tools/, where $0 is enough even in POSIX sh. A nested
+# example build script has a different $0 directory, so prefer its established
+# repository root when available.
+if [ -n "${REPO_ROOT:-}" ]; then
+	_alicorn_common_tools_dir=$REPO_ROOT/tools
+else
+	_alicorn_common_tools_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE:-$0}")" && pwd -P)
+fi
+. "$_alicorn_common_tools_dir/accesskit.sh"
+unset _alicorn_common_tools_dir
