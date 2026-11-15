@@ -31,16 +31,24 @@ repeats preparation unchanged and with translation-only motion: the unchanged
 pass must create or upload nothing, and translation may update its small
 transform buffer without rebuilding glyph geometry or atlas pages. The native
 fixture submits atlas writes before acknowledging Runa's dirty generation. A
-fourth target passes an interleaved surface/text/icon list through the shared
+fourth target passes an interleaved surface/text/icon/image list through the shared
 `renderer/webgpu/compositor.odin`: a surface underlay, text, an opaque surface
 over that text, another copy of the text below, a one-pixel scissor sentinel,
-and clipped tinted icons sampled from both immutable atlas pages.
+clipped tinted icons sampled from both immutable atlas pages, and two Runtime
+images. The images check straight-alpha source-over blending, retained paint
+order, clipped UV/geometry correspondence, and image texture switching.
 Pixel checks assert the opaque overlay remains above earlier text, later text
-remains visible, and icon tint appears only inside its clip. One icon requires
+remains visible, icon tint appears only inside its clip, and image colors,
+alpha blending, and clipping are correct. One icon requires
 the renderer to restore the target scissor after the sentinel; drawing the two
 icons also exercises atlas bind-group switching. The compositor checks that
-surface, text, and icon meshes reuse cached products; both icon atlas pages are
-uploaded lazily and are not uploaded again on unchanged preparation.
+surface, text, icon, and image meshes reuse cached products; both icon atlas
+pages and both Runtime images upload once. Image bounds changes rebuild their
+mesh without resending unchanged pixels. Releasing an image while a submitted
+frame uses its texture queues it for retirement; a queue-completion serial
+releases it only after the host reports completion. GPU image residency is
+bounded to 128 MiB, so a host must deliver completion serials to reclaim retired
+bytes under cache pressure. Production application hosts are not integrated yet.
 
 ## Windows native
 

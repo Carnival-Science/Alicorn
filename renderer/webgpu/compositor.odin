@@ -21,6 +21,7 @@ WebGPU_Compositor :: struct {
 	solid: Solid_Renderer,
 	text: Text_Renderer,
 	icons: Icon_Renderer,
+	images: Image_Renderer,
 	prepared_runtime: ^alicorn.Runtime,
 	prepared_revision: u64,
 	prepared_commands: rawptr,
@@ -44,13 +45,15 @@ Compositor_Create :: proc(
 	if !ok { return }
 	compositor.icons, ok = Icon_Create(device, queue, format)
 	if !ok { return }
+	compositor.images, ok = Image_Create(device, queue, format)
+	if !ok { return }
 	ok = true
 	return
 }
 
 // Compositor_Prepare validates command families before any GPU writes, then
-// prepares the CPU-retained solid, text, and icon products. The order of commands is
-// not changed; Compositor_Encode will issue draws in the original paint order.
+// prepares the CPU-retained solid, text, icon, and image products. The order of
+// commands is not changed; Compositor_Encode dispatches in retained paint order.
 Compositor_Prepare :: proc(
 	compositor: ^WebGPU_Compositor,
 	rt: ^alicorn.Runtime,
@@ -66,7 +69,7 @@ Compositor_Prepare :: proc(
 	}
 	for command in display.commands {
 		if !alicorn.paint_command_is_surface(command) && !alicorn.paint_command_is_text(command) &&
-		   !alicorn.paint_command_is_icon(command) {
+		   !alicorn.paint_command_is_icon(command) && !alicorn.paint_command_is_image(command) {
 			return .Unsupported_Command
 		}
 	}
@@ -81,6 +84,9 @@ Compositor_Prepare :: proc(
 	}
 	if result := Icon_Prepare(&compositor.icons, display, target_width, target_height, scale_x, scale_y); result != .Ok {
 		return compositor_result_from_icon(result)
+	}
+	if result := Image_Prepare(&compositor.images, rt, display, target_width, target_height, scale_x, scale_y); result != .Ok {
+		return compositor_result_from_image(result)
 	}
 	compositor.prepared_runtime = rt
 	compositor.prepared_revision = display.revision
@@ -151,11 +157,17 @@ Compositor_Encode :: proc(
 			); result != .Ok {
 				return compositor_result_from_text(result)
 			}
-		} else {
+		} else if alicorn.paint_command_is_icon(command) {
 			if result := Icon_Draw_Command(
 				&compositor.icons, pass, command_index, command, target_width, target_height,
 			); result != .Ok {
 				return compositor_result_from_icon(result)
+			}
+		} else {
+			if result := Image_Draw_Command(
+				&compositor.images, pass, rt, command_index, command, target_width, target_height,
+			); result != .Ok {
+				return compositor_result_from_image(result)
 			}
 		}
 	}
@@ -164,13 +176,23 @@ Compositor_Encode :: proc(
 
 // Call only after the host has submitted the command buffer. If a prepared
 // frame is abandoned, leaving atlas generations dirty makes them retryable.
-Compositor_Commit_Submission :: proc(compositor: ^WebGPU_Compositor, rt: ^alicorn.Runtime) {
-	if compositor == nil || rt == nil || compositor.prepared_runtime != rt { return }
+Compositor_Commit_Submission :: proc(compositor: ^WebGPU_Compositor, rt: ^alicorn.Runtime) -> u64 {
+	if compositor == nil || rt == nil || compositor.prepared_runtime != rt || !compositor.prepared_valid { return 0 }
 	Text_Commit_Submission(&compositor.text, rt)
+	return Image_Commit_Submission(&compositor.images, rt)
+}
+
+// Call from a queue-work-done callback using the serial returned by the
+// matching Compositor_Commit_Submission. Images retired by release or cache
+// pressure remain resident until their final submitted use has completed.
+Compositor_Complete_Submission :: proc(compositor: ^WebGPU_Compositor, serial: u64) -> bool {
+	if compositor == nil { return false }
+	return Image_Complete_Submission(&compositor.images, serial)
 }
 
 Compositor_Destroy :: proc(compositor: ^WebGPU_Compositor) {
 	if compositor == nil { return }
+	Image_Destroy(&compositor.images)
 	Text_Destroy(&compositor.text)
 	Icon_Destroy(&compositor.icons)
 	Solid_Destroy(&compositor.solid)
@@ -197,6 +219,15 @@ compositor_result_from_text :: proc(result: Text_Result) -> Compositor_Result {
 }
 
 compositor_result_from_icon :: proc(result: Icon_Result) -> Compositor_Result {
+	switch result {
+	case .Ok: return .Ok
+	case .Invalid_Input: return .Invalid_Input
+	case .Resource_Failure: return .Resource_Failure
+	}
+	return .Resource_Failure
+}
+
+compositor_result_from_image :: proc(result: Image_Result) -> Compositor_Result {
 	switch result {
 	case .Ok: return .Ok
 	case .Invalid_Input: return .Invalid_Input

@@ -460,7 +460,7 @@ start_offscreen_readback :: proc() {
 	}
 	if !mixed_text_found { fmt.panicf("Alicorn mixed compositor fixture did not find retained text") }
 	composite_clip := alicorn.Rect{0, 0, f32(READBACK_WIDTH), f32(READBACK_HEIGHT)}
-	mixed_commands := make([dynamic]alicorn.Paint_Command, 0, 7, allocator=context.temp_allocator)
+	mixed_commands := make([dynamic]alicorn.Paint_Command, 0, 9, allocator=context.temp_allocator)
 	append(&mixed_commands, alicorn.paint_surface_command(
 		0, composite_clip, composite_clip, alicorn.Color{0.08, 0.12, 0.18, 1},
 	))
@@ -480,6 +480,12 @@ start_offscreen_readback :: proc() {
 	))
 	append(&mixed_commands, alicorn.paint_icon_command(
 		0, {40, 43, 18, 18}, {45, 48, 12, 10}, .Search, alicorn.Color{0.12, 0.34, 0.96, 1},
+	))
+	append(&mixed_commands, alicorn.paint_image_command(
+		0, {0, 44, 10, 14}, composite_clip, state.compositor_image_a,
+	))
+	append(&mixed_commands, alicorn.paint_image_command(
+		0, {6, 48, 12, 12}, {6, 48, 10, 12}, state.compositor_image_b,
 	))
 	mixed_display := alicorn.Paint_Display_List_View{commands=mixed_commands[:], revision=text_display.revision}
 	if result := webgpu_renderer.Compositor_Prepare(
@@ -503,15 +509,22 @@ start_offscreen_readback :: proc() {
 	composite_icon_uploads := state.compositor.icons.vertex_upload_count
 	composite_icon_atlas_uploads := state.compositor.icons.atlas_page_upload_count
 	composite_icon_cache_hits := state.compositor.icons.mesh_cache_hits
+	composite_image_meshes := state.compositor.images.mesh_rebuild_count
+	composite_image_uploads := state.compositor.images.vertex_upload_count
+	composite_image_texture_uploads := state.compositor.images.texture_upload_count
+	composite_image_texture_bytes := state.compositor.images.texture_upload_bytes
 	if composite_solid_meshes != 1 || composite_solid_uploads != 1 ||
 	   composite_text_meshes != 1 || composite_text_uploads != 1 || composite_atlas_uploads == 0 ||
 	   composite_icon_meshes != 1 || composite_icon_uploads != 1 || composite_icon_atlas_uploads != 2 ||
-	   state.compositor.icons.atlas_upload_bytes != 1536*1024 {
-		fmt.panicf("initial mixed composition expected retained solid/text/icon meshes and glyph/icon atlas uploads")
+	   state.compositor.icons.atlas_upload_bytes != 1536*1024 ||
+	   composite_image_meshes != 1 || composite_image_uploads != 1 || composite_image_texture_uploads != 2 ||
+	   composite_image_texture_bytes != 2*4*4*4 || state.compositor.images.resident_bytes != 2*4*4*4 {
+		fmt.panicf("initial mixed composition expected retained solid/text/icon/image meshes and texture uploads")
 	}
-	fmt.printf("[webgpu-feasibility] mixed paint-order compositor PASS commands=%d solid_meshes=%d text_meshes=%d icon_meshes=%d icon_vertex_uploads=%d icon_atlas_pages=%d icon_atlas_bytes=%d\n",
+	fmt.printf("[webgpu-feasibility] mixed paint-order compositor PASS commands=%d solid_meshes=%d text_meshes=%d icon_meshes=%d icon_vertex_uploads=%d icon_atlas_pages=%d icon_atlas_bytes=%d image_meshes=%d image_vertex_uploads=%d image_texture_uploads=%d image_texture_bytes=%d\n",
 		len(mixed_display.commands), composite_solid_meshes, composite_text_meshes, composite_icon_meshes,
-		composite_icon_uploads, composite_icon_atlas_uploads, state.compositor.icons.atlas_upload_bytes)
+		composite_icon_uploads, composite_icon_atlas_uploads, state.compositor.icons.atlas_upload_bytes,
+		composite_image_meshes, composite_image_uploads, composite_image_texture_uploads, composite_image_texture_bytes)
 	// 63 RGBA8 texels use 252 bytes; the 256-byte row pitch exercises the
 	// required four-byte per-row padding in both native and browser readback.
 	layout:=wgpu.TexelCopyBufferLayout{bytesPerRow=READBACK_BYTES_PER_ROW,rowsPerImage=READBACK_HEIGHT}
@@ -536,7 +549,8 @@ start_offscreen_readback :: proc() {
 	command:=wgpu.CommandEncoderFinish(encoder); wgpu.CommandEncoderRelease(encoder)
 	wgpu.QueueSubmit(state.queue,{command}); wgpu.CommandBufferRelease(command)
 	webgpu_renderer.Text_Commit_Submission(&state.text_renderer, &state.text_runtime)
-	webgpu_renderer.Compositor_Commit_Submission(&state.compositor, &state.text_runtime)
+	state.compositor_completion_serial = webgpu_renderer.Compositor_Commit_Submission(&state.compositor, &state.text_runtime)
+	if state.compositor_completion_serial == 0 { fmt.panicf("mixed compositor submission did not receive a completion serial") }
 	if result := webgpu_renderer.Text_Prepare(
 		&state.text_renderer, &state.text_runtime, text_display,
 		READBACK_WIDTH, READBACK_HEIGHT, 1, 1,
@@ -594,8 +608,34 @@ start_offscreen_readback :: proc() {
 	   state.compositor.icons.mesh_rebuild_count != composite_icon_meshes ||
 	   state.compositor.icons.vertex_upload_count != composite_icon_uploads ||
 	   state.compositor.icons.atlas_page_upload_count != composite_icon_atlas_uploads ||
-	   state.compositor.icons.mesh_cache_hits != composite_icon_cache_hits+1 {
+	   state.compositor.icons.mesh_cache_hits != composite_icon_cache_hits+1 ||
+	   state.compositor.images.mesh_rebuild_count != composite_image_meshes ||
+	   state.compositor.images.vertex_upload_count != composite_image_uploads ||
+	   state.compositor.images.texture_upload_count != composite_image_texture_uploads ||
+	   state.compositor.images.texture_upload_bytes != composite_image_texture_bytes ||
+	   state.compositor.images.mesh_cache_hits != 1 {
 		fmt.panicf("unchanged mixed paint rebuilt or uploaded retained renderer products")
+	}
+	moved_image_commands := make([dynamic]alicorn.Paint_Command, len(mixed_display.commands), allocator=context.temp_allocator)
+	copy(moved_image_commands[:], mixed_display.commands)
+	for &command in moved_image_commands {
+		if paint, is_image := command.payload.(alicorn.Image_Paint); is_image && paint.image == state.compositor_image_a {
+			command.bounds.x += 1
+			break
+		}
+	}
+	moved_image_display := mixed_display
+	moved_image_display.commands = moved_image_commands[:]
+	if result := webgpu_renderer.Compositor_Prepare(
+		&state.compositor, &state.text_runtime, moved_image_display,
+		READBACK_WIDTH, READBACK_HEIGHT, 1, 1,
+	); result != .Ok {
+		fmt.panicf("moved image preparation failed: %v", result)
+	}
+	if state.compositor.images.mesh_rebuild_count != composite_image_meshes+1 ||
+		state.compositor.images.vertex_upload_count != composite_image_uploads+1 ||
+		state.compositor.images.texture_upload_count != composite_image_texture_uploads {
+		fmt.panicf("image geometry change should upload its mesh without re-uploading unchanged image pixels")
 	}
 fmt.printf("[webgpu-feasibility] retained text cache PASS mesh_rebuilds=%d vertex_uploads=%d atlas_uploads=%d atlas_bytes=%d atlas_page_creates=%d prepare_buffer_creates=%d translation_uploads=%d viewport_uploads=%d unchanged_repeat=true\n",
 		state.text_renderer.mesh_rebuild_count, state.text_renderer.vertex_upload_count,
@@ -604,6 +644,26 @@ fmt.printf("[webgpu-feasibility] retained text cache PASS mesh_rebuilds=%d verte
 		state.text_renderer.translation_upload_count,
 		state.text_renderer.viewport_upload_count)
 	fmt.println("[webgpu-feasibility] text motion cache PASS translated_command_only=true glyph_mesh_uploads=0 atlas_uploads=0 atlas_page_creates=0")
+	if !alicorn.image_release(&state.text_runtime, state.compositor_image_b) {
+		fmt.panicf("blue compositor image did not release from its Runtime")
+	}
+	if result := webgpu_renderer.Compositor_Prepare(
+		&state.compositor, &state.text_runtime, mixed_display,
+		READBACK_WIDTH, READBACK_HEIGHT, 1, 1,
+	); result != .Ok {
+		fmt.panicf("stale image compositor preparation failed: %v", result)
+	}
+	if len(state.compositor.images.retired) != 1 || state.compositor.images.resident_bytes != 2*4*4*4 ||
+		state.compositor.images.texture_upload_count != composite_image_texture_uploads ||
+		state.compositor.images.mesh_rebuild_count != composite_image_meshes+2 {
+		fmt.panicf("released in-flight image should remain retired until completion while its new mesh omits it")
+	}
+	if webgpu_renderer.Compositor_Complete_Submission(
+		&state.compositor, state.compositor_completion_serial+1,
+	) || state.compositor.images.completed_serial != 0 || len(state.compositor.images.retired) != 1 {
+		fmt.panicf("completion beyond the last submitted serial must not retire image resources")
+	}
+	fmt.println("[webgpu-feasibility] image retained cache PASS unchanged_texture_uploads=0 geometry_edit_reuses_pixels=true released_inflight=true stale_draw_removed=true retirement_waits_for_queue=true")
 	state.queue_work_done_pending = true
 	wgpu.QueueOnSubmittedWorkDone(state.queue,{mode=.AllowProcessEvents,callback=on_queue_work_done})
 	state.readback_pending=true
@@ -673,6 +733,27 @@ build_text_runtime :: proc() {
 	if !display_ok || len(display.commands) == 0 {
 		fmt.panicf("Alicorn text fixture expected retained text paint commands")
 	}
+}
+
+build_compositor_images :: proc() {
+	// A solid opaque red image and a half-alpha blue image make source-over
+	// ordering, alpha interpretation, clipping, and texture switching visible
+	// in the shared compositor readback.
+	red_pixels := make([]u8, 4*4*4, context.allocator)
+	for i := 0; i < len(red_pixels); i += 4 {
+		red_pixels[i+0], red_pixels[i+1], red_pixels[i+2], red_pixels[i+3] = 255, 0, 0, 255
+	}
+	red_decoded := alicorn.Image_Decoded{width=4, height=4, rgba8=red_pixels, allocator=context.allocator}
+	red_handle, red_error := alicorn.image_adopt_decoded(&state.text_runtime, &red_decoded)
+	if red_error != .None || len(red_decoded.rgba8) != 0 { fmt.panicf("could not adopt red compositor image: %v", red_error) }
+	blue_pixels := make([]u8, 4*4*4, context.allocator)
+	for i := 0; i < len(blue_pixels); i += 4 {
+		blue_pixels[i+0], blue_pixels[i+1], blue_pixels[i+2], blue_pixels[i+3] = 0, 0, 255, 128
+	}
+	blue_decoded := alicorn.Image_Decoded{width=4, height=4, rgba8=blue_pixels, allocator=context.allocator}
+	blue_handle, blue_error := alicorn.image_adopt_decoded(&state.text_runtime, &blue_decoded)
+	if blue_error != .None || len(blue_decoded.rgba8) != 0 { fmt.panicf("could not adopt blue compositor image: %v", blue_error) }
+	state.compositor_image_a, state.compositor_image_b = red_handle, blue_handle
 }
 
 build_offscreen_probe_scene :: proc() -> int {
@@ -771,6 +852,10 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 			if text_visible { break }
 		}
 		composite_overlay_pixel := offscreen_pixel(pixels, 2, 2, 3*READBACK_BUFFER_BYTES)
+		composite_image_red_pixel := offscreen_pixel(pixels, 3, 52, 3*READBACK_BUFFER_BYTES)
+		composite_image_blend_pixel := offscreen_pixel(pixels, 8, 52, 3*READBACK_BUFFER_BYTES)
+		composite_image_blue_pixel := offscreen_pixel(pixels, 13, 52, 3*READBACK_BUFFER_BYTES)
+		composite_image_clip_pixel := offscreen_pixel(pixels, 17, 52, 3*READBACK_BUFFER_BYTES)
 		composite_overlay_uniform := true
 		for y in 0..<24 {
 			for x in 0..<READBACK_WIDTH {
@@ -841,9 +926,13 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		display_clip_x_ok:=offscreen_pixel_near(display_clip_x_pixel,clear_expected)
 		display_clip_y_ok:=offscreen_pixel_near(display_clip_y_pixel,clear_expected)
 		composite_overlay_ok := offscreen_pixel_near(composite_overlay_pixel, [4]u8{204, 26, 26, 255}, 1) && composite_overlay_uniform
-		ok=clear_ok && solid_ok && checker_ok && patch_ok && blend_ok && glyph_ok && clip_ok && outside_clip_ok && rounded_ok && rounded_corner_ok && last_row_ok && partial_buffer_ok && uniform_ok && display_blend_ok && display_clip_x_ok && display_clip_y_ok && text_visible && composite_overlay_ok && composite_text_visible && composite_icon_visible && composite_icon_clip && composite_second_icon_visible
-		fmt.printf("[webgpu-feasibility] async RGBA8 readback %s texture=%dx%d row_pitch=%d padding_per_row=%d bytes=%d clear=%v solid=%v checker=%v partial_texture=%v partial_buffer=%v uniform=%v blend=%v glyph=%v clip=%v outside_clip=%v rounded=%v rounded_corner=%v last_row=%v runtime_display_blend=%v runtime_clip_x=%v runtime_clip_y=%v runtime_text_visible=%v composite_overlay_order=%v composite_offset_text=%v composite_icon_visible=%v composite_icon_clip=%v composite_second_icon_page_switch=%v\n",
-			"PASS" if ok else "FAIL",READBACK_WIDTH,READBACK_HEIGHT,READBACK_BYTES_PER_ROW,READBACK_BYTES_PER_ROW-READBACK_WIDTH*READBACK_BYTES_PER_PIXEL,len(pixels),clear_ok,solid_ok,checker_ok,patch_ok,partial_buffer_ok,uniform_ok,blend_ok,glyph_ok,clip_ok,outside_clip_ok,rounded_ok,rounded_corner_ok,last_row_ok,display_blend_ok,display_clip_x_ok,display_clip_y_ok,text_visible,composite_overlay_ok,composite_text_visible,composite_icon_visible,composite_icon_clip,composite_second_icon_visible)
+		image_red_ok := offscreen_pixel_near(composite_image_red_pixel, [4]u8{255, 0, 0, 255})
+		image_blend_ok := offscreen_pixel_near(composite_image_blend_pixel, [4]u8{127, 0, 128, 255}, 3)
+		image_blue_ok := offscreen_pixel_near(composite_image_blue_pixel, [4]u8{10, 15, 151, 255}, 3)
+		image_clip_ok := offscreen_pixel_near(composite_image_clip_pixel, [4]u8{20, 31, 46, 255}, 3)
+		ok=clear_ok && solid_ok && checker_ok && patch_ok && blend_ok && glyph_ok && clip_ok && outside_clip_ok && rounded_ok && rounded_corner_ok && last_row_ok && partial_buffer_ok && uniform_ok && display_blend_ok && display_clip_x_ok && display_clip_y_ok && text_visible && composite_overlay_ok && composite_text_visible && composite_icon_visible && composite_icon_clip && composite_second_icon_visible && image_red_ok && image_blend_ok && image_blue_ok && image_clip_ok
+		fmt.printf("[webgpu-feasibility] async RGBA8 readback %s texture=%dx%d row_pitch=%d padding_per_row=%d bytes=%d clear=%v solid=%v checker=%v partial_texture=%v partial_buffer=%v uniform=%v blend=%v glyph=%v clip=%v outside_clip=%v rounded=%v rounded_corner=%v last_row=%v runtime_display_blend=%v runtime_clip_x=%v runtime_clip_y=%v runtime_text_visible=%v composite_overlay_order=%v composite_offset_text=%v composite_icon_visible=%v composite_icon_clip=%v composite_second_icon_page_switch=%v composite_image_red=%v composite_image_alpha_blend=%v composite_image_blue=%v composite_image_clip=%v\n",
+			"PASS" if ok else "FAIL",READBACK_WIDTH,READBACK_HEIGHT,READBACK_BYTES_PER_ROW,READBACK_BYTES_PER_ROW-READBACK_WIDTH*READBACK_BYTES_PER_PIXEL,len(pixels),clear_ok,solid_ok,checker_ok,patch_ok,partial_buffer_ok,uniform_ok,blend_ok,glyph_ok,clip_ok,outside_clip_ok,rounded_ok,rounded_corner_ok,last_row_ok,display_blend_ok,display_clip_x_ok,display_clip_y_ok,text_visible,composite_overlay_ok,composite_text_visible,composite_icon_visible,composite_icon_clip,composite_second_icon_visible,image_red_ok,image_blend_ok,image_blue_ok,image_clip_ok)
 	} else {
 		fmt.printf("[webgpu-feasibility] async RGBA8 readback FAIL bytes=%d expected=%d\n",len(pixels),READBACK_TOTAL_BYTES)
 	}

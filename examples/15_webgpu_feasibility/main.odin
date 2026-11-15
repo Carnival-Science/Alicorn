@@ -48,6 +48,9 @@ state: struct {
 	text_renderer: webgpu_renderer.Text_Renderer,
 	text_runtime_ready: bool,
 	compositor: webgpu_renderer.WebGPU_Compositor,
+	compositor_image_a, compositor_image_b: alicorn.Image_Handle,
+	compositor_completion_serial: u64,
+	image_retirement_passed: bool,
 	composite_offscreen_texture: wgpu.Texture,
 	composite_offscreen_view: wgpu.TextureView,
 	config: wgpu.SurfaceConfiguration,
@@ -110,6 +113,7 @@ main :: proc() {
 		if !state.readback_done || !state.queue_work_done || !state.queue_work_done_ok {
 			os_exit_failure()
 		}
+		if !state.image_retirement_passed { os_exit_failure() }
 		when FEASIBILITY_TEST_RESIZE {
 			if !state.test_resize_pre_applied || !state.test_resize_pre_frame ||
 				!state.test_resize_post_applied || !state.test_resize_post_frame {
@@ -121,6 +125,7 @@ main :: proc() {
 
 smoke_complete :: proc() -> bool {
 	if !state.readback_done || !state.queue_work_done || !state.queue_work_done_ok { return false }
+	if !state.image_retirement_passed { return false }
 	when FEASIBILITY_TEST_RESIZE {
 		if !state.test_resize_pre_applied || !state.test_resize_pre_frame ||
 			!state.test_resize_post_applied || !state.test_resize_post_frame { return false }
@@ -192,6 +197,15 @@ on_queue_work_done :: proc "c" (status:wgpu.QueueWorkDoneStatus, message:wgpu.St
 	state.queue_work_done_pending = false
 	state.queue_work_done = true
 	state.queue_work_done_ok = status == .Success
+	if state.compositor_completion_serial > 0 && status == .Success {
+		completion_ok := webgpu_renderer.Compositor_Complete_Submission(&state.compositor, state.compositor_completion_serial)
+		state.image_retirement_passed = completion_ok && len(state.compositor.images.retired) == 0 &&
+			state.compositor.images.resident_bytes == 64 && state.compositor.images.resource_release_count == 1
+		fmt.printf("[webgpu-feasibility] image resource retirement %s submitted_serial=%d completed_serial=%d retired=%d resident_bytes=%d releases=%d\n",
+			"PASS" if state.image_retirement_passed else "FAIL", state.compositor.images.submitted_serial,
+			state.compositor.images.completed_serial, len(state.compositor.images.retired),
+			state.compositor.images.resident_bytes, state.compositor.images.resource_release_count)
+	}
 	fmt.printf("[webgpu-feasibility] queue work done status=%v message=%s\n", status, message)
 	when FEASIBILITY_TEST_QUIT_AFTER_READBACK {
 		if !state.readback_pending && (!FEASIBILITY_TEST_RESIZE || state.test_resize_post_frame) {
@@ -220,6 +234,7 @@ on_device :: proc "c" (status: wgpu.RequestDeviceStatus, device: wgpu.Device, me
 	if !text_ok { fmt.panicf("Alicorn WebGPU text renderer initialization failed") }
 	state.text_renderer = text_renderer
 	build_text_runtime()
+	build_compositor_images()
 	compositor, compositor_ok := webgpu_renderer.Compositor_Create(state.device, state.queue, .RGBA8Unorm)
 	if !compositor_ok { fmt.panicf("Alicorn WebGPU compositor initialization failed") }
 	state.compositor = compositor

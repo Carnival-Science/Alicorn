@@ -1,8 +1,8 @@
 # SDL_GPU to WebGPU migration
 
 Status: Phase 0 remains open for lifecycle, baseline, and performance evidence;
-Phase 2 has bounded solid-surface, text-sampling, icon, and mixed
-surface/text/icon compositor slices. SDL_GPU remains the only complete
+Phase 2 has bounded solid-surface, text-sampling, icon, image, and mixed
+surface/text/icon/image compositor slices. SDL_GPU remains the only complete
 application renderer and the visual reference.
 
 ## Architecture inventory
@@ -56,7 +56,7 @@ backend-neutral; their current native payload renderer is not.
 | --- | --- | --- |
 | 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes on an NVIDIA Turing adapter; physical Linux GPU/Wayland, genuine driver/OS loss and recovery, comparative baselines, and production parity remain open |
 | 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring and CPU surface mesh assembly plus text/image/icon preparation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
-| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: Windows and browser WebGPU fixtures exercise solid/text/icon pixels; one shared compositor preserves interleaved surface/text/icon paint order. Text and icon mesh/atlas reuse are asserted. Images, effects and application host presentation remain outstanding |
+| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and browser WebGPU fixtures exercise solid/text/icon/image pixels; one shared compositor preserves interleaved surface/text/icon/image paint order. Text, icon, and image mesh/texture reuse are asserted. Materials, effects and application host presentation remain outstanding |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | Not started |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
@@ -663,3 +663,47 @@ cross-platform device-loss/lifecycle acceptance remains open. The patched
 explicit-destroy callback is verified on Windows D3D12 and hosted macOS arm64
 Metal. Do not treat those limited probes as evidence of driver/OS-initiated
 device-loss recovery or a completed lifecycle gate for production renderer work.
+
+## Phase 2 image renderer slice (2026-11-15)
+
+`renderer/webgpu/images.odin` now renders Runtime-owned images through the same
+WGSL pipeline and `renderer/cpu.Image_Quad` geometry on native and browser
+targets. It samples straight RGBA8 pixels, preserves source-over blending and
+the retained command order, and clips image UVs with their geometry. The GPU
+cache is keyed by `(Runtime identity, Image_Handle)` and bounded to 128 MiB;
+the Runtime keeps authoritative CPU pixels so a new device can rebuild texture
+resources. The renderer reports submission serials and holds evicted/released
+textures until the host acknowledges completion of their last-use serial.
+
+The shared mixed-paint fixture now interleaves surface, shaped text, two atlas
+icons, and two Runtime images. It verifies opaque red pixels, blue alpha over
+red, blue over the root surface, and that clipped image pixels do not escape
+their clip. Repeating unchanged preparation causes no image mesh or texture
+upload. Moving an image updates its retained vertex mesh without re-uploading
+its pixels. Releasing the blue image after submission leaves 128 bytes resident
+and one texture retired until queue completion serial 1; after completion the
+retirement list is empty, resident bytes fall to 64, and one resource is
+released.
+
+Validation on the final slice:
+
+- `examples/15_webgpu_feasibility/build.ps1 -Odin C:\odin\odin.exe` passed,
+  building the native interactive/smoke/resize executables and `js_wasm32`.
+- Native bounded readback passed on the local Vulkan backend with an NVIDIA
+  GeForce RTX 2080 SUPER. All prior probes and the four image-specific pixel
+  probes passed. Queue completion reported `Success`; the resource retirement
+  assertion observed serial 1 and 64 bytes remaining.
+- Native resize smoke passed on Vulkan while resizing during animation to
+  800×450 and after settlement to 720×405; both new surface sizes were
+  presented, image readback passed, and queue retirement completed.
+- The rebuilt WASM ran in the browser's WebGPU implementation. Its live status
+  reported the same four image pixel checks and resource-retirement assertion
+  passing, with queue completion `Success`.
+- `git diff --check` passed.
+
+This is fixture-level native/browser renderer evidence. It is not yet Windows
+D3D12 or macOS Metal image parity, a production SDL/browser presenter, or a
+device-loss/recreation test. The production hosts do not yet call
+`Compositor_Complete_Submission` from their queue-work-done callbacks. Until
+that host bridge exists, the cache's in-flight retirement mechanism is proven
+only by the feasibility fixture; Phase 2 and Phase 3 remain open.
