@@ -291,6 +291,21 @@ Local Windows validation for these changes, based on `9394537`:
   files are now excluded from JS builds because Odin compiles test sources in
   imported packages and those tests use native-only facilities.
 
+### Hosted validation for the solid-surface slice (`b6cb7e0`, 2026-11-15)
+
+The exact implementation commit passed the [Windows foundation workflow](https://github.com/samanshaiza004/alicorn/actions/runs/43765193655),
+[macOS foundation workflow](https://github.com/samanshaiza004/alicorn/actions/runs/43765193635),
+[Linux WebGPU feasibility workflow](https://github.com/samanshaiza004/alicorn/actions/runs/43765193679),
+[native packaging workflow](https://github.com/samanshaiza004/alicorn/actions/runs/43765193645),
+and [icon asset reproducibility workflow](https://github.com/samanshaiza004/alicorn/actions/runs/43765193674).
+The hosted macOS job also passed Metal readback and resize smoke, device-destroy
+callback checks, retained-effects readback, example runner smoke, secondary-window
+waker teardown under ThreadSanitizer, retained-work benchmarking, and bounded
+material/relief geometry checks. Hosted Linux remains X11/lavapipe software
+Vulkan evidence; the macOS run uses hosted Metal infrastructure and does not
+replace local physical-device validation. CI built the browser target but did
+not execute browser WebGPU after the final cache-reuse assertion was added.
+
 This slice validates retained solid-surface rendering, blend order, clipping,
 and reuse on Windows. It does not route application windows through WebGPU and
 does not provide text, image, icon, material/effect, capture, resource-retirement,
