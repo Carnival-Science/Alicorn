@@ -103,9 +103,17 @@ does not register wgpu-core's device-lost closure. A narrowly scoped source
 patch now registers it; build and test instructions and results are in
 [`docs/validation/webgpu-device-loss-callback-patch-windows-2026-11-15.md`](../../docs/validation/webgpu-device-loss-callback-patch-windows-2026-11-15.md).
 
-With the patched static library, the zero-work native repro delivers
-`reason=Destroyed` with both `AllowProcessEvents` and `AllowSpontaneous`. The
-full fixture also completes readback, receives the callback, and exits through
-normal teardown. The opt-in fixture now exits automatically after callback
-delivery. These are explicit-destroy tests, not simulations of an
-OS/driver-initiated device loss, and they do not prove device recreation.
+The native probe is bounded and now fails unless the explicit destroy was
+triggered and exactly one `reason=Destroyed` callback arrived before ordinary
+teardown. It also checks that teardown does not deliver a duplicate callback.
+With the patched static library, the zero-work native repro delivers the
+callback with both `AllowProcessEvents` and `AllowSpontaneous`, including after
+releasing the last device handle before polling. The full fixture also
+completes readback and receives the callback. The unpatched library is a
+negative control: it exits nonzero when the callback is missing. These are
+explicit-destroy tests, not simulations of OS/driver-initiated device loss, and
+they do not prove device recreation.
+
+On macOS arm64, `sh tools/validate_wgpu_native_device_loss_macos.sh` builds the
+same pinned wgpu-native source patch with Metal and runs all four native
+variants. The script restores the downloaded Odin package library on exit.

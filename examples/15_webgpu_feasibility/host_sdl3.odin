@@ -3,6 +3,7 @@ package webgpu_feasibility
 
 import "core:fmt"
 import "core:os"
+import "core:sync"
 import "vendor:wgpu"
 import SDL "vendor:sdl3"
 import "vendor:wgpu/sdl3glue"
@@ -69,6 +70,13 @@ os_run :: proc() {
 		event:SDL.Event
 		for SDL.PollEvent(&event) { handle_event(event) }
 		os_process_gpu_events()
+		when FEASIBILITY_TEST_DEVICE_LOSS {
+			if sync.atomic_load(&state.device_lost_callback_count) > 0 {
+				state.device_lost = true
+				state.ready = false
+				state.quit = true
+			}
+		}
 		when FEASIBILITY_TEST_QUIT_AFTER_READBACK {
 			smoke_elapsed += f64(dt)
 			if smoke_elapsed >= SMOKE_TIMEOUT_SECONDS && !smoke_complete() {
@@ -77,6 +85,17 @@ os_run :: proc() {
 					state.readback_done,
 					state.queue_work_done,
 					state.queue_work_done_ok,
+				)
+				state.quit = true
+			}
+		}
+		when FEASIBILITY_TEST_DEVICE_LOSS {
+			smoke_elapsed += f64(dt)
+			if smoke_elapsed >= SMOKE_TIMEOUT_SECONDS && !state.device_lost {
+				fmt.printf("[webgpu-feasibility] device-loss callback probe timed out after %.1f seconds (triggered=%v callbacks=%d)\n",
+					SMOKE_TIMEOUT_SECONDS,
+					state.test_device_loss_triggered,
+					sync.atomic_load(&state.device_lost_callback_count),
 				)
 				state.quit = true
 			}
@@ -95,7 +114,29 @@ os_run :: proc() {
 			handle_event(event)
 		}
 	}
+	when FEASIBILITY_TEST_DEVICE_LOSS {
+		callback_count := sync.atomic_load(&state.device_lost_callback_count)
+		state.test_device_loss_passed = state.test_device_loss_triggered && state.device_lost && callback_count == 1
+		if !state.test_device_loss_passed {
+			fmt.printf("[webgpu-feasibility] device-loss callback probe FAIL before teardown (triggered=%v lost=%v callbacks=%d)\n",
+				state.test_device_loss_triggered,
+				state.device_lost,
+				callback_count,
+			)
+		}
+	}
 	finish()
+	when FEASIBILITY_TEST_DEVICE_LOSS {
+		callback_count_after_teardown := sync.atomic_load(&state.device_lost_callback_count)
+		if !state.test_device_loss_passed || callback_count_after_teardown != 1 {
+			fmt.printf("[webgpu-feasibility] device-loss callback probe FAIL after teardown (passed_before_teardown=%v callbacks=%d)\n",
+				state.test_device_loss_passed,
+				callback_count_after_teardown,
+			)
+			os_exit_failure()
+		}
+		fmt.println("[webgpu-feasibility] device-loss callback probe PASS: exactly one callback before teardown")
+	}
 	SDL.DestroyWindow(state.os.window)
 	SDL.Quit()
 }

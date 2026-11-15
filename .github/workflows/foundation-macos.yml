@@ -29,7 +29,7 @@ jobs:
       - name: Install wasm-ld for Odin js_wasm32 linking
         shell: bash
         run: |
-          brew install lld
+          brew install lld llvm
           echo "$(brew --prefix lld)/bin" >> "$GITHUB_PATH"
           wasm-ld --version
 
@@ -57,6 +57,10 @@ jobs:
           sh examples/15_webgpu_feasibility/build.sh
           ./examples/15_webgpu_feasibility/out/webgpu_feasibility_smoke
           ./examples/15_webgpu_feasibility/out/webgpu_feasibility_resize_smoke
+
+      - name: Validate patched wgpu-native device-destroy callbacks through Metal
+        shell: sh
+        run: sh tools/validate_wgpu_native_device_loss_macos.sh
 
       - name: Validate bounded retained-effects experiment through Metal readback
         shell: bash

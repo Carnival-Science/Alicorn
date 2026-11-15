@@ -63,7 +63,7 @@ session.
 | Desktop target | Odin binding selection | Official release asset | SHA-256 | Local validation |
 | --- | --- | --- | --- | --- |
 | Windows x64 MSVC | `.Windows` + `.amd64` → `x86_64-msvc` | `wgpu-windows-x86_64-msvc-release.zip` | `7e67d7445c42aeb85e30f88930fd8d7d83ee769e3390aeb1ada75ebf3cf78132` | Installed Odin package; patched static build and D3D12 probes passed |
-| macOS arm64 | `.Darwin` + `.arm64` → `aarch64` | `wgpu-macos-aarch64-release.zip` | `a5797a37b1adf720bcd5dcffb291edbbd5b7b14be0a3874c28e6393a655a7a3e` | Not installed or run here |
+| macOS arm64 | `.Darwin` + `.arm64` → `aarch64` | `wgpu-macos-aarch64-release.zip` | `a5797a37b1adf720bcd5dcffb291edbbd5b7b14be0a3874c28e6393a655a7a3e` | Hosted macOS arm64 foundation CI: archive hash verified; native/JS builds and Metal readback/resize passed on `2e30693`; maintainer-local Mac validation unavailable |
 | macOS x64 | `.Darwin` + `.amd64` → `x86_64` | `wgpu-macos-x86_64-release.zip` | `8e2f7378548ddd0e2cf21e7d864dda46e953f0af724855a33778b85ead206d41` | Not installed or run here |
 | Linux arm64 | `.Linux` + `.arm64` → `aarch64` | `wgpu-linux-aarch64-release.zip` | `015fcdf1dbae82e614a783cc38017e5399ae0927a889fe9b69c9b664bc61b47a` | Not installed or run here |
 | Linux x64 | `.Linux` + `.amd64` → `x86_64` | `wgpu-linux-x86_64-release.zip` | `95a4d90c071005a98d03eab348beaa6b07e16eb00d1dcdb9f8348f75eb97ec5a` | Not installed or run here |
@@ -135,6 +135,18 @@ unmodified Odin binary still has the issue; the patch is not upstreamed. See the
 and [core closure/poll path](https://github.com/gfx-rs/wgpu/blob/v29.0.1/wgpu-core/src/device/global.rs#L1847-L1879).
 This source finding explains why polling, callback mode, and an empty queue
 didn't fix the original binary. No upstream report has been filed.
+
+A related, separate wgpu-core issue is [#9579](https://github.com/gfx-rs/wgpu/issues/9579),
+which remains open as of 2026-11-15. In the pinned v29.0.1 source, explicit
+destroy marks the device invalid at the start, while the device-lost closure
+and GPU-resource release are queued until maintenance observes an empty queue;
+the v30.0.2 source retains the same queue-empty condition. The WebGPU spec
+change in [gpuweb PR #4903](https://github.com/gpuweb/gpuweb/pull/4903) removed
+the intermediate `destroy started` state and described waiting for outstanding
+work before loss as unobservable. The local C-wrapper patch only registers and
+dispatches the existing core closure; it does not change this queue-drain
+policy. Our no-pending-work probes do not resolve #9579, emulate driver loss,
+or prove recovery.
 
 The Windows patch build used the release checkout's Rust channel `1.93`, Cargo
 lockfile, LLVM 23.1.5 for bindgen, and `WGPU_NATIVE_VERSION=29.0.1.1` for Odin's

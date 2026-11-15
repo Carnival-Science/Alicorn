@@ -27,7 +27,7 @@ backend-neutral; their current native payload renderer is not.
 
 | Phase | Exit evidence | Status |
 | --- | --- | --- |
-| 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: native explicit-destroy callback passes on Windows D3D12 with a pinned wgpu-native source patch; macOS/Linux and real device-loss/recovery evidence remain open |
+| 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: native/JS fixture and Metal readback/resize pass on hosted macOS arm64 CI; patched explicit-destroy callback is locally validated on Windows D3D12, with Metal patch validation queued; Linux, driver/OS loss, and recovery evidence remain open |
 | 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring and CPU surface mesh assembly plus text/image/icon preparation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
 | 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | Not started |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | Not started |
@@ -257,17 +257,30 @@ resource retirement, secondary windows, or production performance parity.
   successful 500 ms idle check. The shared `step()` now preserves dirty state
   across a surface reconfigure so an Outdated/Lost surface can request a bounded
   retry on browser as well as native.
-- Windows foundation CI now builds the native/browser fixture and executes
-  that D3D12 smoke. macOS foundation CI now builds the same shared source for
-  native and `js_wasm32`, then runs its native Metal readback smoke. Those new
-  hosted results are pending; this environment only provides the Windows local
-  run.
+- Hosted CI for Alicorn commit `2e30693` passed the
+  [Windows foundation run](https://github.com/samanshaiza004/alicorn/actions/runs/43753628624),
+  [macOS foundation run](https://github.com/samanshaiza004/alicorn/actions/runs/43753628648),
+  [Windows/macOS native packaging run](https://github.com/samanshaiza004/alicorn/actions/runs/43753628606),
+  and [icon asset reproducibility run](https://github.com/samanshaiza004/alicorn/actions/runs/43753628521).
+  Windows foundation executed the shared fixture on D3D12 and the backend-neutral
+  material benchmark. macOS arm64 verified the pinned wgpu-native archive,
+  built the same fixture for native Metal and `js_wasm32`, and passed native
+  Metal readback plus surface-resize smoke. This is hosted runner evidence, not
+  a maintainer-run macOS session.
 - A local static wgpu-native `v29.0.1.1` library built from the pinned source
   and checked-in callback patch passed early-destroy tests in both native
   callback modes, as well as a final-handle-release-before-poll test. The
   patched full fixture passed RGBA8 readback, delivered one `Destroyed`
   notification, and exited through teardown. See the
   [patch validation record](validation/webgpu-device-loss-callback-patch-windows-2026-11-15.md).
+- The native callback probe now requires exactly one callback before teardown,
+  rejects duplicates during cleanup, and exits nonzero after its 15-second
+  deadline. On the patched Windows D3D12 library, process-events, spontaneous,
+  release-before-poll, and post-readback variants passed. The unmodified Odin
+  package (which selected Vulkan on this host) was a negative control and
+  correctly failed with zero callbacks.
+  A reproducible patched Metal build-and-run step is now part of macOS CI; its
+  result is pending this revision.
 - Odin's installed browser-side `AdapterGetInfo` bridge omits the
   `GPUAdapterInfo` argument when calling `genericGetAdapterInfo`. The fixture
   now works around this only in its page imports and captures the browser's

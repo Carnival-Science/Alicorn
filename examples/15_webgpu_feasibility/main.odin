@@ -2,6 +2,7 @@ package webgpu_feasibility
 
 import "base:runtime"
 import "core:fmt"
+import "core:sync"
 import "vendor:wgpu"
 import runa "../../third_party/Runa"
 
@@ -68,6 +69,8 @@ state: struct {
 	ready, dirty, quit, device_lost: bool,
 	test_device_loss_pending: bool,
 	test_device_loss_triggered: bool,
+	test_device_loss_passed: bool,
+	device_lost_callback_count: i64,
 	native_loss_wait_probed: bool,
 }
 
@@ -154,13 +157,13 @@ on_adapter :: proc "c" (status: wgpu.RequestAdapterStatus, adapter: wgpu.Adapter
 
 on_device_lost :: proc "c" (device:^wgpu.Device, reason:wgpu.DeviceLostReason, message:wgpu.StringView, userdata1,userdata2:rawptr) {
 	context=state.ctx
-	state.device_lost=true
-	state.ready=false
+	sync.atomic_add(&state.device_lost_callback_count, 1)
+	when !FEASIBILITY_TEST_DEVICE_LOSS {
+		state.device_lost=true
+		state.ready=false
+	}
 	device_handle_present := device != nil && device^ != nil
 	fmt.printf("[webgpu-feasibility] device loss notification reason=%v device_handle_present=%v message=%s\n",reason,device_handle_present,message)
-	when FEASIBILITY_TEST_DEVICE_LOSS {
-		state.quit = true
-	}
 }
 
 on_queue_work_done :: proc "c" (status:wgpu.QueueWorkDoneStatus, message:wgpu.StringView, userdata1,userdata2:rawptr) {
