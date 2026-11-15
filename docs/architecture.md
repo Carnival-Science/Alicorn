@@ -296,6 +296,15 @@ Runtime. Applications author semantic widgets and host integrations; the
 generic paint payload union is an internal renderer boundary, not a replacement
 UI authoring API.
 
+`Paint_Display_List_View` is a synchronous borrow, not a retained GPU packet.
+Custom SDL_GPU hosts can use `Sdl_GPU_Presenter` to resolve that view into their
+own command buffer and target, then transfer a successful submission fence back
+to the presenter for resource retirement and Runtime acknowledgement. The
+Runtime and GPU device remain host-owned and must outlive the presenter. This
+bounded integration does not provide the standalone host's input, window,
+accessibility, menu, or retained-effects services; see the
+[#162 presentation boundary](research/issue-162-host-owned-presentation.md).
+
 Two-stop horizontal or vertical semantic surface gradients remain in the
 computed-style sidecar as well. Their paint command carries only an opt-in
 marker, so gradient endpoints do not enlarge every retained command. The SDL

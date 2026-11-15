@@ -150,6 +150,38 @@ The application state pointer is borrowed for the duration of `Run`; keep the
 state alive until it returns. See the complete
 [native starter](../examples/01_hello/main.odin).
 
+### Host-owned SDL_GPU presentation
+
+For a host that owns its own SDL event loop and GPU frame, create an
+`Sdl_GPU_Presenter` with the host's `GPUDevice`, target texture format, and
+borrowed `Runtime`. Call `Sdl_GPU_Presenter_Encode` with the host's command
+buffer, target, pixel dimensions, and logical-to-pixel scales. The host submits
+that command buffer, then passes the acquired fence to
+`Sdl_GPU_Presenter_Submission_Succeeded`; this transfers fence ownership to the
+presenter and returns a `Sdl_GPU_Submission` token. Use
+`Sdl_GPU_Presenter_Wait` or `Sdl_GPU_Presenter_Poll` to retire submitted work,
+and `Sdl_GPU_Presenter_Destroy` before destroying the Runtime or device.
+Call presenter functions on the Runtime's owning host thread. The host must
+submit a fence acquired from that same GPU device. If submission fails and it
+is unclear whether GPU work was queued, wait for GPU idle before canceling the
+presenter frame.
+
+An event-loop host can pair this renderer with [`Hosted_Runtime`](hosted-runtime.md):
+borrow its Runtime with `hosted_runtime_borrow` when creating the presenter.
+`Sdl_GPU_Presenter_Submission_Succeeded` acknowledges the Runtime frame itself;
+do not also call `hosted_runtime_frame_submission_succeeded` for that frame.
+
+The Runtime/device, window, command buffers, and targets remain host-owned. The
+Runtime display list is borrowed and consumed synchronously by encode. A target
+must match the format supplied at presenter creation and remain alive until its
+submission token completes. If encode fails after beginning a frame, cancel the
+host command buffer before calling `Sdl_GPU_Presenter_Cancel_Frame`. This API
+renders surfaces, text, icons, images, and custom geometry; it rejects backdrop
+effects and does not provide native input, accessibility, menu, titlebar, or
+event-loop integration. See the
+[host-owned presentation research note](research/issue-162-host-owned-presentation.md)
+and [external host fixture](../examples/15_host_owned_sdl_gpu/main.odin).
+
 The required callback is `build(state, runtime, logical_width,
 logical_height, dpi_scale) -> Node_ID`. The final `SDL application PASS` host
 summary includes `application_build_ns` (cumulative description-callback CPU
