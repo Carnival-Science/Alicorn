@@ -55,9 +55,11 @@ localhost or HTTPS:
 python -m http.server 8080 --directory web
 ~~~
 
-Open http://localhost:8080/. Confirm the settled status, resize once, and click
-the canvas to replay. A WASM build alone is not browser-GPU validation; the
-browser needs navigator.gpu and a functioning adapter.
+Open http://localhost:8080/. After the animation, confirm the status reports no
+new `requestAnimationFrame` requests for 500 ms. Resize once and confirm a
+single presentation is scheduled; click the canvas to replay. A WASM build
+alone is not browser-GPU validation; the browser needs `navigator.gpu` and a
+functioning adapter.
 
 The fixture uses default device limits because of Odin binding issue #8174. It
 does not validate fallback-font chains, production image decoding, retained

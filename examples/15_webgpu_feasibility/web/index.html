@@ -65,8 +65,14 @@ canvas{width:min(100vw,calc((100vh - 40px)*16/9));height:auto;aspect-ratio:16/9;
  if(exports.memory) memoryInterface.setMemory(exports.memory);
  const context=exports.default_context_ptr();
  exports._start();
- let scheduled=false,previous=0,animationActive=false;
- function requestFrame(){if(!scheduled){scheduled=true;requestAnimationFrame(tick)}}
+ let scheduled=false,previous=0,animationActive=false,rafRequests=0,idleTimer=0;
+ function requestFrame(){
+  if(!scheduled){
+   clearTimeout(idleTimer);idleTimer=0;
+   scheduled=true;rafRequests++;
+   requestAnimationFrame(tick);
+  }
+ }
  function tick(timestamp){
   scheduled=false;
   const dt=previous===0?0:Math.min((timestamp-previous)/1000,0.05);
@@ -75,7 +81,16 @@ canvas{width:min(100vw,calc((100vh - 40px)*16/9));height:auto;aspect-ratio:16/9;
   if(animationActive){
    status.textContent="Animating: frames are scheduled only during this 1.8-second motion.";
    requestFrame();
-  } else status.textContent="Settled: no frame is scheduled. Resize for one frame; click to replay.";
+  } else {
+   const settledRequests=rafRequests;
+   status.textContent="Settled: checking for unexpected frame requests…";
+   idleTimer=setTimeout(()=>{
+    idleTimer=0;
+    if(!scheduled&&rafRequests===settledRequests){
+     status.textContent="Settled: no animation frame requests for 500 ms ("+rafRequests+" total). Resize for one frame; click to replay.";
+    }
+   },500);
+  }
  }
  requestFrame();
  window.addEventListener("resize",()=>{exports.webgpu_resize(context);previous=0;requestFrame()});

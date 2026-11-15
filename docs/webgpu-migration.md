@@ -240,7 +240,11 @@ resource retirement, secondary windows, or production performance parity.
   and description were redacted. Odin's `AdapterGetInfo` returned backend
   `WebGPU`, type `Unknown`, and those same available identifiers. This is
   browser runtime and adapter-metadata evidence; `fallback=false` is not a
-  standalone proof of physical-GPU acceleration.
+  standalone proof of physical-GPU acceleration. The fixture now also counts
+  actual `requestAnimationFrame` scheduling: this session settled after 302
+  requests, reported zero additional requests over 500 ms, scheduled exactly
+  one extra request for a surface resize (303 total), and passed another 500 ms
+  idle check.
 - Windows foundation CI now builds the native/browser fixture and executes
   that D3D12 smoke. macOS foundation CI now builds the same shared source for
   native and `js_wasm32`, then runs its native Metal readback smoke. Those new
