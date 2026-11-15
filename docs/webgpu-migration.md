@@ -240,6 +240,16 @@ resize submission. The browser artifact was built but not executed by this
 Linux job; browser runtime evidence is recorded separately. This result does
 not measure physical GPU performance and does not validate Wayland.
 
+After integrating the latest `master` changes, the corrected Linux workflow on
+[`abc645a`](https://github.com/samanshaiza004/alicorn/actions/runs/43761187143)
+also passed. It verifies the selected adapter from the fixture's own startup
+log (`backend=Vulkan`, `vendor=llvmpipe`) instead of invoking `vulkaninfo` under
+Xvfb; the latter's optional XCB diagnostic had failed to connect in one runner
+attempt. The same run passed all thirteen asynchronous readback probes and
+submitted the resized surfaces at 800×450 and 720×405. The WASM target was
+built in CI; this run does not claim browser execution, physical Linux GPU
+coverage, or Wayland validation.
+
 ## Refreshed Windows validation (2026-11-15)
 
 - `tools/test.ps1 -Odin C:\odin\odin.exe`: passed (343 runtime foundation
