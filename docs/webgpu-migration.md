@@ -28,7 +28,7 @@ backend-neutral; their current native payload renderer is not.
 | Phase | Exit evidence | Status |
 | --- | --- | --- |
 | 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion/offscreen async readback demonstrated; binding/lifecycle limitations recorded | In progress: native explicit-destroy callback now passes on Windows D3D12 with a pinned wgpu-native source patch; cross-platform lifecycle and recovery evidence remains open |
-| 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring and CPU mesh/text/image/icon preparation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
+| 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring and CPU surface mesh assembly plus text/image/icon preparation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
 | 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | Not started |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | Not started |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
@@ -92,6 +92,34 @@ preparation reuse, not a shared production WebGPU renderer; SDL_GPU remains
 the only production backend. In particular, shaped runs still resolve glyph
 slots through the mutable Runa atlas on the native side; extracting a
 reconstructible CPU atlas/raster product is a separate renderer slice.
+
+### Shared solid-surface assembly (Windows, 2026-11-15)
+
+Surface material resolution, culling bounds, scale-aware clipping, shape
+expansion, and ordered per-paint draw metadata now live in
+`renderer/cpu/solid.odin`. The SDL_GPU package supplies the retained runtime and
+display list; the native backend keeps its GPU pipeline/resource lifecycle,
+buffer growth, SDL scissor conversion, uploads, and submission around that CPU
+mesh product. The mesh builder keeps one draw slot per display-list command and
+preserves the original paint order.
+Existing relief, rounded-surface, outside-stroke, fractional-DPI, and mixed
+paint-order regressions now exercise the shared surface mesh through the native
+adapter. The HUD's transient quads also use the shared vertex helper.
+
+On Windows, `odin check renderer/cpu -no-entry-point` passed, all 194
+`native/sdl_gpu` tests passed, the native application executable built, and
+`tools/check_web_ui_package.ps1 -Odin C:\odin\odin.exe` passed. This move does
+not create a WebGPU production backend or alter geometry and shader policy;
+native rendering still uses SDL_GPU. GPU validation and performance comparison
+for the production WebGPU compositor remain Phase 0/2 gates.
+
+The two new `renderer/cpu` solid-mesh unit tests passed. The Windows
+`tools/validate_blending.ps1 -Odin C:\odin\odin.exe` D3D12 readback also
+passed: 348 of 348 expected cases across surfaces, per-corner surfaces,
+geometry, icons, images, text and mixed paint; gradient orientation, stops,
+rounded clipping and source-over checks passed. Its recorded p50/p95 timings
+include offscreen submission/fence/readback and are not a before/after renderer
+performance comparison.
 
 ## Phase 0 feasibility results (Windows, 2026-11-15)
 

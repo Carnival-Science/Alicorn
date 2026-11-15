@@ -170,8 +170,8 @@ test_stroke_culling_accounts_for_nonuniform_dpi_scale :: proc(t: ^testing.T) {
 		stroke=alicorn.Paint_Stroke{color={1, 0, 0, 1}, width=1},
 	}
 	draw.stroke_placement = .Outside
-	visible := native_solid_visible_command(draw, surface, alicorn.STYLE_MATERIAL_FLAT, 1, 2)
-	_, _, _, _, intersects := native_solid_pixel_bounds(visible, 1, 2, 100, 120)
+	visible := cpu_renderer.Solid_Visible_Command(draw, surface, alicorn.STYLE_MATERIAL_FLAT, 1, 2)
+	_, _, _, _, intersects := cpu_renderer.Solid_Pixel_Bounds(visible, 1, 2, 100, 120)
 	testing.expect(t, intersects,
 		"a stroke scaled uniformly to the larger pixel scale should not be culled at the lower-scaled axis")
 }
@@ -463,7 +463,7 @@ test_flat_and_zero_height_take_the_direct_quad_path :: proc(t: ^testing.T) {
 		}
 		expected := make([dynamic]Native_Text_Vertex, 0, 16, allocator=context.temp_allocator)
 		defer delete(expected)
-		native_solid_append_quad(&expected, 5, 7, 35, 29, [4]f32{0.3, 0.4, 0.5, 1})
+		cpu_renderer.Append_Quad(&expected, 5, 7, 35, 29, [4]f32{0.3, 0.4, 0.5, 1})
 		testing.expect(t, len(vertices) == 6 && len(expected) == 6,
 			"flat and zero-height surfaces must emit exactly one ordinary quad")
 		for i := 0; i < 6; i += 1 {

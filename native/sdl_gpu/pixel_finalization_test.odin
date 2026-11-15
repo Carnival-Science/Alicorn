@@ -12,7 +12,7 @@ test_fractional_finalized_edges_survive_native_pixel_conversion :: proc(t: ^test
 			logical_edge := f32(pixel_edge)/scale
 			bounds := alicorn.Rect{logical_edge, logical_edge, 1/scale, 1/scale}
 			x0, y0, x1, y1 := cpu_renderer.Logical_To_Pixel_Bounds(bounds, scale, scale)
-			solid_x0, solid_y0, solid_x1, solid_y1, visible := native_solid_pixel_bounds(
+			solid_x0, solid_y0, solid_x1, solid_y1, visible := cpu_renderer.Solid_Pixel_Bounds(
 				alicorn.Paint_Command{bounds=bounds, clip=bounds},
 				scale,
 				scale,
