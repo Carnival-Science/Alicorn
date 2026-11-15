@@ -631,12 +631,14 @@ copy_node_description :: proc(
 			clear(&node.surface_samples)
 			clear(&node.surface_segments)
 			clear(&node.surface_circles)
+			clear(&node.surface_rectangles)
 			node.surface_geometry_active = d.surface_kind == .Geometry
 		}
 	} else {
 		clear(&node.surface_samples)
 		clear(&node.surface_segments)
 		clear(&node.surface_circles)
+		clear(&node.surface_rectangles)
 		node.surface_geometry_active = false
 	}
 	replace_owned(&node.identity_key, d.identity_key, rt.persistent_allocator)
@@ -814,6 +816,7 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	delete(node.surface_samples)
 	delete(node.surface_segments)
 	delete(node.surface_circles)
+	delete(node.surface_rectangles)
 	text_run_destroy(&node.text_run)
 	clear_text_composition(node, rt.persistent_allocator)
 	release_node_strings(node, rt.persistent_allocator)
@@ -902,6 +905,7 @@ reconcile :: proc(rt: ^Runtime) {
 			node.surface_samples = make([dynamic]f32, 0, allocator=rt.persistent_allocator)
 			node.surface_segments = make([dynamic]GPU_Surface_Line_Segment, 0, allocator=rt.persistent_allocator)
 			node.surface_circles = make([dynamic]GPU_Surface_Filled_Circle, 0, allocator=rt.persistent_allocator)
+			node.surface_rectangles = make([dynamic]GPU_Surface_Filled_Rectangle, 0, allocator=rt.persistent_allocator)
 			rt.nodes[d.id] = node
 			rt.stats.nodes_created += 1
 			next_style_environment := style_environment_with_accessibility(d.style_environment, item.accessibility)
@@ -1151,6 +1155,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 		delete(node.surface_samples)
 		delete(node.surface_segments)
 		delete(node.surface_circles)
+		delete(node.surface_rectangles)
 		text_run_destroy(&node.text_run)
 		clear_text_composition(node, rt.persistent_allocator)
 		release_node_strings(node, rt.persistent_allocator)

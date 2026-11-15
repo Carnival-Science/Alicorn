@@ -82,5 +82,6 @@ gpu_surface_payload_resolve :: proc(rt: ^Runtime, handle: Geometry_Handle) -> (p
 		samples=node.surface_samples[:],
 		segments=node.surface_segments[:],
 		circles=node.surface_circles[:],
+		rectangles=node.surface_rectangles[:],
 	}, true
 }

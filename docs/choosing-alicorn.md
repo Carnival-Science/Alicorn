@@ -155,6 +155,9 @@ payload revision: call `gpu_surface_update` or
 the explicitly versioned variants only when an asynchronous producer needs
 latest-wins ordering. Surfaces are inert to pointer input by default; opt in to
 `.Pointer` interaction only for a surface that behaves as a control/canvas.
+For filled geometry, `gpu_surface_update_geometry_with_rectangles` adds a
+bounded rectangle batch that paints beneath segments and circles in stable
+submission order. All geometry contributes to one vertex limit.
 The surface API carries typed, bounded presentation data; it does not expose
 SDL command buffers or an application shader API. Keep platform/GPU handles
 in the host boundary. Do not emit every logical row or move GPU sizing into

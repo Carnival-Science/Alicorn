@@ -1445,5 +1445,15 @@ system file drops or arbitrary MIME payloads.
   inside the host; the application supplies typed data, not SDL command
   buffers.
 
+  Geometry surfaces accept line segments and filled circles through
+  `gpu_surface_update_geometry`, or those primitives plus filled rectangles
+  through `gpu_surface_update_geometry_with_rectangles`. Rectangle bounds are
+  positive, surface-local logical units. Rectangles paint in supplied order,
+  before segments and circles; all three primitive types share the same
+  `GPU_SURFACE_MAX_VERTICES` budget. The versioned rectangle-aware function
+  provides the same latest-wins contract when payloads come from asynchronous
+  producers. Invalid or over-budget geometry is rejected atomically, leaving
+  the last accepted payload intact.
+
 For the ownership and lifecycle model behind these calls, see
 [Architecture](architecture.md).

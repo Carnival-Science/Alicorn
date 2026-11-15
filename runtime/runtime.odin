@@ -153,10 +153,11 @@ GPU_Surface_Interaction :: enum {
 GPU_Surface_Update_Revision :: distinct u64
 
 // Geometry surfaces share the native SDL_GPU triangle budget. Transparent
-// geometry emits no background vertices; a segment uses six vertices and a
-// filled circle uses 16 fan triangles (48 vertices).
+// geometry emits no background vertices; a rectangle or segment uses six
+// vertices and a filled circle uses 16 fan triangles (48 vertices).
 GPU_SURFACE_MAX_VERTICES :: 8192
 GPU_SURFACE_CIRCLE_SEGMENTS :: 16
+GPU_SURFACE_RECTANGLE_VERTICES :: 6
 
 // Waveform surfaces reserve one six-vertex background quad and emit one
 // six-vertex segment for each adjacent sample pair. This is the largest
@@ -183,6 +184,7 @@ GPU_Surface_Payload_View :: struct {
 	samples:  []f32,
 	segments: []GPU_Surface_Line_Segment,
 	circles:  []GPU_Surface_Filled_Circle,
+	rectangles: []GPU_Surface_Filled_Rectangle,
 }
 
 Layout_Direction :: enum u8 { Row, Column }
@@ -432,6 +434,14 @@ GPU_Surface_Line_Segment :: struct {
 GPU_Surface_Filled_Circle :: struct {
 	center: GPU_Surface_Point,
 	radius: f32,
+	color:  Color,
+}
+
+// GPU_Surface_Filled_Rectangle is expressed in logical coordinates local to
+// the resolved bounds of its geometry surface. Rectangles are emitted in
+// submission order before line segments and circles.
+GPU_Surface_Filled_Rectangle :: struct {
+	bounds: Rect,
 	color:  Color,
 }
 
@@ -1500,6 +1510,7 @@ Node :: struct {
 	surface_geometry_active: bool,
 	surface_segments: [dynamic]GPU_Surface_Line_Segment,
 	surface_circles: [dynamic]GPU_Surface_Filled_Circle,
+	surface_rectangles: [dynamic]GPU_Surface_Filled_Rectangle,
 	bounds:      Rect,
 	hit_bounds:  Rect,
 	clip:        Rect,

@@ -8,6 +8,9 @@ changelogs.
 
 ### Added
 
+- Added a bounded filled-rectangle batch to retained geometry surfaces. Rectangle
+  fills share the existing vertex budget, preserve submission order, and paint
+  beneath line segments and filled circles.
 - Added opt-in horizontal and vertical two-stop gradients to semantic surfaces.
   Stops resolve through ordinary core or namespaced theme color roles, share the
   existing surface vertex-color path, and preserve the solid-fill fast path.

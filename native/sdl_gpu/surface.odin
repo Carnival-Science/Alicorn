@@ -80,14 +80,52 @@ native_surface_append_circle :: proc(vertices: ^[dynamic]Native_Text_Vertex, cx,
 	return true
 }
 
+native_surface_append_rectangle :: proc(
+	vertices: ^[dynamic]Native_Text_Vertex,
+	x, y, width, height, scale_x, scale_y: f32,
+	color: [4]f32,
+) -> bool {
+	if len(vertices^) + alicorn.GPU_SURFACE_RECTANGLE_VERTICES > MAX_SURFACE_VERTICES { return false }
+	x0 := x * scale_x
+	y0 := y * scale_y
+	x1 := (x + width) * scale_x
+	y1 := (y + height) * scale_y
+	top_left := native_surface_vertex(x0, y0, color)
+	top_right := native_surface_vertex(x1, y0, color)
+	bottom_right := native_surface_vertex(x1, y1, color)
+	bottom_left := native_surface_vertex(x0, y1, color)
+	append(vertices,
+		top_left, top_right, bottom_right,
+		top_left, bottom_right, bottom_left,
+	)
+	return true
+}
+
 native_surface_append_geometry :: proc(
 	vertices: ^[dynamic]Native_Text_Vertex,
 	bounds: alicorn.Rect,
 	scale_x, scale_y: f32,
+	rectangles: []alicorn.GPU_Surface_Filled_Rectangle,
 	segments: []alicorn.GPU_Surface_Line_Segment,
 	circles: []alicorn.GPU_Surface_Filled_Circle,
 	opacity: f32 = 1,
 ) -> bool {
+	for rectangle in rectangles {
+		color := rectangle.color
+		color.a *= opacity
+		if !native_surface_append_rectangle(
+			vertices,
+			bounds.x+rectangle.bounds.x,
+			bounds.y+rectangle.bounds.y,
+			rectangle.bounds.w,
+			rectangle.bounds.h,
+			scale_x,
+			scale_y,
+			native_surface_color_from(color),
+		) {
+			return false
+		}
+	}
 	for segment in segments {
 		ax := bounds.x + segment.start.x
 		ay := bounds.y + segment.start.y
@@ -118,7 +156,7 @@ native_surface_geometry_self_test :: proc() -> Native_Validation_Result {
 		start={2, 3}, end={12, 3}, thickness=2, color={1, 0, 0, 1},
 	}}
 	circles := [1]alicorn.GPU_Surface_Filled_Circle{{center={20, 10}, radius=4, color={0, 1, 0, 1}}}
-	if !native_surface_append_geometry(&vertices, alicorn.Rect{100, 50, 40, 30}, 2, 2, segments[:], circles[:]) { return native_validation_failed() }
+	if !native_surface_append_geometry(&vertices, alicorn.Rect{100, 50, 40, 30}, 2, 2, nil, segments[:], circles[:]) { return native_validation_failed() }
 	if len(vertices) != 6+alicorn.GPU_SURFACE_CIRCLE_SEGMENTS*3 { return native_validation_failed() }
 	// Surface-local coordinates are translated by the resolved surface origin,
 	// then scaled to physical pixels for the GPU vertex buffer.
@@ -262,6 +300,7 @@ native_surface_rebuild_mesh :: proc(renderer: ^Native_Surface_Renderer, command:
 	h = native_surface_mix(h, geometry.geometry.generation)
 	h = native_surface_mix(h, u64(payload.revision))
 	h = native_surface_mix(h, u64(len(payload.samples)))
+	h = native_surface_mix(h, u64(len(payload.rectangles)))
 	h = native_surface_mix(h, u64(len(payload.segments)))
 	h = native_surface_mix(h, u64(len(payload.circles)))
 	h = native_surface_mix(h, u64(transmute(u32)scale_x))
@@ -276,8 +315,8 @@ native_surface_rebuild_mesh :: proc(renderer: ^Native_Surface_Renderer, command:
 	bounds := command.bounds
 	bounds.x += command.translation[0]
 	bounds.y += command.translation[1]
-	if len(payload.segments) > 0 || len(payload.circles) > 0 {
-		if !native_surface_append_geometry(&renderer.vertices, bounds, scale_x, scale_y, payload.segments, payload.circles, command.opacity) {
+	if len(payload.rectangles) > 0 || len(payload.segments) > 0 || len(payload.circles) > 0 {
+		if !native_surface_append_geometry(&renderer.vertices, bounds, scale_x, scale_y, payload.rectangles, payload.segments, payload.circles, command.opacity) {
 			return false
 		}
 	}
