@@ -1484,13 +1484,19 @@ system file drops or arbitrary MIME payloads.
 
   Geometry surfaces accept line segments and filled circles through
   `gpu_surface_update_geometry`, or those primitives plus filled rectangles
-  through `gpu_surface_update_geometry_with_rectangles`. Rectangle bounds are
-  positive, surface-local logical units. Rectangles paint in supplied order,
-  before segments and circles; all three primitive types share the same
-  `GPU_SURFACE_MAX_VERTICES` budget. The versioned rectangle-aware function
-  provides the same latest-wins contract when payloads come from asynchronous
-  producers. Invalid or over-budget geometry is rejected atomically, leaving
-  the last accepted payload intact.
+  through `gpu_surface_update_geometry_with_rectangles`. The
+  `gpu_surface_update_geometry_with_markers` and
+  `gpu_surface_update_geometry_with_rectangles_and_markers` variants also
+  accept compact circular point markers, with or without rectangle fills.
+  Marker centers and diameters are
+  surface-local logical units; native SDL_GPU renders each marker from a
+  six-vertex masked quad, while ordinary filled circles retain their existing
+  tessellation quality. Rectangles paint in supplied order, before segments,
+  circles, and point markers. All geometry types share the
+  `GPU_SURFACE_MAX_VERTICES` budget. The corresponding versioned rectangle and
+  marker APIs provide latest-wins ordering for asynchronous producers. Invalid
+  or over-budget geometry is rejected atomically, leaving the last accepted
+  payload intact.
 
 For the ownership and lifecycle model behind these calls, see
 [Architecture](architecture.md).

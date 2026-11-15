@@ -73,6 +73,74 @@ test_gpu_surface_waveform_sample_limit_is_atomic :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_gpu_surface_compact_point_markers_validate_budget_and_lifecycle :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 320, 180})
+	defer destroy_runtime(&rt)
+
+	invalidate_root(&rt, "compact point marker geometry test")
+	ui, should_build := begin_frame(&rt)
+	if !should_build {
+		testing.expect(t, false, "initial geometry surface tree should build")
+		return
+	}
+	container_begin(&ui, .Root, label="point-marker-root")
+	surface := gpu_geometry_surface(&ui, "point-marker-surface", layout_style(width=120, height=40), 1)
+	container_end(&ui)
+	end_frame(&ui)
+
+	segments := make([]GPU_Surface_Line_Segment, 426)
+	defer delete(segments)
+	markers := make([]GPU_Surface_Point_Marker, 427)
+	defer delete(markers)
+	for i in 0..<len(segments) {
+		segments[i] = GPU_Surface_Line_Segment{
+			start={f32(i), 10}, end={f32(i+1), 12}, thickness=1, color={0.2, 0.8, 0.9, 1},
+		}
+	}
+	for i in 0..<len(markers) {
+		markers[i] = GPU_Surface_Point_Marker{
+			center={f32(i), 11}, diameter=4, color={0.95, 0.9, 0.2, 1},
+		}
+	}
+	// 426 connecting segments plus 427 six-vertex markers require 5,118
+	// vertices, allowing a representative high-zoom sample view under budget.
+	testing.expect(t, gpu_surface_geometry_fits(len(segments), 0, 0, len(markers)),
+		"dense waveform markers and connecting segments should fit the shared geometry budget")
+	testing.expect(t, gpu_surface_update_geometry_with_markers(
+		&rt, surface, segments, nil, markers,
+	), "valid compact point markers should be retained")
+	node := rt.nodes[surface]
+	handle := paint_geometry_handle_for_node(node)
+	payload, payload_ok := gpu_surface_payload_resolve(&rt, handle)
+	testing.expect(t, payload_ok && len(payload.segments) == 426 && len(payload.point_markers) == 427,
+		"the borrowed payload view should expose the owned segments and marker snapshot")
+	if !payload_ok || len(payload.point_markers) != 427 { return }
+	accepted_revision := payload.revision
+	accepted_last_marker := payload.point_markers[len(payload.point_markers)-1]
+
+	too_many := make([]GPU_Surface_Point_Marker, GPU_SURFACE_MAX_VERTICES/GPU_SURFACE_POINT_MARKER_VERTICES+1)
+	defer delete(too_many)
+	for i in 0..<len(too_many) {
+		too_many[i] = GPU_Surface_Point_Marker{center={f32(i), 8}, diameter=3, color={1, 1, 1, 1}}
+	}
+	testing.expect(t, !gpu_surface_update_geometry_with_rectangles_and_markers(&rt, surface, nil, nil, nil, too_many),
+		"marker geometry exceeding the shared vertex limit should be rejected")
+	invalid := [1]GPU_Surface_Point_Marker{{center={5, 5}, diameter=0, color={1, 1, 1, 1}}}
+	testing.expect(t, !gpu_surface_update_geometry_with_rectangles_and_markers(&rt, surface, nil, nil, nil, invalid[:]),
+		"zero-diameter markers should be rejected")
+	after_rejection, after_rejection_ok := gpu_surface_payload_resolve(&rt, handle)
+	testing.expect(t, after_rejection_ok && after_rejection.revision == accepted_revision &&
+		len(after_rejection.segments) == 426 && len(after_rejection.point_markers) == 427 &&
+		after_rejection.point_markers[426] == accepted_last_marker,
+		"over-budget or invalid replacements should preserve the last accepted marker payload and revision")
+
+	testing.expect(t, gpu_surface_clear(&rt, surface), "clearing a marker payload should succeed")
+	cleared, cleared_ok := gpu_surface_payload_resolve(&rt, handle)
+	testing.expect(t, cleared_ok && len(cleared.point_markers) == 0 && len(cleared.segments) == 0,
+		"clearing the geometry payload should release retained point markers")
+}
+
+@(test)
 test_retyping_away_from_custom_surface_discards_image_layers :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 100, 80})
 	defer destroy_runtime(&rt)
@@ -81,14 +149,18 @@ test_retyping_away_from_custom_surface_discards_image_layers :: proc(t: ^testing
 	if err != .None { testing.expect(t, false, "QOI image fixture should load"); return }
 	id := gpu_surface_retype_test_describe(&rt, .Custom_Surface)
 	if id == 0 { testing.expect(t, false, "initial custom surface should be retained"); return }
+	marker := [1]GPU_Surface_Point_Marker{{center={10, 10}, diameter=3, color={1, 1, 1, 1}}}
+	testing.expect(t, gpu_surface_update_geometry_with_markers(&rt, id, nil, nil, marker[:]),
+		"custom surfaces should retain compact marker payloads")
 	layer := GPU_Surface_Image{image=handle, bounds=Rect{0,0,10,10}}
 	testing.expect(t, gpu_surface_update_images(&rt, id, []GPU_Surface_Image{layer}),
 		"a valid image layer should be retained by the custom surface")
 
 	id_after_text := gpu_surface_retype_test_describe(&rt, .Text)
 	_, retained_while_text := rt.gpu_surface_images[id]
-	testing.expect(t, id_after_text == id && !retained_while_text,
-		"changing the same retained identity away from Custom_Surface should release its image layers")
+	_, retained_markers_while_text := rt.gpu_surface_point_markers[id]
+	testing.expect(t, id_after_text == id && !retained_while_text && !retained_markers_while_text,
+		"changing the same retained identity away from Custom_Surface should release its image and marker payloads")
 
 	id_after_surface := gpu_surface_retype_test_describe(&rt, .Custom_Surface)
 	presentation, ready := begin_presentation_frame(&rt)
@@ -100,6 +172,7 @@ test_retyping_away_from_custom_surface_discards_image_layers :: proc(t: ^testing
 		}
 	}
 	_, retained_after_return := rt.gpu_surface_images[id]
-	testing.expect(t, id_after_surface == id && !retained_after_return && image_commands == 0,
-		"returning to Custom_Surface should not resurrect image layers from the prior surface kind")
+	_, retained_markers_after_return := rt.gpu_surface_point_markers[id]
+	testing.expect(t, id_after_surface == id && !retained_after_return && !retained_markers_after_return && image_commands == 0,
+		"returning to Custom_Surface should not resurrect image layers or markers from the prior surface kind")
 }

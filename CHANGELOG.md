@@ -8,6 +8,9 @@ changelogs.
 
 ### Added
 
+- Added retained custom-surface point markers for dense plots. Each marker uses
+  a six-vertex masked quad and shares the existing bounded geometry budget;
+  ordinary filled-circle rendering is unchanged.
 - Added a bounded filled-rectangle batch to retained geometry surfaces. Rectangle
   fills share the existing vertex budget, preserve submission order, and paint
   beneath line segments and filled circles.

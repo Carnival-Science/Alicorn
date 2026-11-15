@@ -632,6 +632,7 @@ copy_node_description :: proc(
 			clear(&node.surface_segments)
 			clear(&node.surface_circles)
 			clear(&node.surface_rectangles)
+			gpu_surface_point_markers_destroy(rt, node.id)
 			node.surface_geometry_active = d.surface_kind == .Geometry
 		}
 	} else {
@@ -639,6 +640,7 @@ copy_node_description :: proc(
 		clear(&node.surface_segments)
 		clear(&node.surface_circles)
 		clear(&node.surface_rectangles)
+		gpu_surface_point_markers_destroy(rt, node.id)
 		node.surface_geometry_active = false
 	}
 	replace_owned(&node.identity_key, d.identity_key, rt.persistent_allocator)
@@ -817,6 +819,7 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	delete(node.surface_segments)
 	delete(node.surface_circles)
 	delete(node.surface_rectangles)
+	gpu_surface_point_markers_destroy(rt, id)
 	text_run_destroy(&node.text_run)
 	clear_text_composition(node, rt.persistent_allocator)
 	release_node_strings(node, rt.persistent_allocator)
@@ -1252,6 +1255,8 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.images)
 	for _, layers in rt.gpu_surface_images { delete(layers) }
 	delete(rt.gpu_surface_images)
+	for _, markers in rt.gpu_surface_point_markers { delete(markers) }
+	delete(rt.gpu_surface_point_markers)
 	text_engine_destroy(&rt.text_engine)
 	if rt.scratch_arena != nil {
 		mem.dynamic_arena_destroy(rt.scratch_arena)

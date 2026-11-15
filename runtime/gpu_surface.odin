@@ -56,6 +56,29 @@ gpu_surface_image_layers_destroy :: proc(rt: ^Runtime, id: Node_ID) {
 	}
 }
 
+gpu_surface_point_markers_destroy :: proc(rt: ^Runtime, id: Node_ID) {
+	if rt == nil { return }
+	if markers, ok := rt.gpu_surface_point_markers[id]; ok {
+		delete(markers)
+		delete_key(&rt.gpu_surface_point_markers, id)
+	}
+}
+
+gpu_surface_point_markers_resolve :: proc(rt: ^Runtime, id: Node_ID) -> []GPU_Surface_Point_Marker {
+	if rt == nil { return nil }
+	if markers, ok := rt.gpu_surface_point_markers[id]; ok { return markers[:] }
+	return nil
+}
+
+gpu_surface_point_markers_replace :: proc(rt: ^Runtime, id: Node_ID, source: []GPU_Surface_Point_Marker) -> bool {
+	owned := make([dynamic]GPU_Surface_Point_Marker, 0, len(source), allocator=rt.persistent_allocator)
+	if owned == nil && len(source) > 0 { return false }
+	for marker in source { append(&owned, marker) }
+	gpu_surface_point_markers_destroy(rt, id)
+	if len(owned) > 0 { rt.gpu_surface_point_markers[id] = owned }
+	return true
+}
+
 gpu_surface_update_images :: proc(rt: ^Runtime, id: Node_ID, images: []GPU_Surface_Image) -> bool {
 	node, ok := gpu_surface_payload_node(rt, id)
 	if !ok || len(images) > GPU_SURFACE_MAX_IMAGES { return false }
@@ -103,6 +126,7 @@ gpu_surface_update :: proc(rt: ^Runtime, id: Node_ID, samples: []f32) -> bool {
 	clear(&node.surface_segments)
 	clear(&node.surface_circles)
 	clear(&node.surface_rectangles)
+	gpu_surface_point_markers_destroy(rt, id)
 	for sample in samples { append(&node.surface_samples, sample) }
 	node.surface_geometry_active = false
 	gpu_surface_note_payload_commit(rt, id, revision, "GPU waveform payload replaced", false)
@@ -125,6 +149,7 @@ gpu_surface_update_versioned :: proc(rt: ^Runtime, id: Node_ID, revision: GPU_Su
 	clear(&node.surface_segments)
 	clear(&node.surface_circles)
 	clear(&node.surface_rectangles)
+	gpu_surface_point_markers_destroy(rt, id)
 	for sample in samples { append(&node.surface_samples, sample) }
 	node.surface_geometry_active = false
 	gpu_surface_note_payload_commit(rt, id, revision, "versioned GPU waveform payload replaced", false)
@@ -145,6 +170,7 @@ gpu_surface_geometry_valid :: proc(
 	segments: []GPU_Surface_Line_Segment,
 	circles: []GPU_Surface_Filled_Circle,
 	rectangles: []GPU_Surface_Filled_Rectangle,
+	point_markers: []GPU_Surface_Point_Marker,
 ) -> bool {
 	for segment in segments {
 		if !gpu_surface_geometry_scalar_valid(segment.start.x) || !gpu_surface_geometry_scalar_valid(segment.start.y) ||
@@ -161,6 +187,13 @@ gpu_surface_geometry_valid :: proc(
 			return false
 		}
 	}
+	for marker in point_markers {
+		if !gpu_surface_geometry_scalar_valid(marker.center.x) || !gpu_surface_geometry_scalar_valid(marker.center.y) ||
+		   !gpu_surface_geometry_scalar_valid(marker.diameter) || marker.diameter <= 0 ||
+		   !gpu_surface_geometry_color_valid(marker.color) {
+			return false
+		}
+	}
 	for rectangle in rectangles {
 		if !gpu_surface_geometry_scalar_valid(rectangle.bounds.x) ||
 			!gpu_surface_geometry_scalar_valid(rectangle.bounds.y) ||
@@ -174,15 +207,17 @@ gpu_surface_geometry_valid :: proc(
 	return true
 }
 
-gpu_surface_geometry_fits :: proc(segment_count, circle_count, rectangle_count: int) -> bool {
-	if segment_count < 0 || circle_count < 0 || rectangle_count < 0 || GPU_SURFACE_MAX_VERTICES < 0 { return false }
+gpu_surface_geometry_fits :: proc(segment_count, circle_count, rectangle_count, point_marker_count: int) -> bool {
+	if segment_count < 0 || circle_count < 0 || rectangle_count < 0 || point_marker_count < 0 || GPU_SURFACE_MAX_VERTICES < 0 { return false }
 	remaining := GPU_SURFACE_MAX_VERTICES
 	if segment_count > remaining / 6 { return false }
 	remaining -= segment_count * 6
 	if rectangle_count > remaining / GPU_SURFACE_RECTANGLE_VERTICES { return false }
 	remaining -= rectangle_count * GPU_SURFACE_RECTANGLE_VERTICES
 	circle_vertices := GPU_SURFACE_CIRCLE_SEGMENTS * 3
-	return circle_count <= remaining / circle_vertices
+	if circle_count > remaining / circle_vertices { return false }
+	remaining -= circle_count * circle_vertices
+	return point_marker_count <= remaining / GPU_SURFACE_POINT_MARKER_VERTICES
 }
 
 // gpu_surface_update_geometry copies surface-local logical geometry into the
@@ -197,7 +232,17 @@ gpu_surface_update_geometry :: proc(
 	segments: []GPU_Surface_Line_Segment,
 	circles: []GPU_Surface_Filled_Circle,
 ) -> bool {
-	return gpu_surface_update_geometry_with_rectangles(rt, id, nil, segments, circles)
+	return gpu_surface_update_geometry_with_rectangles_and_markers(rt, id, nil, segments, circles, nil)
+}
+
+gpu_surface_update_geometry_with_markers :: proc(
+	rt: ^Runtime,
+	id: Node_ID,
+	segments: []GPU_Surface_Line_Segment,
+	circles: []GPU_Surface_Filled_Circle,
+	point_markers: []GPU_Surface_Point_Marker,
+) -> bool {
+	return gpu_surface_update_geometry_with_rectangles_and_markers(rt, id, nil, segments, circles, point_markers)
 }
 
 // gpu_surface_update_geometry_with_rectangles atomically replaces all
@@ -211,15 +256,29 @@ gpu_surface_update_geometry_with_rectangles :: proc(
 	segments: []GPU_Surface_Line_Segment,
 	circles: []GPU_Surface_Filled_Circle,
 ) -> bool {
+	return gpu_surface_update_geometry_with_rectangles_and_markers(rt, id, rectangles, segments, circles, nil)
+}
+
+// Compact round markers use one masked quad (six vertices each). Filled
+// circles retain their existing 16-triangle shape quality.
+gpu_surface_update_geometry_with_rectangles_and_markers :: proc(
+	rt: ^Runtime,
+	id: Node_ID,
+	rectangles: []GPU_Surface_Filled_Rectangle,
+	segments: []GPU_Surface_Line_Segment,
+	circles: []GPU_Surface_Filled_Circle,
+	point_markers: []GPU_Surface_Point_Marker,
+) -> bool {
 	node, ok := gpu_surface_payload_node(rt, id)
 	if !ok { return false }
-	if !gpu_surface_geometry_fits(len(segments), len(circles), len(rectangles)) {
+	if !gpu_surface_geometry_fits(len(segments), len(circles), len(rectangles), len(point_markers)) {
 		rt.stats.surface_geometry_overflow_rejections += 1
 		return false
 	}
-	if !gpu_surface_geometry_valid(segments, circles, rectangles) { return false }
+	if !gpu_surface_geometry_valid(segments, circles, rectangles, point_markers) { return false }
 	revision, revision_ok := gpu_surface_next_payload_revision(node.surface_payload_revision)
 	if !revision_ok { return false }
+	if !gpu_surface_point_markers_replace(rt, id, point_markers) { return false }
 	clear(&node.surface_segments)
 	clear(&node.surface_circles)
 	clear(&node.surface_rectangles)
@@ -242,7 +301,18 @@ gpu_surface_update_geometry_versioned :: proc(
 	segments: []GPU_Surface_Line_Segment,
 	circles: []GPU_Surface_Filled_Circle,
 ) -> bool {
-	return gpu_surface_update_geometry_versioned_with_rectangles(rt, id, revision, nil, segments, circles)
+	return gpu_surface_update_geometry_versioned_with_rectangles_and_markers(rt, id, revision, nil, segments, circles, nil)
+}
+
+gpu_surface_update_geometry_versioned_with_markers :: proc(
+	rt: ^Runtime,
+	id: Node_ID,
+	revision: GPU_Surface_Update_Revision,
+	segments: []GPU_Surface_Line_Segment,
+	circles: []GPU_Surface_Filled_Circle,
+	point_markers: []GPU_Surface_Point_Marker,
+) -> bool {
+	return gpu_surface_update_geometry_versioned_with_rectangles_and_markers(rt, id, revision, nil, segments, circles, point_markers)
 }
 
 gpu_surface_update_geometry_versioned_with_rectangles :: proc(
@@ -253,17 +323,30 @@ gpu_surface_update_geometry_versioned_with_rectangles :: proc(
 	segments: []GPU_Surface_Line_Segment,
 	circles: []GPU_Surface_Filled_Circle,
 ) -> bool {
+	return gpu_surface_update_geometry_versioned_with_rectangles_and_markers(rt, id, revision, rectangles, segments, circles, nil)
+}
+
+gpu_surface_update_geometry_versioned_with_rectangles_and_markers :: proc(
+	rt: ^Runtime,
+	id: Node_ID,
+	revision: GPU_Surface_Update_Revision,
+	rectangles: []GPU_Surface_Filled_Rectangle,
+	segments: []GPU_Surface_Line_Segment,
+	circles: []GPU_Surface_Filled_Circle,
+	point_markers: []GPU_Surface_Point_Marker,
+) -> bool {
 	node, ok := gpu_surface_payload_node(rt, id)
 	if !ok { return false }
 	if u64(revision) <= u64(node.surface_payload_revision) {
 		rt.stats.surface_stale_update_rejections += 1
 		return false
 	}
-	if !gpu_surface_geometry_fits(len(segments), len(circles), len(rectangles)) {
+	if !gpu_surface_geometry_fits(len(segments), len(circles), len(rectangles), len(point_markers)) {
 		rt.stats.surface_geometry_overflow_rejections += 1
 		return false
 	}
-	if !gpu_surface_geometry_valid(segments, circles, rectangles) { return false }
+	if !gpu_surface_geometry_valid(segments, circles, rectangles, point_markers) { return false }
+	if !gpu_surface_point_markers_replace(rt, id, point_markers) { return false }
 	clear(&node.surface_segments)
 	clear(&node.surface_circles)
 	clear(&node.surface_rectangles)
@@ -285,13 +368,14 @@ gpu_surface_clear :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 	if !ok { return false }
 	image_layers_changed := false
 	if layers, found := rt.gpu_surface_images[id]; found && len(layers) > 0 { image_layers_changed = true }
-	if len(node.surface_samples) == 0 && len(node.surface_segments) == 0 && len(node.surface_circles) == 0 && len(node.surface_rectangles) == 0 && !image_layers_changed { return false }
+	if len(node.surface_samples) == 0 && len(node.surface_segments) == 0 && len(node.surface_circles) == 0 && len(gpu_surface_point_markers_resolve(rt, id)) == 0 && len(node.surface_rectangles) == 0 && !image_layers_changed { return false }
 	revision, revision_ok := gpu_surface_next_payload_revision(node.surface_payload_revision)
 	if !revision_ok { return false }
 	clear(&node.surface_samples)
 	clear(&node.surface_segments)
 	clear(&node.surface_circles)
 	clear(&node.surface_rectangles)
+	gpu_surface_point_markers_destroy(rt, id)
 	if image_layers_changed { gpu_surface_image_layers_destroy(rt, id) }
 	node.surface_geometry_active = node.surface_kind == .Geometry
 	node.surface_payload_revision = revision

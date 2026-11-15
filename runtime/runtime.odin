@@ -153,11 +153,13 @@ GPU_Surface_Interaction :: enum {
 GPU_Surface_Update_Revision :: distinct u64
 
 // Geometry surfaces share the native SDL_GPU triangle budget. Transparent
-// geometry emits no background vertices; a rectangle or segment uses six
-// vertices and a filled circle uses 16 fan triangles (48 vertices).
+// geometry emits no background vertices; a rectangle, segment, or compact
+// point marker uses six vertices and a filled circle uses 16 fan triangles
+// (48 vertices).
 GPU_SURFACE_MAX_VERTICES :: 8192
 GPU_SURFACE_CIRCLE_SEGMENTS :: 16
 GPU_SURFACE_RECTANGLE_VERTICES :: 6
+GPU_SURFACE_POINT_MARKER_VERTICES :: 6
 
 // Waveform surfaces reserve one six-vertex background quad and emit one
 // six-vertex segment for each adjacent sample pair. This is the largest
@@ -184,6 +186,7 @@ GPU_Surface_Payload_View :: struct {
 	samples:  []f32,
 	segments: []GPU_Surface_Line_Segment,
 	circles:  []GPU_Surface_Filled_Circle,
+	point_markers: []GPU_Surface_Point_Marker,
 	rectangles: []GPU_Surface_Filled_Rectangle,
 }
 
@@ -434,6 +437,15 @@ GPU_Surface_Line_Segment :: struct {
 GPU_Surface_Filled_Circle :: struct {
 	center: GPU_Surface_Point,
 	radius: f32,
+	color:  Color,
+}
+
+// GPU_Surface_Point_Marker is a compact, circle-shaped marker for dense plots.
+// Native renderers draw a masked quad instead of tessellating a full circle,
+// while ordinary filled circles keep their existing geometry and quality.
+GPU_Surface_Point_Marker :: struct {
+	center: GPU_Surface_Point,
+	diameter: f32,
 	color:  Color,
 }
 
@@ -2158,6 +2170,7 @@ Runtime :: struct {
 	images: map[u64]Image_Resource,
 	image_resource_sequence: u64,
 	gpu_surface_images: map[Node_ID][dynamic]GPU_Surface_Image,
+	gpu_surface_point_markers: map[Node_ID][dynamic]GPU_Surface_Point_Marker,
 	text_engine: Text_Engine,
 	text_font_generation_seen: u64,
 	surface_frame_pending: bool,

@@ -99,6 +99,7 @@ new_runtime :: proc(viewport: Rect, config := Runtime_Config{}) -> Runtime {
 	rt.display_target = make([dynamic]Paint_Command, 0, allocator=rt.persistent_allocator)
 	rt.images = make(map[u64]Image_Resource, allocator=rt.persistent_allocator)
 	rt.gpu_surface_images = make(map[Node_ID][dynamic]GPU_Surface_Image, allocator=rt.persistent_allocator)
+	rt.gpu_surface_point_markers = make(map[Node_ID][dynamic]GPU_Surface_Point_Marker, allocator=rt.persistent_allocator)
 	rt.trace = Trace_Ring{events = make([dynamic]Trace_Event, capacity, allocator=rt.persistent_allocator)}
 	when APP_MUTATION_DIAGNOSTICS_ENABLED {
 		rt.application_mutation_tracking.entries = make([dynamic]Application_Mutation_Entry, 0, allocator=rt.persistent_allocator)

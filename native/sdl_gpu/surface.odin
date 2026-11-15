@@ -6,12 +6,15 @@ import alicorn "../../runtime"
 import "vendor:sdl3"
 
 MAX_SURFACE_VERTICES :: alicorn.GPU_SURFACE_MAX_VERTICES
+NATIVE_SURFACE_MARKER_MASK_SIZE :: 32
+NATIVE_SURFACE_MARKER_MASK_SAMPLES :: 8
 
 Native_Surface_Renderer :: struct {
 	device: ^sdl3.GPUDevice,
 	pipeline: ^sdl3.GPUGraphicsPipeline,
 	sampler: ^sdl3.GPUSampler,
-	white_texture: ^sdl3.GPUTexture,
+	shape_mask_texture: ^sdl3.GPUTexture,
+	shape_mask_transfer: ^sdl3.GPUTransferBuffer,
 	vertex_buffer: ^sdl3.GPUBuffer,
 	vertex_transfer: ^sdl3.GPUTransferBuffer,
 	runtime: ^alicorn.Runtime,
@@ -19,7 +22,9 @@ Native_Surface_Renderer :: struct {
 	mesh_valid: bool,
 	mesh_fingerprint: u64,
 	vertex_upload_pending: bool,
-	white_texture_initialized: bool,
+	shape_mask_initialized: bool,
+	shape_mask_upload_recorded: bool,
+	shape_mask_upload_command: ^sdl3.GPUCommandBuffer,
 	resource_creations: u64,
 	vertex_uploads: u64,
 	encodes: u64,
@@ -39,6 +44,10 @@ native_surface_color_from :: proc(color: alicorn.Color) -> [4]f32 {
 
 native_surface_vertex :: proc(x, y: f32, color: [4]f32) -> Native_Text_Vertex {
 	return Native_Text_Vertex{[3]f32{x, y, 0}, color, [2]f32{0.5, 0.5}}
+}
+
+native_surface_vertex_uv :: proc(x, y: f32, color: [4]f32, u, v: f32) -> Native_Text_Vertex {
+	return Native_Text_Vertex{[3]f32{x, y, 0}, color, [2]f32{u, v}}
 }
 
 native_surface_append_segment :: proc(vertices: ^[dynamic]Native_Text_Vertex, ax, ay, bx, by, scale_x, scale_y, thickness: f32, color: [4]f32) -> bool {
@@ -101,6 +110,26 @@ native_surface_append_rectangle :: proc(
 	return true
 }
 
+native_surface_append_point_marker :: proc(
+	vertices: ^[dynamic]Native_Text_Vertex,
+	cx, cy, scale_x, scale_y, diameter: f32,
+	color: [4]f32,
+) -> bool {
+	if len(vertices^) + alicorn.GPU_SURFACE_POINT_MARKER_VERTICES > MAX_SURFACE_VERTICES { return false }
+	half := diameter * 0.5
+	x0, y0 := (cx-half)*scale_x, (cy-half)*scale_y
+	x1, y1 := (cx+half)*scale_x, (cy+half)*scale_y
+	top_left := native_surface_vertex_uv(x0, y0, color, 0, 0)
+	top_right := native_surface_vertex_uv(x1, y0, color, 1, 0)
+	bottom_right := native_surface_vertex_uv(x1, y1, color, 1, 1)
+	bottom_left := native_surface_vertex_uv(x0, y1, color, 0, 1)
+	append(vertices,
+		top_left, top_right, bottom_right,
+		top_left, bottom_right, bottom_left,
+	)
+	return true
+}
+
 native_surface_append_geometry :: proc(
 	vertices: ^[dynamic]Native_Text_Vertex,
 	bounds: alicorn.Rect,
@@ -108,6 +137,7 @@ native_surface_append_geometry :: proc(
 	rectangles: []alicorn.GPU_Surface_Filled_Rectangle,
 	segments: []alicorn.GPU_Surface_Line_Segment,
 	circles: []alicorn.GPU_Surface_Filled_Circle,
+	point_markers: []alicorn.GPU_Surface_Point_Marker,
 	opacity: f32 = 1,
 ) -> bool {
 	for rectangle in rectangles {
@@ -146,6 +176,81 @@ native_surface_append_geometry :: proc(
 			return false
 		}
 	}
+	for marker in point_markers {
+		cx := bounds.x + marker.center.x
+		cy := bounds.y + marker.center.y
+		color := marker.color
+		color.a *= opacity
+		if !native_surface_append_point_marker(
+			vertices, cx, cy, scale_x, scale_y, marker.diameter, native_surface_color_from(color),
+		) {
+			return false
+		}
+	}
+	return true
+}
+
+native_surface_marker_mask_alpha :: proc(x, y: int) -> u8 {
+	inside := 0
+	for sample_y in 0..<NATIVE_SURFACE_MARKER_MASK_SAMPLES {
+		local_y := ((f32(y) + (f32(sample_y)+0.5)/f32(NATIVE_SURFACE_MARKER_MASK_SAMPLES)) /
+			f32(NATIVE_SURFACE_MARKER_MASK_SIZE))*2 - 1
+		for sample_x in 0..<NATIVE_SURFACE_MARKER_MASK_SAMPLES {
+			local_x := ((f32(x) + (f32(sample_x)+0.5)/f32(NATIVE_SURFACE_MARKER_MASK_SAMPLES)) /
+				f32(NATIVE_SURFACE_MARKER_MASK_SIZE))*2 - 1
+			if local_x*local_x + local_y*local_y <= 1 { inside += 1 }
+		}
+	}
+	sample_count := NATIVE_SURFACE_MARKER_MASK_SAMPLES * NATIVE_SURFACE_MARKER_MASK_SAMPLES
+	return cast(u8)(inside * 255 / sample_count)
+}
+
+// The shared surface shader multiplies sampled RGBA by vertex color. Keeping
+// RGB white makes this texture a solid-fill mask at the center UV while the
+// alpha channel supplies an antialiased circle for point-marker UVs.
+native_surface_marker_mask_prepare :: proc(
+	renderer: ^Native_Surface_Renderer,
+	command: ^sdl3.GPUCommandBuffer,
+) -> bool {
+	if renderer.shape_mask_initialized { return true }
+	if renderer.shape_mask_upload_recorded {
+		if renderer.shape_mask_upload_command == command { return true }
+		// A new command buffer means the previous recorded upload was abandoned.
+		renderer.shape_mask_upload_recorded = false
+		renderer.shape_mask_upload_command = nil
+	}
+	if renderer.shape_mask_texture == nil || renderer.shape_mask_transfer == nil { return false }
+	mapped := sdl3.MapGPUTransferBuffer(renderer.device, renderer.shape_mask_transfer, true)
+	if mapped == nil { return false }
+	destination := cast([^]u8)mapped
+	for y in 0..<NATIVE_SURFACE_MARKER_MASK_SIZE {
+		for x in 0..<NATIVE_SURFACE_MARKER_MASK_SIZE {
+			index := (y*NATIVE_SURFACE_MARKER_MASK_SIZE + x)*4
+			destination[index+0] = 255
+			destination[index+1] = 255
+			destination[index+2] = 255
+			destination[index+3] = native_surface_marker_mask_alpha(x, y)
+		}
+	}
+	sdl3.UnmapGPUTransferBuffer(renderer.device, renderer.shape_mask_transfer)
+	copy_pass := sdl3.BeginGPUCopyPass(command)
+	if copy_pass == nil { return false }
+	source := sdl3.GPUTextureTransferInfo{
+		transfer_buffer=renderer.shape_mask_transfer,
+		offset=0,
+		pixels_per_row=NATIVE_SURFACE_MARKER_MASK_SIZE,
+		rows_per_layer=NATIVE_SURFACE_MARKER_MASK_SIZE,
+	}
+	destination_region := sdl3.GPUTextureRegion{
+		texture=renderer.shape_mask_texture,
+		w=NATIVE_SURFACE_MARKER_MASK_SIZE,
+		h=NATIVE_SURFACE_MARKER_MASK_SIZE,
+		d=1,
+	}
+	sdl3.UploadToGPUTexture(copy_pass, source, destination_region, true)
+	sdl3.EndGPUCopyPass(copy_pass)
+	renderer.shape_mask_upload_recorded = true
+	renderer.shape_mask_upload_command = command
 	return true
 }
 
@@ -156,8 +261,9 @@ native_surface_geometry_self_test :: proc() -> Native_Validation_Result {
 		start={2, 3}, end={12, 3}, thickness=2, color={1, 0, 0, 1},
 	}}
 	circles := [1]alicorn.GPU_Surface_Filled_Circle{{center={20, 10}, radius=4, color={0, 1, 0, 1}}}
-	if !native_surface_append_geometry(&vertices, alicorn.Rect{100, 50, 40, 30}, 2, 2, nil, segments[:], circles[:]) { return native_validation_failed() }
-	if len(vertices) != 6+alicorn.GPU_SURFACE_CIRCLE_SEGMENTS*3 { return native_validation_failed() }
+	markers := [1]alicorn.GPU_Surface_Point_Marker{{center={30, 12}, diameter=4, color={0, 0, 1, 0.5}}}
+	if !native_surface_append_geometry(&vertices, alicorn.Rect{100, 50, 40, 30}, 2, 2, nil, segments[:], circles[:], markers[:]) { return native_validation_failed() }
+	if len(vertices) != 6+alicorn.GPU_SURFACE_CIRCLE_SEGMENTS*3+alicorn.GPU_SURFACE_POINT_MARKER_VERTICES { return native_validation_failed() }
 	// Surface-local coordinates are translated by the resolved surface origin,
 	// then scaled to physical pixels for the GPU vertex buffer.
 	if vertices[0].position[0] < 200 || vertices[0].position[0] > 204 { return native_validation_failed() }
@@ -166,6 +272,17 @@ native_surface_geometry_self_test :: proc() -> Native_Validation_Result {
 	if vertices[6].position[0] != 240 || vertices[6].position[1] != 120 { return native_validation_failed() }
 	if vertices[7].position[0] < 247 || vertices[7].position[0] > 249 || vertices[7].position[1] != 120 { return native_validation_failed() }
 	if vertices[6].color[0] != 0 || vertices[6].color[1] != 1 || vertices[6].color[2] != 0 || vertices[6].color[3] != 1 { return native_validation_failed() }
+	marker_vertex := 6 + alicorn.GPU_SURFACE_CIRCLE_SEGMENTS*3
+	marker_top_left := [3]f32{256, 120, 0}
+	marker_bottom_right := [3]f32{264, 128, 0}
+	marker_uv_top_left := [2]f32{0, 0}
+	marker_uv_bottom_right := [2]f32{1, 1}
+	if vertices[marker_vertex].position != marker_top_left ||
+		vertices[marker_vertex+2].position != marker_bottom_right ||
+		vertices[marker_vertex].uv != marker_uv_top_left || vertices[marker_vertex+2].uv != marker_uv_bottom_right ||
+		vertices[marker_vertex].color[3] != 0.5 {
+		return native_validation_failed()
+	}
 
 	clear(&vertices)
 	for _ in 0..<MAX_SURFACE_VERTICES-47 { append(&vertices, Native_Text_Vertex{}) }
@@ -230,6 +347,7 @@ native_surface_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUT
 	if vertex_shader == nil || fragment_shader == nil {
 		if vertex_shader != nil { sdl3.ReleaseGPUShader(device, vertex_shader) }
 		if fragment_shader != nil { sdl3.ReleaseGPUShader(device, fragment_shader) }
+		native_surface_destroy(&renderer)
 		return renderer, false
 	}
 	vertex_buffers := [1]sdl3.GPUVertexBufferDescription{{slot=0, pitch=sdl3.Uint32(size_of(Native_Text_Vertex)), input_rate=.VERTEX}}
@@ -252,30 +370,37 @@ native_surface_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUT
 	renderer.pipeline = sdl3.CreateGPUGraphicsPipeline(device, pipeline_info)
 	sdl3.ReleaseGPUShader(device, vertex_shader)
 	sdl3.ReleaseGPUShader(device, fragment_shader)
-	if renderer.pipeline == nil { return renderer, false }
+	if renderer.pipeline == nil { native_surface_destroy(&renderer); return renderer, false }
 	renderer.sampler = sdl3.CreateGPUSampler(device, sdl3.GPUSamplerCreateInfo{
-		min_filter=.NEAREST, mag_filter=.NEAREST, mipmap_mode=.NEAREST,
+		min_filter=.LINEAR, mag_filter=.LINEAR, mipmap_mode=.NEAREST,
 		address_mode_u=.CLAMP_TO_EDGE, address_mode_v=.CLAMP_TO_EDGE, address_mode_w=.CLAMP_TO_EDGE,
 		max_lod=1,
 	})
-	renderer.white_texture = sdl3.CreateGPUTexture(device, sdl3.GPUTextureCreateInfo{
+	renderer.shape_mask_texture = sdl3.CreateGPUTexture(device, sdl3.GPUTextureCreateInfo{
 		type=.D2, format=.R8G8B8A8_UNORM,
-		usage=sdl3.GPUTextureUsageFlags{.SAMPLER, .COLOR_TARGET},
-		width=1, height=1, layer_count_or_depth=1, num_levels=1, sample_count=._1,
+		usage=sdl3.GPUTextureUsageFlags{.SAMPLER},
+		width=NATIVE_SURFACE_MARKER_MASK_SIZE, height=NATIVE_SURFACE_MARKER_MASK_SIZE,
+		layer_count_or_depth=1, num_levels=1, sample_count=._1,
+	})
+	renderer.shape_mask_transfer = sdl3.CreateGPUTransferBuffer(device, sdl3.GPUTransferBufferCreateInfo{
+		usage=.UPLOAD,
+		size=sdl3.Uint32(NATIVE_SURFACE_MARKER_MASK_SIZE*NATIVE_SURFACE_MARKER_MASK_SIZE*4),
 	})
 	renderer.vertex_buffer = sdl3.CreateGPUBuffer(device, sdl3.GPUBufferCreateInfo{usage=sdl3.GPUBufferUsageFlags{.VERTEX}, size=sdl3.Uint32(MAX_SURFACE_VERTICES * size_of(Native_Text_Vertex))})
 	renderer.vertex_transfer = sdl3.CreateGPUTransferBuffer(device, sdl3.GPUTransferBufferCreateInfo{usage=.UPLOAD, size=sdl3.Uint32(MAX_SURFACE_VERTICES * size_of(Native_Text_Vertex))})
-	if renderer.sampler == nil || renderer.white_texture == nil || renderer.vertex_buffer == nil || renderer.vertex_transfer == nil {
+	if renderer.sampler == nil || renderer.shape_mask_texture == nil || renderer.shape_mask_transfer == nil || renderer.vertex_buffer == nil || renderer.vertex_transfer == nil {
+		native_surface_destroy(&renderer)
 		return renderer, false
 	}
-	renderer.resource_creations = 5
+	renderer.resource_creations = 6
 	return renderer, true
 }
 
 native_surface_destroy :: proc(renderer: ^Native_Surface_Renderer) {
 	if renderer.vertex_transfer != nil { sdl3.ReleaseGPUTransferBuffer(renderer.device, renderer.vertex_transfer) }
 	if renderer.vertex_buffer != nil { sdl3.ReleaseGPUBuffer(renderer.device, renderer.vertex_buffer) }
-	if renderer.white_texture != nil { sdl3.ReleaseGPUTexture(renderer.device, renderer.white_texture) }
+	if renderer.shape_mask_transfer != nil { sdl3.ReleaseGPUTransferBuffer(renderer.device, renderer.shape_mask_transfer) }
+	if renderer.shape_mask_texture != nil { sdl3.ReleaseGPUTexture(renderer.device, renderer.shape_mask_texture) }
 	if renderer.sampler != nil { sdl3.ReleaseGPUSampler(renderer.device, renderer.sampler) }
 	if renderer.pipeline != nil { sdl3.ReleaseGPUGraphicsPipeline(renderer.device, renderer.pipeline) }
 	delete(renderer.vertices)
@@ -303,6 +428,7 @@ native_surface_rebuild_mesh :: proc(renderer: ^Native_Surface_Renderer, command:
 	h = native_surface_mix(h, u64(len(payload.rectangles)))
 	h = native_surface_mix(h, u64(len(payload.segments)))
 	h = native_surface_mix(h, u64(len(payload.circles)))
+	h = native_surface_mix(h, u64(len(payload.point_markers)))
 	h = native_surface_mix(h, u64(transmute(u32)scale_x))
 	h = native_surface_mix(h, u64(transmute(u32)scale_y))
 	h = native_surface_mix(h, native_text_hash_rect(h, command.bounds))
@@ -315,8 +441,8 @@ native_surface_rebuild_mesh :: proc(renderer: ^Native_Surface_Renderer, command:
 	bounds := command.bounds
 	bounds.x += command.translation[0]
 	bounds.y += command.translation[1]
-	if len(payload.rectangles) > 0 || len(payload.segments) > 0 || len(payload.circles) > 0 {
-		if !native_surface_append_geometry(&renderer.vertices, bounds, scale_x, scale_y, payload.rectangles, payload.segments, payload.circles, command.opacity) {
+	if len(payload.rectangles) > 0 || len(payload.segments) > 0 || len(payload.circles) > 0 || len(payload.point_markers) > 0 {
+		if !native_surface_append_geometry(&renderer.vertices, bounds, scale_x, scale_y, payload.rectangles, payload.segments, payload.circles, payload.point_markers, command.opacity) {
 			return false
 		}
 	}
@@ -360,6 +486,15 @@ native_surface_upload_vertices :: proc(renderer: ^Native_Surface_Renderer, comma
 
 native_surface_commit_submission :: proc(renderer: ^Native_Surface_Renderer) {
 	renderer.vertex_upload_pending = false
+	if renderer.shape_mask_upload_recorded {
+		renderer.shape_mask_initialized = true
+		renderer.shape_mask_upload_recorded = false
+		renderer.shape_mask_upload_command = nil
+		if renderer.shape_mask_transfer != nil {
+			sdl3.ReleaseGPUTransferBuffer(renderer.device, renderer.shape_mask_transfer)
+			renderer.shape_mask_transfer = nil
+		}
+	}
 }
 
 native_surface_render_command :: proc(
@@ -370,7 +505,7 @@ native_surface_render_command :: proc(
 	target_w, target_h: sdl3.Uint32,
 	scale_x, scale_y: f32,
 ) -> bool {
-	if !native_white_texture_initialize(renderer.device, renderer.white_texture, &renderer.white_texture_initialized, command_buffer) { return false }
+	if !native_surface_marker_mask_prepare(renderer, command_buffer) { return false }
 	if !native_surface_rebuild_mesh(renderer, command, scale_x, scale_y) { return false }
 	if !native_surface_upload_vertices(renderer, command_buffer) { return false }
 	if len(renderer.vertices) == 0 { return true }
@@ -413,7 +548,7 @@ native_surface_render_command :: proc(
 		sdl3.SetGPUScissor(pass, sdl3.Rect{x=c.int(x0), y=c.int(y0), w=c.int(x1-x0), h=c.int(y1-y0)})
 		binding := sdl3.GPUBufferBinding{buffer=renderer.vertex_buffer, offset=0}
 		sdl3.BindGPUVertexBuffers(pass, 0, &binding, 1)
-		texture_binding := sdl3.GPUTextureSamplerBinding{texture=renderer.white_texture, sampler=renderer.sampler}
+		texture_binding := sdl3.GPUTextureSamplerBinding{texture=renderer.shape_mask_texture, sampler=renderer.sampler}
 		sdl3.BindGPUFragmentSamplers(pass, 0, &texture_binding, 1)
 		sdl3.DrawGPUPrimitives(pass, sdl3.Uint32(len(renderer.vertices)), 1, 0, 0)
 	}
