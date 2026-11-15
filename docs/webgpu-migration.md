@@ -82,6 +82,15 @@ are brought up.
   `renderer/cpu` products, `renderer/webgpu` policies, batching, clipping,
   caches, and WGSL. Platform code is limited to device/surface setup,
   callbacks, scheduling, and input/accessibility integration.
+- **Renderer-local retained geometry:** do not add an application-facing raw
+  GPU canvas callback for the waveform workload. Keep the existing retained
+  geometry API and, when profiling justifies it, cache GPU meshes inside the
+  backend renderer using resource generation, payload revision, resolved
+  bounds/clip, and scale. Let static peaks and dynamic overlays invalidate
+  independently; batch only compatible adjacent paint work without changing
+  retained order. Bound cache residency, retire replaced resources after their
+  last-use submission completes, and rebuild GPU state from retained CPU
+  geometry after device recreation.
 - **Loss evidence:** a test that calls `DeviceDestroy` and receives
   `reason=Destroyed` verifies intentional-destruction callback delivery. It is
   not driver/OS-initiated device loss, and neither result proves resource
@@ -407,6 +416,37 @@ Validation on this Windows host:
 - A browser WebGPU run completed callback setup, retained solid/text cache
   assertions, async queue completion, and all RGBA8 readback assertions,
   including visible runtime text.
+
+## Renderer cache direction from Alicorn #164 (2026-11-15)
+
+Alicorn [#164](https://github.com/samanshaiza004/alicorn/issues/164) closed
+with a useful renderer finding: the existing retained geometry surface already
+expresses the two-waveform Punks-style workload, preserves ordinary slider
+input/accessibility, clips and retained blur, and keeps GPU ownership in the
+host. No new public GPU canvas API is needed. The
+[report at `6410ba3`](https://github.com/samanshaiza004/alicorn/blob/6410ba38cc51e8dfd929a36524838db185d679ab/docs/research/issue-164-gpu-canvas.md)
+records exact output at 100%, 125%, 150%, and 200% scale, after resize and with
+retained blur; hidden idle requested no frames or persistent allocations, and
+in-flight resources were released after their fences completed.
+
+On one Windows D3D12 fixture, the host-private cached-peak prototype reduced
+CPU geometry encoding p95/p99 from 58.8/75.8 µs to 22.9/31.9 µs, per-frame
+vertex uploads from 227,232 B to 5,184 B (about 44× less), and geometry passes
+from four to two. It added 222,048 B of persistent GPU peak buffers.
+Submit-to-fence samples were noisy across runs and report queue/driver wall
+time, not GPU execution timestamps. The fixture reproduced Punks' composition;
+it did not instrument the Punks application.
+
+Carry this as a measured optimization direction, not a parity prerequisite:
+after shared renderer correctness and resource-retirement work, profile the
+WebGPU renderer with stable geometry plus a changing overlay. If that workload
+still rebuilds/uploads static peaks, add a renderer-private cache keyed by
+retained resource identity/revision and resolved presentation inputs. Keep
+static and dynamic mesh invalidation separate, preserve paint ordering, bound
+resident bytes, defer release until submission completion, and reconstruct
+resources from retained CPU payloads after device loss. Validate against the
+same output, scale, idle, and memory checks before claiming a benefit. The
+prototype's single-machine performance result does not predict WebGPU latency.
 
 ## Hosted Linux x64 validation (2026-11-15)
 
