@@ -27,7 +27,7 @@ backend-neutral; their current native payload renderer is not.
 
 | Phase | Exit evidence | Status |
 | --- | --- | --- |
-| 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe workflow is configured and awaiting its first run; physical Linux GPU/Wayland, driver/OS loss, and recovery evidence remain open |
+| 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke and `js_wasm32` build pass; physical Linux GPU/Wayland, driver/OS loss, recovery, and production parity evidence remain open |
 | 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring and CPU surface mesh assembly plus text/image/icon preparation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
 | 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | Not started |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | Not started |
@@ -218,9 +218,27 @@ been filed from this work.
 
 Phase 0's shared-rendering feasibility and the patched explicit-destroy
 callback path are demonstrated on Windows D3D12 and hosted macOS arm64 Metal.
-Phase 0 remains open: Linux is not validated, and the fixture does not establish
-driver/OS-initiated loss, device recreation, general in-flight shutdown safety,
-resource retirement, secondary windows, or production performance parity.
+Hosted Linux x64 X11/lavapipe smoke and `js_wasm32` compilation now also pass;
+this is software Vulkan evidence, not physical-GPU or Wayland validation.
+Phase 0 remains open because the fixture does not establish driver/OS-initiated
+loss, device recreation, general in-flight shutdown safety, resource retirement,
+secondary windows, or production performance parity.
+
+## Hosted Linux x64 validation (2026-11-15)
+
+The [Linux feasibility workflow for `d1d3c1f`](https://github.com/samanshaiza004/alicorn/actions/runs/43759132474)
+passed on Ubuntu 26.04. It downloaded and SHA-256-verified the pinned Odin
+`dev-2026-11` x86-64 SDK and wgpu-native `v29.0.1.1`, built all three native
+fixtures and the browser `js_wasm32` fixture, and ran the native smoke under
+Xvfb against Mesa llvmpipe (lavapipe software Vulkan).
+
+The shared 63×64 RGBA8 asynchronous readback passed all thirteen pixel probes
+with a padded 256-byte row pitch. The native surface-resize smoke submitted
+present work at both 800×450 and 720×405. This validates Linux x64 linking,
+X11 surface use in the virtual display, Vulkan software rendering, readback, and
+resize submission. The browser artifact was built but not executed by this
+Linux job; browser runtime evidence is recorded separately. This result does
+not measure physical GPU performance and does not validate Wayland.
 
 ## Refreshed Windows validation (2026-11-15)
 

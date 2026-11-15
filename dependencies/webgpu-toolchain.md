@@ -73,7 +73,7 @@ That is software Vulkan evidence, not physical-GPU or Wayland validation.
 | macOS arm64 | `.Darwin` + `.arm64` → `aarch64` | `wgpu-macos-aarch64-release.zip` | `a5797a37b1adf720bcd5dcffb291edbbd5b7b14be0a3874c28e6393a655a7a3e` | Hosted arm64 CI hash-verified the archive; native/JS, Metal readback/resize, and patched explicit-destroy callbacks passed on [`cde2f08`](https://github.com/samanshaiza004/alicorn/actions/runs/43756274305); no maintainer-local Mac validation |
 | macOS x64 | `.Darwin` + `.amd64` → `x86_64` | `wgpu-macos-x86_64-release.zip` | `8e2f7378548ddd0e2cf21e7d864dda46e953f0af724855a33778b85ead206d41` | Not installed or run here |
 | Linux arm64 | `.Linux` + `.arm64` → `aarch64` | `wgpu-linux-aarch64-release.zip` | `015fcdf1dbae82e614a783cc38017e5399ae0927a889fe9b69c9b664bc61b47a` | Not installed or run here |
-| Linux x64 | `.Linux` + `.amd64` → `x86_64` | `wgpu-linux-x86_64-release.zip` | `95a4d90c071005a98d03eab348beaa6b07e16eb00d1dcdb9f8348f75eb97ec5a` | New Xvfb/lavapipe CI smoke configured; first run pending; no physical GPU or Wayland claim |
+| Linux x64 | `.Linux` + `.amd64` → `x86_64` | `wgpu-linux-x86_64-release.zip` | `95a4d90c071005a98d03eab348beaa6b07e16eb00d1dcdb9f8348f75eb97ec5a` | Hosted Ubuntu 26.04 Xvfb/llvmpipe native readback and resize passed; browser fixture built; no physical GPU or Wayland claim |
 
 The release also publishes Windows ARM64 and i686 archives, but the current
 Odin `vendor:wgpu` Windows selector only names `x86_64` for `.amd64` and

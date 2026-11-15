@@ -76,7 +76,9 @@ sh examples/15_webgpu_feasibility/build.sh --odin "$ALICORN_ODIN"
 Run `examples/15_webgpu_feasibility/out/webgpu_feasibility_smoke` and
 `webgpu_feasibility_resize_smoke` inside an X11 or Wayland session. Hosted
 Linux CI forces Mesa lavapipe under Xvfb, so it checks the Vulkan software
-path and X11 surface contract, not physical GPU performance or Wayland.
+path and X11 surface contract, not physical GPU performance or Wayland. The
+hosted Linux x64 readback, resize submission, and browser build passed in the
+[2026-11-15 feasibility run](https://github.com/samanshaiza004/alicorn/actions/runs/43759132474).
 
 ## Browser
 
