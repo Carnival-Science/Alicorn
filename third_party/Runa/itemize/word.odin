@@ -93,7 +93,7 @@ wb_class :: proc(r: rune) -> WB {
 
 @(private="file")
 init_wb_table :: proc() {
-	context.allocator = runtime.heap_allocator()
+	context.allocator = runtime.default_allocator()
 	tmp := make([dynamic]WB_Range, 0, 1024)
 
 	// Pass 1: WordBreakProperty.txt — the bulk of the classes.

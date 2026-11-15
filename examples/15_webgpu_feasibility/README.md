@@ -25,7 +25,12 @@ checks three samples from the real retained paint list: ordered source-over
 blend at the overlap and untouched root color beyond the clipped parent on
 both axes. The same display list is encoded twice; counters require one mesh
 build and one vertex/viewport upload total, proving unchanged retained paint
-reuses its prepared product.
+reuses its prepared product. A third target renders a real Alicorn `Text_Paint`
+through `renderer/webgpu/text.odin`, then checks visible glyph pixels. It also
+repeats preparation unchanged and with translation-only motion: the unchanged
+pass must create or upload nothing, and translation may update its small
+transform buffer without rebuilding glyph geometry or atlas pages. The native
+fixture submits atlas writes before acknowledging Runa's dirty generation.
 
 ## Windows native
 
@@ -108,8 +113,11 @@ while waiting for adapter/device callbacks; the browser host must not poll with
 a continuous animation-frame loop during initialization.
 
 The fixture uses default device limits because of Odin binding issue #8174. It
-does not validate fallback-font chains, production image decoding, retained
-invalidation, device recreation, secondary windows, or production performance.
+has passed an actual browser WebGPU runtime/readback session on an NVIDIA
+Turing adapter as well as native Windows Vulkan; a successful browser build
+alone does not count as runtime evidence. It does not validate fallback-font
+chains, production image decoding, mixed solid/text command composition,
+device recreation, secondary windows, or production performance.
 
 ## Opt-in device-destruction callback probe
 

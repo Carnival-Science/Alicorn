@@ -134,7 +134,7 @@ ipc_class :: proc(r: rune) -> IPC {
 
 @(private="file")
 init_isc_table :: proc() {
-	context.allocator = runtime.heap_allocator()
+	context.allocator = runtime.default_allocator()
 	tmp := make([dynamic]ISC_Range, 0, 1024)
 	data := ISC_DATA
 	for line in strings.split_lines_iterator(&data) {
@@ -159,7 +159,7 @@ init_isc_table :: proc() {
 
 @(private="file")
 init_ipc_table :: proc() {
-	context.allocator = runtime.heap_allocator()
+	context.allocator = runtime.default_allocator()
 	tmp := make([dynamic]IPC_Range, 0, 512)
 	data := IPC_DATA
 	for line in strings.split_lines_iterator(&data) {

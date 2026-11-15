@@ -23,14 +23,20 @@ canvas{width:min(100vw,calc((100vh - 40px)*16/9));height:auto;aspect-ratio:16/9;
   const original=console[level].bind(console);
   console[level]=(...args)=>{
    const line=args.map(value=>String(value)).join(" ");
-   if(line.startsWith("[webgpu-feasibility]")){
+   if(line.startsWith("[webgpu-feasibility]")||level==="error"){
     const recent=diagnostics.textContent.split("\n").filter(item=>item.startsWith("[webgpu-feasibility]"));
-    recent.push(line);
+    recent.push(line.startsWith("[webgpu-feasibility]")?line:"[browser console.error] "+line);
     diagnostics.textContent=recent.slice(-4).join("\n");
    }
    original(...args);
   };
  }
+ window.addEventListener("error",event=>{
+  status.textContent="Browser runtime error: "+(event.message||event.error||"unknown error");
+ });
+ window.addEventListener("unhandledrejection",event=>{
+  status.textContent="Browser async error: "+String(event.reason||"unknown rejection");
+ });
  const memoryInterface=new odin.WasmMemoryInterface();
  memoryInterface.setIntSize(4);
  const wgpuInterface=new odin.WebGPUInterface(memoryInterface);
@@ -48,9 +54,15 @@ canvas{width:min(100vw,calc((100vh - 40px)*16/9));height:auto;aspect-ratio:16/9;
    subGroupMinSize:info.subgroupMinSize||0,subGroupMaxSize:info.subgroupMaxSize||0,
   });
  };
+ const requestDeviceBridge=wgpuImports.wgpuAdapterRequestDevice;
+ wgpuImports.wgpuAdapterRequestDevice=(...args)=>{
+  console.info("[webgpu-feasibility] requestDevice bridge invoked");
+  return requestDeviceBridge(...args);
+ };
  let gpuErrorLogged=false;
  const createDevice=wgpuInterface.devices.create.bind(wgpuInterface.devices);
  wgpuInterface.devices.create=device=>{
+  console.info("[webgpu-feasibility] browser device promise resolved");
   device.addEventListener("uncapturederror",event=>{
    if(!gpuErrorLogged){gpuErrorLogged=true;console.error("[webgpu-feasibility] uncaptured GPU error: "+event.error.message)}
   });
@@ -105,6 +117,7 @@ canvas{width:min(100vw,calc((100vh - 40px)*16/9));height:auto;aspect-ratio:16/9;
  }
  const dispatchCallback=wgpuInterface.callCallback.bind(wgpuInterface);
  wgpuInterface.callCallback=(callback,args)=>{
+  console.info("[webgpu-feasibility] callback dispatch status="+args[0]);
   try{dispatchCallback(callback,args)}finally{requestFrame()}
  };
  exports._start();

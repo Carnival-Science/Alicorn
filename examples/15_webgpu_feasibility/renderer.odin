@@ -338,8 +338,13 @@ start_offscreen_readback :: proc() {
 		size={width=READBACK_WIDTH,height=READBACK_HEIGHT,depthOrArrayLayers=1},format=.RGBA8Unorm,mipLevelCount=1,sampleCount=1,
 	})
 	state.solid_offscreen_view=wgpu.TextureCreateView(state.solid_offscreen_texture)
+	state.text_offscreen_texture=wgpu.DeviceCreateTexture(state.device,&wgpu.TextureDescriptor{
+		label="Alicorn text display-list readback target",usage={.RenderAttachment,.CopySrc},dimension=._2D,
+		size={width=READBACK_WIDTH,height=READBACK_HEIGHT,depthOrArrayLayers=1},format=.RGBA8Unorm,mipLevelCount=1,sampleCount=1,
+	})
+	state.text_offscreen_view=wgpu.TextureCreateView(state.text_offscreen_texture)
 	state.readback_buffer=wgpu.DeviceCreateBuffer(state.device,&wgpu.BufferDescriptor{
-		label="mapped readback staging",usage={.CopyDst,.MapRead},size=2*READBACK_BUFFER_BYTES,
+		label="mapped readback staging",usage={.CopyDst,.MapRead},size=READBACK_TOTAL_BYTES,
 	})
 	partial_upload_vertex_start := build_offscreen_probe_scene()
 	upload_size:=u64(len(state.vertices)*size_of(Vertex))
@@ -394,6 +399,46 @@ start_offscreen_readback :: proc() {
 	fmt.printf("[webgpu-feasibility] retained solid cache PASS mesh_rebuilds=%d vertex_uploads=%d vertex_bytes=%d viewport_uploads=%d unchanged_repeat=true\n",
 		state.solid_renderer.mesh_rebuild_count,state.solid_renderer.vertex_upload_count,
 		state.solid_renderer.vertex_upload_bytes,state.solid_renderer.viewport_upload_count)
+	text_display, text_display_ok := alicorn.paint_display_list(&state.text_runtime)
+	if !text_display_ok { fmt.panicf("Alicorn text fixture display list unavailable") }
+	if result := webgpu_renderer.Text_Prepare(
+		&state.text_renderer, &state.text_runtime, text_display,
+		READBACK_WIDTH, READBACK_HEIGHT, 1, 1,
+	); result != .Ok {
+		fmt.panicf("Alicorn WebGPU text preparation failed: %v", result)
+	}
+	text_mesh_rebuilds := state.text_renderer.mesh_rebuild_count
+	text_vertex_uploads := state.text_renderer.vertex_upload_count
+	text_atlas_uploads := state.text_renderer.atlas_upload_count
+	text_translation_uploads := state.text_renderer.translation_upload_count
+	text_viewport_uploads := state.text_renderer.viewport_upload_count
+	text_atlas_page_creates := state.text_renderer.atlas_page_create_count
+	text_prepare_buffer_creates := state.text_renderer.prepare_buffer_create_count
+	if text_mesh_rebuilds != 1 || text_vertex_uploads != 1 || text_atlas_uploads == 0 {
+		fmt.panicf("initial Alicorn text prepare expected one mesh/vertex upload and a glyph atlas upload")
+	}
+	text_attachment := wgpu.RenderPassColorAttachment{
+		view=state.text_offscreen_view,
+		depthSlice=wgpu.DEPTH_SLICE_UNDEFINED,
+		loadOp=.Clear,
+		storeOp=.Store,
+		clearValue={0.04, 0.08, 0.12, 1},
+	}
+	text_pass := wgpu.CommandEncoderBeginRenderPass(encoder, &wgpu.RenderPassDescriptor{
+		colorAttachmentCount=1,
+		colorAttachments=&text_attachment,
+	})
+	if text_pass == nil { fmt.panicf("Alicorn WebGPU text fixture pass unavailable") }
+	for command, command_index in text_display.commands {
+		if result := webgpu_renderer.Text_Draw_Command(
+			&state.text_renderer, text_pass, command_index, command,
+			READBACK_WIDTH, READBACK_HEIGHT, 1, 1,
+		); result != .Ok {
+			fmt.panicf("Alicorn WebGPU text command encoding failed: %v", result)
+		}
+	}
+	wgpu.RenderPassEncoderEnd(text_pass)
+	wgpu.RenderPassEncoderRelease(text_pass)
 	// 63 RGBA8 texels use 252 bytes; the 256-byte row pitch exercises the
 	// required four-byte per-row padding in both native and browser readback.
 	layout:=wgpu.TexelCopyBufferLayout{bytesPerRow=READBACK_BYTES_PER_ROW,rowsPerImage=READBACK_HEIGHT}
@@ -405,12 +450,68 @@ start_offscreen_readback :: proc() {
 	solid_source := wgpu.TexelCopyTextureInfo{texture=state.solid_offscreen_texture,aspect=.All}
 	solid_destination := wgpu.TexelCopyBufferInfo{layout=solid_layout,buffer=state.readback_buffer}
 	wgpu.CommandEncoderCopyTextureToBuffer(encoder,&solid_source,&solid_destination,&wgpu.Extent3D{width=READBACK_WIDTH,height=READBACK_HEIGHT,depthOrArrayLayers=1})
+	text_layout := layout
+	text_layout.offset = 2*READBACK_BUFFER_BYTES
+	text_source := wgpu.TexelCopyTextureInfo{texture=state.text_offscreen_texture,aspect=.All}
+	text_destination := wgpu.TexelCopyBufferInfo{layout=text_layout,buffer=state.readback_buffer}
+	wgpu.CommandEncoderCopyTextureToBuffer(encoder,&text_source,&text_destination,&wgpu.Extent3D{width=READBACK_WIDTH,height=READBACK_HEIGHT,depthOrArrayLayers=1})
 	command:=wgpu.CommandEncoderFinish(encoder); wgpu.CommandEncoderRelease(encoder)
 	wgpu.QueueSubmit(state.queue,{command}); wgpu.CommandBufferRelease(command)
+	webgpu_renderer.Text_Commit_Submission(&state.text_renderer, &state.text_runtime)
+	if result := webgpu_renderer.Text_Prepare(
+		&state.text_renderer, &state.text_runtime, text_display,
+		READBACK_WIDTH, READBACK_HEIGHT, 1, 1,
+	); result != .Ok {
+		fmt.panicf("unchanged Alicorn text prepare failed: %v", result)
+	}
+	if state.text_renderer.mesh_rebuild_count != text_mesh_rebuilds ||
+		state.text_renderer.vertex_upload_count != text_vertex_uploads ||
+		state.text_renderer.atlas_upload_count != text_atlas_uploads ||
+		state.text_renderer.translation_upload_count != text_translation_uploads ||
+		state.text_renderer.viewport_upload_count != text_viewport_uploads ||
+		state.text_renderer.atlas_page_create_count != text_atlas_page_creates ||
+		state.text_renderer.prepare_buffer_create_count != text_prepare_buffer_creates {
+		fmt.panicf("unchanged Alicorn text rebuilt or uploaded retained products")
+	}
+	motion_commands := make([]alicorn.Paint_Command, len(text_display.commands), allocator=context.temp_allocator)
+	copy(motion_commands, text_display.commands)
+	text_command_found := false
+	for &command, command_index in motion_commands {
+		_, is_text := command.payload.(alicorn.Text_Paint)
+		if !is_text { continue }
+		command.translation = [2]f32{3, 2}
+		text_command_found = true
+		break
+	}
+	if !text_command_found { fmt.panicf("Alicorn text fixture did not contain a text paint command") }
+	motion_display := text_display
+	motion_display.commands = motion_commands
+	if result := webgpu_renderer.Text_Prepare(
+		&state.text_renderer, &state.text_runtime, motion_display,
+		READBACK_WIDTH, READBACK_HEIGHT, 1, 1,
+	); result != .Ok {
+		fmt.panicf("translated Alicorn text prepare failed: %v", result)
+	}
+	if state.text_renderer.mesh_rebuild_count != text_mesh_rebuilds ||
+		state.text_renderer.vertex_upload_count != text_vertex_uploads ||
+		state.text_renderer.atlas_upload_count != text_atlas_uploads ||
+		state.text_renderer.atlas_page_create_count != text_atlas_page_creates ||
+		state.text_renderer.translation_upload_count != text_translation_uploads+1 ||
+		state.text_renderer.viewport_upload_count != text_viewport_uploads ||
+		state.text_renderer.prepare_buffer_create_count != text_prepare_buffer_creates {
+		fmt.panicf("text-only motion rebuilt glyph geometry or atlas resources")
+	}
+fmt.printf("[webgpu-feasibility] retained text cache PASS mesh_rebuilds=%d vertex_uploads=%d atlas_uploads=%d atlas_bytes=%d atlas_page_creates=%d prepare_buffer_creates=%d translation_uploads=%d viewport_uploads=%d unchanged_repeat=true\n",
+		state.text_renderer.mesh_rebuild_count, state.text_renderer.vertex_upload_count,
+		state.text_renderer.atlas_upload_count, state.text_renderer.atlas_upload_bytes,
+		state.text_renderer.atlas_page_create_count, state.text_renderer.prepare_buffer_create_count,
+		state.text_renderer.translation_upload_count,
+		state.text_renderer.viewport_upload_count)
+	fmt.println("[webgpu-feasibility] text motion cache PASS translated_command_only=true glyph_mesh_uploads=0 atlas_uploads=0 atlas_page_creates=0")
 	state.queue_work_done_pending = true
 	wgpu.QueueOnSubmittedWorkDone(state.queue,{mode=.AllowProcessEvents,callback=on_queue_work_done})
 	state.readback_pending=true
-	wgpu.BufferMapAsync(state.readback_buffer,{.Read},0,2*READBACK_BUFFER_BYTES,{mode=.AllowProcessEvents,callback=on_readback})
+	wgpu.BufferMapAsync(state.readback_buffer,{.Read},0,READBACK_TOTAL_BYTES,{mode=.AllowProcessEvents,callback=on_readback})
 }
 
 // Build a real retained paint list for the first production WebGPU slice. The
@@ -444,6 +545,37 @@ build_solid_runtime :: proc() {
 	view, view_ok := alicorn.paint_display_list(&state.solid_runtime)
 	if !view_ok || len(view.commands) != 3 {
 		fmt.panicf("Alicorn solid fixture expected three retained surface commands, got %d", len(view.commands))
+	}
+}
+
+// A real runtime Text_Paint command exercises Alicorn's shaped glyphs, Runa
+// atlas residency, shared CPU glyph geometry, WebGPU WGSL sampling, and retained
+// cache. It intentionally has a separate readback target while the composed
+// renderer API is being assembled; no app-owned text geometry is used here.
+build_text_runtime :: proc() {
+	state.text_runtime = alicorn.new_runtime(alicorn.Rect{0, 0, f32(READBACK_WIDTH), f32(READBACK_HEIGHT)})
+	state.text_runtime_ready = true
+	if !alicorn.text_engine_load_font_role(&state.text_runtime.text_engine, .UI, FONT_DATA) {
+		fmt.panicf("Alicorn text fixture could not load the bundled UI font")
+	}
+	alicorn.invalidate_root(&state.text_runtime, "WebGPU text renderer feasibility fixture")
+	ui, should_build := alicorn.begin_frame(&state.text_runtime)
+	if !should_build { fmt.panicf("Alicorn text fixture runtime did not accept its initial description") }
+	alicorn.container_begin(
+		&ui, .Root, label="webgpu-text-root",
+		style=alicorn.layout_style(.Column, width=f32(READBACK_WIDTH), height=f32(READBACK_HEIGHT), clip=true),
+	)
+	alicorn.text(
+		&ui, "WebGPU text", key=alicorn.key_string("webgpu-text-sample"),
+		style=alicorn.layout_style(width=f32(READBACK_WIDTH-2), height=24),
+		text_style=alicorn.Text_Style{font_size=18, overflow=.Clip},
+		color=alicorn.Color{0.95, 0.88, 0.70, 1},
+	)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	display, display_ok := alicorn.paint_display_list(&state.text_runtime)
+	if !display_ok || len(display.commands) == 0 {
+		fmt.panicf("Alicorn text fixture expected retained text paint commands")
 	}
 }
 
@@ -514,8 +646,8 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		}
 		return
 	}
-	pixels:=wgpu.BufferGetMappedRangeSlice(state.readback_buffer,0,u8,2*READBACK_BUFFER_BYTES)
-	valid_range:=len(pixels)==2*READBACK_BUFFER_BYTES
+	pixels:=wgpu.BufferGetMappedRangeSlice(state.readback_buffer,0,u8,READBACK_TOTAL_BYTES)
+	valid_range:=len(pixels)==READBACK_TOTAL_BYTES
 	ok:=valid_range
 	if valid_range {
 		clear_pixel:=offscreen_pixel(pixels,20,10)
@@ -534,6 +666,14 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		display_blend_pixel:=offscreen_pixel(pixels,24,24,READBACK_BUFFER_BYTES)
 		display_clip_x_pixel:=offscreen_pixel(pixels,40,24,READBACK_BUFFER_BYTES)
 		display_clip_y_pixel:=offscreen_pixel(pixels,24,40,READBACK_BUFFER_BYTES)
+		text_visible := false
+		for y in 0..<READBACK_HEIGHT {
+			for x in 0..<READBACK_WIDTH {
+				pixel := offscreen_pixel(pixels, x, y, 2*READBACK_BUFFER_BYTES)
+				if pixel[0] > 100 && pixel[1] > 100 && pixel[2] > 70 { text_visible = true; break }
+			}
+			if text_visible { break }
+		}
 		clear_expected:=[4]u8{10,20,31,255}
 		solid_expected:=[4]u8{242,64,38,255}
 		checker_expected:=[4]u8{232,166,86,255}
@@ -558,11 +698,11 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		display_blend_ok:=offscreen_pixel_near(display_blend_pixel,[4]u8{66,5,136,255},4)
 		display_clip_x_ok:=offscreen_pixel_near(display_clip_x_pixel,clear_expected)
 		display_clip_y_ok:=offscreen_pixel_near(display_clip_y_pixel,clear_expected)
-		ok=clear_ok && solid_ok && checker_ok && patch_ok && blend_ok && glyph_ok && clip_ok && outside_clip_ok && rounded_ok && rounded_corner_ok && last_row_ok && partial_buffer_ok && uniform_ok && display_blend_ok && display_clip_x_ok && display_clip_y_ok
-		fmt.printf("[webgpu-feasibility] async RGBA8 readback %s texture=%dx%d row_pitch=%d padding_per_row=%d bytes=%d clear=%v solid=%v checker=%v partial_texture=%v partial_buffer=%v uniform=%v blend=%v glyph=%v clip=%v outside_clip=%v rounded=%v rounded_corner=%v last_row=%v runtime_display_blend=%v runtime_clip_x=%v runtime_clip_y=%v\n",
-			"PASS" if ok else "FAIL",READBACK_WIDTH,READBACK_HEIGHT,READBACK_BYTES_PER_ROW,READBACK_BYTES_PER_ROW-READBACK_WIDTH*READBACK_BYTES_PER_PIXEL,len(pixels),clear_ok,solid_ok,checker_ok,patch_ok,partial_buffer_ok,uniform_ok,blend_ok,glyph_ok,clip_ok,outside_clip_ok,rounded_ok,rounded_corner_ok,last_row_ok,display_blend_ok,display_clip_x_ok,display_clip_y_ok)
+		ok=clear_ok && solid_ok && checker_ok && patch_ok && blend_ok && glyph_ok && clip_ok && outside_clip_ok && rounded_ok && rounded_corner_ok && last_row_ok && partial_buffer_ok && uniform_ok && display_blend_ok && display_clip_x_ok && display_clip_y_ok && text_visible
+		fmt.printf("[webgpu-feasibility] async RGBA8 readback %s texture=%dx%d row_pitch=%d padding_per_row=%d bytes=%d clear=%v solid=%v checker=%v partial_texture=%v partial_buffer=%v uniform=%v blend=%v glyph=%v clip=%v outside_clip=%v rounded=%v rounded_corner=%v last_row=%v runtime_display_blend=%v runtime_clip_x=%v runtime_clip_y=%v runtime_text_visible=%v\n",
+			"PASS" if ok else "FAIL",READBACK_WIDTH,READBACK_HEIGHT,READBACK_BYTES_PER_ROW,READBACK_BYTES_PER_ROW-READBACK_WIDTH*READBACK_BYTES_PER_PIXEL,len(pixels),clear_ok,solid_ok,checker_ok,patch_ok,partial_buffer_ok,uniform_ok,blend_ok,glyph_ok,clip_ok,outside_clip_ok,rounded_ok,rounded_corner_ok,last_row_ok,display_blend_ok,display_clip_x_ok,display_clip_y_ok,text_visible)
 	} else {
-		fmt.printf("[webgpu-feasibility] async RGBA8 readback FAIL bytes=%d expected=%d\n",len(pixels),2*READBACK_BUFFER_BYTES)
+		fmt.printf("[webgpu-feasibility] async RGBA8 readback FAIL bytes=%d expected=%d\n",len(pixels),READBACK_TOTAL_BYTES)
 	}
 	wgpu.BufferUnmap(state.readback_buffer); state.readback_done=ok
 	when FEASIBILITY_TEST_QUIT_AFTER_READBACK {

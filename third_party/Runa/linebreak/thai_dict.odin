@@ -133,7 +133,7 @@ Build_Node :: struct {
 
 @(private="file")
 init_thai_trie :: proc() {
-	context.allocator = runtime.heap_allocator()
+	context.allocator = runtime.default_allocator()
 
 	// Build phase: keep children as maps for cheap insertion. Then
 	// flatten into sorted arrays for fast lookup.

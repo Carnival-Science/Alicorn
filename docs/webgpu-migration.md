@@ -1,8 +1,8 @@
 # SDL_GPU to WebGPU migration
 
 Status: Phase 0 remains open for lifecycle, baseline, and performance evidence;
-Phase 2 has started with a bounded solid-surface renderer slice. SDL_GPU remains
-the only complete application renderer and the visual reference.
+Phase 2 has bounded solid-surface and text-sampling renderer slices. SDL_GPU
+remains the only complete application renderer and the visual reference.
 
 ## Architecture inventory
 
@@ -35,7 +35,14 @@ backend-neutral; their current native payload renderer is not.
 - [#162](https://github.com/samanshaiza004/alicorn/issues/162) is closed with
   the host-owned SDL_GPU presenter boundary now on `master`. That validates the
   current external-frame seam, but does not prove that a WebGPU renderer
-  consumes Alicorn's production paint stream.
+  consumes Alicorn's production paint stream. Preserve its borrowed-paint-list,
+  synchronous owner-thread consumption, host-owned target/encoder/submission,
+  and GPU-resource lifetime rules in the WebGPU presenter.
+- [#196](https://github.com/samanshaiza004/alicorn/issues/196) establishes a
+  separate host-loop contract. Standalone and externally driven hosts share
+  Runtime and renderer state across nonblocking steps; callbacks and Runtime
+  mutation stay on the owner thread. Do not conflate loop ownership with #162's
+  renderer/frame boundary.
 - Open [#204](https://github.com/samanshaiza004/alicorn/issues/204) describes
   failure recovery after acquiring an SDL_GPU swapchain texture. It remains a
   risk for the temporary reference path while SDL_GPU is retained; it does not
@@ -46,9 +53,9 @@ backend-neutral; their current native payload renderer is not.
 
 | Phase | Exit evidence | Status |
 | --- | --- | --- |
-| 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke and `js_wasm32` build pass; physical Linux GPU/Wayland, driver/OS loss, recovery, and production parity evidence remain open |
+| 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes on an NVIDIA Turing adapter; physical Linux GPU/Wayland, genuine driver/OS loss and recovery, comparative baselines, and production parity remain open |
 | 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring and CPU surface mesh assembly plus text/image/icon preparation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
-| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: initial ordered surface path consumes a real `Paint_Display_List_View` through `renderer/webgpu/solid.odin`; text, images, icons, effects and host presentation remain outstanding |
+| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: native Windows and browser WebGPU solid/text fixtures pass offscreen readback; text cache reuse and translation-only motion are asserted. Mixed-command production composition, images, icons, effects and host presentation remain outstanding |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | Not started |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
@@ -59,6 +66,26 @@ The Phase 0 evidence authorizes bounded, testable renderer slices; it does not
 authorize a wholesale renderer replacement. SDL_GPU remains the complete
 application renderer and the parity reference while individual WebGPU paths
 are brought up.
+
+## Protected renderer invariants
+
+- **Retained products:** unchanged text/surface content must not reconstruct
+  CPU geometry, upload glyph atlas data, or allocate GPU resources. Atlas dirty
+  generations are acknowledged only after queue submission. Motion-only text
+  translation must not rebuild its glyph mesh.
+- **Host independence:** renderer packages accept a host-provided WebGPU
+  device, queue, encoder/render pass, and target view. They do not create SDL
+  windows, acquire browser canvases, or own platform event loops. A renderer
+  instance is bound to one Runtime and is destroyed before it; a host may share
+  its device across independent window runtimes.
+- **Shared implementation:** native SDL3 and browser hosts use the same
+  `renderer/cpu` products, `renderer/webgpu` policies, batching, clipping,
+  caches, and WGSL. Platform code is limited to device/surface setup,
+  callbacks, scheduling, and input/accessibility integration.
+- **Loss evidence:** a test that calls `DeviceDestroy` and receives
+  `reason=Destroyed` verifies intentional-destruction callback delivery. It is
+  not driver/OS-initiated device loss, and neither result proves resource
+  recreation. Track those separately until real loss/recovery is tested.
 
 ## Phase 1 boundary slice (Windows, 2026-11-15)
 
@@ -328,6 +355,58 @@ and reuse on Windows. It does not route application windows through WebGPU and
 does not provide text, image, icon, material/effect, capture, resource-retirement,
 device-recovery, secondary-window, or performance parity. The SDL_GPU
 presenter remains the only full application path.
+
+## Phase 2 shared text sampling slice (Windows and browser, 2026-11-15)
+
+`renderer/webgpu/text.odin` consumes real retained `Text_Paint` commands from
+one borrowed Runtime, resolves glyphs through Alicorn's Runa-backed text engine,
+and reuses `renderer/cpu/text_mesh.odin` for physical glyph geometry. One WGSL
+pipeline samples monochrome `R8Unorm` and color `RGBA8Unorm` atlas pages. The
+host supplies the WebGPU device/queue and its render pass; `Text_Draw_Command`
+can be called at each original command position so a future compositor can
+preserve interleaved paint order. This is shared renderer code with no SDL or
+browser imports.
+
+The text renderer caches its glyph mesh by text paint, shaping/font generation,
+clip, scale, and target size; command translation is kept in a separate GPU
+buffer. Atlas pages are created lazily and upload only dirty regions after
+initialization. `Text_Commit_Submission` acknowledges the exact Runa dirty
+generation only after host submission. A renderer binds to one Runtime and
+must be destroyed before that Runtime; separate window runtimes can share the
+host device while keeping renderer caches independent.
+
+The feasibility fixture now renders actual Alicorn-shaped text to a third
+offscreen target. Windows native WebGPU smoke on an NVIDIA GeForce RTX 2080
+SUPER / Vulkan adapter and the in-app browser WebGPU session on an NVIDIA
+Turing adapter both passed the text pixel-presence check and existing
+solid/blend/clip/readback probes. Browser shaping first exposed a vendored Runa
+portability bug: process-lifetime Unicode tables hard-coded Odin's native heap
+allocator, which traps on `js_wasm32`. Those tables now use Odin's
+platform-default allocator, which is the WASM allocator on that target and the
+same heap allocator on native builds.
+
+On native, first prepare created one atlas page and uploaded its initial 1 MiB
+page; an unchanged prepare added zero mesh rebuilds, vertex/atlas uploads,
+atlas-page creates, or prepare-time buffer creates. Translation-only motion
+added one translation-buffer upload and zero glyph mesh/atlas/resource work.
+The same retained text cache checks and three-target pixel readback also passed
+in the browser. This proves browser runtime execution for the fixture, not
+production mixed-command composition, images, icons, effects, host presentation,
+full renderer parity, or device-loss recovery.
+
+Validation on this Windows host:
+
+- `C:\odin\odin.exe check renderer/webgpu -no-entry-point`: passed.
+- `C:\odin\odin.exe test third_party/Runa`: 7 tests passed.
+- `C:\odin\odin.exe test runtime`: 352 tests passed.
+- `C:\odin\odin.exe test renderer/cpu`: 4 tests passed.
+- `examples/15_webgpu_feasibility/build.ps1 -Odin C:\odin\odin.exe`:
+  native interactive, native smoke, native resize smoke, and `js_wasm32`
+  artifacts built.
+- Native offscreen/readback smoke passed on the RTX 2080 SUPER through Vulkan.
+- A browser WebGPU run completed callback setup, retained solid/text cache
+  assertions, async queue completion, and all RGBA8 readback assertions,
+  including visible runtime text.
 
 ## Hosted Linux x64 validation (2026-11-15)
 

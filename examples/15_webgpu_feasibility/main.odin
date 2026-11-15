@@ -15,6 +15,8 @@ READBACK_HEIGHT :: 64
 READBACK_BYTES_PER_PIXEL :: 4
 READBACK_BYTES_PER_ROW :: 256
 READBACK_BUFFER_BYTES :: READBACK_BYTES_PER_ROW * READBACK_HEIGHT
+READBACK_TARGET_COUNT :: 3
+READBACK_TOTAL_BYTES :: READBACK_BUFFER_BYTES * READBACK_TARGET_COUNT
 FEASIBILITY_TEST_DEVICE_LOSS :: #config(FEASIBILITY_TEST_DEVICE_LOSS, false)
 FEASIBILITY_TEST_DEVICE_LOSS_EARLY :: #config(FEASIBILITY_TEST_DEVICE_LOSS_EARLY, false)
 FEASIBILITY_TEST_DEVICE_LOSS_SPONTANEOUS :: #config(FEASIBILITY_TEST_DEVICE_LOSS_SPONTANEOUS, false)
@@ -42,6 +44,9 @@ state: struct {
 	solid_runtime: alicorn.Runtime,
 	solid_renderer: webgpu_renderer.Solid_Renderer,
 	solid_runtime_ready: bool,
+	text_runtime: alicorn.Runtime,
+	text_renderer: webgpu_renderer.Text_Renderer,
+	text_runtime_ready: bool,
 	config: wgpu.SurfaceConfiguration,
 	pipeline: wgpu.RenderPipeline,
 	offscreen_pipeline: wgpu.RenderPipeline,
@@ -64,6 +69,8 @@ state: struct {
 	offscreen_view: wgpu.TextureView,
 	solid_offscreen_texture: wgpu.Texture,
 	solid_offscreen_view: wgpu.TextureView,
+	text_offscreen_texture: wgpu.Texture,
+	text_offscreen_view: wgpu.TextureView,
 	readback_buffer: wgpu.Buffer,
 	readback_pending, readback_done: bool,
 	queue_work_done_pending, queue_work_done, queue_work_done_ok: bool,
@@ -120,6 +127,7 @@ smoke_complete :: proc() -> bool {
 
 on_adapter :: proc "c" (status: wgpu.RequestAdapterStatus, adapter: wgpu.Adapter, message: string, userdata1, userdata2: rawptr) {
 	context = state.ctx
+	fmt.printf("[webgpu-feasibility] adapter callback status=%v adapter_present=%v\n", status, adapter != nil)
 	if status != .Success || adapter == nil { fmt.panicf("adapter request failed: %v %s", status, message) }
 	state.adapter = adapter
 	adapter_info, info_status := wgpu.AdapterGetInfo(adapter)
@@ -136,7 +144,9 @@ on_adapter :: proc "c" (status: wgpu.RequestAdapterStatus, adapter: wgpu.Adapter
 	} else {
 		fmt.printf("[webgpu-feasibility] adapter info unavailable status=%v\n",info_status)
 	}
+	fmt.println("[webgpu-feasibility] surface capabilities query begin")
 	caps, cap_status := wgpu.SurfaceGetCapabilities(state.surface, adapter)
+	fmt.printf("[webgpu-feasibility] surface capabilities query status=%v formats=%d alpha_modes=%d\n", cap_status, caps.formatCount, caps.alphaModeCount)
 	if cap_status != .Success || caps.formatCount == 0 || caps.alphaModeCount == 0 {
 		fmt.panicf("surface capabilities unavailable: %v", cap_status)
 	}
@@ -155,6 +165,7 @@ on_adapter :: proc "c" (status: wgpu.RequestAdapterStatus, adapter: wgpu.Adapter
 	when FEASIBILITY_TEST_DEVICE_LOSS_SPONTANEOUS {
 		loss_callback_mode = .AllowSpontaneos
 	}
+	fmt.println("[webgpu-feasibility] device request submit")
 	device_desc:=wgpu.DeviceDescriptor{
 		label="Alicorn WebGPU feasibility device",
 		deviceLostCallbackInfo={mode=loss_callback_mode,callback=on_device_lost},
@@ -188,6 +199,7 @@ on_queue_work_done :: proc "c" (status:wgpu.QueueWorkDoneStatus, message:wgpu.St
 
 on_device :: proc "c" (status: wgpu.RequestDeviceStatus, device: wgpu.Device, message: string, userdata1, userdata2: rawptr) {
 	context = state.ctx
+	fmt.printf("[webgpu-feasibility] device callback status=%v device_present=%v message=%s\n", status, device != nil, message)
 	if status != .Success || device == nil { fmt.panicf("device request failed: %v %s", status, message) }
 	state.device = device
 	state.queue = wgpu.DeviceGetQueue(device)
@@ -201,6 +213,11 @@ on_device :: proc "c" (status: wgpu.RequestDeviceStatus, device: wgpu.Device, me
 	if !solid_ok { fmt.panicf("Alicorn WebGPU solid renderer initialization failed") }
 	state.solid_renderer = solid_renderer
 	build_solid_runtime()
+	text_renderer, text_ok := webgpu_renderer.Text_Create(state.device, state.queue, .RGBA8Unorm)
+	if !text_ok { fmt.panicf("Alicorn WebGPU text renderer initialization failed") }
+	state.text_renderer = text_renderer
+	build_text_runtime()
+	fmt.println("[webgpu-feasibility] text runtime built")
 	state.width, state.height = os_get_framebuffer_size()
 	os_set_surface_size(state.width, state.height)
 	state.config.device = device
@@ -268,7 +285,12 @@ step :: proc(dt: f32) -> bool {
 }
 
 finish :: proc() {
+	webgpu_renderer.Text_Destroy(&state.text_renderer)
 	webgpu_renderer.Solid_Destroy(&state.solid_renderer)
+	if state.text_runtime_ready {
+		alicorn.destroy_runtime(&state.text_runtime)
+		state.text_runtime_ready = false
+	}
 	if state.solid_runtime_ready {
 		alicorn.destroy_runtime(&state.solid_runtime)
 		state.solid_runtime_ready = false
@@ -276,6 +298,8 @@ finish :: proc() {
 	if state.readback_buffer != nil { wgpu.BufferDestroy(state.readback_buffer); wgpu.BufferRelease(state.readback_buffer) }
 	if state.solid_offscreen_view != nil { wgpu.TextureViewRelease(state.solid_offscreen_view) }
 	if state.solid_offscreen_texture != nil { wgpu.TextureDestroy(state.solid_offscreen_texture); wgpu.TextureRelease(state.solid_offscreen_texture) }
+	if state.text_offscreen_view != nil { wgpu.TextureViewRelease(state.text_offscreen_view) }
+	if state.text_offscreen_texture != nil { wgpu.TextureDestroy(state.text_offscreen_texture); wgpu.TextureRelease(state.text_offscreen_texture) }
 	if state.offscreen_view != nil { wgpu.TextureViewRelease(state.offscreen_view) }
 	if state.offscreen_texture != nil { wgpu.TextureDestroy(state.offscreen_texture); wgpu.TextureRelease(state.offscreen_texture) }
 	if state.bind_group != nil { wgpu.BindGroupRelease(state.bind_group) }
