@@ -6,6 +6,7 @@ import "core:mem"
 import "core:testing"
 import win "core:sys/windows"
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 
 @(test)
 test_caption_synthetic_text_refresh_preserves_injected_window_metrics :: proc(t: ^testing.T) {
@@ -91,7 +92,7 @@ test_caption_masks_have_shared_metrics_and_occluded_restore_edges :: proc(t: ^te
 		for windows_11 in versions {
 			for icon in Win32_Caption_Icon {
 				mask := win32_caption_build_mask(icon,dpi,windows_11,context.allocator)
-				testing.expect_value(t, mask.size, native_pixel_edge(10,f32(dpi)/96))
+				testing.expect_value(t, mask.size, cpu_renderer.Pixel_Edge(10,f32(dpi)/96))
 				testing.expect_value(t, len(mask.pixels), mask.size*mask.size)
 				ink := 0
 				for coverage in mask.pixels { if coverage != 0 { ink += 1 } }
@@ -99,7 +100,7 @@ test_caption_masks_have_shared_metrics_and_occluded_restore_edges :: proc(t: ^te
 				if icon == .Restore {
 					// The old unoccluded rear square drew a horizontal edge here.
 					x := mask.size/2
-					y := mask.size-int(native_pixel_edge(2,f32(dpi)/96))-1
+					y := mask.size-int(cpu_renderer.Pixel_Edge(2,f32(dpi)/96))-1
 					testing.expect(t, mask.pixels[y*mask.size+x] == 0, "rear edges cannot appear inside the front window")
 				}
 				delete(mask.pixels)
@@ -173,7 +174,7 @@ test_caption_text_clips_to_label_allocations_and_refreshes_for_scale_or_font_gen
 			win32_menu_append_text(&commands,&state,state.title,8,alicorn.Color{1,1,1,1},ellipsis=true)
 			win32_menu_append_text(&commands,&state,state.labels[0],12,alicorn.Color{1,1,1,1})
 			for command in commands {
-				_,_,right,_ := logical_to_pixel_bounds(command.clip,density,density)
+				_,_,right,_ := cpu_renderer.Logical_To_Pixel_Bounds(command.clip,density,density)
 				testing.expect(t,right <= int(state.caption_controls[0].bounds.left),"title/menu clips cannot enter caption controls")
 				if command.owner == state.labels[0].host_node { testing.expect(t,command.clip.x*density >= f32(state.labels[0].bounds.left)) }
 			}

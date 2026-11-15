@@ -626,7 +626,7 @@ native_text_render_command :: proc(
 	if pass == nil { return false }
 	sdl3.BindGPUGraphicsPipeline(pass, renderer.pipeline)
 	sdl3.SetGPUViewport(pass, sdl3.GPUViewport{0, 0, f32(target_w), f32(target_h), 0, 1})
-	x0, y0, x1, y1 := logical_to_pixel_bounds(command.clip, scale_x, scale_y)
+	x0, y0, x1, y1 := cpu_renderer.Logical_To_Pixel_Bounds(command.clip, scale_x, scale_y)
 	if x0 < 0 { x0 = 0 }
 	if y0 < 0 { y0 = 0 }
 	if x1 > int(target_w) { x1 = int(target_w) }

@@ -328,12 +328,12 @@ test_per_corner_rounding_uses_each_radius_and_keeps_flat_fast_path :: proc(t: ^t
 		target_width := sdl3.Uint32(int(100*scale))
 		target_height := sdl3.Uint32(int(80*scale))
 		built := native_solid_build(&renderer, display[:], scale, scale, target_width, target_height)
-		clip_x0 := native_pixel_edge(12, scale)
-		clip_y0 := native_pixel_edge(23, scale)
-		clip_x1 := native_pixel_edge(52, scale)
-		clip_y1 := native_pixel_edge(41, scale)
-		expected_base_x := f32(native_pixel_edge(10, scale))
-		expected_base_y := f32(native_pixel_edge(20, scale))
+		clip_x0 := cpu_renderer.Pixel_Edge(12, scale)
+		clip_y0 := cpu_renderer.Pixel_Edge(23, scale)
+		clip_x1 := cpu_renderer.Pixel_Edge(52, scale)
+		clip_y1 := cpu_renderer.Pixel_Edge(41, scale)
+		expected_base_x := f32(cpu_renderer.Pixel_Edge(10, scale))
+		expected_base_y := f32(cpu_renderer.Pixel_Edge(20, scale))
 		testing.expect(t, built && len(renderer.draws) == 1 && renderer.draws[0].vertex_count == cpu_renderer.ROUNDED_FILL_VERTICES &&
 			abs(renderer.vertices[1].position[0]-expected_base_x) < 0.001 &&
 			abs(renderer.vertices[1].position[1]-(expected_base_y+3*scale)) < 0.001 &&

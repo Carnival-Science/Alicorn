@@ -3,6 +3,7 @@ package alicorn_sdl_gpu
 import "core:c"
 import "core:math"
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 import "vendor:sdl3"
 
 // Supported bounded backdrop blur for semantic surfaces. Filtering is encoded
@@ -661,7 +662,7 @@ native_effect_composite :: proc(cache: ^Native_Effect_Cache, command: ^sdl3.GPUC
 	}
 	// Match ordinary paint-stream edge finalization; only the input halo rounds
 	// outward. The output scissor is the resolved logical region/clip overlap.
-	x0,y0,x1,y1 := logical_to_pixel_bounds(cache.plan.output_clip, cache.plan.scale, cache.plan.scale)
+	x0,y0,x1,y1 := cpu_renderer.Logical_To_Pixel_Bounds(cache.plan.output_clip, cache.plan.scale, cache.plan.scale)
 	x0,y0 = clamp(x0,0,int(w)),clamp(y0,0,int(h))
 	x1,y1 = clamp(x1,0,int(w)),clamp(y1,0,int(h))
 	if x1 <= x0 || y1 <= y0 { return true }

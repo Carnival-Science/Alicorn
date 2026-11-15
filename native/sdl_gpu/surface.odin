@@ -368,7 +368,7 @@ native_surface_render_command :: proc(
 	bottom_bounds := bounds.y + bounds.h
 	bottom := bottom_clip if bottom_clip < bottom_bounds else bottom_bounds
 	clip = alicorn.Rect{left, top, right-left, bottom-top}
-	x0, y0, x1, y1 := logical_to_pixel_bounds(clip, scale_x, scale_y)
+	x0, y0, x1, y1 := cpu_renderer.Logical_To_Pixel_Bounds(clip, scale_x, scale_y)
 	if x0 < 0 { x0 = 0 }; if y0 < 0 { y0 = 0 }
 	if x1 > int(target_w) { x1 = int(target_w) }; if y1 > int(target_h) { y1 = int(target_h) }
 	if x1 > x0 && y1 > y0 {

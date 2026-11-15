@@ -71,19 +71,20 @@ rewriting production rendering before the parity gates.
 ### CPU material mesh boundary (Windows, 2026-11-15)
 
 The shape/material CPU mesher, text paint-span color resolution, text quad
-clipping, physical-pixel glyph snapping, cache hashing, and their 36-byte
-position/color/UV vertex product now live in `renderer/cpu`, with no SDL or GPU
-imports. The SDL_GPU renderers call those shared routines; text atlas lookup,
-glyph rasterization/residency, GPU buffers and uploads remain in the native
-backend. Paint ordering, geometry generation and shaders are unchanged. The
-material, connected-tab, clipping, span-color and snapping regressions exercise
-the shared implementation through the native renderer test package.
+clipping, physical-pixel glyph snapping, logical-to-device-pixel rounding,
+cache hashing, and their 36-byte position/color/UV vertex product now live in
+`renderer/cpu`, with no SDL or GPU imports. The SDL_GPU renderers call those
+shared routines; text atlas lookup, glyph rasterization/residency, GPU buffers
+and uploads remain in the native backend. Paint ordering, geometry generation
+and shaders are unchanged. The material, connected-tab, clipping, span-color,
+snapping and pixel-finalization regressions exercise the shared implementation
+through the native renderer test package.
 
 The WASM package-boundary fixture imports `alicorn:renderer/cpu` and generates
-a quad and calls its glyph-snap helper, so Odin type-checks the extracted CPU
-mesh and text-preparation package for `js_wasm32` without pulling SDL_GPU into
-the target. On Windows, `odin check renderer/cpu -no-entry-point` passed, all
-194 `native/sdl_gpu` tests passed, and
+a quad and calls its glyph-snap and pixel-edge helpers, so Odin type-checks the
+extracted CPU mesh, text-preparation and pixel-geometry package for `js_wasm32`
+without pulling SDL_GPU into the target. On Windows, `odin check renderer/cpu
+-no-entry-point` passed, all 194 `native/sdl_gpu` tests passed, and
 `tools/check_web_ui_package.ps1 -Odin C:\odin\odin.exe` passed. The full
 `tools/test.ps1` suite was not rerun for this slice. This is CPU-side
 preparation reuse, not a shared production WebGPU renderer; SDL_GPU remains

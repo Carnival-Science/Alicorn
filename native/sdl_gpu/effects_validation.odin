@@ -9,6 +9,7 @@ import "core:slice"
 import "core:strings"
 import "core:time"
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 import "vendor:sdl3"
 
 EFFECT_PROBE_WIDTH :: 384
@@ -211,7 +212,7 @@ effect_probe_reference :: proc(plan: Native_Effect_Plan, source, actual: []u8, o
         } } }
     }
     clip := plan.output_clip
-    x0,y0,x1,y1 := logical_to_pixel_bounds(clip,plan.scale,plan.scale)
+    x0,y0,x1,y1 := cpu_renderer.Logical_To_Pixel_Bounds(clip,plan.scale,plan.scale)
     ox,oy := int(math.round(plan.source_bounds.x*plan.scale)),int(math.round(plan.source_bounds.y*plan.scale))
     background := [4]f32{0.08,0.12,0.18,0.4}
     worst := 0

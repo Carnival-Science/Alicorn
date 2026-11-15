@@ -2,6 +2,7 @@ package alicorn_sdl_gpu
 
 import "core:testing"
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 
 @(test)
 test_fractional_finalized_edges_survive_native_pixel_conversion :: proc(t: ^testing.T) {
@@ -10,7 +11,7 @@ test_fractional_finalized_edges_survive_native_pixel_conversion :: proc(t: ^test
 		for pixel_edge in 3..<96 {
 			logical_edge := f32(pixel_edge)/scale
 			bounds := alicorn.Rect{logical_edge, logical_edge, 1/scale, 1/scale}
-			x0, y0, x1, y1 := logical_to_pixel_bounds(bounds, scale, scale)
+			x0, y0, x1, y1 := cpu_renderer.Logical_To_Pixel_Bounds(bounds, scale, scale)
 			solid_x0, solid_y0, solid_x1, solid_y1, visible := native_solid_pixel_bounds(
 				alicorn.Paint_Command{bounds=bounds, clip=bounds},
 				scale,

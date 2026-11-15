@@ -145,7 +145,7 @@ native_solid_pixel_bounds :: proc(
 	if draw.clip.y + draw.clip.h < bottom { bottom = draw.clip.y + draw.clip.h }
 	if right < left { right = left }
 	if bottom < top { bottom = top }
-	x0, y0, x1, y1 = logical_to_pixel_bounds(
+	x0, y0, x1, y1 = cpu_renderer.Logical_To_Pixel_Bounds(
 		alicorn.Rect{left, top, right-left, bottom-top},
 		scale_x,
 		scale_y,
@@ -213,7 +213,7 @@ native_solid_visible_command :: proc(
 }
 
 native_solid_pixel_scissor :: proc(draw: alicorn.Paint_Command, scale_x, scale_y: f32, target_w, target_h: sdl3.Uint32) -> sdl3.Rect {
-	x0, y0, x1, y1 := logical_to_pixel_bounds(draw.clip, scale_x, scale_y)
+	x0, y0, x1, y1 := cpu_renderer.Logical_To_Pixel_Bounds(draw.clip, scale_x, scale_y)
 	if x0 < 0 { x0 = 0 }
 	if y0 < 0 { y0 = 0 }
 	if x1 > int(target_w) { x1 = int(target_w) }
@@ -227,7 +227,7 @@ native_solid_unclipped_pixel_bounds :: proc(draw: alicorn.Paint_Command, scale_x
 	bounds := draw.bounds
 	bounds.x += draw.translation[0]
 	bounds.y += draw.translation[1]
-	x0, y0, x1, y1 := logical_to_pixel_bounds(bounds, scale_x, scale_y)
+	x0, y0, x1, y1 := cpu_renderer.Logical_To_Pixel_Bounds(bounds, scale_x, scale_y)
 	return alicorn.Rect{f32(x0), f32(y0), f32(x1-x0), f32(y1-y0)}
 }
 
@@ -427,7 +427,7 @@ native_solid_build :: proc(
 			stroke.width *= max(scale_x, scale_y)
 			gap := [2]f32{}
 			if surface.top_edge_gap[1] > surface.top_edge_gap[0] {
-				gap = {f32(native_pixel_edge(surface.top_edge_gap[0]+draw.translation[0],scale_x)), f32(native_pixel_edge(surface.top_edge_gap[1]+draw.translation[0],scale_x))}
+				gap = {f32(cpu_renderer.Pixel_Edge(surface.top_edge_gap[0]+draw.translation[0],scale_x)), f32(cpu_renderer.Pixel_Edge(surface.top_edge_gap[1]+draw.translation[0],scale_x))}
 			}
 			if gradient.axis == .None &&
 			   (material.kind != .Analytic_Relief || surface.physical_height == 0) {

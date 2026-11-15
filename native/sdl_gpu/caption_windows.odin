@@ -5,6 +5,7 @@ package alicorn_sdl_gpu
 import "core:mem"
 import win "core:sys/windows"
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 
 // Caption metrics are physical pixels. Only paint output crosses into SDL's
 // window coordinates, which need not have the same scale as Windows DIPs.
@@ -35,7 +36,7 @@ win32_caption_layout_controls :: proc(
 	cluster := dwm_bounds
 	if !dwm_valid || cluster.right <= cluster.left || cluster.bottom <= cluster.top ||
 		cluster.left < 0 || cluster.left >= win.LONG(client_width) {
-		button_width := i32(native_pixel_edge(46, f32(dpi if dpi != 0 else 96)/96))
+		button_width := i32(cpu_renderer.Pixel_Edge(46, f32(dpi if dpi != 0 else 96)/96))
 		cluster.right = win.LONG(client_width-1 if !maximized else client_width)
 		cluster.left = max(cluster.right-win.LONG(3*button_width), 0)
 	}
@@ -102,10 +103,10 @@ win32_caption_symbol_sample :: proc(icon: Win32_Caption_Icon, x, y, size, stroke
 
 win32_caption_build_mask :: proc(icon: Win32_Caption_Icon, dpi: u32, windows_11: bool, allocator: mem.Allocator) -> Win32_Caption_Mask {
 	scale := f32(dpi if dpi != 0 else 96)/96
-	size := max(native_pixel_edge(10, scale), 1)
-	stroke := f32(max(native_pixel_edge(1, scale), 1))
+	size := max(cpu_renderer.Pixel_Edge(10, scale), 1)
+	stroke := f32(max(cpu_renderer.Pixel_Edge(1, scale), 1))
 	radius := f32(int(1.5*scale)) if windows_11 else 0
-	separation := f32(max(native_pixel_edge(2, scale), 1))
+	separation := f32(max(cpu_renderer.Pixel_Edge(2, scale), 1))
 	mask := Win32_Caption_Mask{size=size, pixels=make([]u8, size*size, allocator=allocator)}
 	if mask.pixels == nil { return {} }
 	// Small, immutable coverage masks replace the font-shaped close character.

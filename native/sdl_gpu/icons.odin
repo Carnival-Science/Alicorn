@@ -150,11 +150,11 @@ native_icon_append_quad :: proc(vertices: ^[dynamic]Native_Text_Vertex, draw: al
     if !ok || scale_x <= 0 || scale_y <= 0 { return }
     bounds := draw.bounds
     bounds.x += draw.translation[0]; bounds.y += draw.translation[1]
-    x0, y0, x1, y1 := logical_to_pixel_bounds(bounds, scale_x, scale_y)
+    x0, y0, x1, y1 := cpu_renderer.Logical_To_Pixel_Bounds(bounds, scale_x, scale_y)
     if x1 <= x0 || y1 <= y0 { return }
     entry, ok = alicorn.icon_atlas_lookup(icon.id, max(x1-x0, y1-y0))
     if !ok { return }
-    cx0, cy0, cx1, cy1 := logical_to_pixel_bounds(draw.clip, scale_x, scale_y)
+    cx0, cy0, cx1, cy1 := cpu_renderer.Logical_To_Pixel_Bounds(draw.clip, scale_x, scale_y)
     left, top := max(x0, cx0, 0), max(y0, cy0, 0)
     right, bottom := min(x1, cx1, int(target_w)), min(y1, cy1, int(target_h))
     if right <= left || bottom <= top { return }

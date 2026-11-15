@@ -4,6 +4,7 @@ import "core:fmt"
 import "core:math"
 import "core:time"
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 import paint_reference "../../tests/paint_reference"
 import runa "../../third_party/Runa"
 import "vendor:sdl3"
@@ -204,10 +205,10 @@ blend_validation_check_per_corner_surface :: proc(
 	pixels: []u8,
 	color: alicorn.Color,
 ) -> bool {
-	left := native_pixel_edge(8, scale)
-	top := native_pixel_edge(8, scale)
-	right := native_pixel_edge(32, scale)
-	bottom := native_pixel_edge(32, scale)
+	left := cpu_renderer.Pixel_Edge(8, scale)
+	top := cpu_renderer.Pixel_Edge(8, scale)
+	right := cpu_renderer.Pixel_Edge(32, scale)
+	bottom := cpu_renderer.Pixel_Edge(32, scale)
 	points := [4][2]int{{left,top}, {right-1,top}, {right-1,bottom-1}, {left,bottom-1}}
 	bits := [4]int{1,2,4,8}
 	names := [?]string{"per_corner_top_left", "per_corner_top_right", "per_corner_bottom_right", "per_corner_bottom_left"}
@@ -223,7 +224,7 @@ blend_validation_check_per_corner_surface :: proc(
 			ok = false
 		}
 	}
-	center := native_pixel_edge(20, scale)
+	center := cpu_renderer.Pixel_Edge(20, scale)
 	if !blend_validation_expect("per_corner_center", scale, background, pixels, center, center,
 		blend_validation_over(destination, color, 0.5)) {
 		fmt.println("blend_per_corner_pattern", "mask", mask, "corner", "center")

@@ -2,6 +2,7 @@ package alicorn_sdl_gpu
 
 import "core:testing"
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 
 @(test)
 test_icon_renderer_missing_device_fails_without_retained_resources :: proc(t: ^testing.T) {
@@ -29,7 +30,7 @@ test_icon_mask_quad_preserves_clipping_dpi_and_tint :: proc(t: ^testing.T) {
 	scales := [4]f32{1, 1.25, 1.5, 2}
 	for scale in scales {
 		clear(&vertices)
-		cx0, cy0, cx1, cy1 := logical_to_pixel_bounds(draw.clip, scale, scale)
+		cx0, cy0, cx1, cy1 := cpu_renderer.Logical_To_Pixel_Bounds(draw.clip, scale, scale)
 		entry, added := native_icon_append_quad(&vertices, draw, scale, scale, 800, 600)
 		testing.expect(t, added && len(vertices) == 6 && entry.size == int(20*scale),
 			"an icon should use one mask quad selected from its full physical size before clipping")
