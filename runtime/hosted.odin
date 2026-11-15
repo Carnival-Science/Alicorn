@@ -110,6 +110,7 @@ Hosted_Waker :: struct {
 }
 
 HOSTED_MOTION_SAMPLE_INTERVAL_NS :: u64(16_666_667)
+HOSTED_DRAG_AUTOSCROLL_INTERVAL_NS :: u64(16_000_000)
 HOSTED_UNCERTIFIED_MOTION_LIMIT_NS :: u64(5_000_000_000)
 HOSTED_MAX_MONOTONIC_NS :: u64(0x7fff_ffff_ffff_ffff)
 
@@ -146,6 +147,7 @@ Hosted_Runtime_State :: struct {
 	logical_width, logical_height: int,
 	dpi_scale: f32,
 	app_deadline_ns: u64,
+	drag_deadline_ns: u64,
 	last_step_ns: u64,
 	uncertified_motion_since_ns: u64,
 	has_step_time: bool,
@@ -266,19 +268,56 @@ hosted_deadline_min :: proc(current, candidate: u64) -> u64 {
 	return current
 }
 
+hosted_deadline_after :: proc(now_ns, interval_ns: u64) -> u64 {
+	return now_ns + min(interval_ns, HOSTED_MAX_MONOTONIC_NS-now_ns)
+}
+
 hosted_runtime_next_deadline :: proc(state: ^Hosted_Runtime_State, now_ns: u64) -> u64 {
 	if state == nil { return 0 }
 	deadline := state.app_deadline_ns
 	if !state.renderable { return deadline }
 	deadline = hosted_deadline_min(deadline, tooltip_next_deadline(&state.runtime))
 	deadline = hosted_deadline_min(deadline, notice_next_deadline(&state.runtime))
+	deadline = hosted_deadline_min(deadline, state.drag_deadline_ns)
 	activity := motion_activity(&state.runtime)
 	if activity.active_owners > 0 {
-		next := now_ns + HOSTED_MOTION_SAMPLE_INTERVAL_NS
-		if next < now_ns { next = HOSTED_MAX_MONOTONIC_NS }
+		next := hosted_deadline_after(now_ns, HOSTED_MOTION_SAMPLE_INTERVAL_NS)
 		deadline = hosted_deadline_min(deadline, next)
 	}
 	return deadline
+}
+
+hosted_runtime_advance_presentation :: proc(state: ^Hosted_Runtime_State, now_ns: u64) -> Hosted_Runtime_Status {
+	if !state.renderable { return .Ok }
+	rt := &state.runtime
+	motion := motion_tick(rt, Motion_Time(i64(now_ns)))
+	if motion.status != .Ok { return .Motion_Failed }
+	_ = tooltip_advance(rt, now_ns)
+	_ = notice_advance(rt, now_ns)
+	if motion.unestablished_deadlines > 0 {
+		if !state.motion_uncertified_timing {
+			state.motion_uncertified_timing = true
+			state.uncertified_motion_since_ns = now_ns if now_ns != 0 else 1
+		} else if now_ns >= state.uncertified_motion_since_ns &&
+			now_ns-state.uncertified_motion_since_ns >= HOSTED_UNCERTIFIED_MOTION_LIMIT_NS {
+			snapped := motion_snap_unestablished(rt, Motion_Time(i64(now_ns)))
+			if snapped.status != .Ok { return .Motion_Failed }
+			state.motion_uncertified_timing = false
+			state.uncertified_motion_since_ns = 0
+		}
+	} else {
+		state.motion_uncertified_timing = false
+		state.uncertified_motion_since_ns = 0
+	}
+	if !drag_autoscroll_can_step(rt) {
+		state.drag_deadline_ns = 0
+	} else if state.drag_deadline_ns == 0 {
+		state.drag_deadline_ns = hosted_deadline_after(now_ns, HOSTED_DRAG_AUTOSCROLL_INTERVAL_NS)
+	} else if now_ns >= state.drag_deadline_ns {
+		_ = drag_autoscroll_step(rt, HOSTED_DRAG_AUTOSCROLL_INTERVAL_NS)
+		state.drag_deadline_ns = hosted_deadline_after(now_ns, HOSTED_DRAG_AUTOSCROLL_INTERVAL_NS) if drag_autoscroll_can_step(rt) else 0
+	}
+	return .Ok
 }
 
 // hosted_runtime_step advances due retained work and performs at most one
@@ -292,25 +331,8 @@ hosted_runtime_step :: proc(host: ^Hosted_Runtime, now_ns: u64) -> Hosted_Step_R
 	state.has_step_time = true
 	state.last_step_ns = now_ns
 	rt := &state.runtime
-
-	motion := motion_tick(rt, Motion_Time(i64(now_ns)))
-	if motion.status != .Ok { return Hosted_Step_Result{status=.Motion_Failed} }
-	_ = tooltip_advance(rt, now_ns)
-	_ = notice_advance(rt, now_ns)
-	if motion.unestablished_deadlines > 0 {
-		if !state.motion_uncertified_timing {
-			state.motion_uncertified_timing = true
-			state.uncertified_motion_since_ns = now_ns if now_ns != 0 else 1
-		} else if now_ns >= state.uncertified_motion_since_ns &&
-			now_ns-state.uncertified_motion_since_ns >= HOSTED_UNCERTIFIED_MOTION_LIMIT_NS {
-			snapped := motion_snap_unestablished(rt, Motion_Time(i64(now_ns)))
-			if snapped.status != .Ok { return Hosted_Step_Result{status=.Motion_Failed} }
-			state.motion_uncertified_timing = false
-			state.uncertified_motion_since_ns = 0
-		}
-	} else {
-		state.motion_uncertified_timing = false
-		state.uncertified_motion_since_ns = 0
+	if advance_status := hosted_runtime_advance_presentation(state, now_ns); advance_status != .Ok {
+		return Hosted_Step_Result{status=advance_status}
 	}
 
 	result := Hosted_Step_Result{status=.Ok}
@@ -324,7 +346,7 @@ hosted_runtime_step :: proc(host: ^Hosted_Runtime, now_ns: u64) -> Hosted_Step_R
 	} else if ui, ready := begin_presentation_frame(rt); ready {
 		end_presentation_frame(&ui)
 	}
-	result.render_required = frame_needs_submission(rt)
+	result.render_required = state.renderable && frame_needs_submission(rt)
 	result.has_more_work = rt.invalidated
 	result.next_wake_ns = hosted_runtime_next_deadline(state, now_ns)
 	return result
@@ -347,7 +369,11 @@ hosted_runtime_set_deadline :: proc(host: ^Hosted_Runtime, deadline_ns: u64) -> 
 hosted_runtime_set_renderable :: proc(host: ^Hosted_Runtime, renderable: bool) -> Hosted_Runtime_Status {
 	state, status := hosted_runtime_get_state(host)
 	if status != .Ok { return status }
-	state.renderable = renderable
+	if state.renderable != renderable {
+		state.renderable = renderable
+		state.drag_deadline_ns = 0
+		if renderable { request_presentation(&state.runtime, "hosted surface restored") }
+	}
 	return .Ok
 }
 
@@ -496,7 +522,21 @@ hosted_runtime_focus_changed :: proc(host: ^Hosted_Runtime, focused: bool, focus
 		}
 	}
 	focus_indicator_set(rt, false)
+	context_menu_close(rt)
 	tooltip_dismiss(rt)
+	captured := rt.captured_node
+	cancel_cause := pointer_cause_begin(rt, .Cancel)
+	_ = cancel_pointer_capture(rt)
+	state.drag_deadline_ns = 0
+	if drag_event, pending := drag_event_take(rt); pending && state.on_drag != nil {
+		state.on_drag(state.app_state, rt, drag_event)
+	}
+	if state.on_pointer != nil {
+		event := Pointer_Event{kind=.Cancel}
+		if key, ok := node_identity_key(rt, captured); ok { event.target_key = key }
+		state.on_pointer(state.app_state, rt, event, captured)
+	}
+	cause_end(rt, cancel_cause)
 	return .Ok
 }
 
@@ -620,10 +660,11 @@ hosted_runtime_deliver_wake :: proc(host: ^Hosted_Runtime) -> Hosted_Runtime_Sta
 	if status != .Ok { return status }
 	control := state.wake_control
 	sync.mutex_lock(&control.mutex)
+	queued := control.wake_queued
 	control.wake_queued = false
 	active := control.active
 	sync.mutex_unlock(&control.mutex)
-	if active && state.on_wake != nil { state.on_wake(state.app_state, &state.runtime) }
+	if active && queued && state.on_wake != nil { state.on_wake(state.app_state, &state.runtime) }
 	return .Ok
 }
 

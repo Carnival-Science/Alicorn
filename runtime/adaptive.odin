@@ -4,7 +4,7 @@ package alicorn
 import "core:fmt"
 import "core:math"
 
-Adaptive_Selection_Reason :: enum {
+Adaptive_Selection_Reason :: enum u8 {
 	Unresolved,
 	Minimum_Fit,
 	Fallback,

@@ -123,7 +123,7 @@ after a bounded event batch or one-shot timer:
 ```
 
 `step` never waits, polls, or drains the host's event queue. It advances
-retained motion, tooltips, notices, and the optional application deadline,
+retained motion, tooltips, notices, drag-edge autoscroll, and the optional application deadline,
 then performs at most one application description. `next_wake_ns` is the
 earliest one-shot deadline Alicorn currently needs. `has_more_work` reports
 work that requires another step; a pending frame is reported separately by
@@ -136,7 +136,10 @@ deadlines. `hosted_runtime_set_deadline` installs or replaces one application
 deadline; zero cancels it. The scheduled callback may install the next
 deadline. There is no recurring tick when the Runtime is idle.
 An application deadline remains armed while the surface is hidden; retained
-motion, tooltip, and notice sampling pause until the surface becomes renderable.
+motion, tooltip, notice, and drag-autoscroll sampling pause until the surface
+becomes renderable. Hidden steps can still process model invalidation, but
+never report `render_required`. Restoration requests a retained presentation
+and samples the current monotonic time, without replaying missed ticks.
 The Runtime cannot observe arbitrary application memory. If `on_wake`,
 `on_scheduled_wake`, `on_drag`, or `on_scroll` changes data used by the next
 description, that callback must call `invalidate_root` on its supplied Runtime.
@@ -181,8 +184,10 @@ to `on_text_change` is borrowed only for that callback. The value returned by
 `hosted_runtime_text_command` is owned and must be released with
 `text_change_destroy` and the Runtime that produced it.
 
-On focus loss, `hosted_runtime_focus_changed` cancels active composition, hides
-the keyboard focus indicator, and dismisses tooltips. On focus gain, pass
+On focus loss, `hosted_runtime_focus_changed` cancels active composition and
+retained pointer capture/drag, hides the keyboard focus indicator, closes
+context menus, and dismisses tooltips. The host receives the cancellation
+through its pointer/drag callbacks. On focus gain, pass
 `focus_visible=true` only when the platform's input modality calls for a
 visible keyboard-focus treatment.
 
@@ -213,9 +218,20 @@ can only issue safe no-op notifications while its clone remains retained; the
 application must still join it before freeing worker-owned state. Finally,
 release the renderer/device and native surface in the host's required order.
 Discard any already queued wake event after the session is closed; it must not
-invoke an application callback.
+invoke an application callback. Duplicate wake deliveries with no pending
+notification do not invoke the wake callback. A host that recreates a session
+at the same address must tag queued events with a host-owned lifetime identity
+and discard events from the earlier session before delivering them.
 
 ## Current boundary and integration gates
+
+The headless hosted-session regression suite in `runtime/hosted_test.odin`
+exercises retained description and submission acknowledgement, idle and one-shot
+deadlines, resize and independent drawable scales, hidden motion and restoration,
+drag-edge deadlines and focus cancellation, UTF-8 preedit/commit and semantic
+actions, and worker-thread wake coalescing, failed posts, owner-thread rejection,
+and shutdown. Run it as part of `odin test runtime`. These tests validate the
+Runtime contract, not a native wxWidgets surface or platform IME/AT integration.
 
 This API does not wrap a wx window in SDL, own a GPU device, provide native
 clipboard/dialog services, or implement a wx event adapter. It establishes a
