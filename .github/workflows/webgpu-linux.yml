@@ -48,7 +48,7 @@ jobs:
           sh examples/15_webgpu_feasibility/build.sh --odin "$ALICORN_ODIN"
           vulkan_log="$RUNNER_TEMP/vulkaninfo-linux.txt"
           xvfb-run -a -s '-screen 0 1280x800x24' vulkaninfo --summary 2>&1 | tee "$vulkan_log"
-          grep -Eq 'deviceName = (llvmpipe|lavapipe)' "$vulkan_log"
+          grep -Eq 'deviceName[[:space:]]*=[[:space:]]*(llvmpipe|lavapipe)' "$vulkan_log"
           readback_log="$RUNNER_TEMP/webgpu-linux-readback.txt"
           xvfb-run -a -s '-screen 0 1280x800x24' ./examples/15_webgpu_feasibility/out/webgpu_feasibility_smoke 2>&1 | tee "$readback_log"
           grep -Fq 'adapter info backend=Vulkan' "$readback_log"
