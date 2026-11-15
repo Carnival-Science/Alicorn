@@ -178,10 +178,11 @@ when the user drops or cancels it. Hosts without a native source implementation
 return `false`; SDL file drops into an Alicorn window remain a separate,
 cross-platform input path.
 
-`Application_Waker` is borrowed host state. You may copy it to worker threads
-while `Run` is active, but `on_stop` must stop and join every worker that can
-call it before returning. Do not call a copied waker after `on_stop` returns;
-the host retires its backing state after that callback.
+`Application_Waker` is a borrowed, backend-provided wake callback. You may
+copy it to worker threads while `Run` is active, but `on_stop` must stop and
+join every worker that can call it before returning. Do not call a copied
+waker after `on_stop` returns; the host retires its backing state after that
+callback.
 
 `Application.on_initialize` is called after Runtime creation and before the
 host's default font faces and GPU renderers initialize. Use it for

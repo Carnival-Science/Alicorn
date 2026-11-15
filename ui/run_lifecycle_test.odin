@@ -1,3 +1,4 @@
+#+build !js
 package ui
 
 import "core:fmt"
@@ -6,6 +7,7 @@ import "core:thread"
 import "core:time"
 import "core:testing"
 import alicorn "alicorn:runtime"
+import host "alicorn:native/sdl_gpu"
 
 Run_Wake_Test_Queue :: struct {
 	available: sync.Sema,
@@ -98,7 +100,7 @@ test_typed_wake_adopts_result_with_explicit_invalidation_and_returns_to_idle :: 
 	application.on_initialize(application.state, &rt)
 	testing.expect(t, app.initializations == 1 && app.initialized,
 		"initialization should run once on the created Runtime before the first description")
-	application.on_start(application.state, Application_Waker{data=rawptr(&queue), wake=run_test_enqueue_wake})
+	application.on_start(application.state, host.Application_Waker{data=rawptr(&queue), wake=run_test_enqueue_wake})
 	defer application.on_stop(application.state)
 	if app.worker == nil { testing.expect(t, false, "the app-owned worker must start"); return }
 	testing.expect(t, application.build(application.state, &rt, 240, 120, 1) != 0 && app.renders == 1 && app.starts == 1 && app.initialized)
@@ -134,7 +136,7 @@ test_typed_stop_joins_a_worker_that_wakes_during_shutdown :: proc(t: ^testing.T)
 		on_start=run_lifecycle_test_start, on_stop=run_lifecycle_test_stop}
 	application := run_application(&state, "Shutdown test", 240, 120)
 	queue := Run_Wake_Test_Queue{live=true}
-	application.on_start(application.state, Application_Waker{data=rawptr(&queue), wake=run_test_enqueue_wake})
+	application.on_start(application.state, host.Application_Waker{data=rawptr(&queue), wake=run_test_enqueue_wake})
 	application.on_stop(application.state)
 	queue.live = false // The host retires the borrowed backing state only now.
 	testing.expect(t, app.starts == 1 && app.stops == 1 && app.joined && app.worker == nil && queue.count == 1 && queue.woke_while_live,

@@ -3,7 +3,6 @@ package ui
 import "core:mem"
 import "core:math"
 import alicorn "alicorn:runtime"
-import host "alicorn:native/sdl_gpu"
 import odin_runtime "base:runtime"
 
 // UI is the ordinary authoring context. It is the same context used by the
@@ -715,7 +714,15 @@ virtual_list :: proc(
 // Do not retain it or pass it to a worker. Only Application_Waker may cross
 // that boundary; the app owns result storage and its synchronization.
 Application_Context :: distinct ^alicorn.Runtime
-Application_Waker :: host.Application_Waker
+Application_Wake_Callback :: proc(data: rawptr)
+
+// Application_Waker is a backend-neutral, borrowed request to schedule the
+// application thread. Its backing state remains valid through on_stop; stop
+// and join every producer before returning from that callback.
+Application_Waker :: struct {
+	data: rawptr,
+	wake: Application_Wake_Callback,
+}
 Interaction_Scope_Options :: alicorn.Interaction_Scope_Options
 Interaction_Event :: alicorn.Interaction_Event
 Interaction_After_Frame_Proc :: alicorn.Interaction_After_Frame_Proc
@@ -746,11 +753,11 @@ after_frame :: proc(ctx: ^UI, state: rawptr, callback: Interaction_After_Frame_P
 		alicorn.interaction_after_frame_register(ctx.runtime, state, callback)
 }
 
-// wake is the native host's thread-safe event request. It does not publish or
+// wake is the host's thread-safe event request. It does not publish or
 // synchronize application data. Stop and join every producer in on_stop before
 // returning; no borrowed waker may be used afterward.
 wake :: proc(waker: Application_Waker) {
-	host.application_wake(waker)
+	if waker.wake != nil { waker.wake(waker.data) }
 }
 
 invalidate :: proc {invalidate_ui, invalidate_application}
@@ -764,126 +771,4 @@ invalidate_ui :: proc(ui: ^UI, reason := "simple UI explicitly invalidated") {
 invalidate_application :: proc(ctx: Application_Context, reason := "application explicitly invalidated") {
 	rt := cast(^alicorn.Runtime)ctx
 	if rt != nil { alicorn.invalidate_root(rt, reason) }
-}
-
-@(private)
-Run_State :: struct($T: typeid) {
-	app: ^T,
-	render: proc(^T, ^UI),
-	render_overlays: proc(^T, ^UI),
-	on_initialize: proc(^T, ^alicorn.Runtime),
-	on_start: proc(^T, Application_Waker),
-	on_wake: proc(^T, Application_Context),
-	on_stop: proc(^T),
-	on_key: proc(^T, ^alicorn.Runtime, host.Application_Key) -> bool,
-	on_text_change: proc(^T, ^alicorn.Runtime, alicorn.Text_Change),
-	on_pointer: proc(^T, ^alicorn.Runtime, alicorn.Pointer_Event, Node_ID),
-}
-
-@(private)
-run_describe :: proc(state: ^Run_State($T), ctx: ^UI) -> alicorn.Node_ID {
-	root := alicorn.container_begin(
-		ctx,
-		.Root,
-		label="ui-root",
-		key="alicorn.ui.root",
-		style=alicorn.layout_style(.Column, grow=1),
-	)
-	if root == 0 { return 0 }
-	state.render(state.app, ctx)
-	alicorn.container_end(ctx)
-	if state.render_overlays != nil { state.render_overlays(state.app, ctx) }
-	return root
-}
-
-@(private)
-run_application :: proc(run_state: ^Run_State($T), title: string, width, height: int) -> host.Application {
-	build :: proc(
-		data: rawptr,
-		rt: ^alicorn.Runtime,
-		_logical_width, _logical_height: int,
-		_dpi_scale: f32,
-	) -> alicorn.Node_ID {
-		ctx, should_build := alicorn.begin_frame(rt)
-		if !should_build { return 0 }
-		root := run_describe(cast(^Run_State(T))data, &ctx)
-		alicorn.end_frame(&ctx)
-		return root
-	}
-	initialize :: proc(data: rawptr, rt: ^alicorn.Runtime) {
-		state := cast(^Run_State(T))data
-		state.on_initialize(state.app, rt)
-	}
-	start :: proc(data: rawptr, waker: host.Application_Waker) {
-		state := cast(^Run_State(T))data
-		state.on_start(state.app, waker)
-	}
-	woken :: proc(data: rawptr, rt: ^alicorn.Runtime) {
-		state := cast(^Run_State(T))data
-		state.on_wake(state.app, Application_Context(rt))
-	}
-	stop :: proc(data: rawptr) {
-		state := cast(^Run_State(T))data
-		state.on_stop(state.app)
-	}
-	on_key :: proc(data: rawptr, rt: ^alicorn.Runtime, key: host.Application_Key) -> bool {
-		state := cast(^Run_State(T))data
-		return state.on_key != nil && state.on_key(state.app, rt, key)
-	}
-	on_text_change :: proc(data: rawptr, rt: ^alicorn.Runtime, change: alicorn.Text_Change) {
-		state := cast(^Run_State(T))data
-		if state.on_text_change != nil { state.on_text_change(state.app, rt, change) }
-	}
-	on_pointer :: proc(data: rawptr, rt: ^alicorn.Runtime, event: alicorn.Pointer_Event, target: Node_ID) {
-		state := cast(^Run_State(T))data
-		if state.on_pointer != nil { state.on_pointer(state.app, rt, event, target) }
-	}
-
-	application := host.Application{
-		state=rawptr(run_state),
-		title=title,
-		width=width,
-		height=height,
-		build=build,
-		interaction_update_policy=.Correct_After_Interaction,
-	}
-	if run_state.on_initialize != nil { application.on_initialize = initialize }
-	if run_state.on_start != nil { application.on_start = start }
-	if run_state.on_wake != nil { application.on_wake = woken }
-	if run_state.on_stop != nil { application.on_stop = stop }
-	if run_state.on_key != nil { application.on_key = on_key }
-	if run_state.on_text_change != nil { application.on_text_change = on_text_change }
-	if run_state.on_pointer != nil { application.on_pointer = on_pointer }
-	return application
-}
-
-// run borrows state until the synchronous native host returns. Optional hooks
-// run on the application thread: on_initialize receives the newly created
-// Runtime before the first description (for theme and resource registration);
-// on_start receives the borrowed worker waker;
-// on_wake adopts results and explicitly invalidates through its context;
-// on_stop stops and joins all producers before the host destroys the waker.
-// Rendering uses the same bounded corrective-description policy as host.Run.
-run :: proc(
-	state: ^$T,
-	render: proc(^T, ^UI),
-	title: string = "Alicorn",
-	width: int = 720,
-	height: int = 480,
-	render_overlays: proc(^T, ^UI) = nil,
-	on_start: proc(^T, Application_Waker) = nil,
-	on_wake: proc(^T, Application_Context) = nil,
-	on_stop: proc(^T) = nil,
-	smoke: bool = false,
-	on_initialize: proc(^T, ^alicorn.Runtime) = nil,
-	on_key: proc(^T, ^alicorn.Runtime, host.Application_Key) -> bool = nil,
-	on_text_change: proc(^T, ^alicorn.Runtime, alicorn.Text_Change) = nil,
-	on_pointer: proc(^T, ^alicorn.Runtime, alicorn.Pointer_Event, Node_ID) = nil,
-) {
-	run_state := Run_State(T){
-		app=state, render=render, render_overlays=render_overlays,
-		on_initialize=on_initialize, on_start=on_start, on_wake=on_wake, on_stop=on_stop,
-		on_key=on_key, on_text_change=on_text_change, on_pointer=on_pointer,
-	}
-	host.Run(run_application(&run_state, title, width, height), smoke=smoke)
 }

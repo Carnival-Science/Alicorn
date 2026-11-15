@@ -28,7 +28,7 @@ backend-neutral; their current native payload renderer is not.
 | Phase | Exit evidence | Status |
 | --- | --- | --- |
 | 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion/offscreen async readback demonstrated; binding/lifecycle limitations recorded | In progress: native explicit-destroy callback now passes on Windows D3D12 with a pinned wgpu-native source patch; cross-platform lifecycle and recovery evidence remains open |
-| 1. Separation | renderer/host package boundary with unchanged runtime and app API | Not started |
+| 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: UI authoring no longer imports the SDL host; the native `ui.run` adapter is target-gated, and a JS/WASM package-build check protects the boundary. Renderer/host extraction and a browser `ui.run` remain outstanding |
 | 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | Not started |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | Not started |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
@@ -38,6 +38,35 @@ backend-neutral; their current native payload renderer is not.
 
 Phase 0 does not authorize a production renderer rewrite. SDL_GPU remains the
 reference implementation until parity evidence is available.
+
+## Phase 1 boundary slice (Windows, 2026-11-15)
+
+The first separation step removes the direct native-host dependency from the
+shared UI authoring package. `ui/ui.odin` now owns its small backend-neutral
+`Application_Waker` value and shared runtime interaction helpers. The native
+`ui.run` implementation lives in `ui/run_native.odin`, behind Odin's `!js`
+build constraint; it adapts the shared waker to the existing SDL host callback.
+Native callers retain `ui.run` and the same callback behavior.
+
+Odin compiles test source files as part of imported packages, so the runtime and
+UI test files are excluded from `js` builds. They still compile and run on
+native targets. The shared runtime and UI implementation itself remains
+unchanged by target; this is a package-boundary change, not a renderer change.
+
+`tools/check_web_ui_package.ps1 -Odin C:\odin\odin.exe` builds a real
+`js_wasm32` consumer that imports `alicorn:ui` and calls its declarative text
+API. The check passed on Windows. `odin test ui` passed all 39 UI tests,
+`odin test runtime` passed all 343 runtime tests, and the native
+`examples/01_hello` `ui.run` consumer built successfully. The broader
+`tools/test.ps1` run stopped in the AccessKit UI Automation smoke with
+`Accessible Button missing` before its later test stages; this environment
+failure is not counted as a passing full-suite run.
+
+This is only the UI/runtime package boundary. `ui.run` is currently unavailable
+on `js_wasm32` until the browser host is implemented; SDL_GPU production code
+and SDL host responsibilities are still co-located under `native/sdl_gpu`.
+The next Phase 1 work should establish the renderer/host boundary without
+rewriting production rendering before the parity gates.
 
 ## Phase 0 feasibility results (Windows, 2026-11-15)
 
