@@ -8,6 +8,7 @@ import "core:c"
 import "core:strings"
 import "core:time"
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 import "vendor:sdl3"
 
 RESIZE_STRESS_ITERATIONS :: 300
@@ -72,16 +73,16 @@ validate_text_pixel_snapping :: proc() {
 	// fourth quarter-pixel bucket into the next pixel.
 	fractions := [4]f32{0.12, 0.26, 0.51, 0.76}
 	for fractional, expected_bucket in fractions {
-		pixel_x, bucket := native_text_snap_x(10 + fractional)
+		pixel_x, bucket := cpu_renderer.Snap_Text_X(10 + fractional)
 		if pixel_x != 10 || bucket != u8(expected_bucket) {
 			fail("text X phase was not quantized to the expected Runa bucket")
 		}
 	}
-	pixel_x, bucket := native_text_snap_x(10.90)
+	pixel_x, bucket := cpu_renderer.Snap_Text_X(10.90)
 	if pixel_x != 11 || bucket != 0 {
 		fail("text X phase did not carry the rounded fourth bucket")
 	}
-	if native_text_snap_y(20.49) != 20 || native_text_snap_y(20.50) != 21 {
+	if cpu_renderer.Snap_Text_Y(20.49) != 20 || cpu_renderer.Snap_Text_Y(20.50) != 21 {
 		fail("text Y origin was not snapped to physical pixels")
 	}
 }

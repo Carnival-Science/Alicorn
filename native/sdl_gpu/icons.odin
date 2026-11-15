@@ -3,6 +3,7 @@ package alicorn_sdl_gpu
 import "core:c"
 import "core:math"
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 import "vendor:sdl3"
 
 NATIVE_ICON_INITIAL_VERTICES :: 4096
@@ -179,8 +180,8 @@ native_icon_mesh_fingerprint :: proc(display: []alicorn.Paint_Command, scale_x, 
         icon, ok := draw.payload.(alicorn.Icon_Paint)
         if !ok { continue }
         h = alicorn.hash_mix(h, u64(index)); h = alicorn.hash_mix(h, u64(icon.id))
-        h = native_text_hash_rect(h, draw.bounds); h = native_text_hash_rect(h, draw.clip)
-        h = native_text_hash_color(h, icon.color)
+        h = cpu_renderer.Hash_Rect(h, draw.bounds); h = cpu_renderer.Hash_Rect(h, draw.clip)
+        h = cpu_renderer.Hash_Color(h, icon.color)
         h = alicorn.hash_mix(h, u64(transmute(u32)draw.opacity))
         for axis in draw.translation { h = alicorn.hash_mix(h, u64(transmute(u32)axis)) }
     }

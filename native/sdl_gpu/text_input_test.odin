@@ -1,6 +1,7 @@
 package alicorn_sdl_gpu
 
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 import "vendor:sdl3"
 
 native_text_input_coordinator_contract_test :: proc() -> Native_Validation_Result {
@@ -37,23 +38,23 @@ native_text_paint_span_contract_test :: proc() -> Native_Validation_Result {
 		{start=1, end=3, color=green, color_set=true},
 		{start=0, end=6, underline=true},
 	}
-	winners := native_text_span_winners("abcdef", spans)
+	winners := cpu_renderer.Span_Winners("abcdef", spans)
 	defer delete(winners, context.temp_allocator)
 	if len(winners) != 6 || winners[0] != 0 || winners[1] != 2 || winners[2] != 2 || winners[3] != 1 || winners[4] != 1 || winners[5] != -1 { return native_validation_failed() }
-	if native_text_color_for_cluster(spans, winners, 1, 2, alicorn.Color{}) != green ||
-		native_text_color_for_cluster(spans, winners, 3, 4, alicorn.Color{}) != blue ||
-		native_text_color_for_cluster(spans, winners, 5, 6, red) != red ||
-		native_text_color_for_cluster(spans, winners, 1, 4, red) != green ||
-		native_text_color_for_cluster(spans, winners, 1, 4, red) != alicorn.text_paint_color_for_cluster(spans, 1, 4, red) ||
-		native_text_color_for_cluster(spans, winners, 3, 4, red) != alicorn.text_paint_color_for_cluster(spans, 3, 4, red) ||
-		len(native_text_span_winners("abcdef", []alicorn.Text_Paint_Span{{start=0, end=6, underline=true}})) != 0 {
+	if cpu_renderer.Color_For_Cluster(spans, winners, 1, 2, alicorn.Color{}) != green ||
+		cpu_renderer.Color_For_Cluster(spans, winners, 3, 4, alicorn.Color{}) != blue ||
+		cpu_renderer.Color_For_Cluster(spans, winners, 5, 6, red) != red ||
+		cpu_renderer.Color_For_Cluster(spans, winners, 1, 4, red) != green ||
+		cpu_renderer.Color_For_Cluster(spans, winners, 1, 4, red) != alicorn.text_paint_color_for_cluster(spans, 1, 4, red) ||
+		cpu_renderer.Color_For_Cluster(spans, winners, 3, 4, red) != alicorn.text_paint_color_for_cluster(spans, 3, 4, red) ||
+		len(cpu_renderer.Span_Winners("abcdef", []alicorn.Text_Paint_Span{{start=0, end=6, underline=true}})) != 0 {
 		return native_validation_failed()
 	}
 	unicode_spans := []alicorn.Text_Paint_Span{{start=2, end=4, color=blue, color_set=true}}
-	unicode_winners := native_text_span_winners("Aéfi", unicode_spans)
+	unicode_winners := cpu_renderer.Span_Winners("Aéfi", unicode_spans)
 	defer delete(unicode_winners, context.temp_allocator)
-	if native_text_color_for_cluster(unicode_spans, unicode_winners, 1, 4, red) == blue &&
-		native_text_color_for_cluster(unicode_spans, unicode_winners, 5, 6, red) == red { return Native_Validation_Result{ok=true} }
+	if cpu_renderer.Color_For_Cluster(unicode_spans, unicode_winners, 1, 4, red) == blue &&
+		cpu_renderer.Color_For_Cluster(unicode_spans, unicode_winners, 5, 6, red) == red { return Native_Validation_Result{ok=true} }
 	return native_validation_failed()
 }
 

@@ -3,6 +3,7 @@ package alicorn_sdl_gpu
 import "core:math"
 import "core:c"
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 import "vendor:sdl3"
 
 MAX_SURFACE_VERTICES :: alicorn.GPU_SURFACE_MAX_VERTICES
@@ -266,8 +267,8 @@ native_surface_rebuild_mesh :: proc(renderer: ^Native_Surface_Renderer, command:
 	h = native_surface_mix(h, u64(len(payload.circles)))
 	h = native_surface_mix(h, u64(transmute(u32)scale_x))
 	h = native_surface_mix(h, u64(transmute(u32)scale_y))
-	h = native_surface_mix(h, native_text_hash_rect(h, command.bounds))
-	h = native_surface_mix(h, native_text_hash_rect(h, command.clip))
+	h = native_surface_mix(h, cpu_renderer.Hash_Rect(h, command.bounds))
+	h = native_surface_mix(h, cpu_renderer.Hash_Rect(h, command.clip))
 	h = native_surface_mix(h, u64(transmute(u32)command.opacity))
 	h = native_surface_mix(h, u64(transmute(u32)command.translation[0]))
 	h = native_surface_mix(h, u64(transmute(u32)command.translation[1]))

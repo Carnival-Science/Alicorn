@@ -1,6 +1,7 @@
 package alicorn_sdl_gpu
 
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 import "vendor:sdl3"
 
 NATIVE_IMAGE_INITIAL_VERTICES :: 4096
@@ -228,7 +229,7 @@ native_image_build :: proc(renderer: ^Native_Image_Renderer, display: []alicorn.
 		paint, ok := command.payload.(alicorn.Image_Paint)
 		if !ok { continue }
 		h = native_image_hash_handle(h, paint.image); h = alicorn.hash_mix(h, u64(index))
-		h = native_text_hash_rect(h, command.bounds); h = native_text_hash_rect(h, command.clip)
+		h = cpu_renderer.Hash_Rect(h, command.bounds); h = cpu_renderer.Hash_Rect(h, command.clip)
 		h = alicorn.hash_mix(h, u64(transmute(u32)command.opacity))
 		h = alicorn.hash_mix(h, u64(transmute(u32)command.translation[0])); h = alicorn.hash_mix(h, u64(transmute(u32)command.translation[1]))
 	}
