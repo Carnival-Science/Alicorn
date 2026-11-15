@@ -13,7 +13,7 @@ interaction, focus, semantics, and motion independent of the native renderer.
 | Area | Existing ownership | Migration treatment |
 | --- | --- | --- |
 | GPU-independent, retain unchanged | `runtime/`, `ui/`, app callbacks, invalidation, paint command ordering, semantic model, focus/input policy, text editing, shaping, motion, themes/material descriptions | Preserve public behavior. Runtime must not import SDL3, WGPU, or browser packages. |
-| CPU rendering products to reuse/extract | Paint commands and text runs; image payloads; generic `runtime/gpu_surface` samples; Runa shaping/rasterization and glyph atlas packing in `third_party/Runa`; CPU material/shape mesh generation in `renderer/cpu` | Keep mesh, atlas and image products backend-neutral and reconstructible after device loss. |
+| CPU rendering products to reuse/extract | Paint commands and text runs; image payloads; generic `runtime/gpu_surface` samples; Runa shaping/rasterization and glyph atlas packing in `third_party/Runa`; CPU mesh, text and asset presentation helpers in `renderer/cpu` | Keep mesh, atlas and image products backend-neutral and reconstructible after device loss. |
 | SDL_GPU-specific replacement | `native/sdl_gpu/{gpu_frame,solid,text,surface,images,icons,retained_effects,effects_compositor,vertex_buffers,render_capture}.odin`; GPU resources, shaders, upload policy, render passes, readback and retirement | Replace incrementally with `renderer/webgpu/` and shared WGSL. Do not alter geometry/shaping as incidental migration work. |
 | Native host responsibilities to retain | SDL3 window/event lifecycle, DPI, text input/IME, clipboard, dialogs, drag/drop, titlebars/menus, AccessKit, primary and secondary window scheduling | Keep in SDL3 host modules. Replace only surface/device/presentation integration. |
 | Browser host to add | Canvas sizing/DPR, WebGPU surface/device, pointer/wheel/keyboard/touch, browser focus/composition/clipboard, visibility, bounded scheduling, DOM/ARIA projection and capability errors | Add `host/web/` using Odin `js_wasm32` interop and narrow JS integration. No Emscripten or WebGL renderer. |
@@ -28,7 +28,7 @@ backend-neutral; their current native payload renderer is not.
 | Phase | Exit evidence | Status |
 | --- | --- | --- |
 | 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion/offscreen async readback demonstrated; binding/lifecycle limitations recorded | In progress: native explicit-destroy callback now passes on Windows D3D12 with a pinned wgpu-native source patch; cross-platform lifecycle and recovery evidence remains open |
-| 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring and CPU material mesh generation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
+| 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring and CPU mesh/text/image/icon preparation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
 | 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | Not started |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | Not started |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
@@ -68,17 +68,18 @@ code and SDL host responsibilities are still co-located under `native/sdl_gpu`.
 The next Phase 1 work should establish the renderer/host boundary without
 rewriting production rendering before the parity gates.
 
-### CPU material mesh boundary (Windows, 2026-11-15)
+### CPU renderer preparation boundaries (Windows, 2026-11-15)
 
-The shape/material CPU mesher, text paint-span color resolution, text quad
-clipping, physical-pixel glyph snapping, logical-to-device-pixel rounding,
-cache hashing, and their 36-byte position/color/UV vertex product now live in
-`renderer/cpu`, with no SDL or GPU imports. The SDL_GPU renderers call those
-shared routines; text atlas lookup, glyph rasterization/residency, GPU buffers
+The shape/material CPU mesher, image/icon quad generation and mesh fingerprints,
+text paint-span color resolution, text quad clipping, physical-pixel glyph
+snapping, logical-to-device-pixel rounding, cache hashing, and their 36-byte
+position/color/UV vertex product now live in `renderer/cpu`, with no SDL or GPU
+imports. The SDL_GPU renderers call those shared routines; text atlas lookup,
+glyph rasterization/residency, image and icon GPU texture ownership, buffers,
 and uploads remain in the native backend. Paint ordering, geometry generation
-and shaders are unchanged. The material, connected-tab, clipping, span-color,
-snapping and pixel-finalization regressions exercise the shared implementation
-through the native renderer test package.
+and shaders are unchanged. Existing material, connected-tab, image readback,
+icon clipping, text clipping/span-color/snapping and pixel-finalization
+regressions exercise the shared implementation through native tests.
 
 The WASM package-boundary fixture imports `alicorn:renderer/cpu` and generates
 a quad and calls its glyph-snap and pixel-edge helpers, so Odin type-checks the

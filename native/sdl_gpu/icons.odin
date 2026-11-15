@@ -145,51 +145,8 @@ native_icon_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUText
 
 // Uses the same finalized edge conversion as surfaces, clipping and text.
 // Clipping changes UVs, never the raster resource size or the widget geometry.
-native_icon_append_quad :: proc(vertices: ^[dynamic]Native_Text_Vertex, draw: alicorn.Paint_Command, scale_x, scale_y: f32, target_w, target_h: sdl3.Uint32) -> (entry: alicorn.Icon_Atlas_Entry, added: bool) {
-    icon, ok := draw.payload.(alicorn.Icon_Paint)
-    if !ok || scale_x <= 0 || scale_y <= 0 { return }
-    bounds := draw.bounds
-    bounds.x += draw.translation[0]; bounds.y += draw.translation[1]
-    x0, y0, x1, y1 := cpu_renderer.Logical_To_Pixel_Bounds(bounds, scale_x, scale_y)
-    if x1 <= x0 || y1 <= y0 { return }
-    entry, ok = alicorn.icon_atlas_lookup(icon.id, max(x1-x0, y1-y0))
-    if !ok { return }
-    cx0, cy0, cx1, cy1 := cpu_renderer.Logical_To_Pixel_Bounds(draw.clip, scale_x, scale_y)
-    left, top := max(x0, cx0, 0), max(y0, cy0, 0)
-    right, bottom := min(x1, cx1, int(target_w)), min(y1, cy1, int(target_h))
-    if right <= left || bottom <= top { return }
-    page := alicorn.ICON_ATLAS_PAGES[entry.page]
-    u0 := (f32(entry.x)+f32(left-x0)*f32(entry.size)/f32(x1-x0))/f32(page.width)
-    v0 := (f32(entry.y)+f32(top-y0)*f32(entry.size)/f32(y1-y0))/f32(page.height)
-    u1 := (f32(entry.x)+f32(right-x0)*f32(entry.size)/f32(x1-x0))/f32(page.width)
-    v1 := (f32(entry.y)+f32(bottom-y0)*f32(entry.size)/f32(y1-y0))/f32(page.height)
-    color := [4]f32{icon.color.r, icon.color.g, icon.color.b, icon.color.a*draw.opacity}
-    a := Native_Text_Vertex{{f32(left), f32(top), 0}, color, {u0,v0}}
-    b := Native_Text_Vertex{{f32(right), f32(top), 0}, color, {u1,v0}}
-    c := Native_Text_Vertex{{f32(right), f32(bottom), 0}, color, {u1,v1}}
-    d := Native_Text_Vertex{{f32(left), f32(bottom), 0}, color, {u0,v1}}
-    append(vertices, a,b,c,a,c,d)
-    return entry, true
-}
-
-native_icon_mesh_fingerprint :: proc(display: []alicorn.Paint_Command, scale_x, scale_y: f32, target_w, target_h: sdl3.Uint32) -> u64 {
-    h := alicorn.hash_mix(1469598103934665603, u64(len(display)))
-    h = alicorn.hash_mix(h, u64(transmute(u32)scale_x)); h = alicorn.hash_mix(h, u64(transmute(u32)scale_y))
-    h = alicorn.hash_mix(h, u64(target_w)); h = alicorn.hash_mix(h, u64(target_h))
-    for draw, index in display {
-        icon, ok := draw.payload.(alicorn.Icon_Paint)
-        if !ok { continue }
-        h = alicorn.hash_mix(h, u64(index)); h = alicorn.hash_mix(h, u64(icon.id))
-        h = cpu_renderer.Hash_Rect(h, draw.bounds); h = cpu_renderer.Hash_Rect(h, draw.clip)
-        h = cpu_renderer.Hash_Color(h, icon.color)
-        h = alicorn.hash_mix(h, u64(transmute(u32)draw.opacity))
-        for axis in draw.translation { h = alicorn.hash_mix(h, u64(transmute(u32)axis)) }
-    }
-    return h
-}
-
 native_icon_build :: proc(renderer: ^Native_Icon_Renderer, display: []alicorn.Paint_Command, scale_x, scale_y: f32, target_w, target_h: sdl3.Uint32) -> bool {
-    fingerprint := native_icon_mesh_fingerprint(display, scale_x, scale_y, target_w, target_h)
+    fingerprint := cpu_renderer.Icon_Mesh_Fingerprint(display, scale_x, scale_y, int(target_w), int(target_h))
     if renderer.mesh_valid && fingerprint == renderer.mesh_fingerprint { renderer.mesh_cache_hits += 1; return true }
     clear(&renderer.vertices); clear(&renderer.draws)
     for draw in display { append(&renderer.draws, Native_Icon_Draw{}) }
@@ -202,7 +159,7 @@ native_icon_build :: proc(renderer: ^Native_Icon_Renderer, display: []alicorn.Pa
     for draw, index in display {
         if !alicorn.paint_command_is_icon(draw) { continue }
         first := sdl3.Uint32(len(renderer.vertices))
-        entry, added := native_icon_append_quad(&renderer.vertices, draw, scale_x, scale_y, target_w, target_h)
+        entry, added := cpu_renderer.Icon_Quad(&renderer.vertices, draw, scale_x, scale_y, int(target_w), int(target_h))
         if added { renderer.draws[index] = Native_Icon_Draw{first, 6, entry.page} }
     }
     renderer.mesh_valid = true; renderer.mesh_fingerprint = fingerprint

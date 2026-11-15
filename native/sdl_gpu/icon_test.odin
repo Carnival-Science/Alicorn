@@ -31,7 +31,7 @@ test_icon_mask_quad_preserves_clipping_dpi_and_tint :: proc(t: ^testing.T) {
 	for scale in scales {
 		clear(&vertices)
 		cx0, cy0, cx1, cy1 := cpu_renderer.Logical_To_Pixel_Bounds(draw.clip, scale, scale)
-		entry, added := native_icon_append_quad(&vertices, draw, scale, scale, 800, 600)
+		entry, added := cpu_renderer.Icon_Quad(&vertices, draw, scale, scale, 800, 600)
 		testing.expect(t, added && len(vertices) == 6 && entry.size == int(20*scale),
 			"an icon should use one mask quad selected from its full physical size before clipping")
 		for vertex in vertices {

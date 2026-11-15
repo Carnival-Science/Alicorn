@@ -194,45 +194,8 @@ native_image_commit_submission :: proc(renderer: ^Native_Image_Renderer) {
 	clear(&renderer.uploads)
 }
 
-native_image_pixel_quad :: proc(vertices: ^[dynamic]Native_Text_Vertex, draw: alicorn.Paint_Command, scale_x, scale_y: f32, target_w, target_h: sdl3.Uint32) -> bool {
-	paint, ok := draw.payload.(alicorn.Image_Paint)
-	if !ok || scale_x <= 0 || scale_y <= 0 { return false }
-	bounds := draw.bounds
-	bounds.x += draw.translation[0]; bounds.y += draw.translation[1]
-	x0, y0, x1, y1 := cpu_renderer.Logical_To_Pixel_Bounds(bounds, scale_x, scale_y)
-	if x1 <= x0 || y1 <= y0 { return false }
-	cx0, cy0, cx1, cy1 := cpu_renderer.Logical_To_Pixel_Bounds(draw.clip, scale_x, scale_y)
-	left, top := max(x0, cx0, 0), max(y0, cy0, 0)
-	right, bottom := min(x1, cx1, int(target_w)), min(y1, cy1, int(target_h))
-	if right <= left || bottom <= top { return false }
-	u0, v0 := f32(left-x0)/f32(x1-x0), f32(top-y0)/f32(y1-y0)
-	u1, v1 := f32(right-x0)/f32(x1-x0), f32(bottom-y0)/f32(y1-y0)
-	color := [4]f32{1, 1, 1, draw.opacity}
-	a := Native_Text_Vertex{{f32(left), f32(top), 0}, color, {u0,v0}}
-	b := Native_Text_Vertex{{f32(right), f32(top), 0}, color, {u1,v0}}
-	c := Native_Text_Vertex{{f32(right), f32(bottom), 0}, color, {u1,v1}}
-	d := Native_Text_Vertex{{f32(left), f32(bottom), 0}, color, {u0,v1}}
-	append(vertices, a,b,c,a,c,d)
-	_ = paint
-	return true
-}
-
-native_image_hash_handle :: proc(h: u64, handle: alicorn.Image_Handle) -> u64 {
-	return alicorn.hash_mix(h, u64(handle))
-}
-
 native_image_build :: proc(renderer: ^Native_Image_Renderer, display: []alicorn.Paint_Command, scale_x, scale_y: f32, target_w, target_h: sdl3.Uint32) -> bool {
-	h := alicorn.hash_mix(1469598103934665603, u64(len(display)))
-	h = alicorn.hash_mix(h, u64(transmute(u32)scale_x)); h = alicorn.hash_mix(h, u64(transmute(u32)scale_y))
-	h = alicorn.hash_mix(h, u64(target_w)); h = alicorn.hash_mix(h, u64(target_h))
-	for command, index in display {
-		paint, ok := command.payload.(alicorn.Image_Paint)
-		if !ok { continue }
-		h = native_image_hash_handle(h, paint.image); h = alicorn.hash_mix(h, u64(index))
-		h = cpu_renderer.Hash_Rect(h, command.bounds); h = cpu_renderer.Hash_Rect(h, command.clip)
-		h = alicorn.hash_mix(h, u64(transmute(u32)command.opacity))
-		h = alicorn.hash_mix(h, u64(transmute(u32)command.translation[0])); h = alicorn.hash_mix(h, u64(transmute(u32)command.translation[1]))
-	}
+	h := cpu_renderer.Image_Mesh_Fingerprint(display, scale_x, scale_y, int(target_w), int(target_h))
 	if renderer.mesh_valid && renderer.mesh_fingerprint == h { return true }
 	clear(&renderer.vertices); clear(&renderer.draws)
 	for command in display {
@@ -257,7 +220,7 @@ native_image_build :: proc(renderer: ^Native_Image_Renderer, display: []alicorn.
 		paint, _ := command.payload.(alicorn.Image_Paint)
 		if native_image_cache_index(renderer, paint.image) < 0 { continue }
 		first := sdl3.Uint32(len(renderer.vertices))
-		if native_image_pixel_quad(&renderer.vertices, command, scale_x, scale_y, target_w, target_h) {
+		if cpu_renderer.Image_Quad(&renderer.vertices, command, scale_x, scale_y, int(target_w), int(target_h)) {
 			renderer.draws[index] = Native_Image_Draw{first, 6, paint.image}
 		}
 	}
