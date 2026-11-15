@@ -42,6 +42,30 @@ this environment. Those platforms, architectures, package formats, code-signing
 and redistribution still require their own fetch, hash, license and native-build
 verification before support is claimed.
 
+The pinned release contains native archives for the current Odin binding's
+desktop architecture selectors. The [official asset manifest](https://github.com/gfx-rs/wgpu-native/releases/expanded_assets/v29.0.1.1)
+publishes these SHA-256 values for download verification. Non-Windows archives
+have not been downloaded or verified locally; availability does not establish
+successful linking or runtime behavior on the corresponding machines. Alicorn's
+supported OS/architecture matrix is not yet explicitly declared, so this table
+records binding/package coverage rather than a project support commitment.
+
+| Desktop target | Odin binding selection | Official release asset | SHA-256 | Local validation |
+| --- | --- | --- | --- | --- |
+| Windows x64 MSVC | `.Windows` + `.amd64` → `x86_64-msvc` | `wgpu-windows-x86_64-msvc-release.zip` | `7e67d7445c42aeb85e30f88930fd8d7d83ee769e3390aeb1ada75ebf3cf78132` | Installed Odin package; patched static build and D3D12 probes passed |
+| macOS arm64 | `.Darwin` + `.arm64` → `aarch64` | `wgpu-macos-aarch64-release.zip` | `a5797a37b1adf720bcd5dcffb291edbbd5b7b14be0a3874c28e6393a655a7a3e` | Not installed or run here |
+| macOS x64 | `.Darwin` + `.amd64` → `x86_64` | `wgpu-macos-x86_64-release.zip` | `8e2f7378548ddd0e2cf21e7d864dda46e953f0af724855a33778b85ead206d41` | Not installed or run here |
+| Linux arm64 | `.Linux` + `.arm64` → `aarch64` | `wgpu-linux-aarch64-release.zip` | `015fcdf1dbae82e614a783cc38017e5399ae0927a889fe9b69c9b664bc61b47a` | Not installed or run here |
+| Linux x64 | `.Linux` + `.amd64` → `x86_64` | `wgpu-linux-x86_64-release.zip` | `95a4d90c071005a98d03eab348beaa6b07e16eb00d1dcdb9f8348f75eb97ec5a` | Not installed or run here |
+
+The release also publishes Windows ARM64 and i686 archives, but the current
+Odin `vendor:wgpu` Windows selector only names `x86_64` for `.amd64` and
+`.i386`, and rejects other architectures. Windows ARM64 is therefore not a
+supported build target through this binding as currently shipped; the `.i386`
+mapping appears inconsistent with the x86_64 archive and is not treated as
+32-bit support. If either target becomes part of Alicorn's support matrix, the
+binding/package selection needs a separate verified correction.
+
 Reacquire only from the immutable
 [wgpu-native v29.0.1.1 release](https://github.com/gfx-rs/wgpu-native/releases/tag/v29.0.1.1)
 and verify the selected archive digest before extracting. The Odin bindings are
