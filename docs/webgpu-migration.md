@@ -1,7 +1,8 @@
 # SDL_GPU to WebGPU migration
 
-Status: Phase 0 in progress. Production rendering remains SDL_GPU until the shared
-native/browser feasibility fixture and parity gates pass.
+Status: Phase 0 remains open for lifecycle, baseline, and performance evidence;
+Phase 2 has started with a bounded solid-surface renderer slice. SDL_GPU remains
+the only complete application renderer and the visual reference.
 
 ## Architecture inventory
 
@@ -47,15 +48,17 @@ backend-neutral; their current native payload renderer is not.
 | --- | --- | --- |
 | 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke and `js_wasm32` build pass; physical Linux GPU/Wayland, driver/OS loss, recovery, and production parity evidence remain open |
 | 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring and CPU surface mesh assembly plus text/image/icon preparation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
-| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | Not started |
+| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: initial ordered surface path consumes a real `Paint_Display_List_View` through `renderer/webgpu/solid.odin`; text, images, icons, effects and host presentation remain outstanding |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | Not started |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
 | 6. Browser host | interaction, accessibility, text/IME, lifecycle and demand-driven scheduling complete | Not started |
 | 7. Release readiness | docs, reproducible setup, CI and substantive shared-renderer web example | Not started |
 
-Phase 0 does not authorize a production renderer rewrite. SDL_GPU remains the
-reference implementation until parity evidence is available.
+The Phase 0 evidence authorizes bounded, testable renderer slices; it does not
+authorize a wholesale renderer replacement. SDL_GPU remains the complete
+application renderer and the parity reference while individual WebGPU paths
+are brought up.
 
 ## Phase 1 boundary slice (Windows, 2026-11-15)
 
@@ -241,6 +244,58 @@ this is software Vulkan evidence, not physical-GPU or Wayland validation.
 Phase 0 remains open because the fixture does not establish driver/OS-initiated
 loss, device recreation, general in-flight shutdown safety, resource retirement,
 secondary windows, or production performance parity.
+
+## Phase 2 first solid-surface slice (Windows, 2026-11-15)
+
+`renderer/webgpu/solid.odin` now consumes Alicorn's borrowed finalized
+`Paint_Display_List_View`, resolves the existing shared CPU surface meshes,
+preserves command order, and applies their resolved clips as device-pixel
+scissors. It creates a WGSL solid pipeline, viewport uniform, and vertex buffer.
+The caller owns the command encoder, target view, clear policy, queue submission,
+and renderer lifetime; this module has no SDL dependency and the runtime remains
+GPU-independent. Mixed display lists containing text, images, icons, geometry,
+or effects are rejected before the pass is encoded.
+
+The feasibility fixture builds a three-surface retained tree: an opaque root,
+a translucent clipped parent, and an overlapping translucent child larger than
+that parent. The GPU readback checks source-over output at the overlap and the
+root color outside the clip on both axes. It encodes the unchanged display list
+twice and asserts one CPU mesh rebuild plus one vertex and viewport upload
+overall; the second encoding must reuse the retained mesh. The readback now
+contains 16 checks total: the original 13 capability probes and these three
+real-runtime-paint samples.
+
+Local Windows validation for these changes, based on `9394537`:
+
+- `C:\odin\odin.exe check renderer/webgpu -no-entry-point` and
+  `C:\odin\odin.exe check examples/15_webgpu_feasibility -no-entry-point`:
+  passed.
+- `examples/15_webgpu_feasibility/build.ps1 -Odin C:\odin\odin.exe`: passed;
+  built both native smoke executables and the `js_wasm32` browser fixture.
+- Native readback and resize smokes: passed on the NVIDIA GeForce RTX 2080
+  SUPER with the installed Vulkan backend. All 16 probes passed; surface
+  reconfiguration submitted at 800×450 during animation and 720×405 after
+  settlement.
+- A local browser WebGPU run passed the 16 readback probes before the final
+  cache-reuse assertion was added. The final cache-enabled browser artifact
+  rebuilt successfully; its live run has not yet been repeated.
+- Runtime (352), CPU renderer (2), UI (39), TestUI (13), theme (37), native
+  SDL_GPU (197), and scroll-capture (6) tests passed when run individually. The
+  foundation executable also reported PASS.
+- `tools/test.ps1 -Odin C:\odin\odin.exe` stops in the bundled AccessKit UIA
+  check with `Accessible Button missing`, before reaching Alicorn's suite. The
+  underlying SDL smoke passes and the affected check is outside this renderer
+  change; the separately run Alicorn suites above passed.
+- `tools/check_web_ui_package.ps1 -Odin C:\odin\odin.exe` passed after the
+  WebGPU package was added to the `js_wasm32` import graph. Two runtime test
+  files are now excluded from JS builds because Odin compiles test sources in
+  imported packages and those tests use native-only facilities.
+
+This slice validates retained solid-surface rendering, blend order, clipping,
+and reuse on Windows. It does not route application windows through WebGPU and
+does not provide text, image, icon, material/effect, capture, resource-retirement,
+device-recovery, secondary-window, or performance parity. The SDL_GPU
+presenter remains the only full application path.
 
 ## Hosted Linux x64 validation (2026-11-15)
 

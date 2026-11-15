@@ -1,8 +1,13 @@
 # Shared native/browser WebGPU feasibility fixture
 
-This example stays separate from the production renderer. The Odin scene
-builder, vertex stream, WGSL shader/pipeline, texture upload, and drawing code
-are shared. Only host_sdl3.odin and host_web.odin differ by platform.
+The interactive capability scene keeps a small bespoke draw list for exercising
+the full set of WebGPU operations. A second offscreen probe now builds a real
+Alicorn `Paint_Display_List_View` and sends it through
+`renderer/webgpu/solid.odin`, using the shared `renderer/cpu` surface mesh.
+That production renderer path and its WGSL are the same for native and browser;
+only `host_sdl3.odin` and `host_web.odin` differ by platform. The application
+window still uses the fixture scene, so this is renderer integration evidence,
+not yet a replacement for the SDL_GPU application presenter.
 
 The scene exercises solid geometry, alpha blending, a rounded surface, clipped
 checker texture, Runa-shaped/rasterized text in an R8 atlas, and CPU waveform
@@ -15,7 +20,12 @@ performs a nonzero-offset partial vertex-buffer update and a WGSL uniform
 buffer layout/binding probe, checking both rendered colors. It requests
 `QueueOnSubmittedWorkDone`; the bounded native smoke waits for both async
 callbacks before teardown. Browser probe results appear in the page's live
-validation status as well as its developer console.
+validation status as well as its developer console. A second 63×64 target
+checks three samples from the real retained paint list: ordered source-over
+blend at the overlap and untouched root color beyond the clipped parent on
+both axes. The same display list is encoded twice; counters require one mesh
+build and one vertex/viewport upload total, proving unchanged retained paint
+reuses its prepared product.
 
 ## Windows native
 

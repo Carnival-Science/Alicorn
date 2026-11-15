@@ -2,8 +2,10 @@ package webgpu_feasibility
 
 import "core:fmt"
 import "core:math"
+import alicorn "../../runtime"
 import "vendor:wgpu"
 import runa "../../third_party/Runa"
+import webgpu_renderer "../../renderer/webgpu"
 
 FONT_DATA :: #load("../../assets/fonts/AtkinsonHyperlegibleNext-Variable.ttf")
 SCENE_TEXT :: "One renderer. Native SDL3 + browser WebGPU."
@@ -331,8 +333,13 @@ start_offscreen_readback :: proc() {
 		size={width=READBACK_WIDTH,height=READBACK_HEIGHT,depthOrArrayLayers=1},format=.RGBA8Unorm,mipLevelCount=1,sampleCount=1,
 	})
 	state.offscreen_view=wgpu.TextureCreateView(state.offscreen_texture)
+	state.solid_offscreen_texture=wgpu.DeviceCreateTexture(state.device,&wgpu.TextureDescriptor{
+		label="Alicorn solid display-list readback target",usage={.RenderAttachment,.CopySrc},dimension=._2D,
+		size={width=READBACK_WIDTH,height=READBACK_HEIGHT,depthOrArrayLayers=1},format=.RGBA8Unorm,mipLevelCount=1,sampleCount=1,
+	})
+	state.solid_offscreen_view=wgpu.TextureCreateView(state.solid_offscreen_texture)
 	state.readback_buffer=wgpu.DeviceCreateBuffer(state.device,&wgpu.BufferDescriptor{
-		label="mapped readback staging",usage={.CopyDst,.MapRead},size=READBACK_BUFFER_BYTES,
+		label="mapped readback staging",usage={.CopyDst,.MapRead},size=2*READBACK_BUFFER_BYTES,
 	})
 	partial_upload_vertex_start := build_offscreen_probe_scene()
 	upload_size:=u64(len(state.vertices)*size_of(Vertex))
@@ -359,18 +366,85 @@ start_offscreen_readback :: proc() {
 		wgpu.RenderPassEncoderDraw(pass,draw.count,1,draw.first,0)
 	}
 	wgpu.RenderPassEncoderEnd(pass); wgpu.RenderPassEncoderRelease(pass)
+	display, display_ok := alicorn.paint_display_list(&state.solid_runtime)
+	if !display_ok { fmt.panicf("Alicorn solid fixture display list unavailable") }
+	if result := webgpu_renderer.Solid_Encode(
+		&state.solid_renderer, &state.solid_runtime, display, state.solid_offscreen_view,
+		READBACK_WIDTH, READBACK_HEIGHT, 1, 1, encoder, true, wgpu.Color{0.04, 0.08, 0.12, 1},
+	); result != .Ok {
+		fmt.panicf("Alicorn WebGPU solid display-list encoding failed: %v", result)
+	}
+	mesh_rebuilds := state.solid_renderer.mesh_rebuild_count
+	vertex_uploads := state.solid_renderer.vertex_upload_count
+	viewport_uploads := state.solid_renderer.viewport_upload_count
+	if mesh_rebuilds != 1 || vertex_uploads != 1 || viewport_uploads != 1 {
+		fmt.panicf("initial Alicorn solid encode expected one mesh and one vertex/viewport upload")
+	}
+	if result := webgpu_renderer.Solid_Encode(
+		&state.solid_renderer, &state.solid_runtime, display, state.solid_offscreen_view,
+		READBACK_WIDTH, READBACK_HEIGHT, 1, 1, encoder, true, wgpu.Color{0.04, 0.08, 0.12, 1},
+	); result != .Ok {
+		fmt.panicf("Alicorn WebGPU cached solid display-list encoding failed: %v", result)
+	}
+	if state.solid_renderer.mesh_rebuild_count != mesh_rebuilds ||
+		state.solid_renderer.vertex_upload_count != vertex_uploads ||
+		state.solid_renderer.viewport_upload_count != viewport_uploads {
+		fmt.panicf("unchanged Alicorn paint re-encoded mesh or viewport data")
+	}
+	fmt.printf("[webgpu-feasibility] retained solid cache PASS mesh_rebuilds=%d vertex_uploads=%d vertex_bytes=%d viewport_uploads=%d unchanged_repeat=true\n",
+		state.solid_renderer.mesh_rebuild_count,state.solid_renderer.vertex_upload_count,
+		state.solid_renderer.vertex_upload_bytes,state.solid_renderer.viewport_upload_count)
 	// 63 RGBA8 texels use 252 bytes; the 256-byte row pitch exercises the
 	// required four-byte per-row padding in both native and browser readback.
 	layout:=wgpu.TexelCopyBufferLayout{bytesPerRow=READBACK_BYTES_PER_ROW,rowsPerImage=READBACK_HEIGHT}
 	source:=wgpu.TexelCopyTextureInfo{texture=state.offscreen_texture,aspect=.All}
 	destination:=wgpu.TexelCopyBufferInfo{layout=layout,buffer=state.readback_buffer}
 	wgpu.CommandEncoderCopyTextureToBuffer(encoder,&source,&destination,&wgpu.Extent3D{width=READBACK_WIDTH,height=READBACK_HEIGHT,depthOrArrayLayers=1})
+	solid_layout := layout
+	solid_layout.offset = READBACK_BUFFER_BYTES
+	solid_source := wgpu.TexelCopyTextureInfo{texture=state.solid_offscreen_texture,aspect=.All}
+	solid_destination := wgpu.TexelCopyBufferInfo{layout=solid_layout,buffer=state.readback_buffer}
+	wgpu.CommandEncoderCopyTextureToBuffer(encoder,&solid_source,&solid_destination,&wgpu.Extent3D{width=READBACK_WIDTH,height=READBACK_HEIGHT,depthOrArrayLayers=1})
 	command:=wgpu.CommandEncoderFinish(encoder); wgpu.CommandEncoderRelease(encoder)
 	wgpu.QueueSubmit(state.queue,{command}); wgpu.CommandBufferRelease(command)
 	state.queue_work_done_pending = true
 	wgpu.QueueOnSubmittedWorkDone(state.queue,{mode=.AllowProcessEvents,callback=on_queue_work_done})
 	state.readback_pending=true
-	wgpu.BufferMapAsync(state.readback_buffer,{.Read},0,READBACK_BUFFER_BYTES,{mode=.AllowProcessEvents,callback=on_readback})
+	wgpu.BufferMapAsync(state.readback_buffer,{.Read},0,2*READBACK_BUFFER_BYTES,{mode=.AllowProcessEvents,callback=on_readback})
+}
+
+// Build a real retained paint list for the first production WebGPU slice. The
+// nested blue surface intentionally exceeds its clipped red parent, so pixels
+// outside that parent verify that shared CPU geometry and GPU scissor agree.
+build_solid_runtime :: proc() {
+	state.solid_runtime = alicorn.new_runtime(alicorn.Rect{0, 0, f32(READBACK_WIDTH), f32(READBACK_HEIGHT)})
+	state.solid_runtime_ready = true
+	alicorn.invalidate_root(&state.solid_runtime, "WebGPU solid renderer feasibility fixture")
+	ui, should_build := alicorn.begin_frame(&state.solid_runtime)
+	if !should_build { fmt.panicf("Alicorn solid fixture runtime did not accept its initial description") }
+	alicorn.container_begin(
+		&ui, .Root, label="webgpu-solid-root",
+		style=alicorn.layout_style(.Column, width=f32(READBACK_WIDTH), height=f32(READBACK_HEIGHT)),
+		color=alicorn.Color{0.04, 0.08, 0.12, 1},
+	)
+	alicorn.container_begin(
+		&ui, .Container, label="webgpu-solid-clipped-parent",
+		style=alicorn.layout_style(width=36, height=36, clip=true),
+		color=alicorn.Color{1, 0, 0, 0.5},
+	)
+	alicorn.container_begin(
+		&ui, .Container, label="webgpu-solid-overlapping-child",
+		style=alicorn.layout_style(width=48, height=48),
+		color=alicorn.Color{0, 0, 1, 0.5},
+	)
+	alicorn.container_end(&ui)
+	alicorn.container_end(&ui)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	view, view_ok := alicorn.paint_display_list(&state.solid_runtime)
+	if !view_ok || len(view.commands) != 3 {
+		fmt.panicf("Alicorn solid fixture expected three retained surface commands, got %d", len(view.commands))
+	}
 }
 
 build_offscreen_probe_scene :: proc() -> int {
@@ -440,8 +514,8 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		}
 		return
 	}
-	pixels:=wgpu.BufferGetMappedRangeSlice(state.readback_buffer,0,u8,READBACK_BUFFER_BYTES)
-	valid_range:=len(pixels)==READBACK_BUFFER_BYTES
+	pixels:=wgpu.BufferGetMappedRangeSlice(state.readback_buffer,0,u8,2*READBACK_BUFFER_BYTES)
+	valid_range:=len(pixels)==2*READBACK_BUFFER_BYTES
 	ok:=valid_range
 	if valid_range {
 		clear_pixel:=offscreen_pixel(pixels,20,10)
@@ -457,6 +531,9 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		last_row_pixel:=offscreen_pixel(pixels,62,63)
 		partial_buffer_pixel:=offscreen_pixel(pixels,6,52)
 		uniform_pixel:=offscreen_pixel(pixels,52,54)
+		display_blend_pixel:=offscreen_pixel(pixels,24,24,READBACK_BUFFER_BYTES)
+		display_clip_x_pixel:=offscreen_pixel(pixels,40,24,READBACK_BUFFER_BYTES)
+		display_clip_y_pixel:=offscreen_pixel(pixels,24,40,READBACK_BUFFER_BYTES)
 		clear_expected:=[4]u8{10,20,31,255}
 		solid_expected:=[4]u8{242,64,38,255}
 		checker_expected:=[4]u8{232,166,86,255}
@@ -478,11 +555,14 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		last_row_ok:=offscreen_pixel_near(last_row_pixel,clear_expected)
 		partial_buffer_ok:=offscreen_pixel_near(partial_buffer_pixel,[4]u8{64,191,128,255})
 		uniform_ok:=offscreen_pixel_near(uniform_pixel,[4]u8{64,128,191,255})
-		ok=clear_ok && solid_ok && checker_ok && patch_ok && blend_ok && glyph_ok && clip_ok && outside_clip_ok && rounded_ok && rounded_corner_ok && last_row_ok && partial_buffer_ok && uniform_ok
-		fmt.printf("[webgpu-feasibility] async RGBA8 readback %s texture=%dx%d row_pitch=%d padding_per_row=%d bytes=%d clear=%v solid=%v checker=%v partial_texture=%v partial_buffer=%v uniform=%v blend=%v glyph=%v clip=%v outside_clip=%v rounded=%v rounded_corner=%v last_row=%v corner_px=%v\n",
-			"PASS" if ok else "FAIL",READBACK_WIDTH,READBACK_HEIGHT,READBACK_BYTES_PER_ROW,READBACK_BYTES_PER_ROW-READBACK_WIDTH*READBACK_BYTES_PER_PIXEL,len(pixels),clear_ok,solid_ok,checker_ok,patch_ok,partial_buffer_ok,uniform_ok,blend_ok,glyph_ok,clip_ok,outside_clip_ok,rounded_ok,rounded_corner_ok,last_row_ok,rounded_corner_pixel)
+		display_blend_ok:=offscreen_pixel_near(display_blend_pixel,[4]u8{66,5,136,255},4)
+		display_clip_x_ok:=offscreen_pixel_near(display_clip_x_pixel,clear_expected)
+		display_clip_y_ok:=offscreen_pixel_near(display_clip_y_pixel,clear_expected)
+		ok=clear_ok && solid_ok && checker_ok && patch_ok && blend_ok && glyph_ok && clip_ok && outside_clip_ok && rounded_ok && rounded_corner_ok && last_row_ok && partial_buffer_ok && uniform_ok && display_blend_ok && display_clip_x_ok && display_clip_y_ok
+		fmt.printf("[webgpu-feasibility] async RGBA8 readback %s texture=%dx%d row_pitch=%d padding_per_row=%d bytes=%d clear=%v solid=%v checker=%v partial_texture=%v partial_buffer=%v uniform=%v blend=%v glyph=%v clip=%v outside_clip=%v rounded=%v rounded_corner=%v last_row=%v runtime_display_blend=%v runtime_clip_x=%v runtime_clip_y=%v\n",
+			"PASS" if ok else "FAIL",READBACK_WIDTH,READBACK_HEIGHT,READBACK_BYTES_PER_ROW,READBACK_BYTES_PER_ROW-READBACK_WIDTH*READBACK_BYTES_PER_PIXEL,len(pixels),clear_ok,solid_ok,checker_ok,patch_ok,partial_buffer_ok,uniform_ok,blend_ok,glyph_ok,clip_ok,outside_clip_ok,rounded_ok,rounded_corner_ok,last_row_ok,display_blend_ok,display_clip_x_ok,display_clip_y_ok)
 	} else {
-		fmt.printf("[webgpu-feasibility] async RGBA8 readback FAIL bytes=%d expected=%d\n",len(pixels),READBACK_BUFFER_BYTES)
+		fmt.printf("[webgpu-feasibility] async RGBA8 readback FAIL bytes=%d expected=%d\n",len(pixels),2*READBACK_BUFFER_BYTES)
 	}
 	wgpu.BufferUnmap(state.readback_buffer); state.readback_done=ok
 	when FEASIBILITY_TEST_QUIT_AFTER_READBACK {
@@ -500,8 +580,8 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 	}
 }
 
-offscreen_pixel :: proc(pixels:[]u8,x,y:int) -> [4]u8 {
-	i:=y*READBACK_BYTES_PER_ROW+x*READBACK_BYTES_PER_PIXEL
+offscreen_pixel :: proc(pixels:[]u8,x,y:int,base_offset:int=0) -> [4]u8 {
+	i:=base_offset+y*READBACK_BYTES_PER_ROW+x*READBACK_BYTES_PER_PIXEL
 	return [4]u8{pixels[i],pixels[i+1],pixels[i+2],pixels[i+3]}
 }
 

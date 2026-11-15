@@ -1,3 +1,5 @@
+#+build !js
+
 package alicorn
 
 import "core:testing"

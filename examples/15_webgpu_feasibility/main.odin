@@ -3,8 +3,10 @@ package webgpu_feasibility
 import "base:runtime"
 import "core:fmt"
 import "core:sync"
+import alicorn "../../runtime"
 import "vendor:wgpu"
 import runa "../../third_party/Runa"
+import webgpu_renderer "../../renderer/webgpu"
 
 ANIMATION_SECONDS :: 1.8
 VERTEX_CAPACITY :: 256 * 1024
@@ -37,6 +39,9 @@ state: struct {
 	adapter: wgpu.Adapter,
 	device: wgpu.Device,
 	queue: wgpu.Queue,
+	solid_runtime: alicorn.Runtime,
+	solid_renderer: webgpu_renderer.Solid_Renderer,
+	solid_runtime_ready: bool,
 	config: wgpu.SurfaceConfiguration,
 	pipeline: wgpu.RenderPipeline,
 	offscreen_pipeline: wgpu.RenderPipeline,
@@ -57,6 +62,8 @@ state: struct {
 	draws: [dynamic]Draw_Command,
 	offscreen_texture: wgpu.Texture,
 	offscreen_view: wgpu.TextureView,
+	solid_offscreen_texture: wgpu.Texture,
+	solid_offscreen_view: wgpu.TextureView,
 	readback_buffer: wgpu.Buffer,
 	readback_pending, readback_done: bool,
 	queue_work_done_pending, queue_work_done, queue_work_done_ok: bool,
@@ -190,6 +197,10 @@ on_device :: proc "c" (status: wgpu.RequestDeviceStatus, device: wgpu.Device, me
 		return
 	}
 	create_resources()
+	solid_renderer, solid_ok := webgpu_renderer.Solid_Create(state.device, state.queue, .RGBA8Unorm)
+	if !solid_ok { fmt.panicf("Alicorn WebGPU solid renderer initialization failed") }
+	state.solid_renderer = solid_renderer
+	build_solid_runtime()
 	state.width, state.height = os_get_framebuffer_size()
 	os_set_surface_size(state.width, state.height)
 	state.config.device = device
@@ -257,7 +268,14 @@ step :: proc(dt: f32) -> bool {
 }
 
 finish :: proc() {
+	webgpu_renderer.Solid_Destroy(&state.solid_renderer)
+	if state.solid_runtime_ready {
+		alicorn.destroy_runtime(&state.solid_runtime)
+		state.solid_runtime_ready = false
+	}
 	if state.readback_buffer != nil { wgpu.BufferDestroy(state.readback_buffer); wgpu.BufferRelease(state.readback_buffer) }
+	if state.solid_offscreen_view != nil { wgpu.TextureViewRelease(state.solid_offscreen_view) }
+	if state.solid_offscreen_texture != nil { wgpu.TextureDestroy(state.solid_offscreen_texture); wgpu.TextureRelease(state.solid_offscreen_texture) }
 	if state.offscreen_view != nil { wgpu.TextureViewRelease(state.offscreen_view) }
 	if state.offscreen_texture != nil { wgpu.TextureDestroy(state.offscreen_texture); wgpu.TextureRelease(state.offscreen_texture) }
 	if state.bind_group != nil { wgpu.BindGroupRelease(state.bind_group) }
