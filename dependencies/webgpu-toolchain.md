@@ -50,6 +50,12 @@ successful linking or runtime behavior on the corresponding machines. Alicorn's
 supported OS/architecture matrix is not yet explicitly declared, so this table
 records binding/package coverage rather than a project support commitment.
 
+The macOS arm64 foundation workflow downloads the exact release archive and
+checks its SHA-256 with `tools/setup_macos_wgpu_native.sh` before installing it
+under Odin's `vendor/wgpu/lib` tree. This makes the hosted native build
+reproducible; it does not replace a maintainer-run macOS Metal validation
+session.
+
 | Desktop target | Odin binding selection | Official release asset | SHA-256 | Local validation |
 | --- | --- | --- | --- | --- |
 | Windows x64 MSVC | `.Windows` + `.amd64` → `x86_64-msvc` | `wgpu-windows-x86_64-msvc-release.zip` | `7e67d7445c42aeb85e30f88930fd8d7d83ee769e3390aeb1ada75ebf3cf78132` | Installed Odin package; patched static build and D3D12 probes passed |

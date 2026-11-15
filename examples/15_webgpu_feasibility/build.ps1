@@ -1,7 +1,12 @@
 param([string]$Odin='C:\odin\odin.exe')
 $ErrorActionPreference='Stop'
 $root=$PSScriptRoot
-if (-not (Test-Path -LiteralPath $Odin -PathType Leaf)) { throw "Odin not found: $Odin" }
+. (Join-Path $root '..\..\tools\common.ps1')
+$Odin = Resolve-AlicornOdin -Requested $Odin
+$odinRoot = (& $Odin root | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or -not $odinRoot -or -not (Test-Path -LiteralPath $odinRoot -PathType Container)) {
+	throw "Could not resolve Odin SDK root from '$Odin'."
+}
 New-Item -ItemType Directory -Force -Path (Join-Path $root 'out'),(Join-Path $root 'web') | Out-Null
 Push-Location $root
 try {
@@ -11,7 +16,6 @@ try {
 	if ($LASTEXITCODE -ne 0) { throw "Native smoke fixture build failed: $LASTEXITCODE" }
 	& $Odin build . -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -define:FEASIBILITY_TEST_RESIZE=true -out:out\webgpu_feasibility_resize_smoke.exe
 	if ($LASTEXITCODE -ne 0) { throw "Native resize smoke fixture build failed: $LASTEXITCODE" }
-	$odinRoot=Split-Path -Parent $Odin
 	Copy-Item (Join-Path $odinRoot 'vendor\sdl3\SDL3.dll') (Join-Path $root 'out\SDL3.dll') -Force
 	$wgpuDll=Join-Path $odinRoot 'vendor\wgpu\lib\wgpu-windows-x86_64-msvc-release\lib\wgpu_native.dll'
 	if (Test-Path -LiteralPath $wgpuDll) { Copy-Item $wgpuDll (Join-Path $root 'out\wgpu_native.dll') -Force }

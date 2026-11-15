@@ -19,6 +19,10 @@ jobs:
           echo "ODIN_ROOT=$odin_root" >> "$GITHUB_ENV"
           echo "ALICORN_ODIN=$odin_root/odin" >> "$GITHUB_ENV"
 
+      - name: Install hash-verified wgpu-native for the pinned Odin bindings
+        shell: bash
+        run: sh tools/setup_macos_wgpu_native.sh "$ODIN_ROOT"
+
       - name: Install SDL3 for the native host contract test
         run: brew install sdl3
 
