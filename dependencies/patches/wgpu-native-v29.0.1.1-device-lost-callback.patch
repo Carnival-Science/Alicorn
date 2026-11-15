@@ -1,0 +1,145 @@
+diff --git a/src/lib.rs b/src/lib.rs
+index ba92673..0a2d300 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -494,7 +494,7 @@ struct ErrorScope {
+ struct ErrorSinkRaw {
+     scopes: Vec<ErrorScope>,
+     uncaptured_handler: UncapturedErrorCallback,
+-    device_lost_handler: DeviceLostCallback,
++    device_lost_handler: Option<DeviceLostCallback>,
+     device: Weak<WGPUDeviceImpl>,
+ }
+ 
+@@ -503,7 +503,7 @@ impl ErrorSinkRaw {
+         ErrorSinkRaw {
+             scopes: Vec::new(),
+             uncaptured_handler: DEFAULT_UNCAPTURED_ERROR_HANDLER,
+-            device_lost_handler,
++            device_lost_handler: Some(device_lost_handler),
+             device,
+         }
+     }
+@@ -511,22 +511,7 @@ impl ErrorSinkRaw {
+     fn handle_error(&mut self, err: crate::Error) {
+         let (typ, filter) = match err {
+             crate::Error::DeviceLost { .. } => {
+-                // handle device lost error early
+-                if let Some(callback) = self.device_lost_handler.callback {
+-                    let userdata = &self.device_lost_handler.userdata;
+-                    let msg = err.to_string();
+-                    let device = self.device.as_ptr();
+-                    unsafe {
+-                        callback(
+-                            &device,
+-                            native::WGPUDeviceLostReason_Destroyed,
+-                            str_into_string_view(&msg),
+-                            userdata.get_1(),
+-                            userdata.get_2(),
+-                        );
+-                    };
+-                }
+-                return;
++                unreachable!("device loss callbacks must be dispatched outside the error-sink lock")
+             }
+             crate::Error::OutOfMemory { .. } => (
+                 native::WGPUErrorType_OutOfMemory,
+@@ -569,6 +554,39 @@ impl ErrorSinkRaw {
+     }
+ }
+ 
++fn dispatch_device_lost(
++    sink_mutex: &Mutex<ErrorSinkRaw>,
++    reason: native::WGPUDeviceLostReason,
++    message: String,
++) {
++    let (handler, device) = {
++        let mut sink = sink_mutex.lock();
++        (sink.device_lost_handler.take(), sink.device.upgrade())
++    };
++
++    let Some(handler) = handler else {
++        return;
++    };
++    let Some(callback) = handler.callback else {
++        return;
++    };
++
++    // Keep the wrapper alive for the duration of the callback when the C handle
++    // still exists. The C API permits a null handle after its last ref is released.
++    let device: native::WGPUDevice = device
++        .as_ref()
++        .map_or(std::ptr::null(), |device| Arc::as_ptr(device));
++    unsafe {
++        callback(
++            &device,
++            reason,
++            str_into_string_view(&message),
++            handler.userdata.get_1(),
++            handler.userdata.get_2(),
++        );
++    }
++}
++
+ fn format_error(err: &(impl error::Error + 'static)) -> String {
+     let mut output = String::new();
+     let mut level = 1;
+@@ -616,25 +634,33 @@ fn handle_error(
+         source: Box::new(source),
+         label: label.unwrap_or_default().to_string(),
+     };
+-    let mut sink = sink_mutex.lock();
+     let mut source_opt: Option<&(dyn error::Error + 'static)> = Some(&error);
++    let mut is_out_of_memory = false;
+     while let Some(source) = source_opt {
+         match source.downcast_ref::<wgc::device::DeviceError>() {
+             Some(wgc::device::DeviceError::Lost) => {
+-                return sink.handle_error(crate::Error::DeviceLost {
+-                    source: Box::new(error),
+-                });
++                return dispatch_device_lost(
++                    sink_mutex,
++                    native::WGPUDeviceLostReason_Unknown,
++                    "Device lost".to_owned(),
++                );
+             }
+             Some(wgc::device::DeviceError::OutOfMemory) => {
+-                return sink.handle_error(crate::Error::OutOfMemory {
+-                    source: Box::new(error),
+-                });
++                is_out_of_memory = true;
++                break;
+             }
+             _ => (),
+         }
+         source_opt = source.source();
+     }
+ 
++    let mut sink = sink_mutex.lock();
++    if is_out_of_memory {
++        return sink.handle_error(crate::Error::OutOfMemory {
++            source: Box::new(error),
++        });
++    }
++
+     // Otherwise, it is a validation error
+     sink.handle_error(crate::Error::Validation {
+         description: format_error(&error),
+@@ -876,6 +902,17 @@ pub unsafe extern "C" fn wgpuAdapterRequestDevice(
+                     error_sink: error_sink.clone(),
+                 }
+             });
++            let device_lost_sink = device_impl.error_sink.clone();
++            context.device_set_device_lost_closure(
++                device_id,
++                Box::new(move |reason, message| {
++                    let reason = match reason {
++                        wgt::DeviceLostReason::Destroyed => native::WGPUDeviceLostReason_Destroyed,
++                        wgt::DeviceLostReason::Unknown => native::WGPUDeviceLostReason_Unknown,
++                    };
++                    dispatch_device_lost(&device_lost_sink, reason, message);
++                }),
++            );
+             let device = Arc::into_raw(device_impl);
+ 
+             callback(

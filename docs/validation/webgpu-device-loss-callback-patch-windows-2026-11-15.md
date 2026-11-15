@@ -1,0 +1,118 @@
+# wgpu-native device-loss callback patch — Windows
+
+Validated 2026-11-15 on Windows x64 / D3D12, using the WebGPU feasibility
+fixture. This is targeted dependency evidence for Phase 0, not production
+renderer acceptance.
+
+## Source and build pins
+
+- wgpu-native release: `v29.0.1.1`, commit
+  `6aed50955d934ac36049ba8d002034841633ae02`.
+- Odin: `dev-2026-11-nightly:08539cd` (`C:\odin\odin.exe`).
+- Rust: `1.93.1`, selected by the release checkout's `rust-toolchain.toml`
+  channel `1.93`.
+- Native build: Windows x64 MSVC, `wgsl,dx12`, no other backend features.
+- Patch: [`wgpu-native-v29.0.1.1-device-lost-callback.patch`](../../dependencies/patches/wgpu-native-v29.0.1.1-device-lost-callback.patch),
+  SHA-256 `AE569A401C4014B96567F7BF459DF938ECAE96174C2C39E94336D86AE9243D5E`.
+- Built `wgpu_native.lib`: SHA-256
+  `B1E2660E4FB71FB77566D9997FB8D71BC029B4147F85002B7892E8171C19010B`.
+- Bindgen prerequisite used: LLVM 23.1.5 Windows x64 release archive,
+  SHA-256 `b2be33385ddc86e83511417a060de927ae8b09d1f3017cc3cdce5c73cd5029d7`.
+- Cargo used the release checkout's committed `Cargo.lock`.
+
+## Reproduce the native library
+
+Run from the Alicorn repository root in PowerShell. Install the Rust toolchain
+selected by `rust-toolchain.toml`, Visual Studio C++ build tools, and LLVM 23.1.5
+with `libclang.dll`. Clone only if the pinned source directory does not already
+exist; verify the commit before applying the patch:
+
+```powershell
+$source = Join-Path $PWD 'out\wgpu-native-v29.0.1.1'
+if (-not (Test-Path -LiteralPath $source)) {
+  git clone --recurse-submodules --branch v29.0.1.1 `
+    https://github.com/gfx-rs/wgpu-native.git $source
+}
+if ((git -C $source rev-parse HEAD) -ne '6aed50955d934ac36049ba8d002034841633ae02') {
+  throw 'wgpu-native source is not the validated v29.0.1.1 commit'
+}
+git -C $source apply (Join-Path $PWD 'dependencies\patches\wgpu-native-v29.0.1.1-device-lost-callback.patch')
+
+$env:WGPU_NATIVE_VERSION = '29.0.1.1'
+$env:LIBCLANG_PATH = 'C:\path\to\llvm-23.1.5\bin'
+cargo build --manifest-path (Join-Path $source 'Cargo.toml') `
+  --release --locked --no-default-features --features wgsl,dx12
+```
+
+`WGPU_NATIVE_VERSION` is needed because wgpu-native's `wgpuGetVersion` uses it
+at compile time. Without it, Odin's version guard rejects the library.
+
+For an isolated Odin collection, copy `C:\odin\vendor\wgpu`,
+`C:\odin\vendor\sdl3`, `C:\odin\vendor\vulkan`, and
+`C:\odin\vendor\x11` into `out\odin-overlay\vendor`, then replace
+`vendor\wgpu\lib\wgpu-windows-x86_64-msvc-release\lib\wgpu_native.lib` with:
+
+```powershell
+Copy-Item (Join-Path $source 'target\release\wgpu_native.lib') `
+  'out\odin-overlay\vendor\wgpu\lib\wgpu-windows-x86_64-msvc-release\lib\wgpu_native.lib' -Force
+```
+
+The feasibility fixture now exits through its regular teardown path after the
+opt-in device-loss callback fires. Build from
+`examples\15_webgpu_feasibility`:
+
+```powershell
+$collection = (Resolve-Path '..\..\out\odin-overlay\vendor').Path
+C:\odin\odin.exe build . -define:FEASIBILITY_TEST_DEVICE_LOSS=true `
+  -define:FEASIBILITY_TEST_DEVICE_LOSS_EARLY=true `
+  "-collection:vendor=$collection" -out:out\device-loss-early.exe
+C:\odin\odin.exe build . -define:FEASIBILITY_TEST_DEVICE_LOSS=true `
+  -define:FEASIBILITY_TEST_DEVICE_LOSS_SPONTANEOUS=true `
+  -define:FEASIBILITY_TEST_DEVICE_LOSS_EARLY=true `
+  "-collection:vendor=$collection" -out:out\device-loss-spontaneous.exe
+C:\odin\odin.exe build . -define:FEASIBILITY_TEST_DEVICE_LOSS=true `
+  -define:FEASIBILITY_TEST_DEVICE_LOSS_RELEASE_BEFORE_POLL=true `
+  -define:FEASIBILITY_TEST_DEVICE_LOSS_EARLY=true `
+  "-collection:vendor=$collection" -out:out\device-loss-release-before-poll.exe
+C:\odin\odin.exe build . -define:FEASIBILITY_TEST_DEVICE_LOSS=true `
+  "-collection:vendor=$collection" -out:out\device-loss-after-readback.exe
+Copy-Item C:\odin\vendor\sdl3\SDL3.dll out\SDL3.dll -Force
+```
+
+Run each executable from the fixture directory. The first two exercise the
+zero-resource, zero-submission destroy path with `AllowProcessEvents` and
+`AllowSpontaneous`. The third releases the final device handle before the host
+polls; it should print `device_handle_present=false`, exercising the C API's
+nullable-device callback case. The fourth verifies asynchronous offscreen
+readback before destroy. Each should exit with code 0 after printing exactly
+one `reason=Destroyed` callback line.
+
+## Results
+
+- Patched wgpu-native compiled successfully with the pinned release lockfile;
+  `cargo fmt -- --check` passed.
+- Both callback modes delivered `reason=Destroyed` for the early destroy
+  probe, and exited cleanly through fixture teardown.
+- Releasing the device handle before the host poll delivered one callback with
+  `device_handle_present=false` and exited cleanly; retaining the handle during
+  the other probes reported `device_handle_present=true`.
+- The normal GPU fixture produced
+  `async RGBA8 readback PASS len=16384 center=242,64,38,255`, then delivered
+  `reason=Destroyed` and exited cleanly.
+- The release library calls the callback outside the error-sink mutex and
+  consumes the registered C callback once. The fixture's teardown calls
+  `DeviceDestroy` again; no duplicate notification was observed.
+
+The unmodified Odin package binary still exhibits the original missing callback
+on this native path. The validation used a local static library built from the
+pinned source plus the checked-in patch; it does not silently replace the
+installed Odin package. The browser implementation remains unpatched and the
+same fixture's browser destruction callback had already passed.
+
+## Limits
+
+This verifies explicit `DeviceDestroy` on Windows D3D12. It does not simulate
+driver/OS-initiated device loss, validate recovery or resource recreation, or
+establish callback/shutdown behavior on macOS and Linux. The patch has not been
+submitted upstream; the upstream `trunk` request-device path inspected on
+2026-11-15 still lacked core lost-closure registration.

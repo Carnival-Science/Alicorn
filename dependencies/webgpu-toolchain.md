@@ -61,40 +61,54 @@ The WebGPU bindings expose async adapter/device requests, async buffer mapping,
 surface configuration/acquisition, queue uploads/submission, and WGPU JS
 callbacks. The shared feasibility fixture has verified asynchronous offscreen
 readback on Windows D3D12 and browser WebGPU. Its opt-in `DeviceDestroy` test
-delivered the loss callback in the browser, but not in the Windows native run.
+delivered the callback in browser WebGPU. The unmodified pinned native library
+did not deliver it on Windows; a local patch to the same pinned source now
+passes the native probes described below.
 
 The Odin package already exposes the native-only `wgpu.DevicePoll` wrapper;
 `InstanceProcessEvents` is also available. The SDL fixture calls both while
 async work is pending, without busy waiting. Its opt-in destroy is deferred
-until outside the map callback. On Windows D3D12, both a full readback scenario
-and a zero-resource/zero-submission destroy scenario fail to deliver the
-callback. In the minimal scenario the test was run with both
+until outside the map callback. On the unmodified Windows D3D12 binary, both a
+full readback scenario and a zero-resource/zero-submission destroy scenario
+failed to deliver the callback. The minimal scenario was tested with both
 `AllowProcessEvents` and `AllowSpontaneous`; a blocking poll returned
 `queue_empty=true`, and normal release completed without the callback. The
-browser did deliver `Destroyed` for the same fixture.
+browser delivered `Destroyed` for the same fixture.
 
-This is now traced to the pinned wgpu-native C API source rather than an
-unresolved Odin symbol: `wgpuAdapterRequestDevice` stores the C callback in its
-error sink but does not register a wgpu-core lost closure, while
+This was traced to the pinned wgpu-native C API source rather than an
+unresolved Odin symbol: `wgpuAdapterRequestDevice` stored the C callback in its
+error sink but did not register a wgpu-core lost closure, while
 `wgpuDeviceDestroy` only calls `context.device_destroy`. Core poll-time destroy
-notification is driven through that separate closure. See the pinned
+notification is driven through that separate closure. The checked-in patch
+[`dependencies/patches/wgpu-native-v29.0.1.1-device-lost-callback.patch`](patches/wgpu-native-v29.0.1.1-device-lost-callback.patch)
+adds that registration and dispatches the one-shot callback outside the
+error-sink mutex. It passed Windows D3D12 probes in both callback modes, plus a
+probe that releases the device wrapper before polling (callback received with
+`device_handle_present=false`), plus full offscreen readback followed by
+destroy and clean fixture teardown. See
+the [Windows patch validation record](../docs/validation/webgpu-device-loss-callback-patch-windows-2026-11-15.md)
+for the exact build and repro commands. The patch SHA-256 is
+`AE569A401C4014B96567F7BF459DF938ECAE96174C2C39E94336D86AE9243D5E`; the
+validated `wgpu_native.lib` SHA-256 is
+`B1E2660E4FB71FB77566D9997FB8D71BC029B4147F85002B7892E8171C19010B`. The
+unmodified Odin binary still has the issue; the patch is not upstreamed. See the pinned
 [native device request](https://github.com/gfx-rs/wgpu-native/blob/v29.0.1.1/src/lib.rs#L767-L827),
 [native destroy function](https://github.com/gfx-rs/wgpu-native/blob/v29.0.1/src/lib.rs#L2399-L2406),
 and [core closure/poll path](https://github.com/gfx-rs/wgpu/blob/v29.0.1/wgpu-core/src/device/global.rs#L1847-L1879).
 This source finding explains why polling, callback mode, and an empty queue
-didn't fix the CAPI case. A direct C caller remains useful to confirm the
-published binary matches the tagged source. The smallest reproducible case and
-the targeted callback-ownership fix are recorded in
-`docs/webgpu-migration.md`; no upstream report has been filed.
+didn't fix the original binary. No upstream report has been filed.
 
-Do not claim native loss notification or recovery until a fixed native library
-passes the probe. Pending-callback shutdown safety, resource retirement, and
-actual recovery remain unproven on both hosts.
+The Windows patch build used the release checkout's Rust channel `1.93`, Cargo
+lockfile, LLVM 23.1.5 for bindgen, and `WGPU_NATIVE_VERSION=29.0.1.1` for Odin's
+runtime version guard. It used `--no-default-features --features wgsl,dx12`;
+equivalent patched Metal and Vulkan builds have not been compiled or tested.
+Pending-callback shutdown safety beyond this explicit-destroy fixture, resource
+retirement, and real device recovery remain unproven.
 
 The JS wrapper reports `InstanceProcessEvents` as unimplemented, while browser
 async completion uses promises/event-loop callbacks; the browser destruction
-callback did arrive in the test. Pending-callback shutdown safety, resource
-retirement, and actual recovery remain unproven on both hosts.
+callback did arrive in the test. Browser pending-callback shutdown safety,
+resource retirement, and actual recovery remain unproven.
 
 ## Reproducible local checks
 

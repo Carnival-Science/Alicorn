@@ -40,8 +40,7 @@ invalidation, device recreation, secondary windows, or production performance.
 
 ## Opt-in device-destruction callback probe
 
-This deliberately destroys the device immediately after successful offscreen
-readback. It is diagnostic only and does not test recreation. Build and run the
+This is diagnostic only and does not test device recreation. Build and run the
 browser variant with:
 
 ~~~powershell
@@ -54,38 +53,16 @@ Reload the page. The browser should print the successful readback followed by a
 `device loss notification reason=Destroyed` message. Rebuild the normal variant
 afterward with `.\build.ps1 -Odin C:\odin\odin.exe`.
 
-For Windows native, build to a fresh executable so a running normal fixture is
-not overwritten:
+The unmodified Odin wgpu-native binary passes rendering/readback but does not
+deliver the native destroy callback on the tested Windows D3D12 setup. Source
+inspection found that pinned wgpu-native `v29.0.1.1` stores the C callback but
+does not register wgpu-core's device-lost closure. A narrowly scoped source
+patch now registers it; build and test instructions and results are in
+[`docs/validation/webgpu-device-loss-callback-patch-windows-2026-11-15.md`](../../docs/validation/webgpu-device-loss-callback-patch-windows-2026-11-15.md).
 
-~~~powershell
-C:\odin\odin.exe build . -define:FEASIBILITY_TEST_DEVICE_LOSS=true `
-    -out:out\device_loss_probe.exe
-Copy-Item C:\odin\vendor\sdl3\SDL3.dll out\SDL3.dll -Force
-Copy-Item C:\odin\vendor\wgpu\lib\wgpu-windows-x86_64-msvc-release\lib\wgpu_native.dll out\wgpu_native.dll -Force
-.\out\device_loss_probe.exe
-~~~
-
-The current Windows full-render probe passes readback and stops rendering after
-destroy. The SDL host calls the existing `wgpu.DevicePoll` wrapper and
-`InstanceProcessEvents`; the opt-in probe performs one blocking poll, reports
-whether the queue drained, then follows normal teardown. On the tested Windows
-D3D12 setup it reported `queue_empty=true`, but no native device-loss callback
-was observed.
-
-For a minimal zero-work native repro, build and run:
-
-~~~powershell
-C:\odin\odin.exe build . `
-    -define:FEASIBILITY_TEST_DEVICE_LOSS=true `
-    -define:FEASIBILITY_TEST_DEVICE_LOSS_EARLY=true `
-    -out:out\device_loss_early.exe
-.\out\device_loss_early.exe
-~~~
-
-To test the alternate callback dispatch mode, add
-`-define:FEASIBILITY_TEST_DEVICE_LOSS_SPONTANEOUS=true` to the build. Both modes
-currently report `queue_empty=true device_lost=false` on Windows D3D12. The
-probe exits through normal teardown. The browser variant still delivers
-`reason=Destroyed` after destruction is deferred until the host loop resumes.
-These are explicit-destroy tests, not simulations of an OS/driver-initiated
-device loss, and neither proves device recreation.
+With the patched static library, the zero-work native repro delivers
+`reason=Destroyed` with both `AllowProcessEvents` and `AllowSpontaneous`. The
+full fixture also completes readback, receives the callback, and exits through
+normal teardown. The opt-in fixture now exits automatically after callback
+delivery. These are explicit-destroy tests, not simulations of an
+OS/driver-initiated device loss, and they do not prove device recreation.

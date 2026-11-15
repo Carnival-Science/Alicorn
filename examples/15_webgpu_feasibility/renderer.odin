@@ -373,7 +373,18 @@ begin_test_device_loss :: proc() {
 			state.test_device_loss_pending=false
 			state.test_device_loss_triggered=true
 			state.ready=false
-			wgpu.DeviceDestroy(state.device)
+			when FEASIBILITY_TEST_DEVICE_LOSS_RELEASE_BEFORE_POLL {
+				device := state.device
+				state.device = nil
+				wgpu.DeviceDestroy(device)
+				if state.queue != nil {
+					wgpu.QueueRelease(state.queue)
+					state.queue = nil
+				}
+				wgpu.DeviceRelease(device)
+			} else {
+				wgpu.DeviceDestroy(state.device)
+			}
 		}
 	}
 }

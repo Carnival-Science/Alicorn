@@ -10,6 +10,7 @@ VERTEX_CAPACITY :: 256 * 1024
 FEASIBILITY_TEST_DEVICE_LOSS :: #config(FEASIBILITY_TEST_DEVICE_LOSS, false)
 FEASIBILITY_TEST_DEVICE_LOSS_EARLY :: #config(FEASIBILITY_TEST_DEVICE_LOSS_EARLY, false)
 FEASIBILITY_TEST_DEVICE_LOSS_SPONTANEOUS :: #config(FEASIBILITY_TEST_DEVICE_LOSS_SPONTANEOUS, false)
+FEASIBILITY_TEST_DEVICE_LOSS_RELEASE_BEFORE_POLL :: #config(FEASIBILITY_TEST_DEVICE_LOSS_RELEASE_BEFORE_POLL, false)
 
 Vertex :: struct {
 	position: [2]f32,
@@ -108,7 +109,11 @@ on_device_lost :: proc "c" (device:^wgpu.Device, reason:wgpu.DeviceLostReason, m
 	context=state.ctx
 	state.device_lost=true
 	state.ready=false
-	fmt.printf("[webgpu-feasibility] device loss notification reason=%v message=%s\n",reason,message)
+	device_handle_present := device != nil && device^ != nil
+	fmt.printf("[webgpu-feasibility] device loss notification reason=%v device_handle_present=%v message=%s\n",reason,device_handle_present,message)
+	when FEASIBILITY_TEST_DEVICE_LOSS {
+		state.quit = true
+	}
 }
 
 on_device :: proc "c" (status: wgpu.RequestDeviceStatus, device: wgpu.Device, message: string, userdata1, userdata2: rawptr) {

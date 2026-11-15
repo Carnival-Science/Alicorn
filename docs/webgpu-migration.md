@@ -27,7 +27,7 @@ backend-neutral; their current native payload renderer is not.
 
 | Phase | Exit evidence | Status |
 | --- | --- | --- |
-| 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion/offscreen async readback demonstrated; binding/lifecycle limitations recorded | In progress: shared rendering/readback pass; native destroy callback gap traced to wgpu-native v29.0.1.1 callback wiring |
+| 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion/offscreen async readback demonstrated; binding/lifecycle limitations recorded | In progress: native explicit-destroy callback now passes on Windows D3D12 with a pinned wgpu-native source patch; cross-platform lifecycle and recovery evidence remains open |
 | 1. Separation | renderer/host package boundary with unchanged runtime and app API | Not started |
 | 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | Not started |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | Not started |
@@ -81,22 +81,43 @@ The same missing registration was still present in the upstream wgpu-native
 `trunk` source inspected on 2026-11-15, so simply advancing the binary pin is
 not yet a validated remedy.
 
+### Targeted native callback patch validation
+
+The minimal fix is now captured as
+[`dependencies/patches/wgpu-native-v29.0.1.1-device-lost-callback.patch`](../dependencies/patches/wgpu-native-v29.0.1.1-device-lost-callback.patch).
+It registers wgpu-core's one-shot device-lost closure at native device creation,
+maps the core reason to the C API reason, takes the user callback out of the
+error-sink mutex before invoking it, and safely supplies a null device handle
+if the C wrapper has already been released. The patch is deliberately limited
+to the pinned dependency source; Alicorn's production renderer remains
+untouched.
+
+On 2026-11-15, the patched release library compiled with Odin's pinned
+`29.0.1.1` bindings and passed four Windows x64 / D3D12 fixture runs: early
+destroy with `AllowProcessEvents`, early destroy with `AllowSpontaneous`, final
+wrapper release before polling, and destroy after a successful full GPU
+readback. Every run printed exactly one `reason=Destroyed` notification and
+exited through normal fixture teardown; releasing the wrapper first reported
+`device_handle_present=false` as required by the nullable callback handle.
+This resolves the explicit-destroy callback discrepancy for the tested native
+configuration. The installed, unmodified Odin library still shows the
+original failure. Exact patch/build instructions and outputs are in the
+[Windows validation record](validation/webgpu-device-loss-callback-patch-windows-2026-11-15.md).
+
 The smallest reproducer is the fixture's zero-resource/zero-submission native
 probe with an explicitly supplied `deviceLostCallbackInfo`: destroy, call
 `DevicePoll(wait=true)`, then `InstanceProcessEvents`; it reports an empty
-queue but no callback. A direct C caller is still useful to validate the
-published binary against the tagged source, but this is no longer an
-unlocalized Odin-binding suspicion. The targeted upstream fix is to register a
-core lost closure at native device creation that safely owns and dispatches the
-C callback/userdata, while preserving the existing error-sink handling and
-callback lifetime rules. No upstream report has been filed from this work.
+queue but no callback with the unmodified library. This is no longer an
+unlocalized Odin-binding suspicion. The checked-in source patch registers the
+core lost closure and dispatches the C callback/userdata outside the error-sink
+lock while respecting the C callback lifetime rules. No upstream report has
+been filed from this work.
 
-Phase 0's shared rendering feasibility is demonstrated, but its required
-native callback/lifecycle acceptance remains open pending the dependency fix
-or a verified equivalent patch. The fixture does not yet establish real
-hardware-triggered loss, in-flight shutdown safety, resource retirement,
-device recreation, secondary windows, cross-platform native coverage, or
-production performance parity.
+Phase 0's shared-rendering feasibility and the patched Windows explicit-destroy
+callback path are demonstrated. Phase 0 remains open: this patch has not been
+validated on macOS or Linux, and the fixture does not establish
+driver/OS-initiated loss, device recreation, general in-flight shutdown safety,
+resource retirement, secondary windows, or production performance parity.
 
 ## Refreshed Windows validation (2026-11-15)
 
@@ -108,14 +129,21 @@ production performance parity.
   rebuilt both the native executable and standard `js_wasm32` artifact.
 - Native standard fixture: asynchronous 64×64 RGBA8 readback passed; center
   pixel was `(242, 64, 38, 255)`.
+- A local static wgpu-native `v29.0.1.1` library built from the pinned source
+  and checked-in callback patch passed early-destroy tests in both native
+  callback modes, as well as a final-handle-release-before-poll test. The
+  patched full fixture passed RGBA8 readback, delivered one `Destroyed`
+  notification, and exited through teardown. See the
+  [patch validation record](validation/webgpu-device-loss-callback-patch-windows-2026-11-15.md).
 - The Windows desktop capture bridge timed out while refreshing the browser
   view, so this run confirms the standard WASM build, not a new browser-GPU
   visual run. An earlier browser session had confirmed the shared scene,
-  resizing, and settled no-frame state. The native destroy-callback gap remains
-  as described above.
+  resizing, and settled no-frame state. The unmodified native callback gap and
+  the patched Windows result are distinguished above.
 - `git diff --check`: passed.
 
 Phase 0 therefore has credible shared-renderer feasibility evidence, but its
-native device-loss/lifecycle acceptance item remains open. Do not treat this as
-a completed lifecycle gate for production renderer work until the discrepancy
-is resolved or explicitly accepted by the project owner.
+cross-platform device-loss/lifecycle acceptance remains open. The explicit
+destroy callback is now verified for the patched Windows D3D12 library; do not
+treat that limited probe as evidence of real device-loss recovery or a completed
+lifecycle gate for production renderer work.
