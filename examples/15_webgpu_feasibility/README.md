@@ -117,3 +117,6 @@ they do not prove device recreation.
 On macOS arm64, `sh tools/validate_wgpu_native_device_loss_macos.sh` builds the
 same pinned wgpu-native source patch with Metal and runs all four native
 variants. The script restores the downloaded Odin package library on exit.
+The hosted macOS arm64 foundation run for [`cde2f08`](https://github.com/samanshaiza004/alicorn/actions/runs/43756274305)
+passed this step. This does not simulate driver-initiated loss or prove
+recovery.

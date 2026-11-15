@@ -27,7 +27,7 @@ backend-neutral; their current native payload renderer is not.
 
 | Phase | Exit evidence | Status |
 | --- | --- | --- |
-| 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: native/JS fixture and Metal readback/resize pass on hosted macOS arm64 CI; patched explicit-destroy callback is locally validated on Windows D3D12, with Metal patch validation queued; Linux, driver/OS loss, and recovery evidence remain open |
+| 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: shared native/JS fixture, Metal readback/resize, and patched explicit-destroy callback probes pass on hosted macOS arm64; patched callback probes also pass locally on Windows D3D12; Linux, driver/OS loss, and recovery evidence remain open |
 | 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring and CPU surface mesh assembly plus text/image/icon preparation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
 | 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | Not started |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | Not started |
@@ -216,9 +216,9 @@ core lost closure and dispatches the C callback/userdata outside the error-sink
 lock while respecting the C callback lifetime rules. No upstream report has
 been filed from this work.
 
-Phase 0's shared-rendering feasibility and the patched Windows explicit-destroy
-callback path are demonstrated. Phase 0 remains open: this patch has not been
-validated on macOS or Linux, and the fixture does not establish
+Phase 0's shared-rendering feasibility and the patched explicit-destroy
+callback path are demonstrated on Windows D3D12 and hosted macOS arm64 Metal.
+Phase 0 remains open: Linux is not validated, and the fixture does not establish
 driver/OS-initiated loss, device recreation, general in-flight shutdown safety,
 resource retirement, secondary windows, or production performance parity.
 
@@ -279,8 +279,11 @@ resource retirement, secondary windows, or production performance parity.
   release-before-poll, and post-readback variants passed. The unmodified Odin
   package (which selected Vulkan on this host) was a negative control and
   correctly failed with zero callbacks.
-  A reproducible patched Metal build-and-run step is now part of macOS CI; its
-  result is pending this revision.
+  The reproducible patched Metal build-and-run step passed in the
+  [macOS foundation run for `cde2f08`](https://github.com/samanshaiza004/alicorn/actions/runs/43756274305).
+  It compiled the pinned wgpu-native patch for Metal and passed the same four
+  strict callback variants. This is hosted macOS arm64 runner evidence, not a
+  maintainer-local Mac session.
 - Odin's installed browser-side `AdapterGetInfo` bridge omits the
   `GPUAdapterInfo` argument when calling `genericGetAdapterInfo`. The fixture
   now works around this only in its page imports and captures the browser's
@@ -300,7 +303,7 @@ exit. It also passed readback and queue completion. This verifies WGPU surface
 submission, not physical display scanout.
 
 Phase 0 therefore has credible shared-renderer feasibility evidence, but its
-cross-platform device-loss/lifecycle acceptance remains open. The explicit
-destroy callback is now verified for the patched Windows D3D12 library; do not
-treat that limited probe as evidence of real device-loss recovery or a completed
-lifecycle gate for production renderer work.
+cross-platform device-loss/lifecycle acceptance remains open. The patched
+explicit-destroy callback is verified on Windows D3D12 and hosted macOS arm64
+Metal. Do not treat those limited probes as evidence of driver/OS-initiated
+device-loss recovery or a completed lifecycle gate for production renderer work.

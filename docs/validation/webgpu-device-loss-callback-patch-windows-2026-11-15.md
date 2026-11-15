@@ -111,8 +111,11 @@ same fixture's browser destruction callback had already passed.
 
 ## Limits
 
-This verifies explicit `DeviceDestroy` on Windows D3D12. It does not simulate
-driver/OS-initiated device loss, validate recovery or resource recreation, or
-establish callback/shutdown behavior on macOS and Linux. The patch has not been
+The tests recorded above are the Windows D3D12 validation. Separately, the
+macOS arm64 hosted foundation run for [`cde2f08`](https://github.com/samanshaiza004/alicorn/actions/runs/43756274305)
+compiled the same patch for Metal and passed all four strict explicit-destroy
+callback variants. Neither platform run simulates driver/OS-initiated device
+loss, validates recovery or resource recreation, or establishes general
+in-flight shutdown safety. Linux remains unvalidated. The patch has not been
 submitted upstream; the upstream `trunk` request-device path inspected on
 2026-11-15 still lacked core lost-closure registration.
