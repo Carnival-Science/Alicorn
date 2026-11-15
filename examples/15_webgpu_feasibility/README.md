@@ -7,9 +7,15 @@ are shared. Only host_sdl3.odin and host_web.odin differ by platform.
 The scene exercises solid geometry, alpha blending, a rounded surface, clipped
 checker texture, Runa-shaped/rasterized text in an R8 atlas, and CPU waveform
 bars. A marker animates for 1.8 seconds. The browser scheduler stops requesting
-frames when it settles and wakes for resize or pointer activation. A 64×64
-offscreen RGBA target is copied to a padded staging buffer and mapped
-asynchronously; its callback checks the pixel result.
+frames when it settles and wakes for resize or pointer activation. A 63×64
+offscreen RGBA target is copied with a 256-byte row pitch (252 texel bytes plus
+four padding bytes per row) to a staging buffer and mapped asynchronously; its
+callback checks thirteen pixel samples across the rows. The fixture also
+performs a nonzero-offset partial vertex-buffer update and a WGSL uniform
+buffer layout/binding probe, checking both rendered colors. It requests
+`QueueOnSubmittedWorkDone`; the bounded native smoke waits for both async
+callbacks before teardown. Browser probe results appear in the page's live
+validation status as well as its developer console.
 
 ## Windows native
 
@@ -27,7 +33,8 @@ For a bounded native adapter/render/readback smoke that exits on completion:
 .\out\webgpu_feasibility_smoke.exe
 ~~~
 
-The smoke exits nonzero if the asynchronous pixel check fails.
+The smoke exits nonzero if any pixel probe or the queue-completion callback
+fails.
 
 ## macOS native
 

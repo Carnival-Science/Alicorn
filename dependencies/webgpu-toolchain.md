@@ -82,9 +82,13 @@ limits may still be queried and logged. This is a scoped feasibility workaround,
 not permission to weaken the production device requirements.
 
 The WebGPU bindings expose async adapter/device requests, async buffer mapping,
-surface configuration/acquisition, queue uploads/submission, and WGPU JS
-callbacks. The shared feasibility fixture has verified asynchronous offscreen
-readback on Windows D3D12 and browser WebGPU. Its opt-in `DeviceDestroy` test
+`QueueOnSubmittedWorkDone`, surface configuration/acquisition, queue
+uploads/submission, and WGPU JS callbacks. The shared feasibility fixture has
+verified asynchronous offscreen readback, nonzero-offset partial vertex-buffer
+updates, WGSL uniform-buffer layout/binding, and queue-completion callbacks on
+Windows native and browser WebGPU. Browser pixel-probe results are exposed in
+the page's accessible live status as well as the developer console. Its opt-in
+`DeviceDestroy` test
 delivered the callback in browser WebGPU. The unmodified pinned native library
 did not deliver it on Windows; a local patch to the same pinned source now
 passes the native probes described below.
@@ -150,7 +154,9 @@ context. No Emscripten toolchain is part of this setup.
 ## Browser adapter metadata bridge (2026-11-15)
 
 The browser feasibility fixture was executed in a real browser WebGPU session,
-and its shared asynchronous offscreen readback passed all ten pixel probes.
+and its shared asynchronous offscreen readback passed all thirteen pixel
+probes, including partial buffer upload, uniform-buffer binding, and a padded
+256-byte row layout for a 63-pixel RGBA8 texture.
 That proves the browser runtime path works; the adapter classification probe
 below adds evidence about the browser's fallback flag, but is not by itself a
 physical-GPU or hardware-acceleration benchmark.
@@ -171,11 +177,11 @@ the pinned toolchain.
 The local browser session reported `fallback=false`, vendor `nvidia`, and
 architecture `turing`; device and description were redacted. Odin's returned
 `AdapterInfo` then reported backend `WebGPU`, type `Unknown`, and the same
-vendor/architecture. The actual browser runtime readback passed all ten pixel
-probes and settled without scheduling another frame. Per the WebGPU spec, the
-flag says whether the selected adapter is a fallback adapter; a false value is
-not a general proof of physical-GPU acceleration. Metadata may be redacted, and
-other browser implementations may not expose the flag through this binding.
+vendor/architecture. The actual browser runtime readback passed all thirteen
+pixel probes and settled without scheduling another frame. Per the WebGPU spec,
+the flag says whether the selected adapter is a fallback adapter; a false value
+is not a general proof of physical-GPU acceleration. Metadata may be redacted,
+and other browser implementations may not expose the flag through this binding.
 The JS wrapper's `AdapterInfoFreeMembers` is a no-op; this fixture queries the
 metadata once at startup, so the four allocated adapter strings are bounded
 to one call for the lifetime of this page.

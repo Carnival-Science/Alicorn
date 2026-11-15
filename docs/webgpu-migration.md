@@ -27,7 +27,7 @@ backend-neutral; their current native payload renderer is not.
 
 | Phase | Exit evidence | Status |
 | --- | --- | --- |
-| 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion/offscreen async readback demonstrated; binding/lifecycle limitations recorded | In progress: native explicit-destroy callback now passes on Windows D3D12 with a pinned wgpu-native source patch; cross-platform lifecycle and recovery evidence remains open |
+| 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: native explicit-destroy callback passes on Windows D3D12 with a pinned wgpu-native source patch; macOS/Linux and real device-loss/recovery evidence remain open |
 | 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring and CPU surface mesh assembly plus text/image/icon preparation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
 | 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | Not started |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | Not started |
@@ -126,17 +126,25 @@ performance comparison.
 
 `examples/15_webgpu_feasibility` builds from the same Odin renderer source for
 Windows SDL3/wgpu-native and browser `js_wasm32`. Both targets rendered the
-fixture and passed ten checks from an asynchronous 64×64 RGBA8 readback:
+fixture and passed thirteen checks from an asynchronous 63×64 RGBA8 readback,
+copied using a 256-byte row pitch with four padding bytes per row:
 clear color, solid color, sampled checker texture, partial texture upload,
-source-over blend, Runa glyph-atlas coverage, inside/outside scissor clipping,
-rounded-rectangle fill, and rounded-corner exclusion. This exercises more than
-the on-screen scene: each pixel result is asserted identically by the shared
-Odin callback on both targets. The scene also exercises partial vertex-buffer
-uploads, resize, waveform bars, and demand-driven animation that stops after
-settling. The original Windows native run used D3D12 on an RTX 2080 SUPER. A
+nonzero-offset partial vertex-buffer upload, a uniform-buffer layout and
+binding probe, source-over blend, Runa glyph-atlas coverage, inside/outside
+scissor clipping, rounded-rectangle fill, rounded-corner exclusion, and a last-
+row check. This exercises more than the on-screen scene: each pixel result is
+asserted identically by the shared Odin callback on both targets. The scene also
+exercises partial vertex-buffer uploads, aligned vertex fields, resize, waveform
+bars, and demand-driven animation that stops after settling. The original
+Windows native run used D3D12 on an RTX 2080 SUPER. A
 later fresh run is recorded below with the backend it actually selected. The
 browser fixture was executed in a real WebGPU browser session; its adapter
-fallback flag was captured in the later metadata probe below.
+fallback flag was captured in the later metadata probe below. The readback
+result is exposed in the page's live accessible validation status. The last-row
+and partial-buffer samples exercise the padded row pitch and nonzero upload offset.
+Both targets also reported successful `QueueOnSubmittedWorkDone` callbacks;
+the bounded native smoke waits for both queue completion and async readback
+before exit.
 
 An opt-in destruction experiment (`FEASIBILITY_TEST_DEVICE_LOSS=true`) delivered
 the `Destroyed` device-loss callback in browser WebGPU after the readback
@@ -217,15 +225,17 @@ resource retirement, secondary windows, or production performance parity.
 - `examples/15_webgpu_feasibility/build.ps1 -Odin C:\odin\odin.exe`: passed;
   rebuilt the interactive and bounded-smoke native executables plus the
   standard `js_wasm32` artifact.
-- The bounded native smoke exited successfully after asynchronous 64×64 RGBA8
-  readback; all ten named pixel probes passed. A fresh local run selected
-  Vulkan and reported a discrete NVIDIA GeForce RTX 2080 SUPER adapter with
-  description `595.97`, while the earlier Windows run selected D3D12. Both
-  backend results are retained as separate observations rather than treating
-  backend selection as fixed.
-- The rebuilt browser WASM was loaded in the local WebGPU browser session; its
-  console reported all ten pixel probes passed and the scheduler returned to
-  `Settled: no frame is scheduled`. The fixture-local adapter-info override
+- The bounded native smoke exited successfully after asynchronous 63×64 RGBA8
+  readback with padded 256-byte rows; all thirteen named pixel probes passed. A
+  fresh local run selected Vulkan and reported a discrete NVIDIA GeForce RTX
+  2080 SUPER adapter with description `595.97`, while the earlier Windows run
+  selected D3D12. Both backend results are retained as separate observations
+  rather than treating backend selection as fixed. The new
+  `QueueOnSubmittedWorkDone` callback also reported `Success`; the smoke waits
+  for both callbacks before teardown.
+- The rebuilt browser WASM was loaded in the local WebGPU browser session. Its
+  accessible live status reported all thirteen pixel probes passed and its
+  queue callback reported `Success`. The fixture-local adapter-info override
   reported `fallback=false`, vendor `nvidia`, and architecture `turing`; device
   and description were redacted. Odin's `AdapterGetInfo` returned backend
   `WebGPU`, type `Unknown`, and those same available identifiers. This is

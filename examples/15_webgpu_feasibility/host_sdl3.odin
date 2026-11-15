@@ -31,7 +31,7 @@ os_run :: proc() {
 		for SDL.PollEvent(&event) { handle_event(event) }
 		os_process_gpu_events()
 		if state.quit { break }
-		needs_wakeup := state.readback_pending || state.animation_seconds < ANIMATION_SECONDS
+		needs_wakeup := state.readback_pending || state.queue_work_done_pending || state.animation_seconds < ANIMATION_SECONDS
 		when FEASIBILITY_TEST_DEVICE_LOSS {
 			needs_wakeup = needs_wakeup || (!state.ready && !state.device_lost)
 		}
@@ -63,7 +63,7 @@ os_get_surface :: proc(instance:wgpu.Instance)->wgpu.Surface {
 	return sdl3glue.GetSurface(instance,state.os.window)
 }
 os_process_gpu_events :: proc() {
-	needs_poll := state.readback_pending
+	needs_poll := state.readback_pending || state.queue_work_done_pending
 	when FEASIBILITY_TEST_DEVICE_LOSS {
 		needs_poll = needs_poll || (!state.ready && !state.device_lost)
 	}

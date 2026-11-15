@@ -7,6 +7,11 @@ import runa "../../third_party/Runa"
 
 ANIMATION_SECONDS :: 1.8
 VERTEX_CAPACITY :: 256 * 1024
+READBACK_WIDTH :: 63
+READBACK_HEIGHT :: 64
+READBACK_BYTES_PER_PIXEL :: 4
+READBACK_BYTES_PER_ROW :: 256
+READBACK_BUFFER_BYTES :: READBACK_BYTES_PER_ROW * READBACK_HEIGHT
 FEASIBILITY_TEST_DEVICE_LOSS :: #config(FEASIBILITY_TEST_DEVICE_LOSS, false)
 FEASIBILITY_TEST_DEVICE_LOSS_EARLY :: #config(FEASIBILITY_TEST_DEVICE_LOSS_EARLY, false)
 FEASIBILITY_TEST_DEVICE_LOSS_SPONTANEOUS :: #config(FEASIBILITY_TEST_DEVICE_LOSS_SPONTANEOUS, false)
@@ -39,6 +44,7 @@ state: struct {
 	bind_group: wgpu.BindGroup,
 	sampler: wgpu.Sampler,
 	vertex_buffer: wgpu.Buffer,
+	probe_uniform_buffer: wgpu.Buffer,
 	vertex_capacity: u64,
 	image_texture, glyph_texture: wgpu.Texture,
 	image_view, glyph_view: wgpu.TextureView,
@@ -51,6 +57,7 @@ state: struct {
 	offscreen_view: wgpu.TextureView,
 	readback_buffer: wgpu.Buffer,
 	readback_pending, readback_done: bool,
+	queue_work_done_pending, queue_work_done, queue_work_done_ok: bool,
 	width, height: u32,
 	animation_seconds: f32,
 	ready, dirty, quit, device_lost: bool,
@@ -75,7 +82,9 @@ main :: proc() {
 	}, {callback = on_adapter})
 	os_run()
 	when FEASIBILITY_TEST_QUIT_AFTER_READBACK {
-		if !state.readback_done { os_exit_failure() }
+		if !state.readback_done || !state.queue_work_done || !state.queue_work_done_ok {
+			os_exit_failure()
+		}
 	}
 }
 
@@ -131,6 +140,19 @@ on_device_lost :: proc "c" (device:^wgpu.Device, reason:wgpu.DeviceLostReason, m
 	fmt.printf("[webgpu-feasibility] device loss notification reason=%v device_handle_present=%v message=%s\n",reason,device_handle_present,message)
 	when FEASIBILITY_TEST_DEVICE_LOSS {
 		state.quit = true
+	}
+}
+
+on_queue_work_done :: proc "c" (status:wgpu.QueueWorkDoneStatus, message:wgpu.StringView, userdata1,userdata2:rawptr) {
+	context = state.ctx
+	state.queue_work_done_pending = false
+	state.queue_work_done = true
+	state.queue_work_done_ok = status == .Success
+	fmt.printf("[webgpu-feasibility] queue work done status=%v message=%s\n", status, message)
+	when FEASIBILITY_TEST_QUIT_AFTER_READBACK {
+		if !state.readback_pending {
+			state.quit = true
+		}
 	}
 }
 
@@ -207,6 +229,7 @@ finish :: proc() {
 	if state.image_view != nil { wgpu.TextureViewRelease(state.image_view) }
 	if state.image_texture != nil { wgpu.TextureDestroy(state.image_texture); wgpu.TextureRelease(state.image_texture) }
 	if state.vertex_buffer != nil { wgpu.BufferDestroy(state.vertex_buffer); wgpu.BufferRelease(state.vertex_buffer) }
+	if state.probe_uniform_buffer != nil { wgpu.BufferDestroy(state.probe_uniform_buffer); wgpu.BufferRelease(state.probe_uniform_buffer) }
 	if state.pipeline != nil { wgpu.RenderPipelineRelease(state.pipeline) }
 	if state.offscreen_pipeline != nil { wgpu.RenderPipelineRelease(state.offscreen_pipeline) }
 	if state.pipeline_layout != nil { wgpu.PipelineLayoutRelease(state.pipeline_layout) }

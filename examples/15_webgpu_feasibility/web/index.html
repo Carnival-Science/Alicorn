@@ -8,15 +8,29 @@ html,body{height:100%;margin:0;background:#101319;color:#dfe6e8;font:14px system
 body{display:grid;grid-template-rows:1fr auto}
 canvas{width:min(100vw,calc((100vh - 40px)*16/9));height:auto;aspect-ratio:16/9;display:block;margin:auto;touch-action:none}
 #footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;background:#191f25;color:#abb8bd}
+#diagnostics{font:11px ui-monospace,monospace;color:#91c8a3;margin-top:3px;overflow-wrap:anywhere;white-space:pre-wrap;max-height:54px;overflow:auto}
 #resize{border:1px solid #45505a;border-radius:4px;background:#242d35;color:#dfe6e8;padding:5px 9px;cursor:pointer}
 </style></head>
 <body>
 <canvas id="wgpu-canvas"></canvas>
-<div id="footer"><div id="status">Starting shared Odin WebGPU fixture… click the canvas to replay.</div><button id="resize" type="button">Resize surface</button></div>
+<div id="footer"><div><div id="status">Starting shared Odin WebGPU fixture… click the canvas to replay.</div><div id="diagnostics" role="status" aria-live="polite">GPU readback probes pending.</div></div><button id="resize" type="button">Resize surface</button></div>
 <script src="./odin.js"></script><script src="./wgpu.js"></script>
 <script>
 (async()=>{
  const status=document.querySelector("#status");
+ const diagnostics=document.querySelector("#diagnostics");
+ for(const level of ["log","info","warn","error"]){
+  const original=console[level].bind(console);
+  console[level]=(...args)=>{
+   const line=args.map(value=>String(value)).join(" ");
+   if(line.startsWith("[webgpu-feasibility]")){
+    const recent=diagnostics.textContent.split("\n").filter(item=>item.startsWith("[webgpu-feasibility]"));
+    recent.push(line);
+    diagnostics.textContent=recent.slice(-4).join("\n");
+   }
+   original(...args);
+  };
+ }
  const memoryInterface=new odin.WasmMemoryInterface();
  memoryInterface.setIntSize(4);
  const wgpuInterface=new odin.WebGPUInterface(memoryInterface);
