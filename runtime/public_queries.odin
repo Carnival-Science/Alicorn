@@ -71,6 +71,44 @@ viewport_bounds :: proc(rt: ^Runtime) -> Rect {
 	return rt.viewport
 }
 
+// runtime_set_viewport publishes a host-owned logical viewport. It must be
+// called between frames on the Runtime's owning thread. A changed viewport
+// requests a fresh application description so layout and virtualized content
+// can be recomputed against the new extent. Invalid values and calls during
+// an open frame are rejected without mutation.
+runtime_set_viewport :: proc(rt: ^Runtime, viewport: Rect) -> bool {
+	if rt == nil || rt.frame_open ||
+		!number_is_finite(viewport.x) || !number_is_finite(viewport.y) ||
+		!number_is_finite(viewport.w) || !number_is_finite(viewport.h) ||
+		viewport.w < 0 || viewport.h < 0 {
+		return false
+	}
+	if rt.viewport == viewport { return false }
+	rt.viewport = viewport
+	invalidate_root(rt, "host logical viewport changed")
+	return true
+}
+
+// Paint_Display_List_View exposes the last completed composition for a host
+// renderer. commands borrow Runtime storage and are valid only until the next
+// Runtime mutation or frame operation. Consume them synchronously on the
+// Runtime's owning thread; copy the commands and any referenced text, image,
+// geometry, or font resources before retaining data beyond that call. This is
+// not a serialized or GPU-fence-owned render packet.
+Paint_Display_List_View :: struct {
+	commands: []Paint_Command,
+	revision: u64,
+}
+
+paint_display_list :: proc(rt: ^Runtime) -> (view: Paint_Display_List_View, ok: bool) {
+	if rt == nil || rt.frame_open { return }
+	view = Paint_Display_List_View{
+		commands=rt.display[:],
+		revision=rt.presentation_revision,
+	}
+	return view, true
+}
+
 layout_is_pending :: proc(rt: ^Runtime) -> bool {
 	return rt != nil && rt.layout_pending
 }
