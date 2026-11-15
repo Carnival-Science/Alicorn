@@ -210,6 +210,9 @@ resource retirement, secondary windows, or production performance parity.
   existing large-stack-local warnings for `Native_Secondary_Window`.
 - `examples/15_webgpu_feasibility/build.ps1 -Odin C:\odin\odin.exe`: passed;
   rebuilt both the native executable and standard `js_wasm32` artifact.
+- Windows foundation CI now runs that same native-plus-browser fixture build
+  after compiling all examples. This branch has the local build evidence; its
+  hosted workflow result remains pending until the branch is pushed.
 - Native standard fixture: asynchronous 64×64 RGBA8 readback passed; center
   pixel was `(242, 64, 38, 255)`.
 - A local static wgpu-native `v29.0.1.1` library built from the pinned source

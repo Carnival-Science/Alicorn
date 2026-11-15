@@ -42,6 +42,9 @@ jobs:
       - name: Compile every example
         shell: pwsh
         run: ./tools/build_examples.ps1 -Odin odin
+      - name: Build shared native and browser WebGPU feasibility fixture
+        shell: pwsh
+        run: ./examples/15_webgpu_feasibility/build.ps1 -Odin odin
       - name: Smoke-test example runners
         shell: pwsh
         run: |
