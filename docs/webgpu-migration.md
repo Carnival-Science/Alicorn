@@ -205,9 +205,10 @@ resource retirement, secondary windows, or production performance parity.
 ## Refreshed Windows validation (2026-11-15)
 
 - `tools/test.ps1 -Odin C:\odin\odin.exe`: passed (343 runtime foundation
-  tests, 193 native SDL_GPU frontend tests, and the script's ABI, AccessKit,
-  UIA, text-input/navigation, and host-ownership checks). Odin emitted the
-  existing large-stack-local warnings for `Native_Secondary_Window`.
+  tests, 194 native SDL_GPU frontend tests, 2 shared CPU renderer tests, 6
+  scroll-capture tests, and the script's ABI, AccessKit, UIA,
+  text-input/navigation, and host-ownership checks). Odin emitted the existing
+  large-stack-local warnings for `Native_Secondary_Window`.
 - `examples/15_webgpu_feasibility/build.ps1 -Odin C:\odin\odin.exe`: passed;
   rebuilt both the native executable and standard `js_wasm32` artifact.
 - Windows foundation CI now runs that same native-plus-browser fixture build
