@@ -3,6 +3,7 @@ package alicorn_sdl_gpu
 import "core:c"
 import "core:math"
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 import "vendor:sdl3"
 
 // Solid rectangles use the same simple sampled-white shader contract as the
@@ -197,10 +198,10 @@ native_solid_visible_command :: proc(
 	// Rounded fill and stroke meshes emit a transparent antialias fringe even
 	// when the stroke is inside or absent. Keep culling consistent with that
 	// paint footprint, including the outer edge of a rounded shadow.
-	if native_solid_shape_is_rounded(shape) {
-		outset_pixels += NATIVE_ROUNDED_ANTIALIAS_FRINGE
+	if cpu_renderer.Shape_Is_Rounded(shape) {
+		outset_pixels += cpu_renderer.ROUNDED_ANTIALIAS_FRINGE
 	} else if shape.kind == .Circle || shape.kind == .Arc || shape.kind == .Cubic_Bezier {
-		outset_pixels += NATIVE_VECTOR_ANTIALIAS_FRINGE
+		outset_pixels += cpu_renderer.VECTOR_ANTIALIAS_FRINGE
 	}
 	if outset_pixels > 0 {
 		visible.bounds.x -= outset_pixels / max(scale_x, 0.001)
@@ -278,7 +279,7 @@ native_solid_build :: proc(
 		visible_command := native_solid_visible_command(draw, surface, material, scale_x, scale_y, shape)
 		_, _, _, _, visible := native_solid_pixel_bounds(visible_command, scale_x, scale_y, target_w, target_h)
 		if visible {
-			required_vertices += native_solid_material_vertex_count(
+			required_vertices += cpu_renderer.Material_Vertex_Count(
 				material, surface.physical_height, shape, surface.stroke, surface.top_edge_gap,
 				bounds=draw.bounds, scale_x=scale_x, scale_y=scale_y, fill=surface.fill,
 			)
@@ -297,7 +298,7 @@ native_solid_build :: proc(
 		visible_command := native_solid_visible_command(draw, surface, material, scale_x, scale_y, shape)
 		x0, y0, x1, y1, visible := native_solid_pixel_bounds(visible_command, scale_x, scale_y, target_w, target_h)
 		if !visible { continue }
-		needed := native_solid_material_vertex_count(
+		needed := cpu_renderer.Material_Vertex_Count(
 			material, surface.physical_height, shape, surface.stroke, surface.top_edge_gap,
 			bounds=draw.bounds, scale_x=scale_x, scale_y=scale_y, fill=surface.fill,
 		)
@@ -308,13 +309,13 @@ native_solid_build :: proc(
 			return false
 		}
 		first := sdl3.Uint32(len(renderer.vertices))
-		rounded := native_solid_shape_is_rounded(shape)
+		rounded := cpu_renderer.Shape_Is_Rounded(shape)
 		if shape.kind == .Circle {
 			base := native_solid_unclipped_pixel_bounds(draw, scale_x, scale_y)
 			stroke := surface.stroke
 			stroke.width *= max(scale_x, scale_y)
-			segments := native_solid_vector_segments(shape, draw.bounds, scale_x, scale_y)
-			native_solid_append_circle_surface(
+			segments := cpu_renderer.Vector_Segments(shape, draw.bounds, scale_x, scale_y)
+			cpu_renderer.Append_Circle_Surface(
 				&renderer.vertices, base, surface.fill, stroke, draw.stroke_placement,
 				draw.opacity, 1, 1, segments,
 			)
@@ -325,8 +326,8 @@ native_solid_build :: proc(
 				has_scissor=true,
 			}
 		} else if shape.kind == .Arc || shape.kind == .Cubic_Bezier {
-			segments := native_solid_vector_segments(shape, draw.bounds, scale_x, scale_y)
-			points: [NATIVE_VECTOR_CURVE_MAX_SEGMENTS+1][2]f32
+			segments := cpu_renderer.Vector_Segments(shape, draw.bounds, scale_x, scale_y)
+			points: [cpu_renderer.VECTOR_CURVE_MAX_SEGMENTS+1][2]f32
 			point_count := segments+1
 			origin_x := (draw.bounds.x+draw.translation[0])*scale_x
 			origin_y := (draw.bounds.y+draw.translation[1])*scale_y
@@ -355,7 +356,7 @@ native_solid_build :: proc(
 			}
 			stroke := surface.stroke
 			stroke.width *= max(scale_x, scale_y)
-			native_solid_append_stroked_path(&renderer.vertices, points[:point_count], stroke, draw.opacity)
+			cpu_renderer.Append_Stroked_Path(&renderer.vertices, points[:point_count], stroke, draw.opacity)
 			renderer.draws[i] = Native_Solid_Draw{
 				first_vertex=first,
 				vertex_count=sdl3.Uint32(len(renderer.vertices)-int(first)),
@@ -364,7 +365,7 @@ native_solid_build :: proc(
 			}
 		} else if shape.kind == .Connected_Tab {
 			base := native_solid_unclipped_pixel_bounds(draw, scale_x, scale_y)
-			native_solid_append_connected_tab(&renderer.vertices, base, surface.fill, draw.opacity, max(scale_x,scale_y))
+			cpu_renderer.Append_Connected_Tab(&renderer.vertices, base, surface.fill, draw.opacity, max(scale_x,scale_y))
 			renderer.draws[i] = Native_Solid_Draw{
 				first_vertex=first, vertex_count=sdl3.Uint32(len(renderer.vertices)-int(first)),
 				scissor=native_solid_pixel_scissor(draw, scale_x, scale_y, target_w, target_h), has_scissor=true,
@@ -391,7 +392,7 @@ native_solid_build :: proc(
 			}
 			stroke := surface.stroke
 			stroke.width *= max(scale_x, scale_y)
-			native_solid_append_rounded_material_surface(
+			cpu_renderer.Append_Rounded_Material_Surface(
 				&renderer.vertices, base, shadow, surface.fill, pixel_material,
 				surface.physical_height, draw.opacity, pixel_shape, stroke, draw.stroke_placement, gradient,
 			)
@@ -434,9 +435,9 @@ native_solid_build :: proc(
 				// surfaces. Only opted-in gradients enter per-vertex interpolation.
 				native_solid_append_quad(&renderer.vertices, base.x, base.y, base.x+base.w, base.y+base.h,
 					[4]f32{surface.fill.r, surface.fill.g, surface.fill.b, surface.fill.a*draw.opacity})
-				native_solid_append_rect_stroke(&renderer.vertices, base, stroke, draw.opacity, draw.stroke_placement, gap)
+				cpu_renderer.Append_Rect_Stroke(&renderer.vertices, base, stroke, draw.opacity, draw.stroke_placement, gap)
 			} else {
-				native_solid_append_material_surface(&renderer.vertices, base, shadow, surface.fill, material, surface.physical_height, draw.opacity, stroke, draw.stroke_placement, gap, gradient)
+				cpu_renderer.Append_Material_Surface(&renderer.vertices, base, shadow, surface.fill, material, surface.physical_height, draw.opacity, stroke, draw.stroke_placement, gap, gradient)
 			}
 			renderer.draws[i] = Native_Solid_Draw{
 				first_vertex=first,

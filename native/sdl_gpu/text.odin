@@ -4,17 +4,14 @@ import "core:c"
 import "core:math"
 import "core:time"
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 import runa "../../third_party/Runa"
 import "vendor:sdl3"
 
 NATIVE_TEXT_INITIAL_VERTICES :: 65536
 NATIVE_TEXT_SUBPIXEL_BUCKETS :: 4
 
-Native_Text_Vertex :: struct {
-	position: [3]f32,
-	color:    [4]f32,
-	uv:       [2]f32,
-}
+Native_Text_Vertex :: cpu_renderer.Vertex
 
 Native_Text_Uniforms :: struct {
 	proj_view: [4][4]f32,
