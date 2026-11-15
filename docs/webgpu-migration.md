@@ -23,6 +23,24 @@ The exact paint-stream order is a correctness contract. The renderer must not
 sort primitives into batches that change stacking. GPU surface declarations are
 backend-neutral; their current native payload renderer is not.
 
+## Existing issue alignment (2026-11-15)
+
+- Open [#163](https://github.com/samanshaiza004/alicorn/issues/163) contains an
+  earlier bounded-browser research plan whose boundary explicitly says not to
+  replace SDL_GPU. This owner-directed migration supersedes that restriction.
+  Its browser input, accessibility, text/IME and capability-limit questions
+  remain relevant; this migration tracker is authoritative for renderer scope
+  and phase gates.
+- [#162](https://github.com/samanshaiza004/alicorn/issues/162) is closed with
+  the host-owned SDL_GPU presenter boundary now on `master`. That validates the
+  current external-frame seam, but does not prove that a WebGPU renderer
+  consumes Alicorn's production paint stream.
+- Open [#204](https://github.com/samanshaiza004/alicorn/issues/204) describes
+  failure recovery after acquiring an SDL_GPU swapchain texture. It remains a
+  risk for the temporary reference path while SDL_GPU is retained; it does not
+  dictate the WebGPU frame transaction. Keep its host/renderer recovery
+  requirements visible when comparing the reference implementation.
+
 ## Phase tracker
 
 | Phase | Exit evidence | Status |
