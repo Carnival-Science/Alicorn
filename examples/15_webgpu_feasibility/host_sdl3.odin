@@ -9,6 +9,8 @@ import "vendor:wgpu/sdl3glue"
 
 OS :: struct { window: ^SDL.Window }
 
+SMOKE_TIMEOUT_SECONDS :: 15.0
+
 os_init :: proc() {
 	if !SDL.Init({.VIDEO}) { fmt.panicf("SDL init failed: %s",SDL.GetError()) }
 	state.os.window=SDL.CreateWindow("Alicorn WebGPU feasibility",960,540,{.RESIZABLE,.HIGH_PIXEL_DENSITY})
@@ -17,6 +19,7 @@ os_init :: proc() {
 
 os_run :: proc() {
 	last:=SDL.GetPerformanceCounter()
+	smoke_elapsed:=0.0
 	for !state.quit {
 		begin_test_device_loss()
 		now:=SDL.GetPerformanceCounter()
@@ -30,6 +33,19 @@ os_run :: proc() {
 		event:SDL.Event
 		for SDL.PollEvent(&event) { handle_event(event) }
 		os_process_gpu_events()
+		when FEASIBILITY_TEST_QUIT_AFTER_READBACK {
+			smoke_elapsed += f64(dt)
+			if smoke_elapsed >= SMOKE_TIMEOUT_SECONDS &&
+				(!state.readback_done || !state.queue_work_done || !state.queue_work_done_ok) {
+				fmt.printf("[webgpu-feasibility] bounded smoke timed out after %.1f seconds (readback_done=%v queue_done=%v queue_ok=%v)\n",
+					SMOKE_TIMEOUT_SECONDS,
+					state.readback_done,
+					state.queue_work_done,
+					state.queue_work_done_ok,
+				)
+				state.quit = true
+			}
+		}
 		if state.quit { break }
 		needs_wakeup := state.readback_pending || state.queue_work_done_pending || state.animation_seconds < ANIMATION_SECONDS
 		when FEASIBILITY_TEST_DEVICE_LOSS {

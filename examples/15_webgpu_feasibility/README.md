@@ -34,7 +34,8 @@ For a bounded native adapter/render/readback smoke that exits on completion:
 ~~~
 
 The smoke exits nonzero if any pixel probe or the queue-completion callback
-fails.
+fails or either asynchronous completion callback does not arrive within 15
+seconds. A timeout prints the readback and queue-callback state before exiting.
 
 ## macOS native
 

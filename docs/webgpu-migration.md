@@ -259,6 +259,12 @@ resource retirement, secondary windows, or production performance parity.
   binding defect remains. See the [toolchain audit](../dependencies/webgpu-toolchain.md#browser-adapter-metadata-bridge-2026-11-15).
 - `git diff --check`: passed.
 
+The bounded native fixture now has a 15-second end-to-end deadline for its
+adapter/device/readback/queue-completion path. If an async callback is lost, it
+prints the completion flags and exits nonzero instead of waiting indefinitely.
+The rebuilt Windows smoke passed on Vulkan/NVIDIA RTX 2080 SUPER with all
+thirteen pixel probes and `QueueOnSubmittedWorkDone` reporting `Success`.
+
 Phase 0 therefore has credible shared-renderer feasibility evidence, but its
 cross-platform device-loss/lifecycle acceptance remains open. The explicit
 destroy callback is now verified for the patched Windows D3D12 library; do not
