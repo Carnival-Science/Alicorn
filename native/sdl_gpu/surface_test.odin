@@ -2,6 +2,7 @@ package alicorn_sdl_gpu
 
 import "core:math"
 import "core:testing"
+import "vendor:sdl3"
 import alicorn "../../runtime"
 
 surface_test_near :: proc(a, b: f32, epsilon: f32 = 0.001) -> bool {
@@ -59,6 +60,31 @@ test_surface_point_marker_uses_six_vertices_and_circle_mask :: proc(t: ^testing.
 		native_surface_marker_mask_alpha(NATIVE_SURFACE_MARKER_MASK_SIZE/2, NATIVE_SURFACE_MARKER_MASK_SIZE/2) == 255 &&
 			native_surface_marker_mask_alpha(0, 0) == 0,
 		"circle mask should be opaque at its center and transparent at the corner")
+}
+
+@(test)
+test_canceled_marker_mask_upload_remains_retryable :: proc(t: ^testing.T) {
+	token: u8
+	transfer := cast(^sdl3.GPUTransferBuffer)&token
+	command := cast(^sdl3.GPUCommandBuffer)&token
+	renderer := Native_Surface_Renderer{
+		shape_mask_transfer=transfer,
+		shape_mask_initialized=false,
+		shape_mask_upload_recorded=true,
+		shape_mask_upload_command=command,
+	}
+	native_surface_cancel_unsubmitted_mask_upload(&renderer, false)
+	testing.expect(t,
+		!renderer.shape_mask_initialized && !renderer.shape_mask_upload_recorded &&
+			renderer.shape_mask_upload_command == nil && renderer.shape_mask_transfer == transfer,
+		"canceling the command buffer should discard recorded state but retain the transfer buffer for retry")
+
+	renderer.shape_mask_initialized = true
+	renderer.shape_mask_upload_recorded = false
+	renderer.shape_mask_upload_command = nil
+	native_surface_cancel_unsubmitted_mask_upload(&renderer, true)
+	testing.expect(t, renderer.shape_mask_initialized,
+		"canceling a later frame must preserve a mask texture initialized by an earlier submission")
 }
 
 @(test)

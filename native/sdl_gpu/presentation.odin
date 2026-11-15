@@ -43,7 +43,7 @@ sdl_gpu_presenter_internal_state :: struct {
 	completed:       u64,
 	pending_revision: u64,
 	frame_pending:   bool,
-	surface_white_was_initialized: bool,
+	surface_mask_was_initialized:   bool,
 	solid_white_was_initialized:   bool,
 }
 
@@ -164,7 +164,7 @@ Sdl_GPU_Presenter_Encode :: proc(
 	view, view_ok := alicorn.paint_display_list(state.runtime)
 	if !view_ok || !sdl_gpu_presenter_display_supported(view.commands) { return false }
 	state.pending_revision = view.revision
-	state.surface_white_was_initialized = state.surface.white_texture_initialized
+	state.surface_mask_was_initialized = state.surface.shape_mask_initialized
 	state.solid_white_was_initialized = state.solid.white_initialized
 	state.frame_pending = true
 	return draw_display_list(
@@ -185,13 +185,16 @@ Sdl_GPU_Presenter_Encode :: proc(
 // Cancel a frame after the host has canceled the command buffer. If a submit
 // attempt failed ambiguously, first wait for GPU idle before canceling so its
 // transfer buffers cannot still be in use. Pending glyph uploads remain dirty
-// for retry; unsubmitted image uploads and speculative clears are discarded.
+// for retry; unsubmitted image uploads and speculative clear/mask state are
+// rolled back so the next frame can retry safely.
 Sdl_GPU_Presenter_Cancel_Frame :: proc(presenter: ^Sdl_GPU_Presenter) -> bool {
 	state := sdl_gpu_presenter_state(presenter)
 	if state == nil || !state.frame_pending { return false }
 	clear(&state.text.pending_dirty)
 	native_image_release_unsubmitted(&state.solid.images)
-	if !state.surface_white_was_initialized { state.surface.white_texture_initialized = false }
+	// This resets the recorded command only; the renderer keeps the transfer
+	// buffer so the next encoded frame can retry the upload.
+	native_surface_cancel_unsubmitted_mask_upload(&state.surface, state.surface_mask_was_initialized)
 	if !state.solid_white_was_initialized { state.solid.white_initialized = false }
 	state.pending_revision = 0
 	state.frame_pending = false

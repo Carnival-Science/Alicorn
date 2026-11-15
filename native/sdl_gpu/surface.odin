@@ -254,6 +254,18 @@ native_surface_marker_mask_prepare :: proc(
 	return true
 }
 
+// A command-buffer cancellation rolls back only the speculative upload state.
+// The transfer buffer remains owned by the renderer and can be used to retry.
+native_surface_cancel_unsubmitted_mask_upload :: proc(
+	renderer: ^Native_Surface_Renderer,
+	mask_was_initialized: bool,
+) {
+	if renderer == nil || mask_was_initialized { return }
+	renderer.shape_mask_initialized = false
+	renderer.shape_mask_upload_recorded = false
+	renderer.shape_mask_upload_command = nil
+}
+
 native_surface_geometry_self_test :: proc() -> Native_Validation_Result {
 	vertices := make([dynamic]Native_Text_Vertex, 0, 128, allocator=context.temp_allocator)
 	defer delete(vertices)
