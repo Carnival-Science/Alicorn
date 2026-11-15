@@ -675,6 +675,7 @@ queue_paint :: proc(rt: ^Runtime, id: Node_ID) {
 	if !ok || node.paint_queued { return }
 	node.paint_queued = true
 	append(&rt.paint_queue, id)
+	presentation_output_mark_node_dirty(rt, id)
 }
 
 invalidate_interaction_paint :: proc(rt: ^Runtime, id: Node_ID, reason := "interaction visual state changed") {
@@ -685,7 +686,7 @@ invalidate_interaction_paint :: proc(rt: ^Runtime, id: Node_ID, reason := "inter
 	if len(node.last_reason) > 0 { delete(node.last_reason, rt.persistent_allocator) }
 	node.last_reason = owned(reason, rt.persistent_allocator)
 	queue_paint(rt, id)
-	request_presentation(rt, reason)
+	request_presentation_for_node(rt, id, reason)
 	record_trace(rt, .Invalidation, id, reason)
 }
 
@@ -1108,6 +1109,7 @@ reconcile :: proc(rt: ^Runtime) {
 	// This description already observed the final geometry-surface bounds.
 	rt.geometry_surface_bounds_changed = false
 	rt.presentation_pending = false
+	presentation_outputs_prune_retired_roots(rt)
 	advance_presentation_revision(rt)
 	rt.stats.frame += 1
 	delete(focus_lineage)
@@ -1138,6 +1140,7 @@ end_presentation_frame :: proc(ui: ^UI) {
 	rt.scroll_geometry_changed = false
 	rt.geometry_surface_bounds_changed = false
 	rt.presentation_pending = false
+	presentation_outputs_prune_retired_roots(rt)
 	advance_presentation_revision(rt)
 	rt.stats.frame += 1
 	record_trace(rt, .Composite, 0, "retained presentation frame flushed")
@@ -1251,6 +1254,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.actions)
 	delete(rt.display)
 	delete(rt.display_target)
+	delete(rt.presentation_outputs)
 	for _, image in rt.images { delete(image.rgba8, image.allocator) }
 	delete(rt.images)
 	for _, layers in rt.gpu_surface_images { delete(layers) }

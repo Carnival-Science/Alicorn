@@ -97,6 +97,7 @@ new_runtime :: proc(viewport: Rect, config := Runtime_Config{}) -> Runtime {
 	rt.paint_queue = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator)
 	rt.display = make([dynamic]Paint_Command, 0, allocator=rt.persistent_allocator)
 	rt.display_target = make([dynamic]Paint_Command, 0, allocator=rt.persistent_allocator)
+	rt.presentation_outputs = make([dynamic]Presentation_Output_State, 0, allocator=rt.persistent_allocator)
 	rt.images = make(map[u64]Image_Resource, allocator=rt.persistent_allocator)
 	rt.gpu_surface_images = make(map[Node_ID][dynamic]GPU_Surface_Image, allocator=rt.persistent_allocator)
 	rt.gpu_surface_point_markers = make(map[Node_ID][dynamic]GPU_Surface_Point_Marker, allocator=rt.persistent_allocator)

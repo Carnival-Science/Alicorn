@@ -146,6 +146,72 @@ description, that callback must call `invalidate_root` on its supplied Runtime.
 `on_key` returning `true`, application-owned text input, and pointer button
 callbacks already request a description.
 
+## Multiple outputs from one Runtime
+
+A host that presents disjoint retained regions into separate native targets can
+register one `Presentation_Output_ID` per target. This is useful when one
+application Runtime owns related surfaces such as a ruler and waveform. Keep
+the output roots disjoint and bind each root after its container is described:
+
+```odin
+ruler_output, ruler_status := alicorn.presentation_output_register(rt)
+waveform_output, waveform_status := alicorn.presentation_output_register(rt)
+
+// Inside the application's render procedure:
+ruler_root := alicorn.container_begin(ui, .Container, key="ruler", style=ruler_style)
+_ = alicorn.presentation_output_bind_root(ui.runtime, ruler_output, ruler_root)
+describe_ruler(ui)
+alicorn.container_end(ui)
+
+waveform_root := alicorn.container_begin(ui, .Container, key="waveform", style=waveform_style)
+_ = alicorn.presentation_output_bind_root(ui.runtime, waveform_output, waveform_root)
+describe_waveform(ui)
+alicorn.container_end(ui)
+```
+
+After `hosted_runtime_step`, `render_required` means at least one visible,
+bound output has a published revision awaiting submission. The host tracks the
+IDs it registered, checks `presentation_output_snapshot` for each one, and
+submits only outputs whose snapshot has `pending=true`:
+
+```odin
+snapshot, status := alicorn.presentation_output_snapshot(rt, ruler_output)
+if status == .Ok && snapshot.pending {
+    if submit_ruler(commands, snapshot.root) {
+        _ = alicorn.presentation_output_frame_submission_succeeded(
+            rt, ruler_output, snapshot.revision,
+        )
+    }
+}
+```
+
+The revision argument is required. A stale acknowledgement is rejected and
+cannot clear a newer update. `frame_submission_succeeded` remains the
+whole-display acknowledgement for hosts that submit the complete Runtime
+display in one operation; per-target hosts should acknowledge each output with
+its exact snapshot revision.
+
+`presentation_output_bind_root` accepts a root while it is being described and
+rejects overlapping output subtrees. Retained paint changes and custom-surface
+payload updates are attributed through their owner ancestry. A presentation
+request outside every registered root is treated as shared chrome and marks
+all outputs dirty. Normal root invalidation and layout still use the ordinary
+Runtime path; no per-output scheduler or extra timer is created.
+
+Call `presentation_output_set_visible` when a native target is hidden or
+restored. Hidden outputs do not keep `frame_needs_submission` true and do not
+block visible outputs from reaching idle. Restoring an output publishes its
+current retained contents as a new pending revision. Unregister a permanently
+removed target; if its retained root disappears first, Alicorn detaches that
+root after the next description and drops its obsolete pending frame.
+
+The display-command accessor still returns the complete borrowed Runtime
+display. A multi-target host is responsible for routing or clipping those
+commands into its targets. Output IDs currently define scheduling and exact
+acknowledgement boundaries; they do not create separate retained trees or GPU
+resources. With no registered outputs, the existing whole-display
+`frame_needs_submission` and acknowledgement behavior is unchanged.
+
 ## Deliver input, focus, and accessibility
 
 Call these from the host's UI thread, in native event order:

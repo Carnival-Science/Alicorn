@@ -101,7 +101,7 @@ gpu_surface_update_images :: proc(rt: ^Runtime, id: Node_ID, images: []GPU_Surfa
 	gpu_surface_note_payload_commit(rt, id, revision, "custom surface image layers replaced", false)
 	dirty_set(&node.dirty, .Paint, true)
 	queue_paint(rt, id)
-	request_presentation(rt, "custom surface image layers changed")
+	request_presentation_for_node(rt, id, "custom surface image layers changed")
 	return true
 }
 
@@ -110,6 +110,8 @@ gpu_surface_note_payload_commit :: proc(rt: ^Runtime, id: Node_ID, revision: GPU
 	if !ok || node == nil { return }
 	node.surface_payload_revision = revision
 	rt.surface_frame_pending = true
+	rt.presentation_pending = true
+	presentation_output_mark_node_dirty(rt, id)
 	advance_presentation_revision(rt)
 	rt.stats.surface_updates += 1
 	if geometry { rt.stats.surface_geometry_updates += 1 }
@@ -380,6 +382,8 @@ gpu_surface_clear :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 	node.surface_geometry_active = node.surface_kind == .Geometry
 	node.surface_payload_revision = revision
 	rt.surface_frame_pending = true
+	rt.presentation_pending = true
+	presentation_output_mark_node_dirty(rt, id)
 	advance_presentation_revision(rt)
 	rt.stats.surface_updates += 1
 	rt.stats.surface_clear_count += 1
@@ -389,7 +393,7 @@ gpu_surface_clear :: proc(rt: ^Runtime, id: Node_ID) -> bool {
 	if image_layers_changed {
 		dirty_set(&node.dirty, .Paint, true)
 		queue_paint(rt, id)
-		request_presentation(rt, "custom surface image layers cleared")
+		request_presentation_for_node(rt, id, "custom surface image layers cleared")
 	}
 	return true
 }

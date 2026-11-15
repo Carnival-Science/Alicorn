@@ -2147,6 +2147,13 @@ Runtime :: struct {
 	// swapchain has no drawable texture for a loop iteration.
 	presentation_revision: u64,
 	submitted_revision:    u64,
+	// A multi-surface host may register independent presentation outputs over
+	// disjoint retained roots. These sparse records keep per-output scheduling
+	// out of Node and preserve the legacy whole-display acknowledgement path
+	// when no output roots are bound.
+	presentation_output_runtime_identity: u64,
+	presentation_output_sequence: u64,
+	presentation_outputs: [dynamic]Presentation_Output_State,
 	frame_open:  bool,
 	hard_error:  bool,
 	diagnostic:  string,

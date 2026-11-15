@@ -310,6 +310,7 @@ contract. This API does not provide a wxWidgets or native renderer adapter.
 | `begin_frame` / `end_frame` | Open and complete an application description when invalidated. |
 | `invalidate_root` | Request a new description after application state changes. |
 | `invalidate_region` | Mark a revisioned region as changed. |
+| `Presentation_Output_ID` / `presentation_output_*` | Register disjoint retained roots as independently visible native outputs, inspect exact pending revisions, and acknowledge only after each target submits successfully. |
 | `region_begin` / `region_end` | Reuse an unchanged described subtree using an application-owned revision. |
 | `Application.interaction_update_policy` | Opt a native app into a corrective description after a consumed widget activation or controlled-value change. `.Explicit` is the default; `.Correct_After_Interaction` uses the existing bounded stabilization loop and does not bypass region revisions. |
 

@@ -8,6 +8,10 @@ changelogs.
 
 ### Added
 
+- Added optional per-output presentation revisions for hosts that render
+  disjoint retained subtrees into separate native targets. Outputs can be
+  hidden, retired, and acknowledged independently without changing the
+  existing single-target path.
 - Added retained custom-surface point markers for dense plots. Each marker uses
   a six-vertex masked quad and shares the existing bounded geometry budget;
   ordinary filled-circle rendering is unchanged.
