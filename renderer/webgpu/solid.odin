@@ -197,7 +197,8 @@ Solid_Prepare :: proc(
 	commands := display.commands
 
 	for command in commands {
-		if !alicorn.paint_command_is_surface(command) && !alicorn.paint_command_is_text(command) {
+		if !alicorn.paint_command_is_surface(command) && !alicorn.paint_command_is_text(command) &&
+		   !alicorn.paint_command_is_icon(command) {
 			return .Unsupported_Command
 		}
 	}

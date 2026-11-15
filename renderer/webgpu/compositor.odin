@@ -20,6 +20,7 @@ WebGPU_Compositor :: struct {
 	format: wgpu.TextureFormat,
 	solid: Solid_Renderer,
 	text: Text_Renderer,
+	icons: Icon_Renderer,
 	prepared_runtime: ^alicorn.Runtime,
 	prepared_revision: u64,
 	prepared_commands: rawptr,
@@ -41,12 +42,14 @@ Compositor_Create :: proc(
 	if !ok { return }
 	compositor.text, ok = Text_Create(device, queue, format)
 	if !ok { return }
+	compositor.icons, ok = Icon_Create(device, queue, format)
+	if !ok { return }
 	ok = true
 	return
 }
 
 // Compositor_Prepare validates command families before any GPU writes, then
-// prepares the CPU-retained solid and text products. The order of commands is
+// prepares the CPU-retained solid, text, and icon products. The order of commands is
 // not changed; Compositor_Encode will issue draws in the original paint order.
 Compositor_Prepare :: proc(
 	compositor: ^WebGPU_Compositor,
@@ -62,7 +65,8 @@ Compositor_Prepare :: proc(
 		return .Invalid_Input
 	}
 	for command in display.commands {
-		if !alicorn.paint_command_is_surface(command) && !alicorn.paint_command_is_text(command) {
+		if !alicorn.paint_command_is_surface(command) && !alicorn.paint_command_is_text(command) &&
+		   !alicorn.paint_command_is_icon(command) {
 			return .Unsupported_Command
 		}
 	}
@@ -75,6 +79,9 @@ Compositor_Prepare :: proc(
 	); result != .Ok {
 		return compositor_result_from_text(result)
 	}
+	if result := Icon_Prepare(&compositor.icons, display, target_width, target_height, scale_x, scale_y); result != .Ok {
+		return compositor_result_from_icon(result)
+	}
 	compositor.prepared_runtime = rt
 	compositor.prepared_revision = display.revision
 	compositor.prepared_commands = raw_data(display.commands)
@@ -86,8 +93,8 @@ Compositor_Prepare :: proc(
 }
 
 // Compositor_Encode opens exactly one render pass and dispatches each supported
-// retained command at its original index. This is the first shared production
-// composition path: surfaces and shaped text interleave without sorting or
+// retained command at its original index. This shared composition path lets
+// surfaces, shaped text, and tinted icons interleave without sorting or
 // host-specific compositor code. Surface acquisition and queue submission
 // remain owned by the platform host.
 Compositor_Encode :: proc(
@@ -137,12 +144,18 @@ Compositor_Encode :: proc(
 			); result != .Ok {
 				return compositor_result_from_solid(result)
 			}
-		} else {
+		} else if alicorn.paint_command_is_text(command) {
 			if result := Text_Draw_Command(
 				&compositor.text, pass, command_index, command,
 				target_width, target_height, scale_x, scale_y,
 			); result != .Ok {
 				return compositor_result_from_text(result)
+			}
+		} else {
+			if result := Icon_Draw_Command(
+				&compositor.icons, pass, command_index, command, target_width, target_height,
+			); result != .Ok {
+				return compositor_result_from_icon(result)
 			}
 		}
 	}
@@ -159,6 +172,7 @@ Compositor_Commit_Submission :: proc(compositor: ^WebGPU_Compositor, rt: ^alicor
 Compositor_Destroy :: proc(compositor: ^WebGPU_Compositor) {
 	if compositor == nil { return }
 	Text_Destroy(&compositor.text)
+	Icon_Destroy(&compositor.icons)
 	Solid_Destroy(&compositor.solid)
 	compositor^ = {}
 }
@@ -174,6 +188,15 @@ compositor_result_from_solid :: proc(result: Solid_Result) -> Compositor_Result 
 }
 
 compositor_result_from_text :: proc(result: Text_Result) -> Compositor_Result {
+	switch result {
+	case .Ok: return .Ok
+	case .Invalid_Input: return .Invalid_Input
+	case .Resource_Failure: return .Resource_Failure
+	}
+	return .Resource_Failure
+}
+
+compositor_result_from_icon :: proc(result: Icon_Result) -> Compositor_Result {
 	switch result {
 	case .Ok: return .Ok
 	case .Invalid_Input: return .Invalid_Input

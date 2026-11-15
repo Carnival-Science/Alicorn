@@ -15,7 +15,7 @@ bars. A marker animates for 1.8 seconds. The browser scheduler stops requesting
 frames when it settles and wakes for resize or pointer activation. A 63×64
 offscreen RGBA target is copied with a 256-byte row pitch (252 texel bytes plus
 four padding bytes per row) to a staging buffer and mapped asynchronously; its
-callback checks thirteen pixel samples across the rows. The fixture also
+callback checks the pixel samples across the rows. The fixture also
 performs a nonzero-offset partial vertex-buffer update and a WGSL uniform
 buffer layout/binding probe, checking both rendered colors. It requests
 `QueueOnSubmittedWorkDone`; the bounded native smoke waits for both async
@@ -31,11 +31,16 @@ repeats preparation unchanged and with translation-only motion: the unchanged
 pass must create or upload nothing, and translation may update its small
 transform buffer without rebuilding glyph geometry or atlas pages. The native
 fixture submits atlas writes before acknowledging Runa's dirty generation. A
-fourth target passes an interleaved surface/text list through the shared
+fourth target passes an interleaved surface/text/icon list through the shared
 `renderer/webgpu/compositor.odin`: a surface underlay, text, an opaque surface
-over that text, then another copy of the text below. Pixel checks assert the
-opaque overlay remains above earlier text and the later text remains visible.
-The compositor also checks cache reuse for both renderer families.
+over that text, another copy of the text below, a one-pixel scissor sentinel,
+and clipped tinted icons sampled from both immutable atlas pages.
+Pixel checks assert the opaque overlay remains above earlier text, later text
+remains visible, and icon tint appears only inside its clip. One icon requires
+the renderer to restore the target scissor after the sentinel; drawing the two
+icons also exercises atlas bind-group switching. The compositor checks that
+surface, text, and icon meshes reuse cached products; both icon atlas pages are
+uploaded lazily and are not uploaded again on unchanged preparation.
 
 ## Windows native
 
