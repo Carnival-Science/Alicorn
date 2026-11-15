@@ -114,6 +114,23 @@ the only production backend. In particular, shaped runs still resolve glyph
 slots through the mutable Runa atlas on the native side; extracting a
 reconstructible CPU atlas/raster product is a separate renderer slice.
 
+### Shared text-quad assembly (Windows, 2026-11-15)
+
+`renderer/cpu/text_mesh.odin` now converts an already-resolved Runa atlas slot
+and Alicorn's shaped glyph/paint command into a backend-neutral six-vertex
+quad. The helper owns physical-pixel snapping, exact clip rejection, UV
+placement, bitmap bearings, monochrome tint, and color-glyph alpha policy. The
+SDL_GPU text renderer now consumes this shared mesh product; glyph rasterization,
+atlas residency, and GPU upload remain host/backend responsibilities. Focused
+tests cover snapping carry, bearings, UVs, opacity, color glyphs, and translated
+clipped text. This is preparation reuse, not yet a WebGPU text pass.
+
+The full Windows `tools/test.ps1 -Odin C:\odin\odin.exe` suite passed after the
+extraction, including runtime, SDL_GPU, CPU renderer, AccessKit ABI/UIA,
+restoration, and native text-input/navigation/paint-span/ownership checks. The
+Web UI package-boundary build also passed. Existing large-stack-local warnings
+for native secondary-window tests remain unchanged.
+
 ### Shared solid-surface assembly (Windows, 2026-11-15)
 
 Surface material resolution, culling bounds, scale-aware clipping, shape

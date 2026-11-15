@@ -454,24 +454,10 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 			// snapped to physical pixels for stable texture sampling.
 			raster_size := run.size * scale_y
 			physical_x := (command.bounds.x + glyph.x) * scale_x
-			physical_y := (command.bounds.y + glyph.y) * scale_y
-			snapped_x, subpixel_bucket := cpu_renderer.Snap_Text_X(physical_x)
-			snapped_y := cpu_renderer.Snap_Text_Y(physical_y)
+			_, subpixel_bucket := cpu_renderer.Snap_Text_X(physical_x)
 			slot, drawable, glyph_ok := alicorn.text_engine_glyph(&renderer.runtime.text_engine, glyph.glyph_id, raster_size, subpixel_bucket, scratch_allocator=scratch_allocator, font_role=run.font, font_source=glyph.font_source, font_weight=glyph.font_weight, italic=glyph.italic, face_id=glyph.font_face)
 			if !glyph_ok || !drawable { continue }
 			slot_view := runa.atlas_slot_view(slot)
-			x0 := snapped_x + slot_view.Bearing[0]
-			y0 := snapped_y + slot_view.Bearing[1]
-			x1 := x0 + f32(slot_view.Px_Size[0])
-			y1 := y0 + f32(slot_view.Px_Size[1])
-			if command.translation[0] == 0 && command.translation[1] == 0 &&
-			   !cpu_renderer.Text_Quad_Visible(x0, y0, x1, y1, command.clip, scale_x, scale_y) { continue }
-			if len(renderer.vertices) + 6 > renderer.vertex_capacity && !native_text_ensure_vertex_capacity(renderer, len(renderer.vertices) + 6) {
-				if len(winners) > 0 { delete(winners, scratch_allocator) }
-				renderer.mesh_rebuild_ns += u64(time.duration_nanoseconds(time.since(mesh_rebuild_start)))
-				return false
-			}
-			u0, v0, u1, v1 := slot_view.UV_Rect[0], slot_view.UV_Rect[1], slot_view.UV_Rect[2], slot_view.UV_Rect[3]
 			glyph_color := paint.color
 			if span_strategy == .Single {
 				glyph_color = cpu_renderer.Color_For_Single_Span(len(value), paint.spans, single_span_index, glyph.cluster_start, glyph.cluster_end, paint.color)
@@ -486,16 +472,25 @@ native_text_rebuild_mesh :: proc(renderer: ^Native_Text_Renderer, display: []ali
 			} else if span_strategy == .Segment_Tree {
 				glyph_color = cpu_renderer.Color_For_Cluster(paint.spans, winners, glyph.cluster_start, glyph.cluster_end, paint.color)
 			}
-			color := cpu_renderer.Vertex_Color(glyph_color, command.opacity, slot_view.Is_Color)
-			first := sdl3.Uint32(len(renderer.vertices))
-			append(&renderer.vertices,
-				Native_Text_Vertex{[3]f32{x0, y0, 0}, color, [2]f32{u0, v0}},
-				Native_Text_Vertex{[3]f32{x1, y0, 0}, color, [2]f32{u1, v0}},
-				Native_Text_Vertex{[3]f32{x1, y1, 0}, color, [2]f32{u1, v1}},
-				Native_Text_Vertex{[3]f32{x0, y0, 0}, color, [2]f32{u0, v0}},
-				Native_Text_Vertex{[3]f32{x1, y1, 0}, color, [2]f32{u1, v1}},
-				Native_Text_Vertex{[3]f32{x0, y1, 0}, color, [2]f32{u0, v1}},
+			glyph_mesh := cpu_renderer.Build_Text_Glyph_Mesh(
+				glyph,
+				command,
+				slot_view.Bearing,
+				slot_view.Px_Size,
+				slot_view.UV_Rect,
+				glyph_color,
+				slot_view.Is_Color,
+				scale_x,
+				scale_y,
 			)
+			if !glyph_mesh.visible { continue }
+			if len(renderer.vertices) + 6 > renderer.vertex_capacity && !native_text_ensure_vertex_capacity(renderer, len(renderer.vertices) + 6) {
+				if len(winners) > 0 { delete(winners, scratch_allocator) }
+				renderer.mesh_rebuild_ns += u64(time.duration_nanoseconds(time.since(mesh_rebuild_start)))
+				return false
+			}
+			first := sdl3.Uint32(len(renderer.vertices))
+			for vertex in glyph_mesh.vertices { append(&renderer.vertices, vertex) }
 			append(&renderer.draws, Native_Text_Draw{first, this_text_command_index, paint.run, slot_view.Page_Index, slot_view.Is_Color})
 		}
 		if len(winners) > 0 { delete(winners, scratch_allocator) }
