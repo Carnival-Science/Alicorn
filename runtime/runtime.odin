@@ -36,7 +36,7 @@ ui_key_is_explicit :: proc(key: UI_Key) -> bool {
 	return false
 }
 
-Node_Kind :: enum {
+Node_Kind :: enum u8 {
 	Root,
 	Modal_Overlay,
 	Context_Menu_Overlay,
@@ -134,16 +134,16 @@ visual_part_style_hash :: proc(style: Visual_Part_Style) -> u64 {
 	return h
 }
 
-Split_Axis :: enum { Horizontal, Vertical }
+Split_Axis :: enum u8 { Horizontal, Vertical }
 
-GPU_Surface_Kind :: enum {
+GPU_Surface_Kind :: enum u8 {
 	Waveform,
 	Geometry,
 }
 
 // A GPU surface is presentation-only unless pointer interaction is explicitly
 // requested by its declaration.
-GPU_Surface_Interaction :: enum {
+GPU_Surface_Interaction :: enum u8 {
 	Inert,
 	Pointer,
 }
@@ -476,13 +476,13 @@ Pointer_Kind :: enum { Move, Down, Up, Cancel }
 // it to match a source to compatible targets; it does not interpret payloads.
 Drag_Type :: distinct u64
 
-Drop_Target_Mode :: enum {
+Drop_Target_Mode :: enum u8 {
 	On,
 	Between_Horizontal,
 	Between_Vertical,
 }
 
-Drop_Position :: enum { None, On, Before, After }
+Drop_Position :: enum u8 { None, On, Before, After }
 Drag_Phase :: enum { Idle, Candidate, Dragging }
 Drag_Event_Kind :: enum { Started, Target_Changed, Dropped, Cancelled }
 
@@ -613,7 +613,7 @@ Scroll_Event :: struct {
 // that accepts both directions can choose whether small perpendicular motion
 // is suppressed for code/list-style scrolling or preserved for a free-form
 // canvas.
-Scroll_Axes :: enum {
+Scroll_Axes :: enum u8 {
 	Vertical,
 	Horizontal,
 	Both,
@@ -626,14 +626,14 @@ Scroll_Visibility_Request :: struct {
 	start_x, end_x: f32,
 }
 
-Scroll_Axis_Behavior :: enum {
+Scroll_Axis_Behavior :: enum u8 {
 	Auto_Lock,
 	Free,
 }
 
 // Scrollbar_Policy controls the solid, layout-reserving bars retained by a
 // scroll region. Auto is the default and shows only bars needed by its content.
-Scrollbar_Policy :: enum { Hidden, Auto, Always }
+Scrollbar_Policy :: enum u8 { Hidden, Auto, Always }
 // Scroll_Focus_Visual controls only the generic scroll-region focus outline.
 // Content delegates visible focus indication (for example a caret or active
 // line) to the caller; keyboard, semantic, and accessibility focus are unchanged.
@@ -651,7 +651,7 @@ Text_Edit :: struct {
 
 // Font_Role selects one of the runtime's small built-in text roles. Applications
 // may load a role-specific font; an unloaded role falls back to the UI font.
-Font_Role :: enum {
+Font_Role :: enum u8 {
 	UI,
 	Monospace,
 }
@@ -753,7 +753,7 @@ STYLE_COLOR_ROLE_COUNT :: int(Style_Color_Role.Count)
 // Button variants express component intent. They all resolve through one
 // recipe family so themes do not need a separate state table per product
 // control.
-Button_Variant :: enum {
+Button_Variant :: enum u8 {
 	Default,
 	Primary,
 	Toolbar,
@@ -1374,6 +1374,7 @@ Percent_Width_Dependency :: struct {
 	parent_invalid_reported: bool,
 }
 
+// This record is retained per UI node; keep low-cardinality state enums compact.
 Node :: struct {
 	id:          Node_ID,
 	parent:      Node_ID,
