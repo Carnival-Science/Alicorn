@@ -229,21 +229,28 @@ webgpu_restart :: proc() {
 	state.dirty = true
 }
 
+@(export)
+webgpu_init_state :: proc() -> i32 {
+	if state.ready { return 1 }
+	if state.device_lost { return -1 }
+	return 0
+}
+
 @(private="file", export)
 step :: proc(dt: f32) -> bool {
 	context = state.ctx
 	if state.device_lost { return false }
 	begin_test_device_loss()
-	if !state.ready { return true }
+	if !state.ready { return false }
 	if state.animation_seconds < ANIMATION_SECONDS {
 		state.animation_seconds += dt
 		state.dirty = true
 	}
 	if state.dirty {
-		render_surface_frame()
 		state.dirty = false
+		render_surface_frame()
 	}
-	return state.animation_seconds < ANIMATION_SECONDS
+	return state.animation_seconds < ANIMATION_SECONDS || state.dirty
 }
 
 finish :: proc() {

@@ -71,7 +71,9 @@ Open http://localhost:8080/. After the animation, confirm the status reports no
 new `requestAnimationFrame` requests for 500 ms. Resize once and confirm a
 single presentation is scheduled; click the canvas to replay. A WASM build
 alone is not browser-GPU validation; the browser needs `navigator.gpu` and a
-functioning adapter.
+functioning adapter. The status also reports how many one-shot frames occurred
+while waiting for adapter/device callbacks; the browser host must not poll with
+a continuous animation-frame loop during initialization.
 
 The fixture uses default device limits because of Odin binding issue #8174. It
 does not validate fallback-font chains, production image decoding, retained

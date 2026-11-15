@@ -64,10 +64,9 @@ canvas{width:min(100vw,calc((100vh - 40px)*16/9));height:auto;aspect-ratio:16/9;
  memoryInterface.setExports(exports);
  if(exports.memory) memoryInterface.setMemory(exports.memory);
  const context=exports.default_context_ptr();
- exports._start();
- let scheduled=false,previous=0,animationActive=false,rafRequests=0,idleTimer=0;
+ let scheduled=false,previous=0,animationActive=false,rafRequests=0,initializationWaitFrames=0,idleTimer=0,pageLeaving=false;
  function requestFrame(){
-  if(!scheduled){
+  if(!pageLeaving&&!scheduled){
    clearTimeout(idleTimer);idleTimer=0;
    scheduled=true;rafRequests++;
    requestAnimationFrame(tick);
@@ -75,11 +74,23 @@ canvas{width:min(100vw,calc((100vh - 40px)*16/9));height:auto;aspect-ratio:16/9;
  }
  function tick(timestamp){
   scheduled=false;
+  const initState=exports.webgpu_init_state(context);
+  if(initState===0){
+   initializationWaitFrames++;
+   previous=0;
+   status.textContent="Waiting for WebGPU initialization; async callbacks wake the renderer without frame polling.";
+   return;
+  }
+  if(initState<0){
+   previous=0;
+   status.textContent="The WebGPU device was lost; this feasibility fixture does not recreate devices.";
+   return;
+  }
   const dt=previous===0?0:Math.min((timestamp-previous)/1000,0.05);
   previous=timestamp;
   animationActive=!!exports.step(dt,context);
   if(animationActive){
-   status.textContent="Animating: frames are scheduled only during this 1.8-second motion.";
+   status.textContent="Visual work is pending; requestAnimationFrame is scheduled for motion or surface recovery.";
    requestFrame();
   } else {
    const settledRequests=rafRequests;
@@ -87,11 +98,16 @@ canvas{width:min(100vw,calc((100vh - 40px)*16/9));height:auto;aspect-ratio:16/9;
    idleTimer=setTimeout(()=>{
     idleTimer=0;
     if(!scheduled&&rafRequests===settledRequests){
-     status.textContent="Settled: no animation frame requests for 500 ms ("+rafRequests+" total). Resize for one frame; click to replay.";
+     status.textContent="Settled: no animation frame requests for 500 ms ("+rafRequests+" total; "+initializationWaitFrames+" initialization wake frames). Resize for one frame; click to replay.";
     }
    },500);
   }
  }
+ const dispatchCallback=wgpuInterface.callCallback.bind(wgpuInterface);
+ wgpuInterface.callCallback=(callback,args)=>{
+  try{dispatchCallback(callback,args)}finally{requestFrame()}
+ };
+ exports._start();
  requestFrame();
  window.addEventListener("resize",()=>{exports.webgpu_resize(context);previous=0;requestFrame()});
  document.querySelector("#resize").addEventListener("click",()=>{
@@ -104,7 +120,7 @@ canvas{width:min(100vw,calc((100vh - 40px)*16/9));height:auto;aspect-ratio:16/9;
  document.querySelector("#wgpu-canvas").addEventListener("pointerdown",()=>{
   exports.webgpu_restart(context);previous=0;requestFrame();
  });
- window.addEventListener("pagehide",()=>exports._end?.(),{once:true});
+ window.addEventListener("pagehide",()=>{pageLeaving=true;clearTimeout(idleTimer);exports._end?.()},{once:true});
 })().catch(error=>{
  document.querySelector("#status").textContent="WebGPU fixture failed: "+error;
  console.error(error);
