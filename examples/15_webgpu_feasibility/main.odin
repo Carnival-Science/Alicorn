@@ -15,7 +15,7 @@ READBACK_HEIGHT :: 64
 READBACK_BYTES_PER_PIXEL :: 4
 READBACK_BYTES_PER_ROW :: 256
 READBACK_BUFFER_BYTES :: READBACK_BYTES_PER_ROW * READBACK_HEIGHT
-READBACK_TARGET_COUNT :: 3
+READBACK_TARGET_COUNT :: 4
 READBACK_TOTAL_BYTES :: READBACK_BUFFER_BYTES * READBACK_TARGET_COUNT
 FEASIBILITY_TEST_DEVICE_LOSS :: #config(FEASIBILITY_TEST_DEVICE_LOSS, false)
 FEASIBILITY_TEST_DEVICE_LOSS_EARLY :: #config(FEASIBILITY_TEST_DEVICE_LOSS_EARLY, false)
@@ -47,6 +47,9 @@ state: struct {
 	text_runtime: alicorn.Runtime,
 	text_renderer: webgpu_renderer.Text_Renderer,
 	text_runtime_ready: bool,
+	compositor: webgpu_renderer.WebGPU_Compositor,
+	composite_offscreen_texture: wgpu.Texture,
+	composite_offscreen_view: wgpu.TextureView,
 	config: wgpu.SurfaceConfiguration,
 	pipeline: wgpu.RenderPipeline,
 	offscreen_pipeline: wgpu.RenderPipeline,
@@ -217,6 +220,9 @@ on_device :: proc "c" (status: wgpu.RequestDeviceStatus, device: wgpu.Device, me
 	if !text_ok { fmt.panicf("Alicorn WebGPU text renderer initialization failed") }
 	state.text_renderer = text_renderer
 	build_text_runtime()
+	compositor, compositor_ok := webgpu_renderer.Compositor_Create(state.device, state.queue, .RGBA8Unorm)
+	if !compositor_ok { fmt.panicf("Alicorn WebGPU compositor initialization failed") }
+	state.compositor = compositor
 	fmt.println("[webgpu-feasibility] text runtime built")
 	state.width, state.height = os_get_framebuffer_size()
 	os_set_surface_size(state.width, state.height)
@@ -285,6 +291,7 @@ step :: proc(dt: f32) -> bool {
 }
 
 finish :: proc() {
+	webgpu_renderer.Compositor_Destroy(&state.compositor)
 	webgpu_renderer.Text_Destroy(&state.text_renderer)
 	webgpu_renderer.Solid_Destroy(&state.solid_renderer)
 	if state.text_runtime_ready {
@@ -300,6 +307,8 @@ finish :: proc() {
 	if state.solid_offscreen_texture != nil { wgpu.TextureDestroy(state.solid_offscreen_texture); wgpu.TextureRelease(state.solid_offscreen_texture) }
 	if state.text_offscreen_view != nil { wgpu.TextureViewRelease(state.text_offscreen_view) }
 	if state.text_offscreen_texture != nil { wgpu.TextureDestroy(state.text_offscreen_texture); wgpu.TextureRelease(state.text_offscreen_texture) }
+	if state.composite_offscreen_view != nil { wgpu.TextureViewRelease(state.composite_offscreen_view) }
+	if state.composite_offscreen_texture != nil { wgpu.TextureDestroy(state.composite_offscreen_texture); wgpu.TextureRelease(state.composite_offscreen_texture) }
 	if state.offscreen_view != nil { wgpu.TextureViewRelease(state.offscreen_view) }
 	if state.offscreen_texture != nil { wgpu.TextureDestroy(state.offscreen_texture); wgpu.TextureRelease(state.offscreen_texture) }
 	if state.bind_group != nil { wgpu.BindGroupRelease(state.bind_group) }

@@ -1,13 +1,13 @@
 # Shared native/browser WebGPU feasibility fixture
 
 The interactive capability scene keeps a small bespoke draw list for exercising
-the full set of WebGPU operations. A second offscreen probe now builds a real
-Alicorn `Paint_Display_List_View` and sends it through
-`renderer/webgpu/solid.odin`, using the shared `renderer/cpu` surface mesh.
-That production renderer path and its WGSL are the same for native and browser;
-only `host_sdl3.odin` and `host_web.odin` differ by platform. The application
-window still uses the fixture scene, so this is renderer integration evidence,
-not yet a replacement for the SDL_GPU application presenter.
+the full set of WebGPU operations. Offscreen probes also build real Alicorn
+`Paint_Display_List_View` values and send them through `renderer/webgpu/` and
+the shared `renderer/cpu` products. The production renderer path and WGSL are
+the same for native and browser; only `host_sdl3.odin` and `host_web.odin`
+differ by platform. The application window still uses the fixture scene, so
+this is renderer integration evidence, not yet a replacement for the SDL_GPU
+application presenter.
 
 The scene exercises solid geometry, alpha blending, a rounded surface, clipped
 checker texture, Runa-shaped/rasterized text in an R8 atlas, and CPU waveform
@@ -30,7 +30,12 @@ through `renderer/webgpu/text.odin`, then checks visible glyph pixels. It also
 repeats preparation unchanged and with translation-only motion: the unchanged
 pass must create or upload nothing, and translation may update its small
 transform buffer without rebuilding glyph geometry or atlas pages. The native
-fixture submits atlas writes before acknowledging Runa's dirty generation.
+fixture submits atlas writes before acknowledging Runa's dirty generation. A
+fourth target passes an interleaved surface/text list through the shared
+`renderer/webgpu/compositor.odin`: a surface underlay, text, an opaque surface
+over that text, then another copy of the text below. Pixel checks assert the
+opaque overlay remains above earlier text and the later text remains visible.
+The compositor also checks cache reuse for both renderer families.
 
 ## Windows native
 
@@ -116,8 +121,10 @@ The fixture uses default device limits because of Odin binding issue #8174. It
 has passed an actual browser WebGPU runtime/readback session on an NVIDIA
 Turing adapter as well as native Windows Vulkan; a successful browser build
 alone does not count as runtime evidence. It does not validate fallback-font
-chains, production image decoding, mixed solid/text command composition,
-device recreation, secondary windows, or production performance.
+chains, images, icons, backdrop effects, device recreation, secondary windows,
+application-window presentation, or production performance. The mixed
+surface/text composition check is fixture-only and does not yet cover the
+remaining paint command families.
 
 ## Opt-in device-destruction callback probe
 

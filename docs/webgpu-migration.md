@@ -1,8 +1,9 @@
 # SDL_GPU to WebGPU migration
 
 Status: Phase 0 remains open for lifecycle, baseline, and performance evidence;
-Phase 2 has bounded solid-surface and text-sampling renderer slices. SDL_GPU
-remains the only complete application renderer and the visual reference.
+Phase 2 has bounded solid-surface, text-sampling, and mixed surface/text
+compositor slices. SDL_GPU remains the only complete application renderer and
+the visual reference.
 
 ## Architecture inventory
 
@@ -55,7 +56,7 @@ backend-neutral; their current native payload renderer is not.
 | --- | --- | --- |
 | 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes on an NVIDIA Turing adapter; physical Linux GPU/Wayland, genuine driver/OS loss and recovery, comparative baselines, and production parity remain open |
 | 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring and CPU surface mesh assembly plus text/image/icon preparation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
-| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: native Windows and browser WebGPU solid/text fixtures pass offscreen readback; text cache reuse and translation-only motion are asserted. Mixed-command production composition, images, icons, effects and host presentation remain outstanding |
+| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: native Windows and browser WebGPU solid/text fixtures pass offscreen readback; a shared compositor preserves interleaved surface/text paint order. Text cache reuse, translation-only motion and mixed-renderer cache reuse are asserted. Images, icons, effects and host presentation remain outstanding |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | Not started |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
@@ -398,10 +399,10 @@ On native, first prepare created one atlas page and uploaded its initial 1 MiB
 page; an unchanged prepare added zero mesh rebuilds, vertex/atlas uploads,
 atlas-page creates, or prepare-time buffer creates. Translation-only motion
 added one translation-buffer upload and zero glyph mesh/atlas/resource work.
-The same retained text cache checks and three-target pixel readback also passed
-in the browser. This proves browser runtime execution for the fixture, not
-production mixed-command composition, images, icons, effects, host presentation,
-full renderer parity, or device-loss recovery.
+The same retained text cache checks and updated four-target pixel readback passed
+in the browser. The later mixed surface/text composition is recorded below.
+This proves browser runtime execution for the fixture, not images, icons,
+effects, host presentation, full renderer parity, or device-loss recovery.
 
 Validation on this Windows host:
 
@@ -415,7 +416,55 @@ Validation on this Windows host:
 - Native offscreen/readback smoke passed on the RTX 2080 SUPER through Vulkan.
 - A browser WebGPU run completed callback setup, retained solid/text cache
   assertions, async queue completion, and all RGBA8 readback assertions,
-  including visible runtime text.
+  including visible runtime text and the mixed surface/text compositor checks.
+
+## Phase 2 shared surface/text compositor slice (Windows and browser, 2026-11-15)
+
+`renderer/webgpu/compositor.odin` now owns one shared WebGPU composition path
+for retained surface and shaped-text commands. It prepares the surface mesh
+and Runa-backed text products before the pass, opens one caller-targeted render
+pass, and dispatches every supported command in its original display-list
+order. It does not acquire a native or browser surface, create the command
+encoder, submit the queue, or import SDL/browser APIs. The host still owns
+those operations and acknowledges atlas dirtiness only after submission.
+
+`Solid_Prepare` and `Solid_Draw_Command` separate geometry upload from
+pass-specific drawing. Surface draws retain their source command index, clip
+scissor, and existing cached mesh. The text renderer draws at each exact
+command index requested. The compositor rejects unsupported command families
+before preparing anything, preventing a partial renderer path from appearing
+to accept a complete display list.
+
+The feasibility fixture sends an interleaved four-command list through this
+same compositor in both native and browser runs: an underlay, retained text,
+an opaque surface over that text, then a second copy of the text offset below.
+The asynchronous pixel readback verifies that the upper region is uniformly
+the opaque surface color (so text was not reordered above it) and that the
+later text copy remains visible. It also requires one surface mesh build and
+upload and one text mesh build and upload, a glyph-atlas upload on first use,
+and no additional surface/text mesh or atlas uploads on unchanged preparation.
+
+Validation on this Windows host:
+
+- `C:\odin\odin.exe check renderer/webgpu -no-entry-point` and
+  `C:\odin\odin.exe check examples/15_webgpu_feasibility -no-entry-point`:
+  passed.
+- `examples/15_webgpu_feasibility/build.ps1 -Odin C:\odin\odin.exe`:
+  native interactive, bounded native smoke, resize smoke, and `js_wasm32`
+  artifacts built.
+- Native bounded readback passed on the NVIDIA GeForce RTX 2080 SUPER through
+  Vulkan, including mixed surface/text paint ordering and cache reuse.
+- The rebuilt browser fixture passed live WebGPU readback in the in-app browser
+  on an NVIDIA Turing adapter, including the same mixed-command assertions.
+- `C:\odin\odin.exe test runtime`: 352 passed;
+  `C:\odin\odin.exe test renderer/cpu`: 4 passed.
+- `git diff --check`: passed.
+
+This is shared renderer integration evidence, not full parity. The compositor
+currently accepts only surface and text commands; images, icons, geometry,
+backdrop effects, application-window presentation, lifecycle recovery, and
+performance parity remain open. This local slice has not yet been run on macOS
+or Linux.
 
 ## Renderer cache direction from Alicorn #164 (2026-11-15)
 

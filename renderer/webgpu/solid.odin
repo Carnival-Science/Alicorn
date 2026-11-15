@@ -50,6 +50,7 @@ Solid_Result :: enum {
 Solid_Draw :: struct {
 	first_vertex: u32,
 	vertex_count: u32,
+	command_index: int,
 	scissor: cpu_renderer.Pixel_Rect,
 	has_scissor: bool,
 }
@@ -174,24 +175,18 @@ Solid_Create :: proc(
 	return
 }
 
-// Solid_Encode consumes a borrowed finalized display list synchronously. It
-// validates that every command belongs to this slice before encoding any GPU
-// work, so a mixed list cannot be partially rendered or silently reordered.
-// The host owns the command encoder, target view, frame clear policy and queue
-// submission. Each command is drawn in original paint order with its resolved
-// clip applied as a device-pixel scissor.
-Solid_Encode :: proc(
+// Solid_Prepare consumes the surface commands in a borrowed finalized display
+// list and uploads their cached CPU mesh before a render pass begins. Text
+// commands may be interleaved; other command families are rejected so callers
+// cannot mistake a partial frame for complete rendering.
+Solid_Prepare :: proc(
 	renderer: ^Solid_Renderer,
 	rt: ^alicorn.Runtime,
 	display: alicorn.Paint_Display_List_View,
-	target: wgpu.TextureView,
 	target_width, target_height: u32,
 	scale_x, scale_y: f32,
-	encoder: wgpu.CommandEncoder,
-	clear_target: bool,
-	clear_color: wgpu.Color,
 ) -> Solid_Result {
-	if renderer == nil || rt == nil || target == nil || encoder == nil ||
+	if renderer == nil || rt == nil ||
 	   renderer.device == nil || renderer.queue == nil || renderer.pipeline == nil ||
 	   renderer.bind_group == nil || renderer.vertex_buffer == nil ||
 	   target_width == 0 || target_height == 0 ||
@@ -202,7 +197,9 @@ Solid_Encode :: proc(
 	commands := display.commands
 
 	for command in commands {
-		if !alicorn.paint_command_is_surface(command) { return .Unsupported_Command }
+		if !alicorn.paint_command_is_surface(command) && !alicorn.paint_command_is_text(command) {
+			return .Unsupported_Command
+		}
 	}
 
 	mesh_changed := !renderer.mesh_cache_valid || renderer.mesh_runtime != rt ||
@@ -214,6 +211,7 @@ Solid_Encode :: proc(
 		clear(&renderer.draws)
 		required_vertices := 0
 		for command in commands {
+			if !alicorn.paint_command_is_surface(command) { continue }
 			count, visible := cpu_renderer.Solid_Surface_Vertex_Count(
 				rt, command, scale_x, scale_y, int(target_width), int(target_height),
 			)
@@ -226,7 +224,8 @@ Solid_Encode :: proc(
 			if !solid_vertex_buffer_ensure(renderer, required_vertices) { return .Resource_Failure }
 			reserve(&renderer.vertices, required_vertices)
 		}
-		for command in commands {
+		for command, command_index in commands {
+			if !alicorn.paint_command_is_surface(command) { continue }
 			mesh := cpu_renderer.Append_Surface_Mesh(
 				&renderer.vertices, rt, command, scale_x, scale_y,
 				int(target_width), int(target_height),
@@ -239,6 +238,7 @@ Solid_Encode :: proc(
 			append(&renderer.draws, Solid_Draw{
 				first_vertex=u32(mesh.first_vertex),
 				vertex_count=u32(mesh.vertex_count),
+				command_index=command_index,
 				scissor=mesh.scissor,
 				has_scissor=mesh.has_scissor,
 			})
@@ -264,7 +264,70 @@ Solid_Encode :: proc(
 		renderer.viewport_width, renderer.viewport_height = target_width, target_height
 		renderer.viewport_upload_count += 1
 	}
+	return .Ok
+}
 
+// Solid_Draw_Command draws the prepared solid geometry associated with one
+// command. It is intentionally render-pass agnostic so a shared compositor
+// can preserve paint order with text and later renderer families.
+Solid_Draw_Command :: proc(
+	renderer: ^Solid_Renderer,
+	pass: wgpu.RenderPassEncoder,
+	command_index: int,
+	command: alicorn.Paint_Command,
+	target_width, target_height: u32,
+	scale_x, scale_y: f32,
+) -> Solid_Result {
+	if renderer == nil || pass == nil || renderer.pipeline == nil || renderer.vertex_buffer == nil ||
+	   renderer.bind_group == nil || command_index < 0 || target_width == 0 || target_height == 0 ||
+	   u64(target_width) > u64(math_bits.INT_MAX) || u64(target_height) > u64(math_bits.INT_MAX) ||
+	   !alicorn.number_is_finite(scale_x) || !alicorn.number_is_finite(scale_y) || scale_x <= 0 || scale_y <= 0 {
+		return .Invalid_Input
+	}
+	if !alicorn.paint_command_is_surface(command) { return .Ok }
+	if !renderer.mesh_cache_valid || renderer.mesh_width != target_width || renderer.mesh_height != target_height ||
+	   renderer.mesh_scale_x != scale_x || renderer.mesh_scale_y != scale_y {
+		return .Invalid_Input
+	}
+	if len(renderer.vertices) == 0 { return .Ok }
+	wgpu.RenderPassEncoderSetPipeline(pass, renderer.pipeline)
+	wgpu.RenderPassEncoderSetBindGroup(pass, 0, renderer.bind_group)
+	wgpu.RenderPassEncoderSetVertexBuffer(pass, 0, renderer.vertex_buffer, 0,
+		u64(len(renderer.vertices)*size_of(cpu_renderer.Vertex)))
+	for draw in renderer.draws {
+		if draw.command_index != command_index { continue }
+		scissor := draw.scissor
+		if !draw.has_scissor {
+			scissor = cpu_renderer.Pixel_Rect{0, 0, int(target_width), int(target_height)}
+		}
+		if scissor.w <= 0 || scissor.h <= 0 { continue }
+		wgpu.RenderPassEncoderSetScissorRect(pass, u32(scissor.x), u32(scissor.y), u32(scissor.w), u32(scissor.h))
+		wgpu.RenderPassEncoderDraw(pass, draw.vertex_count, 1, draw.first_vertex, 0)
+	}
+	return .Ok
+}
+
+// Solid_Encode is a surface-only convenience path retained for early
+// feasibility probes. Production composition should use Solid_Prepare and
+// Solid_Draw_Command from the shared WebGPU compositor.
+Solid_Encode :: proc(
+	renderer: ^Solid_Renderer,
+	rt: ^alicorn.Runtime,
+	display: alicorn.Paint_Display_List_View,
+	target: wgpu.TextureView,
+	target_width, target_height: u32,
+	scale_x, scale_y: f32,
+	encoder: wgpu.CommandEncoder,
+	clear_target: bool,
+	clear_color: wgpu.Color,
+) -> Solid_Result {
+	if target == nil || encoder == nil { return .Invalid_Input }
+	for command in display.commands {
+		if !alicorn.paint_command_is_surface(command) { return .Unsupported_Command }
+	}
+	if result := Solid_Prepare(renderer, rt, display, target_width, target_height, scale_x, scale_y); result != .Ok {
+		return result
+	}
 	attachment := wgpu.RenderPassColorAttachment{
 		view=target,
 		depthSlice=wgpu.DEPTH_SLICE_UNDEFINED,
@@ -280,25 +343,16 @@ Solid_Encode :: proc(
 		colorAttachments=&attachment,
 	})
 	if pass == nil { return .Resource_Failure }
-	defer wgpu.RenderPassEncoderRelease(pass)
-	wgpu.RenderPassEncoderSetPipeline(pass, renderer.pipeline)
-	wgpu.RenderPassEncoderSetBindGroup(pass, 0, renderer.bind_group)
-	if len(renderer.vertices) > 0 {
-		wgpu.RenderPassEncoderSetVertexBuffer(
-			pass, 0, renderer.vertex_buffer, 0,
-			u64(len(renderer.vertices)*size_of(cpu_renderer.Vertex)),
-		)
-		for draw in renderer.draws {
-			scissor := draw.scissor
-			if !draw.has_scissor {
-				scissor = cpu_renderer.Pixel_Rect{0, 0, int(target_width), int(target_height)}
-			}
-			if scissor.w <= 0 || scissor.h <= 0 { continue }
-			wgpu.RenderPassEncoderSetScissorRect(pass, u32(scissor.x), u32(scissor.y), u32(scissor.w), u32(scissor.h))
-			wgpu.RenderPassEncoderDraw(pass, draw.vertex_count, 1, draw.first_vertex, 0)
+	defer {
+		wgpu.RenderPassEncoderEnd(pass)
+		wgpu.RenderPassEncoderRelease(pass)
+	}
+	for command, command_index in display.commands {
+		if result := Solid_Draw_Command(renderer, pass, command_index, command,
+			target_width, target_height, scale_x, scale_y); result != .Ok {
+			return result
 		}
 	}
-	wgpu.RenderPassEncoderEnd(pass)
 	return .Ok
 }
 
