@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Alicorn WebGPU feasibility</title>
+<style>
+html,body{height:100%;margin:0;background:#101319;color:#dfe6e8;font:14px system-ui}
+body{display:grid;grid-template-rows:1fr auto}
+canvas{width:min(100vw,calc((100vh - 40px)*16/9));height:auto;aspect-ratio:16/9;display:block;margin:auto;touch-action:none}
+#footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;background:#191f25;color:#abb8bd}
+#resize{border:1px solid #45505a;border-radius:4px;background:#242d35;color:#dfe6e8;padding:5px 9px;cursor:pointer}
+</style></head>
+<body>
+<canvas id="wgpu-canvas"></canvas>
+<div id="footer"><div id="status">Starting shared Odin WebGPU fixture… click the canvas to replay.</div><button id="resize" type="button">Resize surface</button></div>
+<script src="./odin.js"></script><script src="./wgpu.js"></script>
+<script>
+(async()=>{
+ const status=document.querySelector("#status");
+ const memoryInterface=new odin.WasmMemoryInterface();
+ memoryInterface.setIntSize(4);
+ const wgpuInterface=new odin.WebGPUInterface(memoryInterface);
+ let gpuErrorLogged=false;
+ const createDevice=wgpuInterface.devices.create.bind(wgpuInterface.devices);
+ wgpuInterface.devices.create=device=>{
+  device.addEventListener("uncapturederror",event=>{
+   if(!gpuErrorLogged){gpuErrorLogged=true;console.error("[webgpu-feasibility] uncaptured GPU error: "+event.error.message)}
+  });
+  return createDevice(device);
+ };
+ const imports={...odin.setupDefaultImports(memoryInterface,null,memoryInterface.memory),wgpu:wgpuInterface.getInterface()};
+ const response=await fetch("./feasibility.wasm");
+ if(!response.ok) throw new Error("WASM request failed: "+response.status);
+ const {instance}=await WebAssembly.instantiate(await response.arrayBuffer(),imports);
+ const exports=instance.exports;
+ memoryInterface.setExports(exports);
+ if(exports.memory) memoryInterface.setMemory(exports.memory);
+ const context=exports.default_context_ptr();
+ exports._start();
+ let scheduled=false,previous=0,animationActive=false;
+ function requestFrame(){if(!scheduled){scheduled=true;requestAnimationFrame(tick)}}
+ function tick(timestamp){
+  scheduled=false;
+  const dt=previous===0?0:Math.min((timestamp-previous)/1000,0.05);
+  previous=timestamp;
+  animationActive=!!exports.step(dt,context);
+  if(animationActive){
+   status.textContent="Animating: frames are scheduled only during this 1.8-second motion.";
+   requestFrame();
+  } else status.textContent="Settled: no frame is scheduled. Resize for one frame; click to replay.";
+ }
+ requestFrame();
+ window.addEventListener("resize",()=>{exports.webgpu_resize(context);previous=0;requestFrame()});
+ document.querySelector("#resize").addEventListener("click",()=>{
+  const canvas=document.querySelector("#wgpu-canvas");
+  canvas.style.width=canvas.dataset.compact==="true"?"":"min(68vw,calc((100vh - 40px)*16/9))";
+  canvas.dataset.compact=canvas.dataset.compact==="true"?"false":"true";
+  exports.webgpu_resize(context);previous=0;requestFrame();
+  status.textContent="Surface resized; presentation frame scheduled.";
+ });
+ document.querySelector("#wgpu-canvas").addEventListener("pointerdown",()=>{
+  exports.webgpu_restart(context);previous=0;requestFrame();
+ });
+ window.addEventListener("pagehide",()=>exports._end?.(),{once:true});
+})().catch(error=>{
+ document.querySelector("#status").textContent="WebGPU fixture failed: "+error;
+ console.error(error);
+});
+</script></body></html>

@@ -1,3 +1,5 @@
+// Runa's tests use core:testing, which pulls in core:os and is not WASM-compatible.
+#+build !js
 package runa
 
 import "core:testing"
