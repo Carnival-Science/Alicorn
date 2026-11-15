@@ -14,6 +14,8 @@ param(
 	[switch]$WindowsTitlebarFixture,
     [switch]$Smoke,
     [switch]$PresentationValidation,
+	[switch]$GpuCanvasValidation,
+	[switch]$Speed,
     [int]$CaptureAfter = 2,
     [string]$CaptureDir = 'out\diagnostics'
 )
@@ -26,11 +28,22 @@ New-Item -ItemType Directory -Force -Path 'out' | Out-Null
 $AccessKit = Get-AlicornAccessKit
 $Entry = 'native\sdl_gpu_entry'
 $Executable = '.\out\alicorn_sdl_gpu.exe'
-if ($MillionRowAccessibility) {
+if ($GpuCanvasValidation) {
+    $Entry = 'native\gpu_canvas_validation_entry'
+    $Executable = '.\out\alicorn_gpu_canvas_validation.exe'
+} elseif ($MillionRowAccessibility) {
     $Entry = 'native\semantic_virtualization_entry'
     $Executable = '.\out\alicorn_semantic_virtualization.exe'
 }
-& $Odin build $Entry -debug -pdb-name:out\alicorn_sdl_gpu.pdb @($AccessKit.CompilerArguments) -out:$Executable
+$BuildArguments = @('build', $Entry)
+if ($Speed) {
+    $BuildArguments += '-o:speed'
+} else {
+    $BuildArguments += @('-debug', '-pdb-name:out\alicorn_sdl_gpu.pdb')
+}
+$BuildArguments += @($AccessKit.CompilerArguments)
+$BuildArguments += "-out:$Executable"
+& $Odin @BuildArguments
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # The Odin SDK vendor directory carries the SDL3 DLL used by this fixture.
