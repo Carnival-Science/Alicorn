@@ -40,6 +40,7 @@ alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
 	test ui "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_ui_tests"
 "$ODIN" test testui "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_testui_tests"
 "$ODIN" test theme
+"$ODIN" test renderer/cpu "-out:$OUT_DIR/alicorn_cpu_renderer_tests"
 "$ODIN" build tools/theme "-out:$OUT_DIR/alicorn_theme"
 "$OUT_DIR/alicorn_theme" check theme/testdata/minimal.json
 "$OUT_DIR/alicorn_theme" check theme/testdata/extends_base.json

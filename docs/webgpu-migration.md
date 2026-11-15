@@ -113,7 +113,8 @@ not create a WebGPU production backend or alter geometry and shader policy;
 native rendering still uses SDL_GPU. GPU validation and performance comparison
 for the production WebGPU compositor remain Phase 0/2 gates.
 
-The two new `renderer/cpu` solid-mesh unit tests passed. The Windows
+The two new `renderer/cpu` solid-mesh unit tests passed and are now included in
+both `tools/test.ps1` and `tools/test.sh`. The Windows
 `tools/validate_blending.ps1 -Odin C:\odin\odin.exe` D3D12 readback also
 passed: 348 of 348 expected cases across surfaces, per-corner surfaces,
 geometry, icons, images, text and mixed paint; gradient orientation, stops,

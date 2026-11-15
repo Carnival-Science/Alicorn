@@ -49,6 +49,8 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin test theme
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $Odin test renderer\cpu -out:out\alicorn_cpu_renderer_tests.exe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin build tools\theme -out:out\alicorn_theme.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & .\out\alicorn_theme.exe check theme\testdata\minimal.json
