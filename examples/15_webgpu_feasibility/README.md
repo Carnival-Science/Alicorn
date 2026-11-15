@@ -37,6 +37,18 @@ The smoke exits nonzero if any pixel probe or the queue-completion callback
 fails or either asynchronous completion callback does not arrive within 15
 seconds. A timeout prints the readback and queue-callback state before exiting.
 
+For native surface reconfiguration during motion and after it settles, run:
+
+~~~powershell
+.\out\webgpu_feasibility_resize_smoke.exe
+~~~
+
+It changes the SDL window size during the 1.8-second animation, changes it
+again after settlement, and exits only after both surface reconfigurations have
+been observed and a `SurfacePresent` call at each new size has been submitted.
+The same run also performs the padded offscreen readback and waits for queue
+completion.
+
 ## macOS native
 
 ~~~sh

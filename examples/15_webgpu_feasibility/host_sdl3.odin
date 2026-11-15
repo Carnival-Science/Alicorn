@@ -27,16 +27,51 @@ os_run :: proc() {
 		last=now
 		if state.ready && (state.dirty || state.animation_seconds<ANIMATION_SECONDS) {
 			state.animation_seconds+=dt
-			render_surface_frame()
 			state.dirty=false
+			render_surface_frame()
+			when FEASIBILITY_TEST_RESIZE {
+				if state.test_resize_pre_applied && !state.test_resize_pre_frame &&
+					state.surface_present_count>state.test_resize_pre_present_before {
+					state.test_resize_pre_frame=true
+					fmt.printf("[webgpu-feasibility] during-animation SurfacePresent submitted at %dx%d\n",state.config.width,state.config.height)
+				}
+				if state.test_resize_post_applied && !state.test_resize_post_frame &&
+					state.surface_present_count>state.test_resize_post_present_before {
+					state.test_resize_post_frame=true
+					fmt.printf("[webgpu-feasibility] post-animation SurfacePresent submitted at %dx%d\n",state.config.width,state.config.height)
+					if smoke_complete() { state.quit=true }
+				}
+			}
+		}
+		when FEASIBILITY_TEST_RESIZE {
+			if state.ready && !state.test_resize_pre_requested && state.animation_seconds>=0.30 && state.animation_seconds<ANIMATION_SECONDS {
+				state.test_resize_pre_requested=true
+				state.test_resize_pre_present_before=state.surface_present_count
+				fmt.println("[webgpu-feasibility] requesting resize during animation to 800x450")
+				if !SDL.SetWindowSize(state.os.window,800,450) {
+					fmt.printf("[webgpu-feasibility] SDL_SetWindowSize failed: %s\n",SDL.GetError())
+					state.quit=true
+				}
+			}
+			if state.ready && state.animation_seconds>=ANIMATION_SECONDS && !state.test_resize_post_requested {
+				state.test_resize_post_delay+=dt
+				if state.test_resize_post_delay>=0.25 {
+					state.test_resize_post_requested=true
+					state.test_resize_post_present_before=state.surface_present_count
+					fmt.println("[webgpu-feasibility] requesting resize after animation to 720x405")
+					if !SDL.SetWindowSize(state.os.window,720,405) {
+						fmt.printf("[webgpu-feasibility] SDL_SetWindowSize failed: %s\n",SDL.GetError())
+						state.quit=true
+					}
+				}
+			}
 		}
 		event:SDL.Event
 		for SDL.PollEvent(&event) { handle_event(event) }
 		os_process_gpu_events()
 		when FEASIBILITY_TEST_QUIT_AFTER_READBACK {
 			smoke_elapsed += f64(dt)
-			if smoke_elapsed >= SMOKE_TIMEOUT_SECONDS &&
-				(!state.readback_done || !state.queue_work_done || !state.queue_work_done_ok) {
+			if smoke_elapsed >= SMOKE_TIMEOUT_SECONDS && !smoke_complete() {
 				fmt.printf("[webgpu-feasibility] bounded smoke timed out after %.1f seconds (readback_done=%v queue_done=%v queue_ok=%v)\n",
 					SMOKE_TIMEOUT_SECONDS,
 					state.readback_done,
@@ -47,7 +82,10 @@ os_run :: proc() {
 			}
 		}
 		if state.quit { break }
-		needs_wakeup := state.readback_pending || state.queue_work_done_pending || state.animation_seconds < ANIMATION_SECONDS
+		needs_wakeup := state.dirty || state.readback_pending || state.queue_work_done_pending || state.animation_seconds < ANIMATION_SECONDS
+		when FEASIBILITY_TEST_RESIZE {
+			needs_wakeup = needs_wakeup || (state.ready && (!state.test_resize_pre_frame || !state.test_resize_post_frame))
+		}
 		when FEASIBILITY_TEST_DEVICE_LOSS {
 			needs_wakeup = needs_wakeup || (!state.ready && !state.device_lost)
 		}

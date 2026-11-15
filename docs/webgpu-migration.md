@@ -266,8 +266,13 @@ resource retirement, secondary windows, or production performance parity.
 The bounded native fixture now has a 15-second end-to-end deadline for its
 adapter/device/readback/queue-completion path. If an async callback is lost, it
 prints the completion flags and exits nonzero instead of waiting indefinitely.
-The rebuilt Windows smoke passed on Vulkan/NVIDIA RTX 2080 SUPER with all
-thirteen pixel probes and `QueueOnSubmittedWorkDone` reporting `Success`.
+The rebuilt Windows readback smoke passed on Vulkan/NVIDIA RTX 2080 SUPER with
+all thirteen pixel probes and `QueueOnSubmittedWorkDone` reporting `Success`.
+The new resize smoke programmatically changed the SDL window to 800×450 during
+the 1.8-second motion and 720×405 after it settled; both surface reconfigures
+were observed, and `SurfacePresent` was submitted at both new sizes before
+exit. It also passed readback and queue completion. This verifies WGPU surface
+submission, not physical display scanout.
 
 Phase 0 therefore has credible shared-renderer feasibility evidence, but its
 cross-platform device-loss/lifecycle acceptance remains open. The explicit

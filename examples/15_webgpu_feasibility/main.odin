@@ -17,6 +17,7 @@ FEASIBILITY_TEST_DEVICE_LOSS_EARLY :: #config(FEASIBILITY_TEST_DEVICE_LOSS_EARLY
 FEASIBILITY_TEST_DEVICE_LOSS_SPONTANEOUS :: #config(FEASIBILITY_TEST_DEVICE_LOSS_SPONTANEOUS, false)
 FEASIBILITY_TEST_DEVICE_LOSS_RELEASE_BEFORE_POLL :: #config(FEASIBILITY_TEST_DEVICE_LOSS_RELEASE_BEFORE_POLL, false)
 FEASIBILITY_TEST_QUIT_AFTER_READBACK :: #config(FEASIBILITY_TEST_QUIT_AFTER_READBACK, false)
+FEASIBILITY_TEST_RESIZE :: #config(FEASIBILITY_TEST_RESIZE, false)
 
 Vertex :: struct {
 	position: [2]f32,
@@ -58,6 +59,10 @@ state: struct {
 	readback_buffer: wgpu.Buffer,
 	readback_pending, readback_done: bool,
 	queue_work_done_pending, queue_work_done, queue_work_done_ok: bool,
+	test_resize_pre_requested, test_resize_pre_applied, test_resize_pre_frame: bool,
+	test_resize_post_requested, test_resize_post_applied, test_resize_post_frame: bool,
+	test_resize_post_delay: f32,
+	test_resize_pre_present_before, test_resize_post_present_before, surface_present_count: u64,
 	width, height: u32,
 	animation_seconds: f32,
 	ready, dirty, quit, device_lost: bool,
@@ -85,7 +90,22 @@ main :: proc() {
 		if !state.readback_done || !state.queue_work_done || !state.queue_work_done_ok {
 			os_exit_failure()
 		}
+		when FEASIBILITY_TEST_RESIZE {
+			if !state.test_resize_pre_applied || !state.test_resize_pre_frame ||
+				!state.test_resize_post_applied || !state.test_resize_post_frame {
+				os_exit_failure()
+			}
+		}
 	}
+}
+
+smoke_complete :: proc() -> bool {
+	if !state.readback_done || !state.queue_work_done || !state.queue_work_done_ok { return false }
+	when FEASIBILITY_TEST_RESIZE {
+		if !state.test_resize_pre_applied || !state.test_resize_pre_frame ||
+			!state.test_resize_post_applied || !state.test_resize_post_frame { return false }
+	}
+	return true
 }
 
 on_adapter :: proc "c" (status: wgpu.RequestAdapterStatus, adapter: wgpu.Adapter, message: string, userdata1, userdata2: rawptr) {
@@ -150,7 +170,7 @@ on_queue_work_done :: proc "c" (status:wgpu.QueueWorkDoneStatus, message:wgpu.St
 	state.queue_work_done_ok = status == .Success
 	fmt.printf("[webgpu-feasibility] queue work done status=%v message=%s\n", status, message)
 	when FEASIBILITY_TEST_QUIT_AFTER_READBACK {
-		if !state.readback_pending {
+		if !state.readback_pending && (!FEASIBILITY_TEST_RESIZE || state.test_resize_post_frame) {
 			state.quit = true
 		}
 	}
@@ -185,6 +205,15 @@ resize :: proc() {
 	state.config.width, state.config.height = max(state.width, 1), max(state.height, 1)
 	wgpu.SurfaceConfigure(state.surface, &state.config)
 	state.dirty = true
+	when FEASIBILITY_TEST_RESIZE {
+		if !state.test_resize_pre_applied && state.test_resize_pre_requested && state.animation_seconds<ANIMATION_SECONDS {
+			state.test_resize_pre_applied=true
+			fmt.printf("[webgpu-feasibility] resize during animation applied at %dx%d\n",state.config.width,state.config.height)
+		} else if !state.test_resize_post_applied && state.test_resize_post_requested && state.animation_seconds>=ANIMATION_SECONDS {
+			state.test_resize_post_applied=true
+			fmt.printf("[webgpu-feasibility] resize after animation applied at %dx%d\n",state.config.width,state.config.height)
+		}
+	}
 }
 
 @(export)

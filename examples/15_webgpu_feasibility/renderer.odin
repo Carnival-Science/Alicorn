@@ -229,6 +229,7 @@ render_surface_frame :: proc() {
 	defer wgpu.CommandBufferRelease(command)
 	wgpu.QueueSubmit(state.queue,{command})
 	wgpu.SurfacePresent(state.surface)
+	state.surface_present_count+=1
 }
 
 build_scene :: proc() {
@@ -485,7 +486,7 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 	}
 	wgpu.BufferUnmap(state.readback_buffer); state.readback_done=ok
 	when FEASIBILITY_TEST_QUIT_AFTER_READBACK {
-		if state.queue_work_done {
+		if state.queue_work_done && (!FEASIBILITY_TEST_RESIZE || state.test_resize_post_frame) {
 			state.quit=true
 		}
 	}

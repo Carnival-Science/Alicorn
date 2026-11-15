@@ -9,6 +9,8 @@ try {
 	if ($LASTEXITCODE -ne 0) { throw "Native fixture build failed: $LASTEXITCODE" }
 	& $Odin build . -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -out:out\webgpu_feasibility_smoke.exe
 	if ($LASTEXITCODE -ne 0) { throw "Native smoke fixture build failed: $LASTEXITCODE" }
+	& $Odin build . -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -define:FEASIBILITY_TEST_RESIZE=true -out:out\webgpu_feasibility_resize_smoke.exe
+	if ($LASTEXITCODE -ne 0) { throw "Native resize smoke fixture build failed: $LASTEXITCODE" }
 	$odinRoot=Split-Path -Parent $Odin
 	Copy-Item (Join-Path $odinRoot 'vendor\sdl3\SDL3.dll') (Join-Path $root 'out\SDL3.dll') -Force
 	$wgpuDll=Join-Path $odinRoot 'vendor\wgpu\lib\wgpu-windows-x86_64-msvc-release\lib\wgpu_native.dll'
@@ -20,5 +22,6 @@ try {
 	Copy-Item (Join-Path $odinRoot 'vendor\wgpu\wgpu.js') (Join-Path $root 'web\wgpu.js') -Force
 	Write-Host "Native interactive: $root\out\webgpu_feasibility.exe"
 	Write-Host "Native readback smoke: $root\out\webgpu_feasibility_smoke.exe"
+	Write-Host "Native resize smoke: $root\out\webgpu_feasibility_resize_smoke.exe"
 	Write-Host "Browser: serve $root\web on localhost and open /index.html"
 } finally { Pop-Location }
