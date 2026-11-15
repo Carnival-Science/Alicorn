@@ -40,6 +40,12 @@ jobs:
         shell: sh
         run: sh tools/validate_blending.sh
 
+      - name: Build native and browser WebGPU feasibility fixture and smoke Metal readback
+        shell: sh
+        run: |
+          sh examples/15_webgpu_feasibility/build.sh
+          ./examples/15_webgpu_feasibility/out/webgpu_feasibility_smoke
+
       - name: Validate bounded retained-effects experiment through Metal readback
         shell: bash
         run: |

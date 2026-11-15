@@ -210,12 +210,16 @@ resource retirement, secondary windows, or production performance parity.
   text-input/navigation, and host-ownership checks). Odin emitted the existing
   large-stack-local warnings for `Native_Secondary_Window`.
 - `examples/15_webgpu_feasibility/build.ps1 -Odin C:\odin\odin.exe`: passed;
-  rebuilt both the native executable and standard `js_wasm32` artifact.
-- Windows foundation CI now runs that same native-plus-browser fixture build
-  after compiling all examples. This branch has the local build evidence; its
-  hosted workflow result remains pending until the branch is pushed.
-- Native standard fixture: asynchronous 64×64 RGBA8 readback passed; center
-  pixel was `(242, 64, 38, 255)`.
+  rebuilt the interactive and bounded-smoke native executables plus the
+  standard `js_wasm32` artifact.
+- The bounded native smoke executed on Windows D3D12 and exited successfully
+  after asynchronous 64×64 RGBA8 readback; the checked center pixel was
+  `(242, 64, 38, 255)`. A failed map or pixel check exits nonzero.
+- Windows foundation CI now builds the native/browser fixture and executes
+  that D3D12 smoke. macOS foundation CI now builds the same shared source for
+  native and `js_wasm32`, then runs its native Metal readback smoke. Those new
+  hosted results are pending; this environment only provides the Windows local
+  run.
 - A local static wgpu-native `v29.0.1.1` library built from the pinned source
   and checked-in callback patch passed early-destroy tests in both native
   callback modes, as well as a final-handle-release-before-poll test. The

@@ -42,9 +42,13 @@ jobs:
       - name: Compile every example
         shell: pwsh
         run: ./tools/build_examples.ps1 -Odin odin
-      - name: Build shared native and browser WebGPU feasibility fixture
+      - name: Build shared native and browser fixture; smoke-test D3D12 readback
         shell: pwsh
-        run: ./examples/15_webgpu_feasibility/build.ps1 -Odin odin
+        run: |
+          ./examples/15_webgpu_feasibility/build.ps1 -Odin odin
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & ./examples/15_webgpu_feasibility/out/webgpu_feasibility_smoke.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Smoke-test example runners
         shell: pwsh
         run: |

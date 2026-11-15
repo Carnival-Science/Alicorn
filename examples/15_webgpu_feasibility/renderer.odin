@@ -348,7 +348,11 @@ start_offscreen_readback :: proc() {
 
 on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,userdata2:rawptr) {
 	context=state.ctx; state.readback_pending=false
-	if status!=.Success { fmt.printf("[webgpu-feasibility] readback failed: %v %s\n",status,message); return }
+	if status!=.Success {
+		fmt.printf("[webgpu-feasibility] readback failed: %v %s\n",status,message)
+		when FEASIBILITY_TEST_QUIT_AFTER_READBACK { state.quit=true }
+		return
+	}
 	pixels:=wgpu.BufferGetMappedRangeSlice(state.readback_buffer,0,u8,64*64*4)
 	center:=32*256+32*4
 	valid_range:=len(pixels)==64*64*4
@@ -357,6 +361,9 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 	ok:=valid_range && r>200 && g>40 && b>20 && a==255
 	fmt.printf("[webgpu-feasibility] async RGBA8 readback %s len=%d center=%d,%d,%d,%d\n","PASS" if ok else "FAIL",len(pixels),r,g,b,a)
 	wgpu.BufferUnmap(state.readback_buffer); state.readback_done=ok
+	when FEASIBILITY_TEST_QUIT_AFTER_READBACK {
+		state.quit=true
+	}
 	when FEASIBILITY_TEST_DEVICE_LOSS {
 		if ok {
 			// Defer destroy until the host has returned from this callback. In

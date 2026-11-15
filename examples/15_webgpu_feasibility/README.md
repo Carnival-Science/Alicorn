@@ -21,6 +21,23 @@ asynchronously; its callback checks the pixel result.
 Resize while the marker moves and after it settles. The native host waits in
 SDL when there is no frame, animation deadline, or WGPU callback work.
 
+For a bounded native adapter/render/readback smoke that exits on completion:
+
+~~~powershell
+.\out\webgpu_feasibility_smoke.exe
+~~~
+
+The smoke exits nonzero if the asynchronous pixel check fails.
+
+## macOS native
+
+~~~sh
+sh build.sh
+./out/webgpu_feasibility_smoke
+~~~
+
+This uses the same shared Odin renderer with SDL3 and wgpu-native/Metal.
+
 ## Browser
 
 The browser build uses Odin js_wasm32 without Emscripten. Serve web/ over

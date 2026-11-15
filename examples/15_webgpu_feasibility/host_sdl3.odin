@@ -2,6 +2,7 @@
 package webgpu_feasibility
 
 import "core:fmt"
+import "core:os"
 import "vendor:wgpu"
 import SDL "vendor:sdl3"
 import "vendor:wgpu/sdl3glue"
@@ -86,3 +87,5 @@ os_process_gpu_events :: proc() {
 		wgpu.InstanceProcessEvents(state.instance)
 	}
 }
+
+os_exit_failure :: proc() { os.exit(1) }
