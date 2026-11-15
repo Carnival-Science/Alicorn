@@ -146,3 +146,29 @@ Browser build must include Odin's `core/sys/wasm/js/odin.js`, WGPU's
 `vendor/wgpu/wgpu.js`, an imported WebGPU interface, and WebAssembly memory
 wiring. It is served from localhost/HTTPS because WebGPU requires a secure
 context. No Emscripten toolchain is part of this setup.
+
+## Browser adapter classification limitation (2026-11-15)
+
+The browser feasibility fixture was executed in a real browser WebGPU session,
+and its shared asynchronous offscreen readback passed all ten pixel probes.
+That proves the browser runtime path works; it does not establish whether the
+browser selected a hardware adapter or a software implementation.
+
+Source inspection of the Odin JS bridge at
+`C:\odin\vendor\wgpu\wgpu.js` found that `genericGetAdapterInfo(infoPtr,
+info)` reads `info.vendor`, `info.architecture`, and related fields, while the
+`wgpuAdapterGetInfo(adapterIdx, infoPtr)` import calls it with only
+`infoPtr`. The handler has the adapter index available but does not pass the
+corresponding `GPUAdapterInfo`. As a result, the bridge cannot currently be
+trusted to report adapter metadata in browser builds. Native `AdapterGetInfo`
+does not use this JS path.
+
+Minimal reproducer for an isolated follow-up: build a `js_wasm32` program that
+successfully requests an adapter, calls `wgpu.AdapterGetInfo(adapter)`, and
+records the returned info/status and browser exception. A likely narrow
+candidate fix is to pass the selected adapter's `info` to
+`genericGetAdapterInfo`, then verify the binding's allocation/free behavior
+and test browsers that intentionally redact metadata. No Odin source or
+installed toolchain files were modified in this migration work. Until that
+repro/fix is validated, browser evidence should be labeled “WebGPU runtime
+tested; adapter acceleration class unknown,” never hardware-accelerated.

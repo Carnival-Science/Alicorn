@@ -57,10 +57,10 @@ unchanged by target; this is a package-boundary change, not a renderer change.
 `js_wasm32` consumer that imports `alicorn:ui` and calls its declarative text
 API. The check passed on Windows. `odin test ui` passed all 39 UI tests,
 `odin test runtime` passed all 343 runtime tests, and the native
-`examples/01_hello` `ui.run` consumer built successfully. The broader
-`tools/test.ps1` run stopped in the AccessKit UI Automation smoke with
-`Accessible Button missing` before its later test stages; this environment
-failure is not counted as a passing full-suite run.
+`examples/01_hello` `ui.run` consumer built successfully. An initial broad
+`tools/test.ps1` attempt stopped in the AccessKit UI Automation smoke with
+`Accessible Button missing`; a later full rerun passed all stages, as recorded
+in the refreshed Windows validation below.
 
 This is only the UI/runtime package boundary. `ui.run` is currently unavailable
 on `js_wasm32` until the browser host is implemented; most SDL_GPU production
@@ -126,12 +126,17 @@ performance comparison.
 
 `examples/15_webgpu_feasibility` builds from the same Odin renderer source for
 Windows SDL3/wgpu-native and browser `js_wasm32`. Both targets rendered the
-fixture and passed the asynchronous 64×64 RGBA8 offscreen readback check. The
-fixture also exercised partial vertex-buffer and texture uploads, resize,
-Runa-backed glyph-atlas text, clipped/blended/rounded geometry, waveform bars,
-and demand-driven animation that stops after settling. The browser resize and
-settled-scheduler behavior were observed in a real WebGPU browser session; the
-native run used D3D12 on an RTX 2080 SUPER.
+fixture and passed ten checks from an asynchronous 64×64 RGBA8 readback:
+clear color, solid color, sampled checker texture, partial texture upload,
+source-over blend, Runa glyph-atlas coverage, inside/outside scissor clipping,
+rounded-rectangle fill, and rounded-corner exclusion. This exercises more than
+the on-screen scene: each pixel result is asserted identically by the shared
+Odin callback on both targets. The scene also exercises partial vertex-buffer
+uploads, resize, waveform bars, and demand-driven animation that stops after
+settling. The native run used D3D12 on an RTX 2080 SUPER. The browser fixture
+was executed in a real WebGPU browser session, but that session's adapter
+hardware-versus-software classification was not captured; it is runtime
+evidence, not a build-only check or a claim of hardware acceleration.
 
 An opt-in destruction experiment (`FEASIBILITY_TEST_DEVICE_LOSS=true`) delivered
 the `Destroyed` device-loss callback in browser WebGPU after the readback
@@ -213,8 +218,12 @@ resource retirement, secondary windows, or production performance parity.
   rebuilt the interactive and bounded-smoke native executables plus the
   standard `js_wasm32` artifact.
 - The bounded native smoke executed on Windows D3D12 and exited successfully
-  after asynchronous 64×64 RGBA8 readback; the checked center pixel was
-  `(242, 64, 38, 255)`. A failed map or pixel check exits nonzero.
+  after asynchronous 64×64 RGBA8 readback; all ten named pixel probes passed.
+  A failed map or pixel check exits nonzero.
+- The rebuilt browser WASM was loaded in the local WebGPU browser session; its
+  console reported all ten pixel probes passed and the scheduler returned to
+  `Settled: no frame is scheduled`. This verifies browser runtime execution.
+  Hardware versus software adapter classification remains unknown.
 - Windows foundation CI now builds the native/browser fixture and executes
   that D3D12 smoke. macOS foundation CI now builds the same shared source for
   native and `js_wasm32`, then runs its native Metal readback smoke. Those new
@@ -226,11 +235,12 @@ resource retirement, secondary windows, or production performance parity.
   patched full fixture passed RGBA8 readback, delivered one `Destroyed`
   notification, and exited through teardown. See the
   [patch validation record](validation/webgpu-device-loss-callback-patch-windows-2026-11-15.md).
-- The Windows desktop capture bridge timed out while refreshing the browser
-  view, so this run confirms the standard WASM build, not a new browser-GPU
-  visual run. An earlier browser session had confirmed the shared scene,
-  resizing, and settled no-frame state. The unmodified native callback gap and
-  the patched Windows result are distinguished above.
+- Odin's browser-side `AdapterGetInfo` bridge currently appears to omit the
+  `GPUAdapterInfo` argument when calling `genericGetAdapterInfo`; browser
+  adapter classification therefore needs a targeted binding fix or a narrow
+  host-side probe before hardware-acceleration claims are possible. This does
+  not affect the successful rendering/readback checks. The unmodified native
+  callback gap and the patched Windows result are distinguished above.
 - `git diff --check`: passed.
 
 Phase 0 therefore has credible shared-renderer feasibility evidence, but its

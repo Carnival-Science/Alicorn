@@ -323,18 +323,19 @@ start_offscreen_readback :: proc() {
 	state.readback_buffer=wgpu.DeviceCreateBuffer(state.device,&wgpu.BufferDescriptor{
 		label="mapped readback staging",usage={.CopyDst,.MapRead},size=64*64*4,
 	})
-	quad:=[6]Vertex{
-		{{-0.75,-0.75},{0,0},{0.95,0.25,0.15,1},0},{{0.75,-0.75},{1,0},{0.95,0.25,0.15,1},0},{{0.75,0.75},{1,1},{0.95,0.25,0.15,1},0},
-		{{-0.75,-0.75},{0,0},{0.95,0.25,0.15,1},0},{{0.75,0.75},{1,1},{0.95,0.25,0.15,1},0},{{-0.75,0.75},{0,1},{0.95,0.25,0.15,1},0},
-	}
-	wgpu.QueueWriteBuffer(state.queue,state.vertex_buffer,0,raw_data(quad[:]),uint(size_of(quad)))
+	build_offscreen_probe_scene()
+	upload_size:=u64(len(state.vertices)*size_of(Vertex))
+	wgpu.QueueWriteBuffer(state.queue,state.vertex_buffer,0,raw_data(state.vertices),uint(upload_size))
 	encoder:=wgpu.DeviceCreateCommandEncoder(state.device)
 	attachment:=wgpu.RenderPassColorAttachment{view=state.offscreen_view,depthSlice=wgpu.DEPTH_SLICE_UNDEFINED,loadOp=.Clear,storeOp=.Store,clearValue={0.04,0.08,0.12,1}}
 	pass:=wgpu.CommandEncoderBeginRenderPass(encoder,&wgpu.RenderPassDescriptor{colorAttachmentCount=1,colorAttachments=&attachment})
 	wgpu.RenderPassEncoderSetPipeline(pass,state.offscreen_pipeline)
 	wgpu.RenderPassEncoderSetBindGroup(pass,0,state.bind_group)
 	wgpu.RenderPassEncoderSetVertexBuffer(pass,0,state.vertex_buffer,0,state.vertex_capacity)
-	wgpu.RenderPassEncoderDraw(pass,6,1,0,0)
+	for draw in state.draws {
+		wgpu.RenderPassEncoderSetScissorRect(pass,draw.scissor[0],draw.scissor[1],draw.scissor[2],draw.scissor[3])
+		wgpu.RenderPassEncoderDraw(pass,draw.count,1,draw.first,0)
+	}
 	wgpu.RenderPassEncoderEnd(pass); wgpu.RenderPassEncoderRelease(pass)
 	layout:=wgpu.TexelCopyBufferLayout{bytesPerRow=256,rowsPerImage=64}
 	source:=wgpu.TexelCopyTextureInfo{texture=state.offscreen_texture,aspect=.All}
@@ -346,6 +347,57 @@ start_offscreen_readback :: proc() {
 	wgpu.BufferMapAsync(state.readback_buffer,{.Read},0,64*64*4,{mode=.AllowProcessEvents,callback=on_readback})
 }
 
+build_offscreen_probe_scene :: proc() {
+	previous_width,previous_height:=state.width,state.height
+	state.width,state.height=64,64
+	clear(&state.vertices); clear(&state.draws)
+	start:=len(state.vertices)
+	// The center sample preserves the original exact solid-color probe.
+	add_quad_px(&state.vertices,24,16,40,42,{0,0,1,1},{0.95,0.25,0.15,1},0)
+	// A centered checker texel and the partially uploaded teal patch.
+	add_quad_px(&state.vertices,2,2,18,18,{0,0,0.25,0.25},{1,1,1,1},1)
+	add_quad_px(&state.vertices,2,20,18,36,{0.25,0.25,0.5,0.5},{1,1,1,1},1)
+	// Source-over blend over a known opaque base.
+	add_quad_px(&state.vertices,44,4,60,20,{0,0,1,1},{0.1,0.2,0.3,1},0)
+	add_quad_px(&state.vertices,48,8,56,16,{0,0,1,1},{0.9,0.4,0.1,0.5},0)
+	// Runa's first rasterized glyph is sampled at its most covered atlas texel.
+	glyph_uv,glyph_ok:=offscreen_glyph_probe_uv()
+	if glyph_ok { add_quad_px(&state.vertices,44,28,60,44,glyph_uv,{0.8,0.6,0.4,1},2) }
+	add_draw(start,len(state.vertices),0,0,64,64)
+	// A wide primitive is clipped to an 8x8 scissor; a second sample checks
+	// that the pixels beyond that clip remain at the clear color.
+	start=len(state.vertices)
+	add_quad_px(&state.vertices,0,28,20,44,{0,0,1,1},{0.1,0.8,0.2,1},0)
+	add_draw(start,len(state.vertices),4,32,8,8)
+	// This helper takes 960x540 logical coordinates, so inverse-scale the
+	// 16x16 physical test shape into the offscreen target.
+	add_rounded_rect(24*15,44*8.4375,16*15,16*8.4375,6*15,{0.6,0.3,0.9,1})
+	state.width,state.height=previous_width,previous_height
+}
+
+offscreen_glyph_probe_uv :: proc() -> (uv:[4]f32,ok:bool) {
+	if len(state.glyph_quads)==0 { return }
+	page,page_ok:=runa.atlas_page_view(&state.atlas,0,false)
+	if !page_ok || page.Width==0 || page.Height==0 { return }
+	glyph:=state.glyph_quads[0]
+	x0:=clamp(int(glyph.uv[0]*f32(page.Width)),0,int(page.Width)-1)
+	y0:=clamp(int(glyph.uv[1]*f32(page.Height)),0,int(page.Height)-1)
+	x1:=clamp(int(math.ceil(f64(glyph.uv[2]*f32(page.Width)))),x0+1,int(page.Width))
+	y1:=clamp(int(math.ceil(f64(glyph.uv[3]*f32(page.Height)))),y0+1,int(page.Height))
+	best_x,best_y:int
+	best_coverage:u8=0
+	for y in y0..<y1 {
+		for x in x0..<x1 {
+			coverage:=page.Pixels[y*int(page.Width)+x]
+			if coverage>best_coverage { best_x,best_y,best_coverage=x,y,coverage }
+		}
+	}
+	if best_coverage==0 { return }
+	u:=(f32(best_x)+0.5)/f32(page.Width)
+	v:=(f32(best_y)+0.5)/f32(page.Height)
+	return [4]f32{u,v,u,v},true
+}
+
 on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,userdata2:rawptr) {
 	context=state.ctx; state.readback_pending=false
 	if status!=.Success {
@@ -354,12 +406,43 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		return
 	}
 	pixels:=wgpu.BufferGetMappedRangeSlice(state.readback_buffer,0,u8,64*64*4)
-	center:=32*256+32*4
 	valid_range:=len(pixels)==64*64*4
-	r,g,b,a:=u8(0),u8(0),u8(0),u8(0)
-	if valid_range { r,g,b,a=pixels[center],pixels[center+1],pixels[center+2],pixels[center+3] }
-	ok:=valid_range && r>200 && g>40 && b>20 && a==255
-	fmt.printf("[webgpu-feasibility] async RGBA8 readback %s len=%d center=%d,%d,%d,%d\n","PASS" if ok else "FAIL",len(pixels),r,g,b,a)
+	ok:=valid_range
+	if valid_range {
+		clear_pixel:=offscreen_pixel(pixels,20,10)
+		solid_pixel:=offscreen_pixel(pixels,32,32)
+		checker_pixel:=offscreen_pixel(pixels,10,10)
+		patch_pixel:=offscreen_pixel(pixels,10,28)
+		blend_pixel:=offscreen_pixel(pixels,52,12)
+		glyph_pixel:=offscreen_pixel(pixels,52,36)
+		clip_pixel:=offscreen_pixel(pixels,8,36)
+		outside_clip_pixel:=offscreen_pixel(pixels,18,36)
+		rounded_pixel:=offscreen_pixel(pixels,32,52)
+		rounded_corner_pixel:=offscreen_pixel(pixels,24,44)
+		clear_expected:=[4]u8{10,20,31,255}
+		solid_expected:=[4]u8{242,64,38,255}
+		checker_expected:=[4]u8{232,166,86,255}
+		patch_expected:=[4]u8{72,206,166,255}
+		blend_expected:=[4]u8{128,77,51,255}
+		glyph_expected:=[4]u8{204,153,102,255}
+		clip_expected:=[4]u8{26,204,51,255}
+		rounded_expected:=[4]u8{153,77,230,255}
+		clear_ok:=offscreen_pixel_near(clear_pixel,clear_expected)
+		solid_ok:=offscreen_pixel_near(solid_pixel,solid_expected)
+		checker_ok:=offscreen_pixel_near(checker_pixel,checker_expected)
+		patch_ok:=offscreen_pixel_near(patch_pixel,patch_expected)
+		blend_ok:=offscreen_pixel_near(blend_pixel,blend_expected)
+		glyph_ok:=offscreen_pixel_near(glyph_pixel,glyph_expected)
+		clip_ok:=offscreen_pixel_near(clip_pixel,clip_expected)
+		outside_clip_ok:=offscreen_pixel_near(outside_clip_pixel,clear_expected)
+		rounded_ok:=offscreen_pixel_near(rounded_pixel,rounded_expected)
+		rounded_corner_ok:=offscreen_pixel_near(rounded_corner_pixel,clear_expected)
+		ok=clear_ok && solid_ok && checker_ok && patch_ok && blend_ok && glyph_ok && clip_ok && outside_clip_ok && rounded_ok && rounded_corner_ok
+		fmt.printf("[webgpu-feasibility] async RGBA8 readback %s bytes=%d clear=%v solid=%v checker=%v partial_texture=%v blend=%v glyph=%v clip=%v outside_clip=%v rounded=%v rounded_corner=%v corner_px=%v\n",
+			"PASS" if ok else "FAIL",len(pixels),clear_ok,solid_ok,checker_ok,patch_ok,blend_ok,glyph_ok,clip_ok,outside_clip_ok,rounded_ok,rounded_corner_ok,rounded_corner_pixel)
+	} else {
+		fmt.printf("[webgpu-feasibility] async RGBA8 readback FAIL bytes=%d expected=%d\n",len(pixels),64*64*4)
+	}
 	wgpu.BufferUnmap(state.readback_buffer); state.readback_done=ok
 	when FEASIBILITY_TEST_QUIT_AFTER_READBACK {
 		state.quit=true
@@ -372,6 +455,20 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 			state.test_device_loss_pending=true
 		}
 	}
+}
+
+offscreen_pixel :: proc(pixels:[]u8,x,y:int) -> [4]u8 {
+	i:=y*256+x*4
+	return [4]u8{pixels[i],pixels[i+1],pixels[i+2],pixels[i+3]}
+}
+
+offscreen_pixel_near :: proc(actual,expected:[4]u8,tolerance:u8=3) -> bool {
+	for channel in 0..<4 {
+		delta:=i32(actual[channel])-i32(expected[channel])
+		if delta<0 { delta=-delta }
+		if delta>i32(tolerance) { return false }
+	}
+	return true
 }
 
 begin_test_device_loss :: proc() {
