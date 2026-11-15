@@ -40,12 +40,13 @@ fi
 
 mkdir "$stage/extracted"
 unzip -q "$stage/$archive" -d "$stage/extracted"
-package="$stage/extracted/wgpu-macos-aarch64-release"
-library="$package/lib/libwgpu_native.a"
-if [ ! -f "$library" ]; then
-	echo "Pinned wgpu-native archive is missing the expected static library: $library" >&2
+library=$(find "$stage/extracted" -type f -name libwgpu_native.a -print -quit)
+if [ -z "$library" ]; then
+	echo 'Pinned wgpu-native archive is missing libwgpu_native.a.' >&2
 	exit 1
 fi
+package=$(dirname -- "$(dirname -- "$library")")
+echo "Found archive library at ${library#"$stage/extracted"/}"
 
 destination="$odin_root/vendor/wgpu/lib/wgpu-macos-aarch64-release"
 mkdir -p "$destination"
