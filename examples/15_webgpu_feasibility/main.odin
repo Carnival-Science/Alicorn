@@ -83,6 +83,20 @@ on_adapter :: proc "c" (status: wgpu.RequestAdapterStatus, adapter: wgpu.Adapter
 	context = state.ctx
 	if status != .Success || adapter == nil { fmt.panicf("adapter request failed: %v %s", status, message) }
 	state.adapter = adapter
+	adapter_info, info_status := wgpu.AdapterGetInfo(adapter)
+	if info_status == .Success {
+		fmt.printf("[webgpu-feasibility] adapter info backend=%v type=%v vendor=%s architecture=%s device=%s description=%s\n",
+			adapter_info.backendType,
+			adapter_info.adapterType,
+			adapter_info.vendor,
+			adapter_info.architecture,
+			adapter_info.device,
+			adapter_info.description,
+		)
+		wgpu.AdapterInfoFreeMembers(adapter_info)
+	} else {
+		fmt.printf("[webgpu-feasibility] adapter info unavailable status=%v\n",info_status)
+	}
 	caps, cap_status := wgpu.SurfaceGetCapabilities(state.surface, adapter)
 	if cap_status != .Success || caps.formatCount == 0 || caps.alphaModeCount == 0 {
 		fmt.panicf("surface capabilities unavailable: %v", cap_status)

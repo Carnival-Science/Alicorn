@@ -133,10 +133,10 @@ rounded-rectangle fill, and rounded-corner exclusion. This exercises more than
 the on-screen scene: each pixel result is asserted identically by the shared
 Odin callback on both targets. The scene also exercises partial vertex-buffer
 uploads, resize, waveform bars, and demand-driven animation that stops after
-settling. The native run used D3D12 on an RTX 2080 SUPER. The browser fixture
-was executed in a real WebGPU browser session, but that session's adapter
-hardware-versus-software classification was not captured; it is runtime
-evidence, not a build-only check or a claim of hardware acceleration.
+settling. The original Windows native run used D3D12 on an RTX 2080 SUPER. A
+later fresh run is recorded below with the backend it actually selected. The
+browser fixture was executed in a real WebGPU browser session; its adapter
+fallback flag was captured in the later metadata probe below.
 
 An opt-in destruction experiment (`FEASIBILITY_TEST_DEVICE_LOSS=true`) delivered
 the `Destroyed` device-loss callback in browser WebGPU after the readback
@@ -217,13 +217,20 @@ resource retirement, secondary windows, or production performance parity.
 - `examples/15_webgpu_feasibility/build.ps1 -Odin C:\odin\odin.exe`: passed;
   rebuilt the interactive and bounded-smoke native executables plus the
   standard `js_wasm32` artifact.
-- The bounded native smoke executed on Windows D3D12 and exited successfully
-  after asynchronous 64×64 RGBA8 readback; all ten named pixel probes passed.
-  A failed map or pixel check exits nonzero.
+- The bounded native smoke exited successfully after asynchronous 64×64 RGBA8
+  readback; all ten named pixel probes passed. A fresh local run selected
+  Vulkan and reported a discrete NVIDIA GeForce RTX 2080 SUPER adapter with
+  description `595.97`, while the earlier Windows run selected D3D12. Both
+  backend results are retained as separate observations rather than treating
+  backend selection as fixed.
 - The rebuilt browser WASM was loaded in the local WebGPU browser session; its
   console reported all ten pixel probes passed and the scheduler returned to
-  `Settled: no frame is scheduled`. This verifies browser runtime execution.
-  Hardware versus software adapter classification remains unknown.
+  `Settled: no frame is scheduled`. The fixture-local adapter-info override
+  reported `fallback=false`, vendor `nvidia`, and architecture `turing`; device
+  and description were redacted. Odin's `AdapterGetInfo` returned backend
+  `WebGPU`, type `Unknown`, and those same available identifiers. This is
+  browser runtime and adapter-metadata evidence; `fallback=false` is not a
+  standalone proof of physical-GPU acceleration.
 - Windows foundation CI now builds the native/browser fixture and executes
   that D3D12 smoke. macOS foundation CI now builds the same shared source for
   native and `js_wasm32`, then runs its native Metal readback smoke. Those new
@@ -235,12 +242,11 @@ resource retirement, secondary windows, or production performance parity.
   patched full fixture passed RGBA8 readback, delivered one `Destroyed`
   notification, and exited through teardown. See the
   [patch validation record](validation/webgpu-device-loss-callback-patch-windows-2026-11-15.md).
-- Odin's browser-side `AdapterGetInfo` bridge currently appears to omit the
-  `GPUAdapterInfo` argument when calling `genericGetAdapterInfo`; browser
-  adapter classification therefore needs a targeted binding fix or a narrow
-  host-side probe before hardware-acceleration claims are possible. This does
-  not affect the successful rendering/readback checks. The unmodified native
-  callback gap and the patched Windows result are distinguished above.
+- Odin's installed browser-side `AdapterGetInfo` bridge omits the
+  `GPUAdapterInfo` argument when calling `genericGetAdapterInfo`. The fixture
+  now works around this only in its page imports and captures the browser's
+  fallback flag without modifying the installed SDK. The pinned/upstream JS
+  binding defect remains. See the [toolchain audit](../dependencies/webgpu-toolchain.md#browser-adapter-metadata-bridge-2026-11-15).
 - `git diff --check`: passed.
 
 Phase 0 therefore has credible shared-renderer feasibility evidence, but its
