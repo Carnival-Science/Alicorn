@@ -3,7 +3,7 @@ package main
 import "core:fmt"
 import "core:time"
 import alicorn "../../runtime"
-import host "../../native/sdl_gpu"
+import cpu_renderer "../../renderer/cpu"
 
 SURFACE_COUNT :: 4096
 ITERATIONS    :: 80
@@ -16,14 +16,14 @@ BENCHMARK_GRADIENT :: alicorn.Surface_Gradient{
 	end=alicorn.Color{0.72, 0.56, 0.28, 1},
 }
 
-run_batch :: proc(vertices: ^[dynamic]host.Native_Text_Vertex, material_path: bool) -> (elapsed_ns: i64, checksum: f64) {
+run_batch :: proc(vertices: ^[dynamic]cpu_renderer.Vertex, material_path: bool) -> (elapsed_ns: i64, checksum: f64) {
 	start := time.now()
 	for _ in 0..<ITERATIONS {
 		clear(vertices)
 		for i in 0..<SURFACE_COUNT {
 			x := f32(i % 128)
 			if material_path {
-				host.native_solid_append_material_surface(
+				cpu_renderer.Append_Material_Surface(
 					vertices,
 					alicorn.Rect{x, 10, 48, 24},
 					alicorn.Rect{x, 10, 48, 24},
@@ -33,7 +33,7 @@ run_batch :: proc(vertices: ^[dynamic]host.Native_Text_Vertex, material_path: bo
 					1,
 				)
 			} else {
-				host.native_solid_append_quad(vertices, x, 10, x+48, 34, [4]f32{0.3, 0.4, 0.5, 1})
+				cpu_renderer.Append_Quad(vertices, x, 10, x+48, 34, [4]f32{0.3, 0.4, 0.5, 1})
 			}
 		}
 	}
@@ -46,7 +46,7 @@ run_batch :: proc(vertices: ^[dynamic]host.Native_Text_Vertex, material_path: bo
 }
 
 build_shape_geometry :: proc(
-	vertices: ^[dynamic]host.Native_Text_Vertex,
+	vertices: ^[dynamic]cpu_renderer.Vertex,
 	shape: alicorn.Surface_Shape,
 	gradient: bool,
 ) {
@@ -56,15 +56,15 @@ build_shape_geometry :: proc(
 		fill := alicorn.Color{0.3, 0.4, 0.5, 1}
 		resolved_gradient := alicorn.SURFACE_GRADIENT_NONE
 		if gradient { resolved_gradient = BENCHMARK_GRADIENT }
-		if host.native_solid_shape_is_rounded(shape) {
-			host.native_solid_append_rounded_material_surface(
+		if cpu_renderer.Shape_Is_Rounded(shape) {
+			cpu_renderer.Append_Rounded_Material_Surface(
 				vertices, bounds, bounds, fill,
 				alicorn.STYLE_MATERIAL_FLAT, 0, 1, shape, gradient=resolved_gradient,
 			)
 		} else if gradient {
-			host.native_solid_append_gradient_quad(vertices, bounds, fill, resolved_gradient, 1)
+			cpu_renderer.Append_Gradient_Quad(vertices, bounds, fill, resolved_gradient, 1)
 		} else {
-			host.native_solid_append_quad(vertices, bounds.x, bounds.y, bounds.x+bounds.w, bounds.y+bounds.h,
+			cpu_renderer.Append_Quad(vertices, bounds.x, bounds.y, bounds.x+bounds.w, bounds.y+bounds.h,
 				[4]f32{fill.r, fill.g, fill.b, fill.a})
 		}
 	}
@@ -88,7 +88,7 @@ benchmark_shape_geometry_print :: proc(name, fill_kind: string, samples: []i64, 
 	fmt.println("native_shape_geometry", name, "fill", fill_kind,
 		"surfaces", SHAPE_SURFACE_COUNT,
 		"vertices_per_surface", vertices_per_surface,
-		"uploaded_bytes", SHAPE_SURFACE_COUNT*vertices_per_surface*size_of(host.Native_Text_Vertex),
+		"uploaded_bytes", SHAPE_SURFACE_COUNT*vertices_per_surface*size_of(cpu_renderer.Vertex),
 		"surface_commands", SHAPE_SURFACE_COUNT, "draw_slots", SHAPE_SURFACE_COUNT, "additional_passes", 0,
 		"p50_batch_ns", samples[p50_index],
 		"p95_batch_ns", samples[p95_index],
@@ -98,8 +98,8 @@ benchmark_shape_geometry_print :: proc(name, fill_kind: string, samples: []i64, 
 }
 
 benchmark_shape_geometry :: proc(name: string, shape: alicorn.Surface_Shape) {
-	vertices := make([dynamic]host.Native_Text_Vertex, 0,
-		SHAPE_SURFACE_COUNT*host.NATIVE_ROUNDED_FILL_VERTICES, allocator=context.temp_allocator)
+	vertices := make([dynamic]cpu_renderer.Vertex, 0,
+		SHAPE_SURFACE_COUNT*cpu_renderer.ROUNDED_FILL_VERTICES, allocator=context.temp_allocator)
 	defer delete(vertices)
 	solid_samples: [SHAPE_SAMPLES]i64
 	gradient_samples: [SHAPE_SAMPLES]i64
@@ -132,7 +132,7 @@ benchmark_shape_geometry :: proc(name: string, shape: alicorn.Surface_Shape) {
 }
 
 main :: proc() {
-	vertices := make([dynamic]host.Native_Text_Vertex, 0, SURFACE_COUNT*6, allocator=context.temp_allocator)
+	vertices := make([dynamic]cpu_renderer.Vertex, 0, SURFACE_COUNT*6, allocator=context.temp_allocator)
 	defer delete(vertices)
 
 	// Warm the same preallocated storage before reporting. Both cases create the

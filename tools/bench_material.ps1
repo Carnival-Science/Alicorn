@@ -10,14 +10,8 @@ $AccessKit = Get-AlicornAccessKit
 & $Odin build benchmarks/native_material @($AccessKit.CompilerArguments) -o:speed -out:out\alicorn_material_benchmark.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-# The renderer package imports SDL3 for its normal host path. The benchmark
-# calls only CPU geometry routines, but Windows still needs the vendor DLL to
-# load the executable.
-$OdinRoot = Split-Path -Parent $Odin
-$SDL3 = Join-Path $OdinRoot 'vendor\sdl3\SDL3.dll'
-if (Test-Path -LiteralPath $SDL3 -PathType Leaf) {
-    Copy-Item -LiteralPath $SDL3 -Destination 'out\SDL3.dll' -Force
-}
+# CPU renderer helpers are backend-neutral; no SDL host or native renderer is
+# needed by this geometry-only benchmark.
 & .\out\alicorn_material_benchmark.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin build benchmarks/native_material_budget @($AccessKit.CompilerArguments) -o:speed -out:out\alicorn_material_budget.exe

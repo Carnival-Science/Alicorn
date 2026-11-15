@@ -122,6 +122,13 @@ rounded clipping and source-over checks passed. Its recorded p50/p95 timings
 include offscreen submission/fence/readback and are not a before/after renderer
 performance comparison.
 
+The material geometry benchmark now imports `renderer/cpu` directly instead of
+reaching through the SDL_GPU host package. The Windows run of
+`tools/bench_material.ps1` with `-Odin C:\odin\odin.exe` passed, including
+direct/material output equivalence and the geometry budget assertions. Its
+local timing output is not added as migration performance evidence: this changes
+the measured call path, and this run did not capture complete machine metadata.
+
 ## Phase 0 feasibility results (Windows, 2026-11-15)
 
 `examples/15_webgpu_feasibility` builds from the same Odin renderer source for
