@@ -266,6 +266,11 @@ host.Run(host.Application{
 See [native menus and integrated titlebar](native-menus-and-integrated-titlebar.md)
 for the callback contract and native fixture.
 
+For an application that owns its event loop, see
+[host-owned UI loops](hosted-runtime.md) for the nonblocking retained Runtime
+session, UI-thread event ingress, wake/deadline handling, resize/DPI, and close
+contract. This API does not provide a wxWidgets or native renderer adapter.
+
 ## Frame and invalidation
 
 | API | Use |
