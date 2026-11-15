@@ -29,6 +29,10 @@ echo 'Building native asynchronous-readback smoke fixture'
 "$ODIN" build . -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -out:out/webgpu_feasibility_smoke
 echo 'Building native surface-resize smoke fixture'
 "$ODIN" build . -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -define:FEASIBILITY_TEST_RESIZE=true -out:out/webgpu_feasibility_resize_smoke
+if ! command -v wasm-ld >/dev/null 2>&1; then
+	echo 'The js_wasm32 build requires wasm-ld. On macOS install it with `brew install lld` and add `$(brew --prefix lld)/bin` to PATH.' >&2
+	exit 1
+fi
 echo 'Building browser js_wasm32 fixture'
 "$ODIN" build . -target:js_wasm32 -o:size -out:web/feasibility.wasm -extra-linker-flags:--export-table
 ODIN_ROOT=$("$ODIN" root)

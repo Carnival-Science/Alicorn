@@ -26,6 +26,13 @@ jobs:
       - name: Install SDL3 for the native host contract test
         run: brew install sdl3
 
+      - name: Install wasm-ld for Odin js_wasm32 linking
+        shell: bash
+        run: |
+          brew install lld
+          echo "$(brew --prefix lld)/bin" >> "$GITHUB_PATH"
+          wasm-ld --version
+
       - name: Report Odin installation
         shell: sh
         run: |

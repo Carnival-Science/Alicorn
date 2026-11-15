@@ -13,6 +13,10 @@ fixture. It is not yet the project-wide supported-platform matrix.
   `6aed50955d934ac36049ba8d002034841633ae02`.
 - WASM target: `js_wasm32`; callbacks require
   `-extra-linker-flags:"--export-table"`.
+- WASM linker: Odin invokes `wasm-ld`; the macOS official SDK archive omits it.
+  Install Homebrew `lld` and put `$(brew --prefix lld)/bin` on `PATH` before
+  building the browser target. The macOS foundation workflow does this
+  explicitly and logs the linker version.
 - Native platform integration: Odin `vendor:sdl3` plus
   `vendor:wgpu/sdl3glue`. SDL3 remains the window/input host.
 

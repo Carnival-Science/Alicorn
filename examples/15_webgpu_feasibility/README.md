@@ -52,6 +52,8 @@ completion.
 ## macOS native
 
 ~~~sh
+brew install lld
+export PATH="$(brew --prefix lld)/bin:$PATH"
 sh build.sh
 ./out/webgpu_feasibility_smoke
 ~~~
