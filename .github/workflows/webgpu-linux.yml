@@ -1,0 +1,59 @@
+name: WebGPU feasibility (Linux)
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux-x64-lavapipe:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SDL3, Vulkan software driver, X11, and WASM linker
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libsdl3-dev libvulkan-dev mesa-vulkan-drivers vulkan-tools \
+            xvfb xauth lld pkg-config
+          pkg-config --modversion sdl3
+          wasm-ld --version
+
+      - name: Install pinned Odin Linux x64 SDK
+        shell: bash
+        run: |
+          odin_root="$RUNNER_TEMP/alicorn-odin"
+          sh tools/setup_linux_odin.sh "$odin_root"
+          echo "$odin_root" >> "$GITHUB_PATH"
+          echo "ODIN_ROOT=$odin_root" >> "$GITHUB_ENV"
+          echo "ALICORN_ODIN=$odin_root/odin" >> "$GITHUB_ENV"
+          "$odin_root/odin" version
+
+      - name: Install hash-verified wgpu-native for pinned Odin bindings
+        shell: sh
+        run: sh tools/setup_linux_wgpu_native.sh "$ODIN_ROOT"
+
+      - name: Build native and browser fixture, then smoke Vulkan through X11
+        shell: bash
+        run: |
+          set -euo pipefail
+          icd_file=$(find /usr/share/vulkan/icd.d -maxdepth 1 -type f -name 'lvp_icd*.json' -print -quit)
+          if [ -z "$icd_file" ]; then
+            echo 'Mesa lavapipe ICD was not installed.' >&2
+            exit 1
+          fi
+          export VK_ICD_FILENAMES="$icd_file"
+          export SDL_VIDEO_DRIVER=x11
+          export ALICORN_ODIN
+          sh examples/15_webgpu_feasibility/build.sh --odin "$ALICORN_ODIN"
+          vulkan_log="$RUNNER_TEMP/vulkaninfo-linux.txt"
+          xvfb-run -a -s '-screen 0 1280x800x24' vulkaninfo --summary 2>&1 | tee "$vulkan_log"
+          grep -Eq 'deviceName = (llvmpipe|lavapipe)' "$vulkan_log"
+          readback_log="$RUNNER_TEMP/webgpu-linux-readback.txt"
+          xvfb-run -a -s '-screen 0 1280x800x24' ./examples/15_webgpu_feasibility/out/webgpu_feasibility_smoke 2>&1 | tee "$readback_log"
+          grep -Fq 'adapter info backend=Vulkan' "$readback_log"
+          grep -Fq 'async RGBA8 readback PASS' "$readback_log"
+          resize_log="$RUNNER_TEMP/webgpu-linux-resize.txt"
+          xvfb-run -a -s '-screen 0 1280x800x24' ./examples/15_webgpu_feasibility/out/webgpu_feasibility_resize_smoke 2>&1 | tee "$resize_log"
+          grep -Fq 'SurfacePresent submitted at 800x450' "$resize_log"
+          grep -Fq 'SurfacePresent submitted at 720x405' "$resize_log"

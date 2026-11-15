@@ -60,6 +60,24 @@ sh build.sh
 
 This uses the same shared Odin renderer with SDL3 and wgpu-native/Metal.
 
+## Linux x64 native
+
+Install the platform's SDL3 development package, Vulkan loader/driver, and
+`wasm-ld`, then install the pinned compiler and wgpu-native archive:
+
+~~~sh
+sh tools/setup_linux_odin.sh "$HOME/opt/alicorn-odin"
+export ODIN_ROOT="$HOME/opt/alicorn-odin"
+export ALICORN_ODIN="$ODIN_ROOT/odin"
+sh tools/setup_linux_wgpu_native.sh "$ODIN_ROOT"
+sh examples/15_webgpu_feasibility/build.sh --odin "$ALICORN_ODIN"
+~~~
+
+Run `examples/15_webgpu_feasibility/out/webgpu_feasibility_smoke` and
+`webgpu_feasibility_resize_smoke` inside an X11 or Wayland session. Hosted
+Linux CI forces Mesa lavapipe under Xvfb, so it checks the Vulkan software
+path and X11 surface contract, not physical GPU performance or Wayland.
+
 ## Browser
 
 The browser build uses Odin js_wasm32 without Emscripten. Serve web/ over

@@ -19,6 +19,10 @@ fixture. It is not yet the project-wide supported-platform matrix.
   explicitly and logs the linker version.
 - Native platform integration: Odin `vendor:sdl3` plus
   `vendor:wgpu/sdl3glue`. SDL3 remains the window/input host.
+- Linux x64 CI compiler: the official `dev-2026-11` archive, SHA-256
+  `65c9f6e97d6f8a30930e151f270ce5aeaa98fe8b2ba49fe067394e2af04f7618`,
+  installed by `tools/setup_linux_odin.sh` and checked for version
+  `dev-2026-11-nightly:9a69916`.
 
 Official package documentation says wgpu-native supplies native platforms and
 Odin's WGPU JS wrapper calls browser WebGPU on WASM. It lists `js_wasm32` and
@@ -39,12 +43,12 @@ The installed binding's static library and shared runtime were hashed locally:
 Location:
 `C:\odin\vendor\wgpu\lib\wgpu-windows-x86_64-msvc-release\lib\`.
 
-The compiler distribution currently provides Windows x64 only. The release page
-lists Windows MSVC builds for all release architectures, Linux manylinux 2.28
-builds, and macOS 10.13+ builds. No macOS/Linux native library is installed in
-this environment. Those platforms, architectures, package formats, code-signing
-and redistribution still require their own fetch, hash, license and native-build
-verification before support is claimed.
+The Windows compiler installed locally is x64. The Odin release page also
+publishes Linux builds; the macOS and Linux CI jobs use separate official
+archives with recorded version/hash checks. No macOS/Linux native SDK is
+installed in this Windows environment. Package formats, code-signing and
+redistribution still require platform-specific verification before support is
+claimed.
 
 The pinned release contains native archives for the current Odin binding's
 desktop architecture selectors. The [official asset manifest](https://github.com/gfx-rs/wgpu-native/releases/expanded_assets/v29.0.1.1)
@@ -59,14 +63,17 @@ checks its SHA-256 with `tools/setup_macos_wgpu_native.sh` before installing it
 under Odin's `vendor/wgpu/lib` tree. The hosted native build, Metal readback and
 resize, and patched explicit-destroy callback probes have passed. This is
 hosted macOS arm64 evidence; it does not replace a maintainer-run Metal session.
+The Linux x64 WebGPU workflow similarly verifies the official wgpu-native
+archive and exercises the native X11 surface through Xvfb with Mesa lavapipe.
+That is software Vulkan evidence, not physical-GPU or Wayland validation.
 
-| Desktop target | Odin binding selection | Official release asset | SHA-256 | Local validation |
+| Desktop target | Odin binding selection | Official release asset | SHA-256 | Observed validation |
 | --- | --- | --- | --- | --- |
 | Windows x64 MSVC | `.Windows` + `.amd64` → `x86_64-msvc` | `wgpu-windows-x86_64-msvc-release.zip` | `7e67d7445c42aeb85e30f88930fd8d7d83ee769e3390aeb1ada75ebf3cf78132` | Installed Odin package; patched static build and D3D12 probes passed |
 | macOS arm64 | `.Darwin` + `.arm64` → `aarch64` | `wgpu-macos-aarch64-release.zip` | `a5797a37b1adf720bcd5dcffb291edbbd5b7b14be0a3874c28e6393a655a7a3e` | Hosted arm64 CI hash-verified the archive; native/JS, Metal readback/resize, and patched explicit-destroy callbacks passed on [`cde2f08`](https://github.com/samanshaiza004/alicorn/actions/runs/43756274305); no maintainer-local Mac validation |
 | macOS x64 | `.Darwin` + `.amd64` → `x86_64` | `wgpu-macos-x86_64-release.zip` | `8e2f7378548ddd0e2cf21e7d864dda46e953f0af724855a33778b85ead206d41` | Not installed or run here |
 | Linux arm64 | `.Linux` + `.arm64` → `aarch64` | `wgpu-linux-aarch64-release.zip` | `015fcdf1dbae82e614a783cc38017e5399ae0927a889fe9b69c9b664bc61b47a` | Not installed or run here |
-| Linux x64 | `.Linux` + `.amd64` → `x86_64` | `wgpu-linux-x86_64-release.zip` | `95a4d90c071005a98d03eab348beaa6b07e16eb00d1dcdb9f8348f75eb97ec5a` | Not installed or run here |
+| Linux x64 | `.Linux` + `.amd64` → `x86_64` | `wgpu-linux-x86_64-release.zip` | `95a4d90c071005a98d03eab348beaa6b07e16eb00d1dcdb9f8348f75eb97ec5a` | New Xvfb/lavapipe CI smoke configured; first run pending; no physical GPU or Wayland claim |
 
 The release also publishes Windows ARM64 and i686 archives, but the current
 Odin `vendor:wgpu` Windows selector only names `x86_64` for `.amd64` and
