@@ -631,12 +631,16 @@ copy_node_description :: proc(
 			clear(&node.surface_samples)
 			clear(&node.surface_segments)
 			clear(&node.surface_circles)
+			clear(&node.surface_rectangles)
+			gpu_surface_point_markers_destroy(rt, node.id)
 			node.surface_geometry_active = d.surface_kind == .Geometry
 		}
 	} else {
 		clear(&node.surface_samples)
 		clear(&node.surface_segments)
 		clear(&node.surface_circles)
+		clear(&node.surface_rectangles)
+		gpu_surface_point_markers_destroy(rt, node.id)
 		node.surface_geometry_active = false
 	}
 	replace_owned(&node.identity_key, d.identity_key, rt.persistent_allocator)
@@ -671,6 +675,7 @@ queue_paint :: proc(rt: ^Runtime, id: Node_ID) {
 	if !ok || node.paint_queued { return }
 	node.paint_queued = true
 	append(&rt.paint_queue, id)
+	presentation_output_mark_node_dirty(rt, id)
 }
 
 invalidate_interaction_paint :: proc(rt: ^Runtime, id: Node_ID, reason := "interaction visual state changed") {
@@ -681,7 +686,7 @@ invalidate_interaction_paint :: proc(rt: ^Runtime, id: Node_ID, reason := "inter
 	if len(node.last_reason) > 0 { delete(node.last_reason, rt.persistent_allocator) }
 	node.last_reason = owned(reason, rt.persistent_allocator)
 	queue_paint(rt, id)
-	request_presentation(rt, reason)
+	request_presentation_for_node(rt, id, reason)
 	record_trace(rt, .Invalidation, id, reason)
 }
 
@@ -814,6 +819,8 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	delete(node.surface_samples)
 	delete(node.surface_segments)
 	delete(node.surface_circles)
+	delete(node.surface_rectangles)
+	gpu_surface_point_markers_destroy(rt, id)
 	text_run_destroy(&node.text_run)
 	clear_text_composition(node, rt.persistent_allocator)
 	release_node_strings(node, rt.persistent_allocator)
@@ -902,6 +909,7 @@ reconcile :: proc(rt: ^Runtime) {
 			node.surface_samples = make([dynamic]f32, 0, allocator=rt.persistent_allocator)
 			node.surface_segments = make([dynamic]GPU_Surface_Line_Segment, 0, allocator=rt.persistent_allocator)
 			node.surface_circles = make([dynamic]GPU_Surface_Filled_Circle, 0, allocator=rt.persistent_allocator)
+			node.surface_rectangles = make([dynamic]GPU_Surface_Filled_Rectangle, 0, allocator=rt.persistent_allocator)
 			rt.nodes[d.id] = node
 			rt.stats.nodes_created += 1
 			next_style_environment := style_environment_with_accessibility(d.style_environment, item.accessibility)
@@ -1101,6 +1109,7 @@ reconcile :: proc(rt: ^Runtime) {
 	// This description already observed the final geometry-surface bounds.
 	rt.geometry_surface_bounds_changed = false
 	rt.presentation_pending = false
+	presentation_outputs_prune_retired_roots(rt)
 	advance_presentation_revision(rt)
 	rt.stats.frame += 1
 	delete(focus_lineage)
@@ -1131,6 +1140,7 @@ end_presentation_frame :: proc(ui: ^UI) {
 	rt.scroll_geometry_changed = false
 	rt.geometry_surface_bounds_changed = false
 	rt.presentation_pending = false
+	presentation_outputs_prune_retired_roots(rt)
 	advance_presentation_revision(rt)
 	rt.stats.frame += 1
 	record_trace(rt, .Composite, 0, "retained presentation frame flushed")
@@ -1151,6 +1161,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 		delete(node.surface_samples)
 		delete(node.surface_segments)
 		delete(node.surface_circles)
+		delete(node.surface_rectangles)
 		text_run_destroy(&node.text_run)
 		clear_text_composition(node, rt.persistent_allocator)
 		release_node_strings(node, rt.persistent_allocator)
@@ -1243,10 +1254,13 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.actions)
 	delete(rt.display)
 	delete(rt.display_target)
+	delete(rt.presentation_outputs)
 	for _, image in rt.images { delete(image.rgba8, image.allocator) }
 	delete(rt.images)
 	for _, layers in rt.gpu_surface_images { delete(layers) }
 	delete(rt.gpu_surface_images)
+	for _, markers in rt.gpu_surface_point_markers { delete(markers) }
+	delete(rt.gpu_surface_point_markers)
 	text_engine_destroy(&rt.text_engine)
 	if rt.scratch_arena != nil {
 		mem.dynamic_arena_destroy(rt.scratch_arena)

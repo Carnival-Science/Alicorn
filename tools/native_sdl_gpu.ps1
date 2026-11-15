@@ -13,6 +13,7 @@ param(
     [switch]$MillionRowAccessibility,
 	[switch]$WindowsTitlebarFixture,
     [switch]$Smoke,
+    [switch]$PresentationValidation,
     [int]$CaptureAfter = 2,
     [string]$CaptureDir = 'out\diagnostics'
 )
@@ -80,5 +81,6 @@ if ($DialogFixture) {
 if ($DiagnosticEvents) { $arguments += '--diagnostic-events' }
 if ($WindowsTitlebarFixture) { $arguments += @('--menu-fixture', '--windows-titlebar-fixture') }
 if ($Smoke) { $arguments += '--smoke' }
+if ($PresentationValidation) { $arguments += '--presentation-validation' }
 & $Executable @arguments
 exit $LASTEXITCODE

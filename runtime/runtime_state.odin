@@ -382,10 +382,22 @@ invalidate_root :: proc(rt: ^Runtime, reason := "explicit root invalidation") {
 // caret, selection, and other interaction-only visual changes.
 request_presentation :: proc(rt: ^Runtime, reason := "retained presentation changed") {
 	rt.presentation_pending = true
+	presentation_outputs_mark_all_dirty(rt)
 	when APP_MUTATION_DIAGNOSTICS_ENABLED {
 		application_mutation_note_request(rt, .Presentation)
 	}
 	record_trace(rt, .Invalidation, 0, reason)
+	note_pending_work_cause(rt, trace_current_cause(rt))
+}
+
+@(private)
+request_presentation_for_node :: proc(rt: ^Runtime, id: Node_ID, reason: string) {
+	rt.presentation_pending = true
+	presentation_output_mark_node_dirty(rt, id)
+	when APP_MUTATION_DIAGNOSTICS_ENABLED {
+		application_mutation_note_request(rt, .Presentation)
+	}
+	record_trace(rt, .Invalidation, id, reason)
 	note_pending_work_cause(rt, trace_current_cause(rt))
 }
 
@@ -397,6 +409,8 @@ advance_presentation_revision :: proc(rt: ^Runtime) {
 		rt.presentation_revision = 1
 		rt.submitted_revision = 0
 	}
+	presentation_outputs_publish_dirty(rt, rt.presentation_revision)
+	if len(rt.presentation_outputs) > 0 { presentation_outputs_refresh_aggregate(rt) }
 }
 
 presentation_needs_frame :: proc(rt: ^Runtime) -> bool {
@@ -404,6 +418,15 @@ presentation_needs_frame :: proc(rt: ^Runtime) -> bool {
 }
 
 frame_needs_submission :: proc(rt: ^Runtime) -> bool {
+	if presentation_outputs_are_active(rt) {
+		for output in rt.presentation_outputs {
+			if output.root != 0 && output.visible && output.pending && !output.dirty &&
+				output.revision != output.acknowledged_revision {
+				return true
+			}
+		}
+		return false
+	}
 	return rt.presentation_revision != rt.submitted_revision || rt.surface_frame_pending
 }
 
@@ -427,6 +450,18 @@ note_submission_cause :: proc(rt: ^Runtime, cause: Cause_Context) {
 // successfully. In particular, a nil swapchain texture is not an
 // acknowledgement: the revision remains pending so the host can retry.
 frame_submission_succeeded :: proc(rt: ^Runtime) {
+	if presentation_outputs_are_active(rt) {
+		for i in 0..<len(rt.presentation_outputs) {
+			output := &rt.presentation_outputs[i]
+			if output.root != 0 && output.visible && output.pending && !output.dirty &&
+				output.revision != output.acknowledged_revision {
+				output.acknowledged_revision = output.revision
+				output.pending = false
+			}
+		}
+		presentation_outputs_refresh_aggregate(rt, completed_submission=true)
+		return
+	}
 	rt.submitted_revision = rt.presentation_revision
 	if rt.motion_frame_pending {
 		if diagnostics := rt.motion_diagnostics; diagnostics != nil {

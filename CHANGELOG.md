@@ -8,6 +8,16 @@ changelogs.
 
 ### Added
 
+- Added optional per-output presentation revisions for hosts that render
+  disjoint retained subtrees into separate native targets. Outputs can be
+  hidden, retired, and acknowledged independently without changing the
+  existing single-target path.
+- Added retained custom-surface point markers for dense plots. Each marker uses
+  a six-vertex masked quad and shares the existing bounded geometry budget;
+  ordinary filled-circle rendering is unchanged.
+- Added a bounded filled-rectangle batch to retained geometry surfaces. Rectangle
+  fills share the existing vertex budget, preserve submission order, and paint
+  beneath line segments and filled circles.
 - Added opt-in horizontal and vertical two-stop gradients to semantic surfaces.
   Stops resolve through ordinary core or namespaced theme color roles, share the
   existing surface vertex-color path, and preserve the solid-fill fast path.

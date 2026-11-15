@@ -36,7 +36,7 @@ ui_key_is_explicit :: proc(key: UI_Key) -> bool {
 	return false
 }
 
-Node_Kind :: enum {
+Node_Kind :: enum u8 {
 	Root,
 	Modal_Overlay,
 	Context_Menu_Overlay,
@@ -134,16 +134,16 @@ visual_part_style_hash :: proc(style: Visual_Part_Style) -> u64 {
 	return h
 }
 
-Split_Axis :: enum { Horizontal, Vertical }
+Split_Axis :: enum u8 { Horizontal, Vertical }
 
-GPU_Surface_Kind :: enum {
+GPU_Surface_Kind :: enum u8 {
 	Waveform,
 	Geometry,
 }
 
 // A GPU surface is presentation-only unless pointer interaction is explicitly
 // requested by its declaration.
-GPU_Surface_Interaction :: enum {
+GPU_Surface_Interaction :: enum u8 {
 	Inert,
 	Pointer,
 }
@@ -153,10 +153,13 @@ GPU_Surface_Interaction :: enum {
 GPU_Surface_Update_Revision :: distinct u64
 
 // Geometry surfaces share the native SDL_GPU triangle budget. Transparent
-// geometry emits no background vertices; a segment uses six vertices and a
-// filled circle uses 16 fan triangles (48 vertices).
+// geometry emits no background vertices; a rectangle, segment, or compact
+// point marker uses six vertices and a filled circle uses 16 fan triangles
+// (48 vertices).
 GPU_SURFACE_MAX_VERTICES :: 8192
 GPU_SURFACE_CIRCLE_SEGMENTS :: 16
+GPU_SURFACE_RECTANGLE_VERTICES :: 6
+GPU_SURFACE_POINT_MARKER_VERTICES :: 6
 
 // Waveform surfaces reserve one six-vertex background quad and emit one
 // six-vertex segment for each adjacent sample pair. This is the largest
@@ -183,6 +186,8 @@ GPU_Surface_Payload_View :: struct {
 	samples:  []f32,
 	segments: []GPU_Surface_Line_Segment,
 	circles:  []GPU_Surface_Filled_Circle,
+	point_markers: []GPU_Surface_Point_Marker,
+	rectangles: []GPU_Surface_Filled_Rectangle,
 }
 
 Layout_Direction :: enum u8 { Row, Column }
@@ -435,6 +440,23 @@ GPU_Surface_Filled_Circle :: struct {
 	color:  Color,
 }
 
+// GPU_Surface_Point_Marker is a compact, circle-shaped marker for dense plots.
+// Native renderers draw a masked quad instead of tessellating a full circle,
+// while ordinary filled circles keep their existing geometry and quality.
+GPU_Surface_Point_Marker :: struct {
+	center: GPU_Surface_Point,
+	diameter: f32,
+	color:  Color,
+}
+
+// GPU_Surface_Filled_Rectangle is expressed in logical coordinates local to
+// the resolved bounds of its geometry surface. Rectangles are emitted in
+// submission order before line segments and circles.
+GPU_Surface_Filled_Rectangle :: struct {
+	bounds: Rect,
+	color:  Color,
+}
+
 Source_Site :: struct {
 	file:      string,
 	line:      int,
@@ -466,13 +488,13 @@ Pointer_Kind :: enum { Move, Down, Up, Cancel }
 // it to match a source to compatible targets; it does not interpret payloads.
 Drag_Type :: distinct u64
 
-Drop_Target_Mode :: enum {
+Drop_Target_Mode :: enum u8 {
 	On,
 	Between_Horizontal,
 	Between_Vertical,
 }
 
-Drop_Position :: enum { None, On, Before, After }
+Drop_Position :: enum u8 { None, On, Before, After }
 Drag_Phase :: enum { Idle, Candidate, Dragging }
 Drag_Event_Kind :: enum { Started, Target_Changed, Dropped, Cancelled }
 
@@ -603,7 +625,7 @@ Scroll_Event :: struct {
 // that accepts both directions can choose whether small perpendicular motion
 // is suppressed for code/list-style scrolling or preserved for a free-form
 // canvas.
-Scroll_Axes :: enum {
+Scroll_Axes :: enum u8 {
 	Vertical,
 	Horizontal,
 	Both,
@@ -616,14 +638,14 @@ Scroll_Visibility_Request :: struct {
 	start_x, end_x: f32,
 }
 
-Scroll_Axis_Behavior :: enum {
+Scroll_Axis_Behavior :: enum u8 {
 	Auto_Lock,
 	Free,
 }
 
 // Scrollbar_Policy controls the solid, layout-reserving bars retained by a
 // scroll region. Auto is the default and shows only bars needed by its content.
-Scrollbar_Policy :: enum { Hidden, Auto, Always }
+Scrollbar_Policy :: enum u8 { Hidden, Auto, Always }
 // Scroll_Focus_Visual controls only the generic scroll-region focus outline.
 // Content delegates visible focus indication (for example a caret or active
 // line) to the caller; keyboard, semantic, and accessibility focus are unchanged.
@@ -641,7 +663,7 @@ Text_Edit :: struct {
 
 // Font_Role selects one of the runtime's small built-in text roles. Applications
 // may load a role-specific font; an unloaded role falls back to the UI font.
-Font_Role :: enum {
+Font_Role :: enum u8 {
 	UI,
 	Monospace,
 }
@@ -743,7 +765,7 @@ STYLE_COLOR_ROLE_COUNT :: int(Style_Color_Role.Count)
 // Button variants express component intent. They all resolve through one
 // recipe family so themes do not need a separate state table per product
 // control.
-Button_Variant :: enum {
+Button_Variant :: enum u8 {
 	Default,
 	Primary,
 	Toolbar,
@@ -1364,6 +1386,7 @@ Percent_Width_Dependency :: struct {
 	parent_invalid_reported: bool,
 }
 
+// This record is retained per UI node; keep low-cardinality state enums compact.
 Node :: struct {
 	id:          Node_ID,
 	parent:      Node_ID,
@@ -1500,6 +1523,7 @@ Node :: struct {
 	surface_geometry_active: bool,
 	surface_segments: [dynamic]GPU_Surface_Line_Segment,
 	surface_circles: [dynamic]GPU_Surface_Filled_Circle,
+	surface_rectangles: [dynamic]GPU_Surface_Filled_Rectangle,
 	bounds:      Rect,
 	hit_bounds:  Rect,
 	clip:        Rect,
@@ -2123,6 +2147,13 @@ Runtime :: struct {
 	// swapchain has no drawable texture for a loop iteration.
 	presentation_revision: u64,
 	submitted_revision:    u64,
+	// A multi-surface host may register independent presentation outputs over
+	// disjoint retained roots. These sparse records keep per-output scheduling
+	// out of Node and preserve the legacy whole-display acknowledgement path
+	// when no output roots are bound.
+	presentation_output_runtime_identity: u64,
+	presentation_output_sequence: u64,
+	presentation_outputs: [dynamic]Presentation_Output_State,
 	frame_open:  bool,
 	hard_error:  bool,
 	diagnostic:  string,
@@ -2147,6 +2178,7 @@ Runtime :: struct {
 	images: map[u64]Image_Resource,
 	image_resource_sequence: u64,
 	gpu_surface_images: map[Node_ID][dynamic]GPU_Surface_Image,
+	gpu_surface_point_markers: map[Node_ID][dynamic]GPU_Surface_Point_Marker,
 	text_engine: Text_Engine,
 	text_font_generation_seen: u64,
 	surface_frame_pending: bool,

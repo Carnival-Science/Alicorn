@@ -150,6 +150,38 @@ The application state pointer is borrowed for the duration of `Run`; keep the
 state alive until it returns. See the complete
 [native starter](../examples/01_hello/main.odin).
 
+### Host-owned SDL_GPU presentation
+
+For a host that owns its own SDL event loop and GPU frame, create an
+`Sdl_GPU_Presenter` with the host's `GPUDevice`, target texture format, and
+borrowed `Runtime`. Call `Sdl_GPU_Presenter_Encode` with the host's command
+buffer, target, pixel dimensions, and logical-to-pixel scales. The host submits
+that command buffer, then passes the acquired fence to
+`Sdl_GPU_Presenter_Submission_Succeeded`; this transfers fence ownership to the
+presenter and returns a `Sdl_GPU_Submission` token. Use
+`Sdl_GPU_Presenter_Wait` or `Sdl_GPU_Presenter_Poll` to retire submitted work,
+and `Sdl_GPU_Presenter_Destroy` before destroying the Runtime or device.
+Call presenter functions on the Runtime's owning host thread. The host must
+submit a fence acquired from that same GPU device. If submission fails and it
+is unclear whether GPU work was queued, wait for GPU idle before canceling the
+presenter frame.
+
+An event-loop host can pair this renderer with [`Hosted_Runtime`](hosted-runtime.md):
+borrow its Runtime with `hosted_runtime_borrow` when creating the presenter.
+`Sdl_GPU_Presenter_Submission_Succeeded` acknowledges the Runtime frame itself;
+do not also call `hosted_runtime_frame_submission_succeeded` for that frame.
+
+The Runtime/device, window, command buffers, and targets remain host-owned. The
+Runtime display list is borrowed and consumed synchronously by encode. A target
+must match the format supplied at presenter creation and remain alive until its
+submission token completes. If encode fails after beginning a frame, cancel the
+host command buffer before calling `Sdl_GPU_Presenter_Cancel_Frame`. This API
+renders surfaces, text, icons, images, and custom geometry; it rejects backdrop
+effects and does not provide native input, accessibility, menu, titlebar, or
+event-loop integration. See the
+[host-owned presentation research note](research/issue-162-host-owned-presentation.md)
+and [external host fixture](../examples/15_host_owned_sdl_gpu/main.odin).
+
 The required callback is `build(state, runtime, logical_width,
 logical_height, dpi_scale) -> Node_ID`. The final `SDL application PASS` host
 summary includes `application_build_ns` (cumulative description-callback CPU
@@ -267,6 +299,11 @@ host.Run(host.Application{
 See [native menus and integrated titlebar](native-menus-and-integrated-titlebar.md)
 for the callback contract and native fixture.
 
+For an application that owns its event loop, see
+[host-owned UI loops](hosted-runtime.md) for the nonblocking retained Runtime
+session, UI-thread event ingress, wake/deadline handling, resize/DPI, and close
+contract. This API does not provide a wxWidgets or native renderer adapter.
+
 ## Frame and invalidation
 
 | API | Use |
@@ -274,6 +311,7 @@ for the callback contract and native fixture.
 | `begin_frame` / `end_frame` | Open and complete an application description when invalidated. |
 | `invalidate_root` | Request a new description after application state changes. |
 | `invalidate_region` | Mark a revisioned region as changed. |
+| `Presentation_Output_ID` / `presentation_output_*` | Register disjoint retained roots as independently visible native outputs, inspect exact pending revisions, and acknowledge only after each target submits successfully. |
 | `region_begin` / `region_end` | Reuse an unchanged described subtree using an application-owned revision. |
 | `Application.interaction_update_policy` | Opt a native app into a corrective description after a consumed widget activation or controlled-value change. `.Explicit` is the default; `.Correct_After_Interaction` uses the existing bounded stabilization loop and does not bypass region revisions. |
 
@@ -1445,6 +1483,22 @@ system file drops or arbitrary MIME payloads.
   within `GPU_SURFACE_MAX_VERTICES`. Keep GPU handles and rendering callbacks
   inside the host; the application supplies typed data, not SDL command
   buffers.
+
+  Geometry surfaces accept line segments and filled circles through
+  `gpu_surface_update_geometry`, or those primitives plus filled rectangles
+  through `gpu_surface_update_geometry_with_rectangles`. The
+  `gpu_surface_update_geometry_with_markers` and
+  `gpu_surface_update_geometry_with_rectangles_and_markers` variants also
+  accept compact circular point markers, with or without rectangle fills.
+  Marker centers and diameters are
+  surface-local logical units; native SDL_GPU renders each marker from a
+  six-vertex masked quad, while ordinary filled circles retain their existing
+  tessellation quality. Rectangles paint in supplied order, before segments,
+  circles, and point markers. All geometry types share the
+  `GPU_SURFACE_MAX_VERTICES` budget. The corresponding versioned rectangle and
+  marker APIs provide latest-wins ordering for asynchronous producers. Invalid
+  or over-budget geometry is rejected atomically, leaving the last accepted
+  payload intact.
 
 For the ownership and lifecycle model behind these calls, see
 [Architecture](architecture.md).

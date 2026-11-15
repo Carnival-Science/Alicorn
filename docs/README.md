@@ -40,6 +40,9 @@ contains the v0.1.0 and v0.2.0 release history.
 
 ## Active research
 
+- [#162 host-owned presentation](research/issue-162-host-owned-presentation.md) —
+  public SDL_GPU frame/fence boundary and external host fixture; pixel, input,
+  idle, and lifetime comparisons remain open.
 - [#169 native mesh locality](research/issue-169-native-mesh-locality.md) —
   fixes text-mesh invalidation when unrelated selection surfaces move in the
   paint stream; a broader per-owner GPU buffer cache remains pending matched
