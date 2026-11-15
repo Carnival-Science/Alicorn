@@ -1,6 +1,9 @@
 # #162 — Host-owned presentation boundary
 
-**Status: prototype implemented; comparison and integration gates remain open.**
+**Status: bounded SDL_GPU host-owned presentation proof complete on Windows.**
+The wx/Audacity integration and native plugin-window work remain separate in
+[#196](https://github.com/samanshaiza004/alicorn/issues/196) and
+[#121](https://github.com/samanshaiza004/alicorn/issues/121).
 
 ## Finding
 
@@ -98,21 +101,65 @@ recreation are not handled by this presenter. The host must keep dispatching
 events into the same Runtime and arrange a new frame when needed. The API rejects
 backdrop effects; the full host's effects cache remains a host-only service.
 
-## Verification and remaining gates
+## Windows comparison results
 
-The fixture establishes a buildable public call path around a host-owned
-window, device, command buffer, target, and event loop. A successful compile
-does not establish pixel equivalence or correct physical presentation. Before
-calling #162 complete, compare the fixture and standalone host for:
+**Bounded comparison complete on Windows (SDL_GPU Direct3D 12, 2026-11-15).** The
+repeatable fixture is `--presentation-validation`, exposed through
+`tools/native_sdl_gpu.ps1 -PresentationValidation`. It uses two independently
+initialized but identical Runtime instances, the same display description,
+font setup, GPU device, swapchain format, and 480×300 offscreen target size.
+One is drawn through the standalone host's `draw_display_list`; the other is
+encoded and acknowledged through the public `Sdl_GPU_Presenter` API. Separate
+Runtime instances are necessary because each renderer owns its own GPU text
+atlas and Runtime atlas-dirty state.
 
-- pixel output for flat surfaces and text;
-- focus and input behavior when the host routes events to the same Runtime;
-- no repeated frames or GPU submissions while idle;
-- cancellation, successful submission, fence retirement, and Runtime/device
-  destruction ordering;
-- allocation and CPU/GPU submission costs.
+The optimized `-o:speed` fixture was run three times. Each run alternated 64
+matched standalone/presenter encode samples:
 
-This prototype intentionally adds no generic renderer interface or serialized
-paint packet. The Runtime's existing paint stream stays renderer-neutral; the
-new package API is an explicitly SDL_GPU implementation of its host-owned frame
-and resource-lifetime boundary.
+```powershell
+. .\tools\common.ps1
+$Odin = Resolve-AlicornOdin
+$AccessKit = Get-AlicornAccessKit
+& $Odin build native\sdl_gpu_entry -o:speed @($AccessKit.CompilerArguments) -out:out\alicorn_sdl_gpu_release.exe
+Copy-Item (Join-Path (Split-Path -Parent $Odin) 'vendor\sdl3\SDL3.dll') out\SDL3.dll -Force
+.\out\alicorn_sdl_gpu_release.exe --presentation-validation
+```
+
+The debug/repro run is `tools/native_sdl_gpu.ps1 -PresentationValidation`.
+Results:
+
+| Comparison | Result |
+| --- | --- |
+| Initial raw target readback | Exact byte match: 0 differing bytes; both hashes `4283490736380418686` |
+| After focus, caret movement, and text input | Exact match: 0 differing bytes; both hashes `7613017125873392090` |
+| Input behavior | Both activated the button once, focused the same keyed text field, moved the caret from byte 0 to byte 1, inserted `-host`, and ended with identical text `e-hostditable input` and caret byte 6 |
+| Canceled frame | Canceling the SDL command buffer then presenter frame left the Runtime frame pending and retryable |
+| Warm encode work | Across the three runs, per-run means ranged 26.5–28.0 µs standalone and 26.5–27.6 µs hosted. The pooled means were 27.04 µs and 27.03 µs (about 0.04% apart), well within this single-machine run-to-run spread. CPU encode only; excludes command-buffer acquisition, submission, fence wait, and display, so this is not a total frame-time claim |
+| GPU submissions | Both paths recorded 66 submissions per run (initial + post-input + 64 matched samples) |
+| Persistent Runtime allocations | Both recorded 399 calls per run. The 64 matched encode samples each caused 64 allocations and 64 frees on both paths, with 0 live-byte growth; idle then added 0 allocations. |
+| Settled idle | About 299 ms native event wait, 0 events, 0 Runtime allocation calls, 0 submissions, and neither Runtime requested another frame |
+| Presenter lifetime | Eight submitted frames; 1–3 fences remained in flight before Destroy across runs. Destroy retired all fences, cleared presenter state, and the GPU reached idle before Runtime/device teardown |
+| Standalone lifetime | Host waited its submission fence, destroyed renderer resources, then Runtime; the device remained alive until after both paths completed |
+
+The same validation also passed in a debug build. Build warnings are the
+existing large `Native_Secondary_Window` stack-size warnings.
+
+### Scope of this evidence
+
+The pixel check proves equality of the composed SDL_GPU target for this bounded
+fixture, which includes flat surfaces, retained text, a focus ring, and an
+edited text field. It is not a cross-backend or cross-platform image guarantee.
+Input uses the same normalized Runtime pointer, text-command, and text-input
+operations on both instances; it verifies the host-owned path can route input
+to the Runtime without losing focus or edit state. It does not validate a
+particular third-party toolkit's native event adapter, physical keyboard or
+IME behavior, accessibility bridge, clipboard, menus, device loss, or resize
+policy. Those remain host integration responsibilities and are outside this
+frame-boundary proof.
+
+The result is **GO for the bounded SDL_GPU frame boundary**: an external host
+can own the window, device, command buffer, target, event wait, and teardown
+while using Alicorn's public retained compositor without adopting `host.Run`.
+This does not establish a renderer-agnostic API, wx/Audacity integration, or
+native plugin-window attachment; those remain tracked separately in #196 and
+#121. No generic renderer interface or serialized paint packet was added.

@@ -5,6 +5,12 @@ import "core:os"
 
 main :: proc() {
 	for argument in os.args {
+		if argument == "--presentation-validation" {
+			host.RunPresentationBoundaryValidation()
+			return
+		}
+	}
+	for argument in os.args {
 		if argument == "--dialog-fixture" {
 			host.RunDialogFixture()
 			return
