@@ -88,9 +88,12 @@ The fixture wrote four 384×256 PPM captures under ignored
 in this run. The captures are local artifacts, not committed reference images.
 
 This supplement fills in a reproducible effects-specific cold/warm timing and
-cache reference. It does not fill the application-level gaps below: full
-description/layout/paint/renderer timing attribution, process working-set peak,
-or comparative production measurements on the same workload.
+cache reference. A Runtime-only construction/phase/allocator and process
+working-set comparison was later captured in
+[`runtime-construction-windows-2026-11-16.md`](runtime-construction-windows-2026-11-16.md).
+It does not fill the remaining application-level gaps below: full interactive
+description/layout/paint/renderer timing attribution or comparative production
+measurements on the same workload.
 
 ## Limits of this baseline
 
