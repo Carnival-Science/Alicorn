@@ -223,7 +223,8 @@ python -m http.server 8080 --directory web
 
 Open http://localhost:8080/. The browser canvas now creates the same retained
 Alicorn Runtime and passes its display list to `WebGPU_Presenter_Encode`; the
-SDL native surface smoke uses that same Runtime composition and presenter.
+SDL native surface smoke uses that same Runtime composition and presenter,
+obtaining an output-scoped view through `paint_display_list_for_output`.
 Resize or click the canvas to request another frame, and confirm the status
 reports no new `requestAnimationFrame` requests for 500 ms after the queue
 completion callback. A WASM build alone is not browser-GPU validation; the

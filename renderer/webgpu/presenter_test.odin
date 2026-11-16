@@ -40,6 +40,20 @@ test_webgpu_presenter_output_id_accepts_legacy_or_complete_runtime_identity :: p
 }
 
 @(test)
+test_webgpu_presenter_rejects_a_display_view_tagged_for_another_output :: proc(t: ^testing.T) {
+	left := alicorn.Presentation_Output_ID{runtime_identity=7, sequence=1}
+	right := alicorn.Presentation_Output_ID{runtime_identity=7, sequence=2}
+	testing.expect(t, webgpu_presenter_view_matches_output({}, left),
+		"legacy host-routed display views remain accepted")
+	testing.expect(t, webgpu_presenter_view_matches_output(left, left),
+		"a scoped view should match its own output")
+	testing.expect(t, !webgpu_presenter_view_matches_output(left, right),
+		"a scoped view must not be submitted to a sibling output")
+	testing.expect(t, !webgpu_presenter_view_matches_output(left, {}),
+		"a scoped view must not enter the whole-Runtime compatibility path")
+}
+
+@(test)
 test_webgpu_presenter_submission_acknowledges_only_its_runtime_output :: proc(t: ^testing.T) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 240, 120})
 	defer alicorn.destroy_runtime(&rt)

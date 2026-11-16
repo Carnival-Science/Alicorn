@@ -78,6 +78,16 @@ webgpu_presenter_output_id_is_well_formed :: proc(output: alicorn.Presentation_O
 		(output.runtime_identity != 0 && output.sequence != 0)
 }
 
+webgpu_presenter_view_matches_output :: proc(
+	view_output, output: alicorn.Presentation_Output_ID,
+) -> bool {
+	view_is_scoped := view_output.runtime_identity != 0 || view_output.sequence != 0
+	if !view_is_scoped { return true }
+	return output.runtime_identity != 0 &&
+		view_output.runtime_identity == output.runtime_identity &&
+		view_output.sequence == output.sequence
+}
+
 webgpu_presenter_ack_submission :: proc(
 	runtime: ^alicorn.Runtime,
 	output: alicorn.Presentation_Output_ID,
@@ -133,7 +143,8 @@ WebGPU_Presenter_Create :: proc(
 // submits the queue or retains a pointer into the view.
 //
 // For Runtime multi-output presentation, pass the selected output ID and a
-// host-routed display view stamped with that output snapshot's revision. The
+// display view from paint_display_list_for_output. A manually routed view is
+// also accepted when it carries that output snapshot's exact revision. The
 // submission acknowledges only that output. Omitting output preserves the
 // whole-Runtime compatibility path for hosts that render the complete display.
 //
@@ -160,6 +171,9 @@ WebGPU_Presenter_Encode :: proc(
 		return .Invalid_Input
 	}
 	output_bound := output.runtime_identity != 0
+	if !webgpu_presenter_view_matches_output(display.output, output) {
+		return .Invalid_Input
+	}
 	if output_bound {
 		snapshot, snapshot_status := alicorn.presentation_output_snapshot(state.runtime, output)
 		if snapshot_status != .Ok || snapshot.root == 0 || !snapshot.visible { return .Invalid_Input }

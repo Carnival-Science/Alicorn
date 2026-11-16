@@ -92,6 +92,63 @@ test_presentation_outputs_publish_and_acknowledge_independently :: proc(t: ^test
 }
 
 @(test)
+test_presentation_output_display_views_are_scoped_and_revision_tagged :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 240, 120})
+	defer destroy_runtime(&rt)
+	left, left_status := presentation_output_register(&rt)
+	right, right_status := presentation_output_register(&rt)
+	nodes := presentation_outputs_test_describe(&rt, left, right)
+	if left_status != .Ok || right_status != .Ok || nodes.left_root == 0 || nodes.right_root == 0 {
+		testing.expect(t, false, "both roots should be available for output display routing")
+		return
+	}
+
+	// Owner-zero commands are Runtime-wide transient overlays. Add one to the
+	// published test composition to verify that both output views retain it.
+	shared_overlay := paint_surface_command(Node_ID(0), Rect{4, 4, 12, 12}, rt.viewport, Color{1, 1, 1, 1})
+	append(&rt.display, shared_overlay)
+	left_view, left_view_status := paint_display_list_for_output(&rt, left)
+	right_view, right_view_status := paint_display_list_for_output(&rt, right)
+	left_snapshot, _ := presentation_output_snapshot(&rt, left)
+	right_snapshot, _ := presentation_output_snapshot(&rt, right)
+	testing.expect(t, left_view_status == .Ok && right_view_status == .Ok,
+		"published bound outputs should expose scoped display views")
+	if left_view_status != .Ok || right_view_status != .Ok { return }
+	testing.expect(t, left_view.output == left && right_view.output == right,
+		"each scoped view should carry its output identity")
+	testing.expect(t, left_view.revision == left_snapshot.revision && right_view.revision == right_snapshot.revision,
+		"each scoped view should carry that output's published revision")
+
+	left_text_found, right_text_found := false, false
+	left_overlay_found, right_overlay_found := false, false
+	for command in left_view.commands {
+		if command.owner == 0 { left_overlay_found = true; continue }
+		if command.owner == nodes.left_text { left_text_found = true }
+		testing.expect(t, presentation_output_node_in_root(&rt, command.owner, nodes.left_root),
+			"left view should contain only commands owned by the left subtree")
+	}
+	for command in right_view.commands {
+		if command.owner == 0 { right_overlay_found = true; continue }
+		if command.owner == nodes.right_text { right_text_found = true }
+		testing.expect(t, presentation_output_node_in_root(&rt, command.owner, nodes.right_root),
+			"right view should contain only commands owned by the right subtree")
+	}
+	testing.expect(t, left_text_found && right_text_found,
+		"each output view should retain its own subtree's text commands")
+	testing.expect(t, left_overlay_found && right_overlay_found,
+		"Runtime-wide owner-zero overlays should remain above every output subtree")
+
+	// A scoped view stays valid for the untouched output when another root is
+	// republished at a newer Runtime revision.
+	old_right_revision := right_view.revision
+	invalidate_interaction_paint(&rt, nodes.left_text, "advance only the left output")
+	presentation_outputs_test_flush(&rt)
+	new_right_view, new_right_status := paint_display_list_for_output(&rt, right)
+	testing.expect(t, new_right_status == .Ok && new_right_view.revision == old_right_revision,
+		"an unchanged output should keep its older but still-current scoped revision")
+}
+
+@(test)
 test_presentation_outputs_follow_retained_motion_per_owner :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 240, 120})
 	defer destroy_runtime(&rt)

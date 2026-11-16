@@ -90,14 +90,18 @@ runtime_set_viewport :: proc(rt: ^Runtime, viewport: Rect) -> bool {
 }
 
 // Paint_Display_List_View exposes the last completed composition for a host
-// renderer. commands borrow Runtime storage and are valid only until the next
-// Runtime mutation or frame operation. Consume them synchronously on the
-// Runtime's owning thread; copy the commands and any referenced text, image,
-// geometry, or font resources before retaining data beyond that call. This is
-// not a serialized or GPU-fence-owned render packet.
+// renderer. commands borrow Runtime display or scratch storage and are valid
+// only until the next Runtime mutation or frame operation. Consume them
+// synchronously on the Runtime's owning thread; copy the commands and any
+// referenced text, image, geometry, or font resources before retaining data
+// beyond that call. This is not a serialized or GPU-fence-owned render packet.
 Paint_Display_List_View :: struct {
 	commands: []Paint_Command,
 	revision: u64,
+	// Non-zero only when commands were routed for one registered presentation
+	// output. This lets a presenter reject a view accidentally paired with a
+	// different output that happens to have the same revision number.
+	output: Presentation_Output_ID,
 }
 
 paint_display_list :: proc(rt: ^Runtime) -> (view: Paint_Display_List_View, ok: bool) {

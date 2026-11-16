@@ -244,8 +244,8 @@ render_surface_frame :: proc() {
 		fmt.printf("[webgpu-feasibility] Alicorn retained display presented to browser canvas revision=%d size=%dx%d scale=%.3f\n",
 			submission.display_revision, state.config.width, state.config.height, scale)
 	} else when FEASIBILITY_TEST_SURFACE_PRESENTER {
-		display, display_ok := alicorn.paint_display_list(&state.surface_runtime)
-		if !display_ok { fmt.panicf("Alicorn SDL surface display list unavailable") }
+		display, display_status := alicorn.paint_display_list_for_output(&state.surface_runtime, state.surface_output)
+		if display_status != .Ok { fmt.panicf("Alicorn SDL surface output display list unavailable: %v", display_status) }
 		snapshot, snapshot_status := alicorn.presentation_output_snapshot(&state.surface_runtime, state.surface_output)
 		if snapshot_status != .Ok || !snapshot.pending || snapshot.root != state.surface_runtime_root {
 			fmt.panicf("Alicorn SDL surface output is not bound and pending: %v", snapshot_status)
