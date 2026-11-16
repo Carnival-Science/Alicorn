@@ -31,8 +31,9 @@ sh "$ACCESSKIT_BINDING_ROOT/tools/check.sh" --odin "$ODIN" --cache-root "$REPO_R
 "$ODIN" build tests "-out:$OUT_DIR/alicorn_tests"
 "$OUT_DIR/alicorn_tests"
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
-	build native/sdl_gpu_entry "-out:$OUT_DIR/alicorn_sdl_gpu"
+	build native/sdl_gpu_entry "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_sdl_gpu"
 "$ODIN" test runtime
+"$ODIN" test host/sdl3 "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_sdl3_host_tests"
 "$ODIN" test host/web "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_web_host_tests"
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
 	test tests/fixtures/accessibility_contract \
@@ -56,8 +57,8 @@ if "$OUT_DIR/alicorn_theme" check theme/testdata/invalid.json; then
     exit 1
 fi
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
-	test native/sdl_gpu "-out:$OUT_DIR/alicorn_native_tests"
+	test native/sdl_gpu "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_native_tests"
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
-	test native/scroll_capture_tests "-out:$OUT_DIR/alicorn_scroll_capture_tests"
+	test native/scroll_capture_tests "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_scroll_capture_tests"
 "$OUT_DIR/alicorn_sdl_gpu" --text-input-contract-test
 sh "$SCRIPT_DIR/test_restoration.sh" "$ODIN"

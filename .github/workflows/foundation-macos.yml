@@ -92,7 +92,7 @@ jobs:
           ODIN=$(alicorn_resolve_odin)
           ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
           alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
-            test native/sdl_gpu \
+            test native/sdl_gpu "-collection:alicorn=$REPO_ROOT" \
             -define:ODIN_TEST_NAMES=test_secondary_window_wakers_remain_live_until_application_stop \
             -sanitize:thread
 

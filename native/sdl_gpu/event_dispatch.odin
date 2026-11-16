@@ -3,18 +3,10 @@ package alicorn_sdl_gpu
 import "core:fmt"
 import alicorn "../../runtime"
 import "vendor:sdl3"
+import sdl_host "alicorn:host/sdl3"
 
 native_scroll_event_from_sdl :: proc(wheel: sdl3.MouseWheelEvent, modifiers: alicorn.Input_Modifiers) -> alicorn.Scroll_Event {
-	// SDL X is positive toward the right of the document; Alicorn's
-	// deltas describe content motion (positive right/down), so only X
-	// needs negating. SDL Y already matches. Natural scrolling is
-	// already encoded in the values: do not apply FLIPPED again.
-	return alicorn.Scroll_Event{
-		delta_x=-wheel.x, delta_y=wheel.y,
-		ticks_x=-int(wheel.integer_x), ticks_y=int(wheel.integer_y),
-		x=wheel.mouse_x, y=wheel.mouse_y,
-		modifiers=modifiers,
-	}
+	return sdl_host.scroll_event_from_sdl(wheel, modifiers)
 }
 
 native_drag_autoscroll_update :: proc(rt: ^alicorn.Runtime, deadline_ns: ^u64, now_ns: u64) {

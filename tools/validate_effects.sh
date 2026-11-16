@@ -14,7 +14,7 @@ cd "$REPO_ROOT"
 mkdir -p out/retained-effects
 ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
-    test native/sdl_gpu -out:out/alicorn_effects_tests
+    test native/sdl_gpu "-collection:alicorn=$REPO_ROOT" -out:out/alicorn_effects_tests
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
-    build native/effects_validation_entry -o:speed -out:out/alicorn_effects_validation
+    build native/effects_validation_entry "-collection:alicorn=$REPO_ROOT" -o:speed -out:out/alicorn_effects_validation
 exec ./out/alicorn_effects_validation "$@"

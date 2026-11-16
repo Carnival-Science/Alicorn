@@ -35,6 +35,9 @@ jobs:
       - name: Validate browser host key policy on Linux
         run: mkdir -p out && odin test host/web -collection:alicorn=. -out:out/alicorn_web_host_tests
 
+      - name: Validate SDL3 native host input mapping on Linux
+        run: odin test host/sdl3 -collection:alicorn=. -out:out/alicorn_sdl3_host_tests
+
       - name: Install hash-verified wgpu-native for pinned Odin bindings
         shell: sh
         run: sh tools/setup_linux_wgpu_native.sh "$ODIN_ROOT"
