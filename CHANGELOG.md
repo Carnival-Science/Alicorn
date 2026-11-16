@@ -31,8 +31,8 @@ changelogs.
 - Added dense point-marker GPU readback and cost fixtures for 1,280px and
   1,920px sample views. The readback uses an analytic ellipse oracle and checks
   overlap, clipping, and fractional DPI on Metal and D3D12. Corrected wxRect
-  center alignment is being revalidated; native pixel parity and isolated GPU
-  execution timing remain open acceptance checks. See
+  center alignment passed all hosted readback cases; native pixel parity and
+  isolated GPU execution timing remain open acceptance checks. See
   [issue #201 research](docs/research/issue-201-dense-retained-markers.md).
 
 ## [0.2.1] — 2026-11-10
