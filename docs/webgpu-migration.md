@@ -63,7 +63,7 @@ uploads remain renderer-specific.
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | In progress: image, custom-geometry, and backdrop resources have bounded asynchronous retirement and completion-driven release tests; async readback is exercised. Same-device compositor teardown/rebuild now reproduces every RGBA pixel on Windows D3D12 and Vulkan from retained Runtime products. Genuine driver/OS device loss and device recovery, plus primary/secondary window teardown/recreation, remain unvalidated. Intentional `DeviceDestroy` callbacks are tracked separately and do not count as driver-loss evidence |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
-| 6. Browser host | interaction, accessibility, text/IME, lifecycle and demand-driven scheduling complete | In progress: reusable demand-driven scheduling, host-side key mapping, DOM input routing, optional textarea-backed UTF-8/IME input, Hosted_Runtime surface presentation, and the reusable `Browser_Application` coordinator live in `host/web/`. The feasibility example uses that coordinator and builds for `js_wasm32`; on Windows, agent and owner validation against a refreshed `http://localhost:8091/` confirmed retained button input, text entry, resize persistence, and demand-driven idle without a runtime trap. An earlier `RuntimeError: unreachable executed` came from a stale page instance and was not reproduced after reload. This slice routes composition preedit/commit/cancel and positions the input proxy from retained caret geometry; physical IME validation, DOM accessibility projection, production `ui.run` integration, and application dogfooding remain outstanding |
+| 6. Browser host | interaction, accessibility, text/IME, lifecycle and demand-driven scheduling complete | In progress: reusable demand-driven scheduling, host-side key mapping, DOM input routing, optional textarea-backed UTF-8/IME input, Hosted_Runtime surface presentation, and the reusable `Browser_Application` coordinator live in `host/web/`. The feasibility example uses that coordinator and builds for `js_wasm32`; on Windows, agent and owner validation against a refreshed `http://localhost:8091/` confirmed retained button input, text entry, resize persistence, and demand-driven idle without a runtime trap. An earlier `RuntimeError: unreachable executed` came from a stale page instance and was not reproduced after reload. This slice routes composition preedit/commit/cancel and positions the input proxy from retained caret geometry; physical IME validation, live browser DOM/ARIA focus and assistive-technology validation, production `ui.run` integration, and application dogfooding remain outstanding; the bounded DOM/ARIA projection now builds and has headless model and Unicode-selection tests |
 | 7. Release readiness | docs, reproducible setup, CI and substantive shared-renderer web example | Not started |
 
 The Phase 0 evidence authorizes bounded, testable renderer slices; it does not
@@ -1980,7 +1980,54 @@ Validation with `C:\odin\odin.exe` on Windows:
   browser probe was added, its `js_wasm32` fixture rebuilt successfully.
 
 This closes the optional text-key callback adapter gap for native and hosted
-`ui.run` composition. Production `ui.run` host selection for WebGPU, browser
-DOM/ARIA accessibility, physical IME and keyboard checks, clipboard,
-drag/drop, menus/dialogs, secondary windows, and native macOS/Linux validation
-remain outstanding.
+`ui.run` composition. The bounded DOM/ARIA projection is now present in
+`host/web`; live browser focus/action and assistive-technology validation,
+physical IME and keyboard checks, production `ui.run` host selection for
+WebGPU, clipboard, drag/drop, menus/dialogs, secondary windows, and native
+macOS/Linux validation remain outstanding.
+
+### Bounded browser semantic DOM projection (Windows `js_wasm32` build and headless tests, 2026-11-16)
+
+`host/web/accessibility.odin` converts a complete Runtime semantic snapshot to
+a bounded JSON view with stable IDs derived from the semantic namespace and
+identity. It maps Runtime roles, labels, descriptions, values, states, numeric
+properties, collection positions, live-region metadata, focus, and available
+actions. `Text_Run` children are retained as internal selection-mapping data
+rather than exposed as duplicate controls.
+
+`host/web/accessibility_dom.js` maintains stable browser elements and applies
+incremental attribute/value/order changes without replacing the tree on each
+semantic revision. Native browser controls cover buttons, textboxes, checkboxes,
+sliders, tabs, and generic ARIA roles. Click, focus, input, composition-end, and
+text-selection events route through the existing Hosted_Runtime semantic
+action APIs. DOM UTF-16 selection offsets convert to Alicorn selectable text-run
+units; offsets inside astral Unicode scalars snap to a grapheme boundary. The
+root is visually hidden and the canvas is marked `aria-hidden` while this
+projection is enabled, so visible focus mirroring remains an open usability
+item.
+
+The projection bounds snapshots to 4,096 candidate nodes, output to 2,048 DOM
+controls, semantic text to 1 MiB, and serialized JSON to 8 MiB. Oversized or
+unrepresentable trees replace any prior projection with a live status message,
+preventing stale controls from remaining actionable. Snapshot text is checked
+before cloning so oversized values do not cause unbounded temporary copies.
+The example opts in with `accessibility_root_id="alicorn-accessibility"` and
+loads the DOM helper from its feasibility web directory.
+
+Validation with `C:\odin\odin.exe` on Windows:
+
+- `odin test runtime -collection:alicorn=.` passed 360 Runtime tests,
+  including bounded ordering and pre-clone text-budget cases.
+- `odin test host/web -collection:alicorn=.` passed 13 tests, including
+  projection caps, strict JSON, stable identity, and UTF-16-to-grapheme
+  boundary mapping for accented and astral text.
+- The feasibility fixture built for `js_wasm32`; `node --check` passed for the
+  JavaScript DOM helper; `git diff --check` passed.
+- The owner confirmed the refreshed `localhost:8091` page no longer reproduces
+  the earlier runtime trap. That is not evidence that this uncommitted worktree
+  was served, and does not validate the new accessibility DOM at runtime.
+
+This is an opt-in accessibility host foundation, not browser acceptance.
+Live screen-reader behavior, keyboard-only focus/action routing, visual focus
+feedback, text editing/selection in a real browser, physical IME, and
+virtualized collection navigation still need browser validation.

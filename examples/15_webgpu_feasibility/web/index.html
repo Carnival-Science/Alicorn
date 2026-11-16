@@ -15,8 +15,9 @@ canvas{width:min(100vw,calc((100vh - 40px)*16/9));height:auto;aspect-ratio:16/9;
 <body>
 <canvas id="wgpu-canvas" tabindex="0" aria-label="Alicorn WebGPU hosted runtime example"></canvas>
 <textarea id="wgpu-text-input" tabindex="-1" aria-label="Alicorn text entry" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+<div id="alicorn-accessibility"></div>
 <div id="footer"><div><div id="status">Starting the shared Alicorn retained WebGPU renderer…</div><div id="diagnostics" role="status" aria-live="polite">GPU readback probes pending.</div></div><button id="resize" type="button">Resize surface</button></div>
-<script src="./odin.js"></script><script src="./wgpu.js"></script><script src="./alicorn_demand_scheduler.js"></script>
+<script src="./odin.js"></script><script src="./wgpu.js"></script><script src="./alicorn_demand_scheduler.js"></script><script src="./alicorn_accessibility_dom.js"></script>
 <script>
 (async()=>{
  const status=document.querySelector("#status");

@@ -272,6 +272,18 @@ key and increment its event count. This exercises browser DOM keyboard routing
 through `Hosted_Runtime` into application state. It validates key delivery, not
 a complete browser text editor or physical IME behavior.
 
+The optional `#alicorn-accessibility` root demonstrates a bounded DOM/ARIA
+projection of the same Runtime semantic snapshot. Stable IDs and incremental
+patches preserve DOM controls across semantic revisions; text and selection
+values route back through Hosted_Runtime, with browser UTF-16 selection offsets
+mapped to Alicorn selectable grapheme boundaries. The projection caps itself at
+2,048 controls, 1 MiB of semantic text, and 8 MiB of encoded JSON. If the current
+tree exceeds a limit, it removes stale controls and exposes one status message.
+The projection is visually hidden and the canvas is hidden from assistive
+technology while it is enabled. This is build and headless-test evidence only;
+live screen-reader, keyboard-only, visible-focus, and physical IME behavior are
+not yet validated.
+
 Browser WebGPU presents the canvas as part of queue submission. Odin's current
 `vendor:wgpu` binding still types `SurfacePresent` as returning `Status`, while
 its JavaScript bridge implements it as a void no-op. The shared presenter

@@ -151,6 +151,7 @@ browser_host_init :: proc() {
 		rawptr(&browser_host_runtime),
 		browser_host_surface_wake,
 		"wgpu-text-input",
+		accessibility_root_id="alicorn-accessibility",
 	); result != .Ok {
 		fmt.panicf("browser Hosted_Runtime application initialization failed: %v", result)
 	}

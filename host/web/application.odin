@@ -24,6 +24,7 @@ Browser_Application :: struct {
 	hosted: alicorn.Hosted_Runtime,
 	presenter: Browser_Surface_Presenter,
 	input: Browser_Input,
+	accessibility: Browser_Accessibility,
 	device: wgpu.Device,
 	queue: wgpu.Queue,
 	surface: wgpu.Surface,
@@ -81,11 +82,14 @@ browser_application_init :: proc(
 	wake: Browser_Application_Wake_Proc,
 	text_input_id: string = "",
 	clear_color: wgpu.Color = {0.04, 0.06, 0.08, 1},
+	accessibility_root_id: string = "",
 ) -> Browser_Application_Result {
 	if application == nil || application.initialized || hosted_config.render == nil ||
 	   surface == nil || device == nil || queue == nil || wake == nil ||
 	   !browser_application_id_is_safe(canvas_id) ||
 	   (text_input_id != "" && (!browser_application_id_is_safe(text_input_id) || text_input_id == canvas_id)) ||
+	   (accessibility_root_id != "" && (!browser_application_id_is_safe(accessibility_root_id) ||
+	    accessibility_root_id == canvas_id || accessibility_root_id == text_input_id)) ||
 	   configuration.format == .Undefined {
 		return .Invalid_Input
 	}
@@ -152,6 +156,21 @@ browser_application_init :: proc(
 		application^ = {}
 		return .Input_Failure
 	}
+	if accessibility_root_id != "" && !browser_accessibility_init(
+		&application.accessibility,
+		&application.hosted,
+		accessibility_root_id,
+		canvas_id,
+		text_input_id,
+		rawptr(application),
+		browser_application_wake,
+	) {
+		browser_input_detach(&application.input)
+		_ = browser_surface_presenter_destroy(&application.presenter)
+		_ = alicorn.hosted_runtime_destroy(&application.hosted)
+		application^ = {}
+		return .Input_Failure
+	}
 	application.initialized = true
 	return .Ok
 }
@@ -210,6 +229,7 @@ browser_application_step :: proc(application: ^Browser_Application, now_ns: u64)
 		}
 	}
 	browser_input_update_text_input_area(&application.input)
+	if application.accessibility.initialized { _ = browser_accessibility_sync(&application.accessibility) }
 	return Browser_Application_Step{
 		status=.Ok,
 		presentation=presentation,
@@ -227,6 +247,7 @@ browser_application_destroy :: proc(application: ^Browser_Application) -> bool {
 		browser_input_detach(&application.input)
 		application.input_detached = true
 	}
+	if application.accessibility.initialized { browser_accessibility_destroy(&application.accessibility) }
 	if !browser_surface_presenter_destroy(&application.presenter) { return false }
 	if alicorn.hosted_runtime_destroy(&application.hosted) != .Ok { return false }
 	application^ = {}
