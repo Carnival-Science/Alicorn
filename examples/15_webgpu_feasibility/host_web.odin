@@ -14,12 +14,8 @@ Browser_Feasibility_App :: struct {
 }
 
 browser_host_runtime: struct {
-	hosted: alicorn.Hosted_Runtime,
-	presenter: browser_host_api.Browser_Surface_Presenter,
-	input: browser_host_api.Browser_Input,
+	application: browser_host_api.Browser_Application,
 	app: Browser_Feasibility_App,
-	initialized: bool,
-	next_wake_ns: u64,
 }
 
 OS :: struct {}
@@ -92,17 +88,8 @@ browser_host_surface_wake :: proc(_data: rawptr) {
 	js.evaluate("window.__alicornDemandScheduler?.wake();")
 }
 
-browser_host_post_wake :: proc(data: rawptr) -> bool {
-	browser_host_surface_wake(data)
-	return true
-}
-
 browser_host_init :: proc() {
-	if browser_host_runtime.initialized { return }
-	rect := js.get_bounding_client_rect("wgpu-canvas")
-	dpi := f32(max(js.device_pixel_ratio(), 0.01))
-	logical_width := max(1, int(rect.width))
-	logical_height := max(1, int(rect.height))
+	if browser_host_runtime.application.initialized { return }
 	if !browser_host_runtime.app.field.initialized {
 		field, ok := alicorn.text_field_buffer_init("Type into this retained text field", context.allocator)
 		if !ok { fmt.panicf("browser hosted fixture could not allocate text buffer") }
@@ -110,121 +97,68 @@ browser_host_init :: proc() {
 	}
 	host_config := alicorn.Hosted_Runtime_Config{
 		state=rawptr(&browser_host_runtime.app),
-		logical_width=logical_width,
-		logical_height=logical_height,
-		pixel_width=int(state.config.width),
-		pixel_height=int(state.config.height),
-		dpi_scale=dpi,
-		post_wake=browser_host_post_wake,
 		render=browser_host_app_render,
 		on_initialize=browser_host_app_initialize,
 	}
-	if status := alicorn.hosted_runtime_init(&browser_host_runtime.hosted, host_config); status != .Ok {
-		fmt.panicf("browser Hosted_Runtime initialization failed: %v", status)
-	}
-	if result := browser_host_api.browser_surface_presenter_init(
-		&browser_host_runtime.presenter,
-		&browser_host_runtime.hosted,
+	if result := browser_host_api.browser_application_init(
+		&browser_host_runtime.application,
+		host_config,
 		state.surface,
 		state.device,
 		state.queue,
 		state.config,
-		logical_width,
-		logical_height,
-		dpi,
-		rawptr(&browser_host_runtime),
-		browser_host_surface_wake,
-	); result != .Ok {
-		fmt.panicf("browser Hosted_Runtime surface presenter initialization failed: %v", result)
-	}
-	if !browser_host_api.browser_input_install(
-		&browser_host_runtime.input,
-		&browser_host_runtime.hosted,
 		"wgpu-canvas",
 		.Other,
 		rawptr(&browser_host_runtime),
 		browser_host_surface_wake,
-		rawptr(&browser_host_runtime.presenter),
-		browser_host_api.browser_surface_visibility_changed,
 		"wgpu-text-input",
-	) {
-		fmt.panicf("browser Hosted_Runtime input listener installation failed")
+	); result != .Ok {
+		fmt.panicf("browser Hosted_Runtime application initialization failed: %v", result)
 	}
-	browser_host_runtime.initialized = true
 	fmt.println("[webgpu-feasibility] Hosted_Runtime, browser input, and canvas presenter connected")
 }
 
 browser_host_resize :: proc() {
-	if !browser_host_runtime.initialized { return }
-	rect := js.get_bounding_client_rect("wgpu-canvas")
-	dpi := max(js.device_pixel_ratio(), 0.01)
-	logical_width := max(0, int(rect.width))
-	logical_height := max(0, int(rect.height))
-	pixel_width := max(0, int(rect.width*dpi))
-	pixel_height := max(0, int(rect.height*dpi))
-	state.width, state.height = u32(pixel_width), u32(pixel_height)
-	os_set_surface_size(state.width, state.height)
-	state.config.width, state.config.height = u32(max(1, pixel_width)), u32(max(1, pixel_height))
-	result := browser_host_api.browser_surface_presenter_resize(
-		&browser_host_runtime.presenter,
-		logical_width,
-		logical_height,
-		pixel_width,
-		pixel_height,
-		f32(dpi),
-	)
-	if result != .Ok && result != .Suspended {
+	result := browser_host_api.browser_application_resize(&browser_host_runtime.application)
+	state.width, state.height = os_get_framebuffer_size()
+	state.config.width, state.config.height = max(state.width, 1), max(state.height, 1)
+	if result == .Invalid_Input || result == .Resource_Failure || result == .Render_Failure {
 		fmt.eprintln("[webgpu-feasibility] browser Hosted_Runtime resize failed:", result)
 	}
 }
 
 browser_host_step :: proc(now_ns: u64) -> bool {
-	if !browser_host_runtime.initialized { return false }
-	step, presentation := browser_host_api.browser_surface_presenter_step(
-		&browser_host_runtime.presenter,
-		now_ns,
-	)
+	step := browser_host_api.browser_application_step(&browser_host_runtime.application, now_ns)
 	if step.status != .Ok {
 		fmt.eprintln("[webgpu-feasibility] browser Hosted_Runtime step failed:", step.status)
 		return false
 	}
-	browser_host_runtime.next_wake_ns = step.next_wake_ns
-	if presentation == .Retry_Later {
-		retry_ns := now_ns + 16_666_667
-		if browser_host_runtime.next_wake_ns == 0 || retry_ns < browser_host_runtime.next_wake_ns {
-			browser_host_runtime.next_wake_ns = retry_ns
-		}
-	}
-	if presentation == .Invalid_Input || presentation == .Resource_Failure ||
-	   presentation == .Render_Failure || presentation == .Surface_Acquire_Failure ||
-	   presentation == .Present_Failure {
-		fmt.eprintln("[webgpu-feasibility] browser canvas presentation failed:", presentation)
+	if step.presentation == .Invalid_Input || step.presentation == .Resource_Failure ||
+	   step.presentation == .Render_Failure || step.presentation == .Surface_Acquire_Failure ||
+	   step.presentation == .Present_Failure {
+		fmt.eprintln("[webgpu-feasibility] browser canvas presentation failed:", step.presentation)
 		return false
 	}
-	browser_host_api.browser_input_update_text_input_area(&browser_host_runtime.input)
 	return step.has_more_work
 }
 
 @(export)
 browser_host_next_wake_ns :: proc() -> u64 {
 	context = state.ctx
-	return browser_host_runtime.next_wake_ns
+	return browser_host_runtime.application.next_wake_ns
 }
 
 @(export)
 browser_host_shutdown :: proc() {
 	context = state.ctx
-	if browser_host_runtime.initialized {
-		browser_host_api.browser_input_detach(&browser_host_runtime.input)
-		if !browser_host_api.browser_surface_presenter_destroy(&browser_host_runtime.presenter) {
+	if browser_host_runtime.application.initialized {
+		if !browser_host_api.browser_application_destroy(&browser_host_runtime.application) {
 			// Page teardown may stop delivering GPU completion callbacks. Keep the
 			// Runtime and presenter state alive until the WASM instance is reclaimed.
 			fmt.println("[webgpu-feasibility] page teardown deferred presenter destruction with work in flight")
 			return
 		}
-		_ = alicorn.hosted_runtime_destroy(&browser_host_runtime.hosted)
 		alicorn.text_field_buffer_destroy(&browser_host_runtime.app.field)
-		browser_host_runtime.initialized = false
 	}
 }
 
