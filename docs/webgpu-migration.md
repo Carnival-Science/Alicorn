@@ -1856,6 +1856,10 @@ Validation with `C:\odin\odin.exe` (`dev-2026-11-nightly:08539cd`) on Windows:
 The full `tools/test.ps1` run stopped in the external AccessKit Windows UI
 Automation smoke with `Accessible Button missing`, before reaching its unit
 test stages. The focused Runtime, UI, and browser-host suites were run
-separately and passed. The newly extracted coordinator has not yet been
-exercised in a live browser; the owner's refreshed-page screenshot verifies
-the preceding fixture revision and is not counted as evidence for this change.
+separately and passed. After reloading the Windows fixture at localhost:8091,
+the owner confirmed that clicking the retained button updates the visible state
+to `Button input reached the Hosted_Runtime.` and no browser runtime error
+appears. This is live pointer-and-rerender smoke evidence for the refreshed
+fixture and its Browser_Application path. The screenshot does not identify the
+served commit SHA; it does not establish resize, IME, hardware acceleration,
+or performance behavior for that exact artifact.
