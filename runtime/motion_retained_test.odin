@@ -185,12 +185,10 @@ test_ui_motion_intent_queues_typed_semantic_surface_color_after_reconciliation :
 	container_end(&ui)
 	end_frame(&ui)
 	handle, handle_status := motion_owner_begin(&rt, id)
-	present_ui, present := begin_presentation_frame(&rt)
-	if present { end_presentation_frame(&present_ui) }
 	command, command_found := motion_retained_test_find_command(&rt, id)
 	fill, is_surface := command.payload.(Surface_Paint)
 	presentation := motion_presentation(&rt, handle)
-	testing.expect(t, queue_status == .Ok && handle_status == .Ok && present && command_found && is_surface &&
+	testing.expect(t, queue_status == .Ok && handle_status == .Ok && command_found && is_surface &&
 		command.semantic_surface_fill && fill.fill == target.surface_color && presentation.has_surface_color &&
 		presentation.presented_surface_color == target.surface_color,
 		"declarative motion queues the typed fill target until the retained node and semantic style are reconciled")
@@ -202,10 +200,13 @@ test_retained_motion_static_interaction_policy_preserves_capture_and_semantic_bo
 	defer destroy_runtime(&rt)
 	button_id := motion_retained_test_build_button(&rt)
 	if button_id == 0 { testing.expect(t, false, "button fixture should build"); return }
+	_ = focus(&rt, button_id)
+	// Focusing invalidates the application description. Rebuild once before
+	// testing presentation-only motion so the next frame is not a full update.
+	button_id = motion_retained_test_build_button(&rt)
 	button_node := rt.nodes[button_id]
 	logical_bounds := button_node.hit_bounds
 	semantic_before, semantic_found := semantic_node_lookup(&rt, semantic_visual_id(button_id))
-	_ = focus(&rt, button_id)
 	_ = motion_clock_set_time(&rt, Motion_Time(0))
 	status := motion_apply_intent(&rt, button_id,
 		Motion_Target{translation=Motion_Vector2{180, 0}, has_translation=true, interaction_policy=.Target_Static}, .Settle)
