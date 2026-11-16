@@ -57,7 +57,7 @@ uploads remain renderer-specific.
 | --- | --- | --- |
 | 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes on an NVIDIA Turing adapter; physical Linux GPU/Wayland, genuine driver/OS loss and recovery, comparative baselines, and production parity remain open |
 | 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring, CPU solid/custom-surface mesh assembly, and text/image/icon preparation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
-| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and explicitly selected D3D12 fixtures exercise per-resource custom-surface caching, cache-budget pressure, in-flight protection, instance transforms, readback, and resize; prior browser WebGPU fixture passes custom-surface pixels and the current WASM build compiles, but the cache follow-up has not had a live browser replay. One shared compositor preserves interleaved paint order. Text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, rectangles, segments, circles, masked markers, clipping, and waveform samples pass representative native pixel probes. Rounded/accessibility material parity, effects, and application host presentation remain outstanding |
+| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and explicitly selected D3D12 fixtures exercise per-resource custom-surface caching, cache-budget pressure, in-flight protection, instance transforms, readback, and resize; prior browser WebGPU fixture passes custom-surface pixels and the current WASM build compiles, but the cache follow-up has not had a live browser replay. One shared compositor preserves interleaved paint order. Text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, rectangles, segments, circles, masked markers, clipping, and waveform samples pass representative native pixel probes. Backend-neutral backdrop-effect planning and Gaussian sampling now live in `renderer/cpu`; rounded/accessibility material parity, GPU effect capture/filter/composite, and application host presentation remain outstanding |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | Not started |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
@@ -76,10 +76,14 @@ are brought up.
   generations are acknowledged only after queue submission. Motion-only text
   translation must not rebuild its glyph mesh.
 - **Host independence:** renderer packages accept a host-provided WebGPU
-  device, queue, encoder/render pass, and target view. They do not create SDL
-  windows, acquire browser canvases, or own platform event loops. A renderer
-  instance is bound to one Runtime and is destroyed before it; a host may share
-  its device across independent window runtimes.
+  device, queue, encoder/render pass, and target view. Native SDL3 hosting must
+  support both Alicorn-created windows and externally managed surfaces. The
+  presenter path preserves #162's borrowed paint-list, owner-thread synchronous
+  consumption, and caller-owned target/encoder/submission; it must not silently
+  take surface or queue ownership. Loop ownership follows #196 independently:
+  callbacks and Runtime mutation stay on the owner thread. A renderer instance
+  is bound to one Runtime and is destroyed before it; a host may share its
+  device across independent window runtimes.
 - **Shared implementation:** native SDL3 and browser hosts use the same
   `renderer/cpu` products, `renderer/webgpu` policies, batching, clipping,
   caches, and WGSL. Platform code is limited to device/surface setup,
@@ -205,6 +209,25 @@ reaching through the SDL_GPU host package. The Windows run of
 direct/material output equivalence and the geometry budget assertions. Its
 local timing output is not added as migration performance evidence: this changes
 the measured call path, and this run did not capture complete machine metadata.
+
+### Shared backdrop-effect planning (Windows, 2026-11-15)
+
+The bounded backdrop-blur request validation, physical-pixel capture bounds,
+ancestor output clipping, Gaussian kernel generation, and bilinear tap pairing
+now live in `renderer/cpu/effects.odin`. The SDL_GPU adapter calls this shared
+policy and retains ownership of SDL texture formats, byte-budget accounting,
+resource caching, GPU passes, and submission/fence lifetime. This is a CPU
+planning extraction only: it does not implement or validate WebGPU effect
+capture, filtering, or composition.
+
+CPU regressions verify fractional-DPI halo rounding, clipping, Gaussian
+normalization and tap reconstruction, tiny-sigma underflow, bounds, and forged
+plan rejection. The complete Windows
+`tools/test.ps1 -Odin C:\odin\odin.exe` run passed after the extraction,
+including CPU renderer and SDL_GPU integration tests. Its existing large-stack-
+local warnings in secondary-window tests remain. These tests validate the
+temporary SDL_GPU reference path and shared policy; WebGPU effect parity remains
+open.
 
 ## Phase 0 feasibility results (Windows, 2026-11-15)
 

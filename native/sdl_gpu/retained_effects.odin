@@ -25,29 +25,26 @@ import "vendor:sdl3"
 // The byte budget counts requested texel + vertex + transfer bytes; SDL
 // pipeline/sampler metadata and opaque driver allocation overhead are unknown.
 
-NATIVE_EFFECT_MAX_DIMENSION :: 2048
-NATIVE_EFFECT_MAX_COORD :: 1_048_576
-NATIVE_EFFECT_MAX_SCALE :: 64
-NATIVE_EFFECT_MAX_SIGMA_PIXELS :: 32.0
-NATIVE_EFFECT_MAX_GAUSSIAN_RADIUS_PIXELS :: 96
-NATIVE_EFFECT_MAX_GAUSSIAN_KERNEL_WIDTH :: 2*NATIVE_EFFECT_MAX_GAUSSIAN_RADIUS_PIXELS+1
-NATIVE_EFFECT_MAX_FILTER_TAPS :: 97
+NATIVE_EFFECT_MAX_DIMENSION :: cpu_renderer.BACKDROP_EFFECT_MAX_DIMENSION
+NATIVE_EFFECT_MAX_COORD :: cpu_renderer.BACKDROP_EFFECT_MAX_COORD
+NATIVE_EFFECT_MAX_SCALE :: cpu_renderer.BACKDROP_EFFECT_MAX_SCALE
+NATIVE_EFFECT_MAX_SIGMA_PIXELS :: cpu_renderer.BACKDROP_EFFECT_MAX_SIGMA_PIXELS
+NATIVE_EFFECT_MAX_GAUSSIAN_RADIUS_PIXELS :: cpu_renderer.BACKDROP_EFFECT_MAX_GAUSSIAN_RADIUS_PIXELS
+NATIVE_EFFECT_MAX_GAUSSIAN_KERNEL_WIDTH :: cpu_renderer.BACKDROP_EFFECT_MAX_GAUSSIAN_KERNEL_WIDTH
+NATIVE_EFFECT_MAX_FILTER_TAPS :: cpu_renderer.BACKDROP_EFFECT_MAX_FILTER_TAPS
 NATIVE_EFFECT_VERTEX_COUNT :: NATIVE_EFFECT_MAX_FILTER_TAPS*12+6
 NATIVE_EFFECT_VERTEX_BYTES :: u64(NATIVE_EFFECT_VERTEX_COUNT * size_of(Native_Text_Vertex))
 NATIVE_EFFECT_FILTER_FORMAT :: sdl3.GPUTextureFormat.R16G16B16A16_FLOAT
 
-Native_Effect_Tap :: struct {
-	offset_pixels: f32,
-	weight: f32,
-}
+Native_Effect_Tap :: cpu_renderer.Backdrop_Effect_Tap
 
 Native_Effect_Request :: struct {
 	enabled: bool,
 	key, source_generation: u64,
 	region, clip: alicorn.Rect,
 	scale: f32,
-	sigma: f32, // Gaussian standard deviation in logical pixels, [0,8]; zero bypasses
-	depth: int, // exactly one; nesting is unsupported
+	sigma: f32,
+	depth: int,
 }
 
 Native_Effect_Plan :: struct {
@@ -251,150 +248,83 @@ native_retained_effects_destroy :: proc(effects: ^Native_Retained_Effects, devic
 	effects.slot_last_use_serial = [NATIVE_RETAINED_EFFECT_SLOT_COUNT]u64{}
 }
 
-native_effect_rect_bounded :: proc(rect: alicorn.Rect) -> bool {
-	for value in ([4]f32{rect.x, rect.y, rect.w, rect.h}) {
-		if !alicorn.number_is_finite(value) || abs(value) > NATIVE_EFFECT_MAX_COORD { return false }
-	}
-	return abs(f64(rect.x)+f64(rect.w)) <= NATIVE_EFFECT_MAX_COORD &&
-	       abs(f64(rect.y)+f64(rect.h)) <= NATIVE_EFFECT_MAX_COORD
-}
-
 native_effect_byte_size :: proc(width, height: sdl3.Uint32) -> u64 {
 	return u64(width)*u64(height)*(4+8+8) + 2*NATIVE_EFFECT_VERTEX_BYTES
 }
 
 native_effect_gaussian_radius :: proc(sigma_pixels: f32) -> (radius: int, ok: bool) {
-	if !alicorn.number_is_finite(sigma_pixels) || sigma_pixels <= 0 || sigma_pixels > NATIVE_EFFECT_MAX_SIGMA_PIXELS {
-		return 0, false
-	}
-	radius_f64 := math.ceil(3*f64(sigma_pixels))
-	if radius_f64 < 1 || radius_f64 > NATIVE_EFFECT_MAX_GAUSSIAN_RADIUS_PIXELS { return 0, false }
-	return int(radius_f64), true
+	return cpu_renderer.Backdrop_Effect_Gaussian_Radius(sigma_pixels)
 }
 
 native_effect_gaussian_tap_count :: proc(sigma_pixels: f32) -> (count: int, ok: bool) {
-	radius, valid := native_effect_gaussian_radius(sigma_pixels)
-	if !valid { return 0, false }
-	// Pair adjacent positive and negative texel weights into one bilinear
-	// sample per side, retaining the center sample and any unpaired edge tap.
-	return 1+2*((radius+1)/2), true
+	return cpu_renderer.Backdrop_Effect_Gaussian_Tap_Count(sigma_pixels)
 }
 
-native_effect_gaussian_weights :: proc(sigma_pixels: f32) -> (weights: [NATIVE_EFFECT_MAX_GAUSSIAN_KERNEL_WIDTH]f32, radius: int, ok: bool) {
-	computed_radius, valid := native_effect_gaussian_radius(sigma_pixels)
-	if !valid { return weights, 0, false }
-
-	radius = computed_radius
-	count := radius*2+1
-	center := NATIVE_EFFECT_MAX_GAUSSIAN_RADIUS_PIXELS
-	unnormalized: [NATIVE_EFFECT_MAX_GAUSSIAN_KERNEL_WIDTH]f64
-	total := f64(0)
-	denominator := 2*f64(sigma_pixels)*f64(sigma_pixels)
-	for index in 0..<count {
-		offset := index-radius
-		x := f64(offset)
-		weight := math.exp(-(x*x)/denominator)
-		unnormalized[center+offset] = weight
-		total += weight
-	}
-	for index in 0..<count {
-		offset := index-radius
-		weights[center+offset] = f32(unnormalized[center+offset]/total)
-	}
-	return weights, radius, true
+native_effect_gaussian_weights :: proc(sigma_pixels: f32) -> (
+	weights: [NATIVE_EFFECT_MAX_GAUSSIAN_KERNEL_WIDTH]f32,
+	radius: int,
+	ok: bool,
+) {
+	return cpu_renderer.Backdrop_Effect_Gaussian_Weights(sigma_pixels)
 }
 
-native_effect_gaussian_taps :: proc(sigma_pixels: f32) -> (taps: [NATIVE_EFFECT_MAX_FILTER_TAPS]Native_Effect_Tap, count: int, ok: bool) {
-	weights, radius, valid := native_effect_gaussian_weights(sigma_pixels)
-	if !valid { return taps, 0, false }
-	center := NATIVE_EFFECT_MAX_GAUSSIAN_RADIUS_PIXELS
-	taps[0] = Native_Effect_Tap{0, weights[center]}
-	count = 1
-	for distance := 1; distance <= radius; distance += 2 {
-		near_weight := f64(weights[center+distance])
-		far_weight := f64(0)
-		if distance < radius { far_weight = f64(weights[center+distance+1]) }
-		combined := near_weight+far_weight
-		offset := f64(distance)
-		if combined > 0 {
-			offset = (f64(distance)*near_weight+f64(distance+1)*far_weight)/combined
-		}
-		weight := f32(combined)
-		taps[count] = Native_Effect_Tap{-f32(offset), weight}
-		taps[count+1] = Native_Effect_Tap{f32(offset), weight}
-		count += 2
-	}
-	return taps, count, true
+native_effect_gaussian_taps :: proc(sigma_pixels: f32) -> (
+	taps: [NATIVE_EFFECT_MAX_FILTER_TAPS]Native_Effect_Tap,
+	count: int,
+	ok: bool,
+) {
+	return cpu_renderer.Backdrop_Effect_Gaussian_Taps(sigma_pixels)
 }
 
 native_effect_plan :: proc(request: Native_Effect_Request) -> (plan: Native_Effect_Plan, ok: bool) {
-	// A zero-initialized disabled request needs no device, key, generation, scale,
-	// or depth. Enabled requests are validated.
-	if !request.enabled { return plan, true }
-	if !alicorn.number_is_finite(request.scale) || request.scale <= 0 || request.scale > NATIVE_EFFECT_MAX_SCALE ||
-	   !alicorn.number_is_finite(request.sigma) || request.sigma < 0 || request.sigma > 8 ||
-	   !native_effect_rect_bounded(request.region) || !native_effect_rect_bounded(request.clip) ||
-	   request.depth != 1 || request.key == 0 || request.source_generation == 0 { return plan, false }
-	output_clip := alicorn.rect_intersection(request.region, request.clip)
-	if request.sigma == 0 || request.region.w <= 0 || request.region.h <= 0 ||
-	   request.clip.w <= 0 || request.clip.h <= 0 || output_clip.w <= 0 || output_clip.h <= 0 { return plan, true }
-	sigma_pixels := request.sigma*request.scale
-	radius, radius_ok := native_effect_gaussian_radius(sigma_pixels)
-	tap_count, tap_count_ok := native_effect_gaussian_tap_count(sigma_pixels)
-	if !radius_ok || !tap_count_ok { return Native_Effect_Plan{}, false }
-	// Capture the complete finite 3-sigma Gaussian support and round outward in
-	// physical pixels before conversion back to logical layout coordinates.
-	scale, halo := f64(request.scale), f64(radius)/f64(request.scale)
-	left := math.floor((f64(request.region.x)-halo)*scale)
-	top := math.floor((f64(request.region.y)-halo)*scale)
-	right := math.ceil((f64(request.region.x)+f64(request.region.w)+halo)*scale)
-	bottom := math.ceil((f64(request.region.y)+f64(request.region.h)+halo)*scale)
-	w, h := right-left, bottom-top
-	if abs(left) > NATIVE_EFFECT_MAX_COORD || abs(top) > NATIVE_EFFECT_MAX_COORD ||
-	   abs(right) > NATIVE_EFFECT_MAX_COORD || abs(bottom) > NATIVE_EFFECT_MAX_COORD ||
-	   w < 1 || h < 1 || w > NATIVE_EFFECT_MAX_DIMENSION || h > NATIVE_EFFECT_MAX_DIMENSION { return plan, false }
-	// Extremely small scales can make the snapped logical extent unbounded.
-	source := alicorn.Rect{f32(left/scale), f32(top/scale), f32(w/scale), f32(h/scale)}
-	if !native_effect_rect_bounded(source) { return plan, false }
-	plan = Native_Effect_Plan{
-		active=true, source_bounds=source, output_clip=output_clip,
-		width=sdl3.Uint32(w), height=sdl3.Uint32(h),
-		scale=request.scale, sigma_pixels=sigma_pixels, filter_tap_count=tap_count,
-		key=request.key, source_generation=request.source_generation,
+	cpu_request := cpu_renderer.Backdrop_Effect_Request{
+		enabled=request.enabled,
+		key=request.key,
+		source_generation=request.source_generation,
+		region=request.region,
+		clip=request.clip,
+		scale=request.scale,
+		sigma=request.sigma,
+		depth=request.depth,
 	}
-	plan.bytes = native_effect_byte_size(plan.width, plan.height)
-	// Include f32 round-trip/underflow checks in planning, so an accepted plan
-	// also passes prepare's allocation-boundary validation.
+	cpu_plan, plan_ok := cpu_renderer.Backdrop_Effect_Plan_Make(cpu_request)
+	if !plan_ok { return Native_Effect_Plan{}, false }
+	plan = Native_Effect_Plan{
+		active=cpu_plan.active,
+		source_bounds=cpu_plan.source_bounds,
+		output_clip=cpu_plan.output_clip,
+		width=sdl3.Uint32(cpu_plan.width),
+		height=sdl3.Uint32(cpu_plan.height),
+		scale=cpu_plan.scale,
+		sigma_pixels=cpu_plan.sigma_pixels,
+		filter_tap_count=cpu_plan.filter_tap_count,
+		key=cpu_plan.key,
+		source_generation=cpu_plan.source_generation,
+	}
+	if plan.active { plan.bytes = native_effect_byte_size(plan.width, plan.height) }
 	if !native_effect_plan_valid(plan) { return Native_Effect_Plan{}, false }
 	return plan, true
 }
 
-// Defend the allocation boundary as well: callers must not be able to bypass
-// caps or supply a forged, smaller byte count by constructing a plan directly.
+// The backend adapter verifies shared geometry policy plus its own resource
+// charge; GPU formats and fixed filter buffers are accounted for here.
 native_effect_plan_valid :: proc(plan: Native_Effect_Plan) -> bool {
 	if !plan.active { return true }
-	if plan.key == 0 || plan.source_generation == 0 ||
-	   plan.width == 0 || plan.height == 0 || plan.width > NATIVE_EFFECT_MAX_DIMENSION || plan.height > NATIVE_EFFECT_MAX_DIMENSION ||
-	   !alicorn.number_is_finite(plan.scale) || plan.scale <= 0 || plan.scale > NATIVE_EFFECT_MAX_SCALE ||
-	   !alicorn.number_is_finite(plan.sigma_pixels) || plan.sigma_pixels <= 0 || plan.sigma_pixels > NATIVE_EFFECT_MAX_SIGMA_PIXELS ||
-	   !native_effect_rect_bounded(plan.source_bounds) || !native_effect_rect_bounded(plan.output_clip) ||
-	   plan.source_bounds.w <= 0 || plan.source_bounds.h <= 0 || plan.output_clip.w <= 0 || plan.output_clip.h <= 0 ||
-	   plan.bytes != native_effect_byte_size(plan.width, plan.height) { return false }
-	expected_taps, taps_ok := native_effect_gaussian_tap_count(plan.sigma_pixels)
-	if !taps_ok || plan.filter_tap_count != expected_taps { return false }
-	left, top := f64(plan.source_bounds.x)*f64(plan.scale), f64(plan.source_bounds.y)*f64(plan.scale)
-	w, h := f64(plan.source_bounds.w)*f64(plan.scale), f64(plan.source_bounds.h)*f64(plan.scale)
-	if abs(left) > NATIVE_EFFECT_MAX_COORD || abs(top) > NATIVE_EFFECT_MAX_COORD ||
-	   abs(left+w) > NATIVE_EFFECT_MAX_COORD || abs(top+h) > NATIVE_EFFECT_MAX_COORD ||
-	   abs(left-math.round(left)) > 0.125 || abs(top-math.round(top)) > 0.125 ||
-	   abs(w-f64(plan.width)) > 0.001 || abs(h-f64(plan.height)) > 0.001 { return false }
-	// Allow only the f32 round-trip tolerance at the logical source boundary.
-	epsilon := f32(0.25)/plan.scale
-	return plan.output_clip.x >= plan.source_bounds.x-epsilon && plan.output_clip.y >= plan.source_bounds.y-epsilon &&
-	       f64(plan.output_clip.x)+f64(plan.output_clip.w) <= f64(plan.source_bounds.x)+f64(plan.source_bounds.w)+f64(epsilon) &&
-	       f64(plan.output_clip.y)+f64(plan.output_clip.h) <= f64(plan.source_bounds.y)+f64(plan.source_bounds.h)+f64(epsilon)
+	cpu_plan := cpu_renderer.Backdrop_Effect_Plan{
+		active=plan.active,
+		source_bounds=plan.source_bounds,
+		output_clip=plan.output_clip,
+		width=u32(plan.width),
+		height=u32(plan.height),
+		scale=plan.scale,
+		sigma_pixels=plan.sigma_pixels,
+		filter_tap_count=plan.filter_tap_count,
+		key=plan.key,
+		source_generation=plan.source_generation,
+	}
+	return plan.bytes == native_effect_byte_size(plan.width, plan.height) &&
+		cpu_renderer.Backdrop_Effect_Plan_Valid(cpu_plan)
 }
-
 native_effect_make :: proc(
 	device: ^sdl3.GPUDevice,
 	budget_bytes: u64,
