@@ -13,6 +13,8 @@ Browser_Input_Visibility_Proc :: proc(data: rawptr, visible: bool)
 // embedding host owns the Hosted_Runtime, canvas sizing, frame scheduler and
 // callback state. Give the canvas tabindex="0" so it can receive keyboard
 // input; browser text composition still requires the separate text-input host.
+// When on_visibility is supplied, that callback owns renderable coordination;
+// otherwise this adapter directly updates Hosted_Runtime visibility.
 Browser_Input :: struct {
 	host: ^alicorn.Hosted_Runtime,
 	canvas_id: string,
@@ -358,7 +360,9 @@ browser_input_visibility :: proc(event: js.Event) {
 	input := cast(^Browser_Input)event.user_data
 	if input == nil || input.host == nil { return }
 	visible := event.visibility_change.is_visible
-	_ = alicorn.hosted_runtime_set_renderable(input.host, visible)
+	if input.on_visibility == nil {
+		_ = alicorn.hosted_runtime_set_renderable(input.host, visible)
+	}
 	if !visible {
 		input.pointer_active = false
 		input.active_pointer_id = 0
