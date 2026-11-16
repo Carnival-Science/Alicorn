@@ -1359,9 +1359,16 @@ Replayed the `js_wasm32` feasibility build in a live browser using the same
 per-corner raised relief surface, increased-contrast, and reduced-transparency
 fixture described above. The asynchronous RGBA8 readback and focused material
 result both passed: variant resolution, face, bevel, rounded corner, and
-suppressed shadow. The browser also classified its selected adapter as
-non-fallback with NVIDIA/Turing metadata; adapter metadata does not establish
-physical acceleration. Clicking **Resize surface** produced a new retained
+suppressed shadow. The same source rebuilt all native and browser targets;
+`webgpu_feasibility_smoke.exe --backend=d3d12` and
+`webgpu_feasibility_smoke.exe --backend=vulkan` both passed on Windows x64 with
+an NVIDIA GeForce RTX 2080 SUPER. Both reported the core, compositor, effects,
+and focused material readbacks as passing, along with cache-pressure,
+retirement, and queue-completion checks. Splitting the readback diagnostics
+into bounded groups also prevents the browser console bridge from truncating
+the trailing material results. The browser also classified its selected
+adapter as non-fallback with NVIDIA/Turing metadata; adapter metadata does not
+establish physical acceleration. Clicking **Resize surface** produced a new retained
 output revision at 870×489, acknowledged presentation and queue completion,
 and returned to idle with no recurring animation-frame requests. This closes
 the prior browser-replay gap for this one fixture only; it is not full material
