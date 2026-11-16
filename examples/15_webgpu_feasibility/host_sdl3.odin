@@ -38,10 +38,17 @@ os_run :: proc() {
 		now:=SDL.GetPerformanceCounter()
 		dt:=f32(f64(now-last)/f64(SDL.GetPerformanceFrequency()))
 		last=now
+		when FEASIBILITY_TEST_SURFACE_PRESENTER {
+			if state.ready && state.surface_present_count > 0 && state.surface_motion_active {
+				_ = surface_runtime_motion_tick(dt)
+			}
+		}
 		if state.ready && (state.dirty || state.animation_seconds<ANIMATION_SECONDS) {
-			state.animation_seconds+=dt
-			state.dirty=false
-			render_surface_frame()
+			if !state.surface_presenter_completion_pending {
+				state.animation_seconds+=dt
+				state.dirty=false
+				render_surface_frame()
+			}
 			when FEASIBILITY_TEST_RESIZE {
 				if state.test_resize_pre_applied && !state.test_resize_pre_frame &&
 					state.surface_present_count>state.test_resize_pre_present_before {
@@ -121,7 +128,7 @@ os_run :: proc() {
 		needs_wakeup := state.dirty || state.readback_pending || state.queue_work_done_pending || state.animation_seconds < ANIMATION_SECONDS
 		needs_wakeup = needs_wakeup || state.surface_presenter_completion_pending
 		when FEASIBILITY_TEST_SURFACE_PRESENTER {
-			needs_wakeup = needs_wakeup || (state.ready && state.surface_present_count == 0)
+			needs_wakeup = needs_wakeup || state.surface_motion_active || (state.ready && state.surface_present_count == 0)
 		}
 		when FEASIBILITY_TEST_RESIZE {
 			needs_wakeup = needs_wakeup || (state.ready && (!state.test_resize_pre_frame || !state.test_resize_post_frame))
@@ -182,7 +189,7 @@ os_get_surface :: proc(instance:wgpu.Instance)->wgpu.Surface {
 	return sdl3glue.GetSurface(instance,state.os.window)
 }
 os_process_gpu_events :: proc() {
-	needs_poll := state.readback_pending || state.queue_work_done_pending
+	needs_poll := state.readback_pending || state.queue_work_done_pending || state.surface_presenter_completion_pending
 	when FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY {
 		needs_poll = needs_poll || (!state.ready && !state.device_lost)
 	}

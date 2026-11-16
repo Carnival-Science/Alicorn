@@ -1306,7 +1306,10 @@ motion_tick :: proc(rt: ^Runtime, at: Motion_Time) -> Motion_Tick_Result {
 			}
 		}
 		if owner_active { result.active_owners += 1 }
-		if changed { result.changed_owners += 1 }
+		if changed {
+			result.changed_owners += 1
+			presentation_output_mark_node_dirty(rt, owner)
+		}
 		if settled { motion_diagnostic_record(rt, .Settled, owner) }
 	}
 	}

@@ -806,6 +806,54 @@ geometry, and waveform are separately covered by the shared compositor's
 offscreen pixel readback. This does not yet validate a real application or
 browser input/accessibility projection.
 
+## Shared Runtime motion on the native surface and browser canvas (Windows, 2026-11-16)
+
+The opt-in presenter scene now builds one retained Runtime tree containing
+Runa-shaped text, an adopted checker image, a rounded clipped card, a
+translucent surface, and a waveform payload held by Alicorn's existing custom
+geometry API. The same `WebGPU_Presenter_Encode` and WGSL render this composition
+to the SDL-created surface and the browser canvas. The waveform remains a
+retained renderer resource while the card receives a translation-only reveal.
+No application-facing GPU canvas API was added; waveform mesh caching remains
+renderer-local as directed by Alicorn #164.
+
+The reveal exercises the Runtime presentation-output contract. A sampled motion
+change marks only the outputs containing its retained owner. The host then
+opens a presentation-only frame, flushes composition, and publishes the new
+display revision without rerunning UI descriptions. Native presentation waits
+for each queue-completion callback before submitting the next frame, and the
+SDL host polls wgpu-native while that callback is pending. Once motion settles
+and the final submission completes, the host returns to its event wait.
+
+Validation on this Windows host:
+
+- `C:\odin\odin.exe test runtime`: 353 tests passed, including a regression
+  that verifies sampled motion marks the owning output pending without dirtying
+  a separate output.
+- `tools/test.ps1 -Odin C:\odin\odin.exe`: the full Windows regression script
+  passed, including the 353 Runtime tests, 197 SDL_GPU integration tests,
+  AccessKit ABI/UIA, restoration, and native text-input/ownership host checks.
+- Native build with `FEASIBILITY_TEST_QUIT_AFTER_READBACK` and
+  `FEASIBILITY_TEST_SURFACE_PRESENTER`: passed. The bounded run selected Vulkan
+  on an NVIDIA GeForce RTX 2080 SUPER (driver 595.97), completed the existing
+  asynchronous pixel readback and cache-retirement probes, and presented
+  retained revisions 2 through 25. Each presenter completion and output
+  acknowledgement passed; the final settled revision completed before exit.
+- `js_wasm32` browser build: passed. The live localhost browser canvas rendered
+  the shared composition; status reported the reveal settled, queue serial 51
+  completed successfully, and no frame requests during the following 500 ms
+  (56 requests total, including two initialization wake frames).
+- `git diff --check`: passed after this documentation update.
+
+The browser run did not record whether its adapter was hardware- or
+software-backed, and its request count is not a performance measurement. These
+fixtures do not establish cross-platform pixel parity for the visible surface,
+production application integration, externally managed browser/native
+surfaces, or primary/secondary application windows. This motion smoke also
+does not simulate driver/OS-initiated device loss. Intentional `DeviceDestroy`
+callback delivery remains a separate test result; genuine loss and recovery
+remain open Phase 0/3 gates.
+
 ## Phase 2 image renderer slice (2026-11-15)
 
 `renderer/webgpu/images.odin` now renders Runtime-owned images through the same

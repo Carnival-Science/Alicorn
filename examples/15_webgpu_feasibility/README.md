@@ -1,13 +1,14 @@
 # Shared native/browser WebGPU feasibility fixture
 
-The interactive capability scene keeps a small bespoke draw list for exercising
-the full set of WebGPU operations. Offscreen probes also build real Alicorn
-`Paint_Display_List_View` values and send them through `renderer/webgpu/` and
-the shared `renderer/cpu` products. The production renderer path and WGSL are
-the same for native and browser; only `host_sdl3.odin` and `host_web.odin`
-differ by platform. The application window still uses the fixture scene, so
-this is renderer integration evidence, not yet a replacement for the SDL_GPU
-application presenter.
+The default interactive capability scene keeps a small bespoke draw list for
+exercising the full set of WebGPU operations. Offscreen probes and the opt-in
+surface-presenter targets also build real Alicorn `Paint_Display_List_View`
+values and send them through `renderer/webgpu/` and the shared `renderer/cpu`
+products. The production renderer path and WGSL are the same for native and
+browser; only `host_sdl3.odin` and `host_web.odin` differ by platform. The
+presenter targets now render one shared Runtime-backed composition to the SDL
+window surface and browser canvas. This is renderer and host-boundary evidence,
+not yet a replacement for the SDL_GPU application presenter.
 
 The scene exercises solid geometry, alpha blending, a rounded surface, clipped
 checker texture, Runa-shaped/rasterized text in an R8 atlas, and CPU waveform
@@ -43,6 +44,15 @@ Two retained custom-surface payloads check a rectangle, thick segment, filled
 circle, masked point marker, marker scissor, and a two-sample waveform. Their
 geometry comes from `renderer/cpu/gpu_surface.odin`, which is also used by the
 SDL_GPU reference surface renderer.
+
+The shared Runtime presenter composition contains Runa-shaped text, a retained
+checker image, rounded clipping, a translucent surface, and waveform geometry
+stored in an Alicorn custom surface. A translation-only reveal is sampled by
+the Runtime motion clock; each changed owner dirties only its registered output
+and is published through a retained presentation-only frame. The SDL host
+polls wgpu-native only while readback, queue completion, or presenter work is
+pending, then blocks in SDL when the scene has settled. No application UI
+description callback is rerun for the motion.
 Pixel checks assert the opaque overlay remains above earlier text, later text
 remains visible, icon tint appears only inside its clip, and image colors,
 alpha blending, and clipping are correct. One icon requires

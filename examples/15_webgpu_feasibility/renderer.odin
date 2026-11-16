@@ -195,6 +195,9 @@ create_bind_group :: proc() {
 }
 
 render_surface_frame :: proc() {
+	when FEASIBILITY_TEST_WEB_CANVAS_PRESENTER || FEASIBILITY_TEST_SURFACE_PRESENTER {
+		if state.surface_presenter_completion_pending { return }
+	}
 	surface_texture:=wgpu.SurfaceGetCurrentTexture(state.surface)
 	switch surface_texture.status {
 	case .SuccessOptimal,.SuccessSuboptimal:
@@ -241,7 +244,6 @@ render_surface_frame :: proc() {
 		fmt.printf("[webgpu-feasibility] Alicorn retained display presented to browser canvas revision=%d size=%dx%d scale=%.3f\n",
 			submission.display_revision, state.config.width, state.config.height, scale)
 	} else when FEASIBILITY_TEST_SURFACE_PRESENTER {
-		if state.surface_present_count != 0 { return }
 		display, display_ok := alicorn.paint_display_list(&state.surface_runtime)
 		if !display_ok { fmt.panicf("Alicorn SDL surface display list unavailable") }
 		snapshot, snapshot_status := alicorn.presentation_output_snapshot(&state.surface_runtime, state.surface_output)
@@ -1412,9 +1414,29 @@ build_surface_runtime :: proc() {
 	})
 	state.surface_runtime_ready = true
 	if !alicorn.text_engine_load_font_role(&state.surface_runtime.text_engine, .UI, FONT_DATA) {
-		fmt.panicf("Alicorn SDL surface fixture could not load the bundled UI font")
+		fmt.panicf("Alicorn shared surface fixture could not load the bundled UI font")
 	}
-	alicorn.invalidate_root(&state.surface_runtime, "WebGPU surface presenter fixture")
+	if status := alicorn.motion_clock_set_time(&state.surface_runtime, alicorn.Motion_Time(0)); status != .Ok {
+		fmt.panicf("Alicorn shared surface fixture could not initialize retained motion time: %v", status)
+	}
+	image_pixels := make([]u8, 16*16*4, context.allocator)
+	for y in 0..<16 {
+		for x in 0..<16 {
+			offset := (y*16+x)*4
+			if (x/4+y/4)%2 == 0 {
+				image_pixels[offset+0], image_pixels[offset+1], image_pixels[offset+2], image_pixels[offset+3] = 238, 155, 81, 255
+			} else {
+				image_pixels[offset+0], image_pixels[offset+1], image_pixels[offset+2], image_pixels[offset+3] = 73, 168, 174, 255
+			}
+		}
+	}
+	decoded := alicorn.Image_Decoded{width=16, height=16, rgba8=image_pixels, allocator=context.allocator}
+	image, image_error := alicorn.image_adopt_decoded(&state.surface_runtime, &decoded)
+	if image_error != .None || len(decoded.rgba8) != 0 {
+		fmt.panicf("Alicorn shared surface fixture could not adopt its retained image: %v", image_error)
+	}
+	state.surface_runtime_image = image
+	alicorn.invalidate_root(&state.surface_runtime, "WebGPU shared retained surface fixture")
 	when FEASIBILITY_TEST_SURFACE_PRESENTER {
 		output, output_status := alicorn.presentation_output_register(&state.surface_runtime)
 		if output_status != .Ok { fmt.panicf("SDL WebGPU surface output registration failed: %v", output_status) }
@@ -1437,32 +1459,98 @@ build_surface_runtime :: proc() {
 			fmt.panicf("SDL WebGPU surface output root binding failed: %v", status)
 		}
 	}
-	alicorn.surface_begin(
+	card := alicorn.surface_begin(
 		&ui, alicorn.surface_core_color_role(.Surface),
 		key=alicorn.key_string("webgpu-surface-panel"),
-		style=alicorn.layout_style(width=896, height=132),
+		style=alicorn.layout_style(.Row, width=896, height=208, padding=20, gap=18, align=.Center, clip=true),
+		shape=alicorn.surface_shape_rounded_corners(alicorn.Surface_Corner_Radii{18, 18, 18, 18}),
 		fill=alicorn.Color{0.10, 0.14, 0.19, 1},
+		label="Shared retained renderer fixture",
 	)
-	alicorn.text(
-		&ui, "Alicorn retained display on a WebGPU surface",
-		key=alicorn.key_string("webgpu-surface-title"),
-		style=alicorn.layout_style(width=860, height=42, padding=12),
-		text_style=alicorn.Text_Style{font_size=28, overflow=.Clip},
-		color=alicorn.Color{0.94, 0.91, 0.82, 1},
+	if card == 0 { fmt.panicf("shared WebGPU surface card was not retained") }
+	target := alicorn.Motion_Target{
+		translation=alicorn.Motion_Vector2{0, 0},
+		clip_policy=.Follow_Visual, has_translation=true,
+	}
+	if status := alicorn.motion_intent_queue(
+		&state.surface_runtime, card, target, .Reveal, alicorn.Motion_Vector2{0, 18},
+	); status != .Ok {
+		fmt.panicf("shared WebGPU surface reveal declaration failed: %v", status)
+	}
+	alicorn.image(
+		&ui, state.surface_runtime_image, "Retained checker image",
+		key=alicorn.key_string("webgpu-surface-image"),
+		style=alicorn.layout_style(width=68, height=68),
+	)
+	alicorn.container_begin(
+		&ui, .Container, label="webgpu-surface-copy",
+		style=alicorn.layout_style(.Column, width=420, height=112, gap=10),
+	)
+	alicorn.container_begin(
+		&ui, .Container, label="webgpu-surface-heading-row",
+		style=alicorn.layout_style(.Row, width=420, height=38, gap=10, align=.Center),
+	)
+	alicorn.surface_begin(
+		&ui, alicorn.surface_core_color_role(.Surface),
+		key=alicorn.key_string("webgpu-surface-alpha-swatch"),
+		style=alicorn.layout_style(width=18, height=18),
+		shape=alicorn.surface_shape_rounded_corners(alicorn.Surface_Corner_Radii{6, 6, 6, 6}),
+		fill=alicorn.Color{0.94, 0.48, 0.18, 0.72},
 	)
 	alicorn.surface_end(&ui)
 	alicorn.text(
-		&ui, "The host owns the surface and frame schedule. Alicorn owns retained paint and renderer composition.",
+		&ui, "One retained renderer, both hosts",
+		key=alicorn.key_string("webgpu-surface-title"),
+		style=alicorn.layout_style(width=392, height=38, padding=2),
+		text_style=alicorn.Text_Style{font_size=24, overflow=.Clip},
+		color=alicorn.Color{0.94, 0.91, 0.82, 1},
+	)
+	alicorn.container_end(&ui)
+	alicorn.text(
+		&ui, "Runa text, rounded clipping, alpha blending, an adopted image, and resident waveform geometry.",
 		key=alicorn.key_string("webgpu-surface-description"),
+		style=alicorn.layout_style(width=420, height=58, padding=2),
+		text_style=alicorn.Text_Style{font_size=16, overflow=.Wrap},
+		color=alicorn.Color{0.72, 0.78, 0.81, 1},
+	)
+	alicorn.container_end(&ui)
+	alicorn.surface_begin(
+		&ui, alicorn.surface_core_color_role(.Surface),
+		key=alicorn.key_string("webgpu-surface-waveform-tray"),
+		style=alicorn.layout_style(width=280, height=116, padding=10, clip=true),
+		shape=alicorn.surface_shape_rounded_corners(alicorn.Surface_Corner_Radii{10, 10, 10, 10}),
+		fill=alicorn.Color{0.055, 0.075, 0.10, 1},
+	)
+	state.surface_runtime_waveform = alicorn.gpu_surface(
+		&ui, "retained-waveform", alicorn.Rect{0, 0, 260, 96}, 260, 96, 1,
+	)
+	alicorn.surface_end(&ui)
+	alicorn.surface_end(&ui)
+	alicorn.text(
+		&ui, "The host owns the surface and frame schedule. Alicorn owns retained paint and renderer composition.",
+		key=alicorn.key_string("webgpu-surface-footer"),
 		style=alicorn.layout_style(width=896, height=36),
 		text_style=alicorn.Text_Style{font_size=18, overflow=.Clip},
 		color=alicorn.Color{0.16, 0.20, 0.27, 1},
 	)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
+	if state.surface_runtime_waveform == 0 { fmt.panicf("shared retained waveform surface was not declared") }
+	waveform_samples: [96]f32
+	for index in 0..<len(waveform_samples) {
+		peak := (index*29+11)%83
+		waveform_samples[index] = 0.12 + f32(peak)/100.0
+	}
+	if !alicorn.gpu_surface_update(&state.surface_runtime, state.surface_runtime_waveform, waveform_samples[:]) {
+		fmt.panicf("shared retained waveform payload was rejected")
+	}
+	state.surface_motion_active = true
+	state.surface_motion_settled = false
+	state.surface_motion_elapsed_ns = 0
+	state.dirty = true
 	display, display_ok := alicorn.paint_display_list(&state.surface_runtime)
 	if !display_ok || len(display.commands) == 0 {
-		fmt.panicf("WebGPU surface Runtime did not publish its first retained display revision")
+		fmt.panicf("shared WebGPU surface Runtime did not publish its first retained display revision")
 	}
 	when FEASIBILITY_TEST_SURFACE_PRESENTER {
 		snapshot, snapshot_status := alicorn.presentation_output_snapshot(&state.surface_runtime, state.surface_output)
@@ -1470,6 +1558,28 @@ build_surface_runtime :: proc() {
 			fmt.panicf("SDL WebGPU surface Runtime output was not published with its first display revision")
 		}
 	}
+}
+
+surface_runtime_motion_tick :: proc(dt: f32) -> bool {
+	if !state.surface_runtime_ready || !state.surface_motion_active { return false }
+	bounded_dt := dt
+	if bounded_dt < 0 { bounded_dt = 0 }
+	if bounded_dt > 0.05 { bounded_dt = 0.05 }
+	state.surface_motion_elapsed_ns += i64(f64(bounded_dt)*1_000_000_000)
+	result := alicorn.motion_tick(&state.surface_runtime, alicorn.Motion_Time(state.surface_motion_elapsed_ns))
+	if result.status != .Ok { fmt.panicf("shared surface retained motion tick failed: %v", result.status) }
+	if result.changed_owners > 0 {
+		ui, ready := alicorn.begin_presentation_frame(&state.surface_runtime)
+		if !ready { fmt.panicf("shared surface retained motion could not open its presentation-only frame") }
+		alicorn.end_presentation_frame(&ui)
+		state.dirty = true
+	}
+	if result.active_properties == 0 {
+		state.surface_motion_active = false
+		state.surface_motion_settled = true
+		fmt.println("[webgpu-feasibility] shared Runtime reveal settled; motion scheduler is idle")
+	}
+	return state.surface_motion_active
 }
 
 build_compositor_images :: proc() {

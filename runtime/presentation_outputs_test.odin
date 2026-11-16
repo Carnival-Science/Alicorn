@@ -92,6 +92,34 @@ test_presentation_outputs_publish_and_acknowledge_independently :: proc(t: ^test
 }
 
 @(test)
+test_presentation_outputs_follow_retained_motion_per_owner :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 240, 120})
+	defer destroy_runtime(&rt)
+	left, left_status := presentation_output_register(&rt)
+	right, right_status := presentation_output_register(&rt)
+	nodes := presentation_outputs_test_describe(&rt, left, right)
+	presentation_outputs_test_flush(&rt)
+	left_snapshot, _ := presentation_output_snapshot(&rt, left)
+	right_snapshot, _ := presentation_output_snapshot(&rt, right)
+	if left_status != .Ok || right_status != .Ok || nodes.left_text == 0 || nodes.right_root == 0 {
+		testing.expect(t, false, "two disjoint outputs should be available for motion invalidation")
+		return
+	}
+	_ = presentation_output_frame_submission_succeeded(&rt, left, left_snapshot.revision)
+	_ = presentation_output_frame_submission_succeeded(&rt, right, right_snapshot.revision)
+	_ = motion_clock_set_time(&rt, Motion_Time(0))
+	target := Motion_Target{translation=Motion_Vector2{28, 0}, has_translation=true}
+	testing.expect(t, motion_apply_intent(&rt, nodes.left_text, target) == .Ok,
+		"the retained text in the left output should accept paint-only motion")
+	tick := motion_tick(&rt, Motion_Time(30_000_000))
+	presentation_outputs_test_flush(&rt)
+	left_snapshot, _ = presentation_output_snapshot(&rt, left)
+	right_snapshot, _ = presentation_output_snapshot(&rt, right)
+	testing.expect(t, tick.status == .Ok && tick.changed_owners > 0 && left_snapshot.pending && !right_snapshot.pending,
+		"a sampled motion change should schedule only the output that owns its retained node")
+}
+
+@(test)
 test_presentation_outputs_global_invalidation_visibility_and_retirement :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 240, 120})
 	defer destroy_runtime(&rt)

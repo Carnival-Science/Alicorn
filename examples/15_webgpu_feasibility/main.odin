@@ -75,6 +75,10 @@ state: struct {
 	surface_runtime: alicorn.Runtime,
 	surface_runtime_ready: bool,
 	surface_runtime_root: alicorn.Node_ID,
+	surface_runtime_image: alicorn.Image_Handle,
+	surface_runtime_waveform: alicorn.Node_ID,
+	surface_motion_elapsed_ns: i64,
+	surface_motion_active, surface_motion_settled: bool,
 	compositor_image_a, compositor_image_b: alicorn.Image_Handle,
 	compositor_material_surface_ids: [4]alicorn.Node_ID,
 	compositor_material_surface_bounds: [4]alicorn.Rect,
@@ -195,7 +199,7 @@ main :: proc() {
 			if !state.surface_presenter_created || !state.surface_presenter_destroyed ||
 			   !state.surface_presenter_completion_passed || !state.surface_output_acknowledged ||
 			   state.surface_output.runtime_identity == 0 || state.surface_output.sequence == 0 ||
-			   state.surface_present_count != 1 {
+			   !state.surface_motion_settled || state.dirty || state.surface_present_count < 2 {
 				os_exit_failure()
 			}
 		}
@@ -222,7 +226,10 @@ smoke_complete :: proc() -> bool {
 	}
 	when FEASIBILITY_TEST_SURFACE_PRESENTER {
 		if !state.surface_presenter_created || !state.surface_presenter_completion_passed ||
-		   state.surface_present_count != 1 { return false }
+		   state.surface_presenter_completion_pending || !state.surface_motion_settled ||
+		   state.dirty || state.surface_present_count < 2 {
+			return false
+		}
 	}
 	when FEASIBILITY_TEST_RESIZE {
 		if !state.test_resize_pre_applied || !state.test_resize_pre_frame ||
@@ -449,7 +456,10 @@ on_surface_cache_pressure_batch_b :: proc "c" (status: wgpu.QueueWorkDoneStatus,
 	when FEASIBILITY_TEST_COMPOSITOR_RECREATION {
 		compositor_recreation_maybe_start()
 	}
-	when !FEASIBILITY_TEST_COMPOSITOR_RECREATION {
+	when FEASIBILITY_TEST_SURFACE_PRESENTER {
+		if smoke_complete() { state.quit = true }
+	}
+	when !FEASIBILITY_TEST_COMPOSITOR_RECREATION && !FEASIBILITY_TEST_SURFACE_PRESENTER {
 		if smoke_complete() || (state.readback_callback_received && smoke_resize_complete()) { state.quit = true }
 	}
 	when FEASIBILITY_TEST_COMPOSITOR_RECREATION {
@@ -560,12 +570,13 @@ step :: proc(dt: f32) -> bool {
 	begin_test_explicit_device_destroy()
 	if !state.ready { return false }
 	when FEASIBILITY_TEST_WEB_CANVAS_PRESENTER {
+		if state.surface_present_count > 0 { _ = surface_runtime_motion_tick(dt) }
 		if state.dirty {
 			if state.surface_presenter_completion_pending { return false }
 			state.dirty = false
 			render_surface_frame()
 		}
-		return state.dirty
+		return state.surface_motion_active || state.dirty
 	}
 	if state.animation_seconds < ANIMATION_SECONDS {
 		state.animation_seconds += dt
