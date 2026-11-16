@@ -763,6 +763,27 @@ presentation evidence is recorded in the following sections. No adapter, SDL,
 or browser responsibilities have moved into the renderer. Phase 1 and Phase 6
 remain open.
 
+### Phase 1 shared `ui.run` description slice (Windows and `js_wasm32`, 2026-11-16)
+
+Moved the generic runner state and root/overlay description callback into
+`ui/run_common.odin`, which is compiled for both native and browser targets.
+The native adapter remains in `ui/run_native.odin` and still constructs
+`native/sdl_gpu.Application`; the public key callback now uses Runtime's
+backend-neutral `Application_Key` type. This establishes one shared application
+description path for future host adapters without claiming that a browser
+`ui.run` or production WebGPU host exists yet.
+
+Validation: the standard Windows `tools/test.ps1 -Odin C:\odin\odin.exe`
+completed successfully, and the focused UI tests passed all 39 tests. The
+browser-target package check also passed:
+
+~~~powershell
+odin check ui -target:js_wasm32 -collection:alicorn=. -no-entry-point
+~~~
+
+Browser host selection, event delivery, accessibility, and WebGPU presentation
+through `ui.run` remain open Phase 1/6 work.
+
 ## SDL-created native surface presenter smoke (Windows, 2026-11-16)
 
 The new opt-in `FEASIBILITY_TEST_SURFACE_PRESENTER` target draws a separate
