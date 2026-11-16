@@ -91,9 +91,10 @@ checks that the old textures retire only after the reported completion serial.
 An over-budget but valid effect plan skips only its marker; its full RGBA
 readback matches plain paint with the marker removed. D3D12 passes the resize,
 retirement, and fallback probes; browser readback passes the over-budget
-fallback parity probe. The browser adapter's hardware/software class was not
-reported. This single-marker probe does not establish full effect parity or
-application host integration.
+fallback parity probe. The browser page reports `fallback=false` and any
+available vendor metadata, but those privacy-limited values do not prove
+physical-GPU acceleration. This single-marker probe does not establish full
+effect parity or application host integration.
 
 An opt-in bounded native smoke also renders the mixed retained display list,
 waits for its queue serial and mapped readback, destroys the completed

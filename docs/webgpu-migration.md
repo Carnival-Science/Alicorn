@@ -56,7 +56,7 @@ uploads remain renderer-specific.
 
 | Phase | Exit evidence | Status |
 | --- | --- | --- |
-| 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: the pre-change Windows SDL_GPU reference and a supplemental D3D12 effects profile are recorded in `docs/validation/sdl-gpu-reference-windows-2026-11-15.md`; Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes. Windows browser canvas resize now verifies retained-only redraw with a fresh output revision and no UI re-description. The browser adapter acceleration class is not surfaced. Physical Linux GPU/Wayland, genuine driver/OS loss and recovery, same-workload production comparison, and application-level stage/working-set measurements remain open |
+| 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: the pre-change Windows SDL_GPU reference and a supplemental D3D12 effects profile are recorded in `docs/validation/sdl-gpu-reference-windows-2026-11-15.md`; Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes. Windows browser canvas resize now verifies retained-only redraw with a fresh output revision and no UI re-description. Browser fallback/vendor metadata is exposed, but does not establish hardware acceleration. Physical Linux GPU/Wayland, genuine driver/OS loss and recovery, same-workload production comparison, and application-level stage/working-set measurements remain open |
 | 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring and CPU preparation are SDL-independent; `renderer/webgpu/presenter.odin` consumes a borrowed finalized display list and encodes into caller-owned WebGPU frame objects, with queue submission and async completion owned by the host. `paint_display_list_for_output` now routes commands by disjoint retained root, preserves paint order and shared owner-zero overlays, and tags the view with that output's identity and revision. Native D3D12/Vulkan fixture parity passes and the package builds for `js_wasm32`. Production SDL3/window and browser host integration, native `ui.run` target selection, and full downstream app import migration remain outstanding |
 | 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and D3D12 fixtures exercise per-resource custom-surface caching, budget pressure, in-flight protection, instance transforms, readback, and resize. One shared compositor preserves interleaved paint order; text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, clipping, waveform samples, and cropped mixed-renderer readback pass Windows D3D12 and the current browser WebGPU readback. Shared CPU backdrop planning/meshes feed renderer-owned WebGPU prefix capture, filtering, and in-order composition for up to four markers within one aggregate 48 MiB tracked mesh+texture allocation budget. Two overlapping markers pass pixel readback on Windows D3D12/Vulkan and browser WebGPU; the later marker's capture includes the earlier marker's composed result. D3D12 also verifies unchanged-prefix reuse, changed-prefix invalidation, resized-target retirement behind the prior queue serial, and exact ordinary-paint parity when a valid effect exceeds budget. Six shared WGSL sources are compile-time loaded for native and `js_wasm32` builds. A Windows-only fixture slice verifies one per-corner rounded relief surface under increased contrast and reduced transparency on D3D12/Vulkan; its WASM build passes, but those new material pixels have not yet been replayed in a browser. Full theme/accessibility combinations, application host presentation, and broader cross-platform GPU validation remain open |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | In progress: image, custom-geometry, and backdrop resources have bounded asynchronous retirement and completion-driven release tests; async readback is exercised. Same-device compositor teardown/rebuild now reproduces every RGBA pixel on Windows D3D12 and Vulkan from retained Runtime products. Genuine driver/OS device loss and device recovery, plus primary/secondary window teardown/recreation, remain unvalidated. Intentional `DeviceDestroy` callbacks are tracked separately and do not count as driver-loss evidence |
@@ -891,9 +891,10 @@ Validation on Windows x64 with `C:\odin\odin.exe` and the NVIDIA RTX 2080 SUPER:
   500 ms (22 requests total, including two initialization wake frames).
 - `git diff --check` passed.
 
-The browser run's adapter acceleration class remains unrecorded, and the
-automation screenshot capture timed out; the browser's live accessibility
-status exposed the successful output acknowledgement and completion instead.
+The browser run exposed fallback/vendor metadata, but that does not establish
+whether rendering used a physical GPU; the automation screenshot capture timed
+out. The browser's live accessibility status exposed the successful output
+acknowledgement and completion instead.
 This is fixture-level native/browser host evidence, not a production `ui.run`
 integration or a pixel capture. Externally managed third-party native surfaces,
 physical browser acceleration classification, and device-loss recovery remain
@@ -1311,8 +1312,9 @@ Validation on Windows x64 with Odin
   paint at every RGBA pixel.
 - A live browser WebGPU replay passed the same two-marker pixel assertion and
   reached settled idle with no additional animation-frame requests for
-  500 ms. Its adapter acceleration class was not surfaced, so this is
-  correctness evidence only.
+  500 ms. The page exposed `fallback=false` and available vendor metadata, but
+  that is not proof of physical-GPU acceleration; this is correctness evidence
+  only.
 
 The new path is still fixture-level renderer coverage, not production
 application presentation. It does not establish SDR parity for all output
