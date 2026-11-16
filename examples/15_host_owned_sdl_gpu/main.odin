@@ -62,16 +62,21 @@ main :: proc() {
 	if !sdl3.ShowWindow(window) { FAIL("SDL_ShowWindow failed") }
 	command := sdl3.AcquireGPUCommandBuffer(device)
 	if command == nil { FAIL("SDL_AcquireGPUCommandBuffer failed") }
-	target: ^sdl3.GPUTexture
-	width, height: sdl3.Uint32
-	if !sdl3.AcquireGPUSwapchainTexture(command, window, &target, &width, &height) || target == nil || width == 0 || height == 0 {
+	pixel_width, pixel_height: c.int
+	if !sdl3.GetWindowSizeInPixels(window, &pixel_width, &pixel_height) || pixel_width <= 0 || pixel_height <= 0 {
 		_ = sdl3.CancelGPUCommandBuffer(command)
-		FAIL("SDL swapchain target unavailable")
+		FAIL("SDL window pixel size unavailable")
 	}
-	if !host.Sdl_GPU_Presenter_Encode(&presenter, command, target, width, height, f32(width)/960, f32(height)/640, clear_background=true) {
+	if !host.Sdl_GPU_Presenter_Encode_Window(
+		&presenter,
+		command,
+		window,
+		f32(pixel_width)/960,
+		f32(pixel_height)/640,
+	) {
 		_ = sdl3.CancelGPUCommandBuffer(command)
 		_ = host.Sdl_GPU_Presenter_Cancel_Frame(&presenter)
-		FAIL("Alicorn display-list encoding failed")
+		FAIL("Alicorn display-list preparation or swapchain acquisition failed")
 	}
 	fence := sdl3.SubmitGPUCommandBufferAndAcquireFence(command)
 	if fence == nil { FAIL("SDL_GPU frame submission failed") }

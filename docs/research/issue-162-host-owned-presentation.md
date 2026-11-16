@@ -1,6 +1,8 @@
 # #162 — Host-owned presentation boundary
 
 **Status: bounded SDL_GPU host-owned presentation proof complete on Windows.**
+
+The #204 recovery path is implemented; native failure-injection validation remains open.
 The wx/Audacity integration and native plugin-window work remain separate in
 [#196](https://github.com/samanshaiza004/alicorn/issues/196) and
 [#121](https://github.com/samanshaiza004/alicorn/issues/121).
@@ -35,17 +37,20 @@ SDL_GPU target or switch Acetate's interface by itself.
 
 [`presentation.odin`](../../native/sdl_gpu/presentation.odin) adds
 `Sdl_GPU_Presenter` for one borrowed Runtime and one borrowed SDL_GPU device.
-The host continues to own SDL initialization, window/device creation, target
-acquisition, command buffers, event dispatch, resize policy, input translation,
-and its event loop.
+The host continues to own SDL initialization, window/device creation, command
+buffers, event dispatch, resize policy, input translation, and its event loop.
+`Sdl_GPU_Presenter_Encode` accepts caller-owned offscreen targets. For window
+presentation, `Sdl_GPU_Presenter_Encode_Window` retains the host-owned window
+but acquires its swapchain texture only after fallible frame preparation.
 
-The frame contract is:
+The offscreen frame contract is:
 
 1. `Sdl_GPU_Presenter_Encode` obtains the current borrowed display view and
-   resolves it synchronously into the host's target and command buffer. It
-   retains neither the view nor the command-buffer pointer. Flat surfaces,
-   text, icons, images, and custom geometry are supported. Backdrop effects and
-   unknown command kinds fail preflight instead of being silently omitted.
+   resolves it synchronously into a caller-owned offscreen target and command
+   buffer. It retains neither the view nor the command-buffer pointer. Flat
+   surfaces, text, icons, images, and custom geometry are supported. Backdrop
+   effects and unknown command kinds fail preflight instead of being silently
+   omitted. Do not pass this low-level API an acquired swapchain texture.
 2. The host submits the command buffer and obtains an SDL_GPU fence.
 3. `Sdl_GPU_Presenter_Submission_Succeeded` takes ownership of that fence,
    commits renderer uploads, and acknowledges the Runtime only if its display
@@ -62,16 +67,40 @@ The frame contract is:
    guarantee that no work was queued, it first waits for GPU idle. Pending
    atlas/image work is retried or discarded without acknowledging the Runtime.
 
-The target must use the format supplied at presenter creation. The host must
-keep the Runtime and GPU device alive until presenter destruction and keep each
-host target alive until its corresponding submission token completes. The
-presenter does not claim the host window or change device frame limits. All
-presenter calls run on the Runtime's owning host thread.
+### Swapchain-safe window encoding (#204)
+
+The window path queries the pixel dimensions and swapchain format before
+rendering, then prepares the full display into one presenter-owned texture with
+color-target and sampler usage. On resize it creates the replacement first,
+waits for all prior presenter fences, and only then releases the old texture.
+This keeps the steady-state target count at one and the resize peak at two.
+
+After preparation succeeds, it calls
+`SDL_WaitAndAcquireGPUSwapchainTexture`. A minimized window may return a nil
+texture; that remains a cancellable result because no drawable target was
+acquired. Once a non-nil swapchain texture is acquired, the only remaining GPU
+operation is `SDL_BlitGPUTexture`, whose API has no failure return. The
+presenter therefore has no false-return path after acquiring a drawable target.
+Encoding or acquisition failure can cancel the command buffer, leave the prior
+visible frame untouched, and retry without acknowledging the Runtime revision.
+The existing submission-success path still controls frame acknowledgement.
+
+The external fixture and compile check exercise the new call path. Native
+failure injection across renderer preparation, resize, acquisition, and retry
+has not yet been run; #204 remains open until that validation is recorded.
+
+A caller-owned offscreen target must use the format supplied at presenter
+creation and remain alive until its submission token completes. The window path
+uses a presenter-owned intermediate texture, replacing it only after submitted
+uses retire on resize. The Runtime and device must outlive presenter
+destruction. The presenter does not claim the host window or change device
+frame limits. All presenter calls run on the Runtime's owning host thread.
 
 The minimal external consumer in
 [`examples/15_host_owned_sdl_gpu/main.odin`](../../examples/15_host_owned_sdl_gpu/main.odin)
 creates its own SDL window and GPU device, authors one ordinary Runtime frame,
-encodes and submits it through the new API, then blocks in its own event wait.
+encodes it through `Sdl_GPU_Presenter_Encode_Window`, submits it, then blocks in
+its own event wait.
 It does not call `Run` or the standalone application loop.
 
 ## Acetate integration boundary
