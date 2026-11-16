@@ -27,10 +27,6 @@ point_marker_validation_fail :: proc(message: string) -> ! {
 	os.exit(1)
 }
 
-point_marker_validation_trace :: proc(enabled: bool, stage: string) {
-	if enabled { fmt.println("issue_201_trace", "stage", stage) }
-}
-
 point_marker_validation_percentile :: proc(values: []i64, percentile: f32) -> i64 {
 	if len(values) == 0 { return 0 }
 	sorted := make([]i64, len(values), allocator=context.temp_allocator)
@@ -78,24 +74,18 @@ point_marker_validation_create_runtime :: proc(
 	rt: ^alicorn.Runtime,
 	logical_width: int,
 	marker_size: Point_Marker_Validation_Size,
-	trace: bool,
 ) -> (surface: alicorn.Node_ID, ok: bool) {
 	if rt == nil { return 0, false }
-	point_marker_validation_trace(trace, "fonts-load")
 	if !alicorn.text_engine_load_default_fonts(rt) { return 0, false }
-	point_marker_validation_trace(trace, "fonts-ready")
 	alicorn.invalidate_root(rt, "issue #201 dense marker readback")
-	point_marker_validation_trace(trace, "root-invalidated")
 	ui, build := alicorn.begin_frame(rt)
 	if !build { return 0, false }
-	point_marker_validation_trace(trace, "frame-begun")
 	alicorn.container_begin(&ui, .Root, label="issue-201-root", key=alicorn.key_string("issue-201-root"),
 		style=alicorn.layout_style(.Column, width=f32(logical_width), height=POINT_MARKER_VALIDATION_HEIGHT))
 	surface = alicorn.gpu_geometry_surface(&ui, "issue-201-markers",
 		alicorn.layout_style(width=f32(logical_width), height=POINT_MARKER_VALIDATION_HEIGHT), 1)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
-	point_marker_validation_trace(trace, "description-finished")
 
 	count := (logical_width-1)/3 + 1
 	segments := make([]alicorn.GPU_Surface_Line_Segment, count-1, allocator=context.temp_allocator)
@@ -118,7 +108,6 @@ point_marker_validation_create_runtime :: proc(
 	if !alicorn.gpu_surface_update_geometry_with_markers(rt, surface, segments, nil, markers) {
 		return surface, false
 	}
-	point_marker_validation_trace(trace, "payload-retained")
 	return surface, true
 }
 
@@ -179,18 +168,12 @@ point_marker_validation_frame :: proc(
 	return encode_ns, submit_wait_ns, true
 }
 
-point_marker_validation_pixel_alpha :: proc(pixels: []u8, width, x, y: int) -> u8 {
-	return pixels[(y*width+x)*4+3]
-}
-
-point_marker_validation_debug_pixels :: proc(pixels: []u8, width, height, center_x, center_y: int) {
-	for y in max(0, center_y-3)..<min(height, center_y+4) {
-		for x in max(0, center_x-3)..<min(width, center_x+4) {
-			i := (y*width+x)*4
-			fmt.println("[DEBUG-201-RB]", "x", x, "y", y,
-				"rgba", pixels[i], pixels[i+1], pixels[i+2], pixels[i+3])
-		}
-	}
+point_marker_validation_pixel_rgb_mean :: proc(pixels: []u8, width, x, y: int) -> int {
+	i := (y*width+x)*4
+	// The native swapchain format can order color channels differently across
+	// backends. A channel mean is invariant to RGBA/BGRA ordering; markers use
+	// white ink on the sampled fixture backdrop.
+	return (int(pixels[i])+int(pixels[i+1])+int(pixels[i+2]))/3
 }
 
 point_marker_validation_reference_coverage :: proc(
@@ -229,6 +212,7 @@ point_marker_validation_compare_readback :: proc(
 	pixels: []u8,
 ) -> bool {
 	anchors := [6]int{0, 1, (logical_width-1)/6, (logical_width-1)/3, (logical_width-1)/3+1, len(markers)-1}
+	background := point_marker_validation_pixel_rgb_mean(pixels, pixel_width, pixel_width/2, pixel_height-1)
 	max_delta, sum_delta, compared := 0, 0, 0
 	aa_samples, covered_samples := 0, 0
 	for marker_index in anchors {
@@ -243,25 +227,28 @@ point_marker_validation_compare_readback :: proc(
 		y1 := min(pixel_height, int(math.ceil(cy+radius+1)))
 		for y in y0..<y1 {
 			for x in x0..<x1 {
-				actual := int(point_marker_validation_pixel_alpha(pixels, pixel_width, x, y))
-				expected := int(math.round(point_marker_validation_reference_coverage(markers, logical_bounds, scale, x, y)*255))
+				actual := point_marker_validation_pixel_rgb_mean(pixels, pixel_width, x, y)
+				coverage := point_marker_validation_reference_coverage(markers, logical_bounds, scale, x, y)
+				expected := int(math.round(f32(background)+(255-f32(background))*coverage))
 				delta := abs(actual-expected)
 				max_delta = max(max_delta, delta)
 				sum_delta += delta
 				compared += 1
-				if actual > 0 { covered_samples += 1 }
-				if actual > 0 && actual < 255 { aa_samples += 1 }
+				if actual > background+2 { covered_samples += 1 }
+				if actual > background+2 && actual < 253 { aa_samples += 1 }
 			}
 		}
 	}
 	mean_delta := 0 if compared == 0 else sum_delta/compared
-	// The analytic area oracle is independent of the 32x32 sampled mask. Keep
-	// a modest tolerance for rasterizer-specific coverage quantization while
+	// The analytic area oracle is independent of the 32x32 sampled mask. Compare
+	// blended luminance against the fixture's opaque root backdrop, not target
+	// alpha: the application's root surface intentionally makes alpha opaque.
+	// Keep tolerance for rasterizer-specific coverage quantization while
 	// requiring visible antialiasing and a close mean match.
 	ok := compared > 0 && mean_delta <= 28 && aa_samples > 0 && covered_samples > 0
 	fmt.println("issue_201_readback", "case", name, "scale", scale, "pixels_compared", compared,
-		"mean_alpha_delta", mean_delta, "max_alpha_delta", max_delta,
-		"antialiased_pixels", aa_samples, "covered_pixels", covered_samples, "status", "PASS" if ok else "FAIL")
+		"background_rgb_mean", background, "mean_rgb_delta", mean_delta, "max_rgb_delta", max_delta,
+		"antialiased_pixels", aa_samples, "marker_pixels", covered_samples, "status", "PASS" if ok else "FAIL")
 	return ok
 }
 
@@ -274,8 +261,6 @@ point_marker_validation_run_case :: proc(
 	benchmark: bool,
 ) {
 	marker_name := "3x3" if marker_size == .Three else "4x4"
-	trace := logical_width == 1280 && scale == 1 && marker_size == .Three
-	point_marker_validation_trace(trace, "case-start")
 	pixel_width := int(f32(logical_width)*scale)
 	pixel_height := int(f32(POINT_MARKER_VALIDATION_HEIGHT)*scale)
 	marker_count := (logical_width-1)/3+1
@@ -284,42 +269,32 @@ point_marker_validation_run_case :: proc(
 		alicorn.Rect{0, 0, f32(logical_width), POINT_MARKER_VALIDATION_HEIGHT},
 		config=alicorn.Runtime_Config{allocation_stats=&allocations},
 	)
-	point_marker_validation_trace(trace, "runtime-create")
-	surface, runtime_ok := point_marker_validation_create_runtime(&rt, logical_width, marker_size, trace)
-	point_marker_validation_trace(trace, "runtime-ready")
+	surface, runtime_ok := point_marker_validation_create_runtime(&rt, logical_width, marker_size)
 	if !runtime_ok { point_marker_validation_fail("runtime fixture could not retain dense markers and lines") }
 	defer if rt.persistent_allocator_state != nil { alicorn.destroy_runtime(&rt) }
-	point_marker_validation_trace(trace, "renderer-create")
 	renderers, renderer_ok := point_marker_validation_renderers_make(device, format, &rt)
-	point_marker_validation_trace(trace, "renderer-ready")
 	if !renderer_ok { point_marker_validation_fail("production surface renderer initialization failed") }
 	defer if renderers.text.device != nil { point_marker_validation_renderers_destroy(&renderers) }
-	point_marker_validation_trace(trace, "target-create")
 	target := sdl3.CreateGPUTexture(device, sdl3.GPUTextureCreateInfo{
 		type=.D2, format=format, usage={.COLOR_TARGET}, width=sdl3.Uint32(pixel_width),
 		height=sdl3.Uint32(pixel_height), layer_count_or_depth=1, num_levels=1, sample_count=._1,
 	})
-	point_marker_validation_trace(trace, "target-ready")
 	if target == nil { point_marker_validation_fail("offscreen marker target creation failed") }
 	defer sdl3.ReleaseGPUTexture(device, target)
 	download := sdl3.CreateGPUTransferBuffer(device, sdl3.GPUTransferBufferCreateInfo{
 		usage=.DOWNLOAD, size=sdl3.Uint32(pixel_width*pixel_height*4),
 	})
-	point_marker_validation_trace(trace, "readback-ready")
 	if download == nil { point_marker_validation_fail("GPU readback buffer creation failed") }
 	defer sdl3.ReleaseGPUTransferBuffer(device, download)
 	pixels := make([]u8, pixel_width*pixel_height*4)
 	defer delete(pixels)
-	point_marker_validation_trace(trace, "first-frame-submit")
 	_, _, initial_ok := point_marker_validation_frame(&rt, &renderers, device, target,
 		sdl3.Uint32(pixel_width), sdl3.Uint32(pixel_height), scale, download, pixels)
-	point_marker_validation_trace(trace, "first-frame-ready")
 	if !initial_ok { point_marker_validation_fail("first marker readback frame failed") }
 	command, found := native_surface_test_geometry_command(&rt, surface)
 	if !found || !native_surface_rebuild_mesh(&renderers.geometry, command, scale, scale) {
 		point_marker_validation_fail("retained mesh rebuild failed after readback")
 	}
-	point_marker_validation_trace(trace, "mesh-ready")
 	expected_vertices := (marker_count+2 + marker_count-1)*6
 	if len(renderers.geometry.vertices) != expected_vertices || expected_vertices > alicorn.GPU_SURFACE_MAX_VERTICES {
 		point_marker_validation_fail("native dense marker and line mesh exceeded the bounded vertex expectation")
@@ -332,16 +307,14 @@ point_marker_validation_run_case :: proc(
 	markers[marker_count+0] = {center={-1, 1}, diameter=4, color={1, 1, 1, 1}}
 	markers[marker_count+1] = {center={f32(logical_width+1), 1}, diameter=4, color={1, 1, 1, 1}}
 	info, info_ok := alicorn.node_info(&rt, surface)
-	point_marker_validation_trace(trace, "readback-compare")
-	if trace { point_marker_validation_debug_pixels(pixels, pixel_width, pixel_height, 3, 16) }
 	if !info_ok || !point_marker_validation_compare_readback(
 		fmt.tprintf("%dpx-%s", logical_width, marker_name), markers,
 		info.bounds, logical_width, pixel_width, pixel_height, scale, pixels,
-	) { point_marker_validation_fail("native readback did not match the analytic wx-ellipse coverage reference") }
-	point_marker_validation_trace(trace, "readback-passed")
+	) { point_marker_validation_fail("native readback did not match the analytic ellipse coverage reference") }
 	// The viewport's edge scissor must clip the auxiliary circles whose centers
 	// are outside the retained geometry surface.
-	if point_marker_validation_pixel_alpha(pixels, pixel_width, pixel_width-1, 0) == 0 {
+	background := point_marker_validation_pixel_rgb_mean(pixels, pixel_width, pixel_width/2, pixel_height-1)
+	if point_marker_validation_pixel_rgb_mean(pixels, pixel_width, pixel_width-1, 0) <= background+2 {
 		point_marker_validation_fail("right-edge sample marker was not clipped/rendered at the surface boundary")
 	}
 	fmt.println("issue_201_geometry", "logical_width", logical_width, "samples", marker_count,

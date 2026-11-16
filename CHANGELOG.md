@@ -30,9 +30,10 @@ changelogs.
 
 - Added dense point-marker GPU readback and cost fixtures for 1,280px and
   1,920px sample views. They cover 3px/4px markers, overlap, clipping, and
-  fractional DPI, and are wired to Metal and D3D12 CI. The readback currently
-  uses an analytic ellipse oracle; native wxWidgets pixel parity remains an
-  open acceptance check. See [issue #201 research](docs/research/issue-201-dense-retained-markers.md).
+  fractional DPI, and are wired to Metal and D3D12 CI. The readback compares
+  RGB coverage against an analytic ellipse oracle over a sampled backdrop;
+  native wxWidgets pixel parity remains an open acceptance check. See
+  [issue #201 research](docs/research/issue-201-dense-retained-markers.md).
 
 ## [0.2.1] — 2026-11-10
 

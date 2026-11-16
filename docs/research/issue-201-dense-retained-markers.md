@@ -37,9 +37,11 @@ audio state, and undo.
 - Added a production-renderer SDL_GPU readback fixture at 1×, 1.25×, 1.5×, and
   2× for 3px and 4px markers, at both viewport widths. Its repeated 3px spacing
   exercises overlap; two out-of-bounds samples exercise surface clipping.
-- The fixture compares GPU alpha coverage against an independent 8×8
-  supersampled analytic ellipse reference. It records pixel error, marker and
-  line counts, expanded vertices, and the GPU driver.
+- The fixture compares RGB luminance over a sampled root backdrop against an
+  independent 8×8 supersampled analytic ellipse reference. Alpha is unsuitable
+  here because the ordinary root surface makes the offscreen target opaque.
+  It records pixel error, marker and line counts, expanded vertices, and the
+  GPU driver.
 - Added a 64-update cost run for the 1,920px/4px case. It reports Runtime update
   p95, render-encode p95, submit-to-fence wall-time p95, uploaded vertex bytes,
   upload count, persistent allocation calls, and settled Runtime/surface work.
@@ -61,9 +63,12 @@ Local on Odin `dev-2026-11:9a6991685`:
 | Point-marker GPU validation executable | Compiled; could not start locally because SDL reports no available video displays |
 | Full `tools/test.sh` | Stopped in the AccessKit macOS example when Clang tried to write its module cache under the protected user cache path; the targeted Runtime and native test suites were run separately and passed |
 
-The new hosted Metal and D3D12 measurements must be checked on the commit that
-contains this work. The Alicorn-only readback uses an analytic reference rather
-than a captured wxWidgets `DrawEllipse` bitmap. It verifies marker size,
+The first hosted attempt exposed a test-oracle mistake: reading alpha from an
+opaque root surface made every sample appear covered. A Direct3D 12 pixel trace
+confirmed the root backdrop and antialiased marker colors; the comparison now
+measures RGB coverage above that backdrop. Hosted Metal and D3D12 reruns are
+pending. The Alicorn-only readback still uses an analytic reference rather
+than a captured wxWidgets `DrawEllipse` bitmap. It can compare marker size,
 antialiasing, overlap, clipping, and fractional scale against the requested
 ellipse geometry, but does **not** prove pixel parity with wxWidgets' native
 rasterizer. Keep #201 open until a wx reference capture is compared at all four
