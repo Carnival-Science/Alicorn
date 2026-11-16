@@ -1,8 +1,8 @@
 # SDL_GPU to WebGPU migration
 
 Status: Phase 0 remains open for lifecycle, baseline, and performance evidence;
-Phase 2 has bounded solid-surface, text-sampling, icon, image, material, and
-mixed compositor slices. SDL_GPU remains the only complete application
+Phase 2 has bounded solid-surface, text-sampling, icon, image, material,
+custom-surface, and mixed compositor slices. SDL_GPU remains the only complete application
 renderer and the visual reference.
 
 ## Architecture inventory
@@ -15,15 +15,16 @@ interaction, focus, semantics, and motion independent of the native renderer.
 | Area | Existing ownership | Migration treatment |
 | --- | --- | --- |
 | GPU-independent, retain unchanged | `runtime/`, `ui/`, app callbacks, invalidation, paint command ordering, semantic model, focus/input policy, text editing, shaping, motion, themes/material descriptions | Preserve public behavior. Runtime must not import SDL3, WGPU, or browser packages. |
-| CPU rendering products to reuse/extract | Paint commands and text runs; image payloads; generic `runtime/gpu_surface` samples; Runa shaping/rasterization and glyph atlas packing in `third_party/Runa`; CPU mesh, text and asset presentation helpers in `renderer/cpu` | Keep mesh, atlas and image products backend-neutral and reconstructible after device loss. |
+| CPU rendering products to reuse/extract | Paint commands and text runs; image payloads; generic `runtime/gpu_surface` samples and geometry; Runa shaping/rasterization and glyph atlas packing in `third_party/Runa`; CPU mesh, text and asset presentation helpers in `renderer/cpu` | Keep mesh, atlas and image products backend-neutral and reconstructible after device loss. |
 | SDL_GPU-specific replacement | `native/sdl_gpu/{gpu_frame,solid,text,surface,images,icons,retained_effects,effects_compositor,vertex_buffers,render_capture}.odin`; GPU resources, shaders, upload policy, render passes, readback and retirement | Replace incrementally with `renderer/webgpu/` and shared WGSL. Do not alter geometry/shaping as incidental migration work. |
 | Native host responsibilities to retain | SDL3 window/event lifecycle, DPI, text input/IME, clipboard, dialogs, drag/drop, titlebars/menus, AccessKit, primary and secondary window scheduling | Keep in SDL3 host modules. Replace only surface/device/presentation integration. |
 | Browser host to add | Canvas sizing/DPR, WebGPU surface/device, pointer/wheel/keyboard/touch, browser focus/composition/clipboard, visibility, bounded scheduling, DOM/ARIA projection and capability errors | Add `host/web/` using Odin `js_wasm32` interop and narrow JS integration. No Emscripten or WebGL renderer. |
 | Public API/downstream impact | `ui.run` and authoring APIs are public goals; examples and applications currently import `alicorn:native/sdl_gpu` | Preserve `ui.run` and UI/runtime contracts. Provide a temporary narrow import shim only if needed. Coordinate compile/import updates for examples, AliKit, Scratchpad and Punks at migration gates. No raw WGPU handles in widget APIs. |
 
 The exact paint-stream order is a correctness contract. The renderer must not
-sort primitives into batches that change stacking. GPU surface declarations are
-backend-neutral; their current native payload renderer is not.
+sort primitives into batches that change stacking. GPU surface declarations
+and custom-geometry tessellation are backend-neutral; device resources and
+uploads remain renderer-specific.
 
 ## Existing issue alignment (2026-11-15)
 
@@ -55,8 +56,8 @@ backend-neutral; their current native payload renderer is not.
 | Phase | Exit evidence | Status |
 | --- | --- | --- |
 | 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes on an NVIDIA Turing adapter; physical Linux GPU/Wayland, genuine driver/OS loss and recovery, comparative baselines, and production parity remain open |
-| 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring and CPU surface mesh assembly plus text/image/icon preparation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
-| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and browser WebGPU fixtures exercise solid/text/icon/image/material pixels; one shared compositor preserves interleaved paint order. Text, icon, and image mesh/texture reuse are asserted. Semantic gradients and raised/recessed analytic relief pass representative pixel probes. Rounded/accessibility material parity, custom GPU surfaces, effects, and application host presentation remain outstanding |
+| 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring, CPU solid/custom-surface mesh assembly, and text/image/icon preparation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
+| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and browser WebGPU fixtures exercise solid/text/icon/image/material/custom-surface pixels; one shared compositor preserves interleaved paint order. Text, icon, image and custom-surface mesh reuse are asserted. Semantic gradients, relief, rectangles, segments, circles, masked markers, clipping, and waveform samples pass representative pixel probes. Rounded/accessibility material parity, effects, and application host presentation remain outstanding |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | Not started |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
@@ -725,6 +726,56 @@ Those expected colors distinguish the gradient direction and confirm the
 relief sign changes the edge tint while leaving the face color unchanged. These
 checks validate representative rectangular materials and semantic gradient
 resolution. Rounded material parity, full theme/accessibility combinations,
-reference pixel comparison against SDL_GPU, custom GPU surfaces, and retained
-material mesh invalidation remain to be measured before claiming material
-parity.
+reference pixel comparison against SDL_GPU and retained material mesh
+invalidation remain to be measured before claiming material parity.
+
+## Phase 2 shared custom-surface rendering (2026-11-15)
+
+`renderer/cpu/gpu_surface.odin` now owns the physical-pixel tessellation for
+Alicorn's existing `Geometry_Paint` payloads and waveform samples. Both
+`native/sdl_gpu/surface.odin` and `renderer/webgpu/surfaces.odin` consume that
+same builder. Rectangles, thick segments, 16-triangle circles, and six-vertex
+masked point markers preserve payload ordering, clipping bounds, command
+translation, scale, opacity, and the established cyan waveform treatment. The
+WebGPU compositor dispatches those commands at their original paint-list
+indices, alongside solid surfaces, text, icons, and images. No public drawing
+API was added.
+
+The WebGPU renderer caches its prepared custom-surface mesh against the display
+revision, target scale/size, command placement and each retained geometry
+resource's generation/payload revision. An unchanged repeated preparation
+causes no geometry rebuild or vertex upload. This is an aggregate renderer
+mesh cache; it does not yet keep each independent geometry resource in its own
+GPU allocation. The #164 comparison's larger upload reduction remains a
+renderer-local optimization opportunity to measure separately, especially
+for static waveform peaks with independently changing overlays.
+
+The feasibility mixed-compositor readback now checks explicit rectangle,
+segment, circle, point-marker, marker clipping, and waveform pixels. The native
+SDL_GPU reference path and browser WebGPU path use the same
+`renderer/cpu` geometry; WebGPU executes it through the new WGSL renderer. The
+fixture uses synthetic command placement for deterministic readback and does
+not replace downstream Punks app validation.
+
+Validation on this slice:
+
+- `C:\odin\odin.exe test renderer/cpu` passed all 7 tests, including the new
+  shared geometry, waveform, and marker-mask regressions.
+- `examples/15_webgpu_feasibility/build.ps1 -Odin C:\odin\odin.exe` passed,
+  building the native interactive/readback/resize programs and `js_wasm32`.
+- The native readback smoke passed on Windows Vulkan / NVIDIA GeForce RTX 2080
+  SUPER. All six custom-surface pixel checks, existing renderer probes, image
+  retirement, and queue completion passed.
+- The native resize smoke passed the same checks and presented at 800×450
+  during motion and 720×405 after settlement.
+- The rebuilt fixture ran in the browser WebGPU implementation. Its live
+  accessibility status reported all custom-surface checks, existing material
+  probes, image retirement, and queue completion passing.
+- `git diff --check` passed after the implementation and documentation updates.
+
+This is shared-renderer fixture parity on local Windows Vulkan and the tested
+browser adapter. It is not Windows D3D12 or macOS Metal custom-surface evidence,
+SDL_GPU pixel-differential comparison, Punks app instrumentation, production
+host presentation, cache-performance benchmarking, or genuine driver/OS device
+loss and recovery. Intentional device destruction remains a separate probe and
+must not be counted as genuine device loss.

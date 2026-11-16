@@ -22,6 +22,7 @@ WebGPU_Compositor :: struct {
 	text: Text_Renderer,
 	icons: Icon_Renderer,
 	images: Image_Renderer,
+	surfaces: Surface_Renderer,
 	prepared_runtime: ^alicorn.Runtime,
 	prepared_revision: u64,
 	prepared_commands: rawptr,
@@ -47,6 +48,8 @@ Compositor_Create :: proc(
 	if !ok { return }
 	compositor.images, ok = Image_Create(device, queue, format)
 	if !ok { return }
+	compositor.surfaces, ok = Surface_Create(device, queue, format)
+	if !ok { return }
 	ok = true
 	return
 }
@@ -68,7 +71,7 @@ Compositor_Prepare :: proc(
 		return .Invalid_Input
 	}
 	for command in display.commands {
-		if !alicorn.paint_command_is_surface(command) && !alicorn.paint_command_is_text(command) &&
+		if !alicorn.paint_command_is_surface(command) && !alicorn.paint_command_is_geometry(command) && !alicorn.paint_command_is_text(command) &&
 		   !alicorn.paint_command_is_icon(command) && !alicorn.paint_command_is_image(command) {
 			return .Unsupported_Command
 		}
@@ -87,6 +90,9 @@ Compositor_Prepare :: proc(
 	}
 	if result := Image_Prepare(&compositor.images, rt, display, target_width, target_height, scale_x, scale_y); result != .Ok {
 		return compositor_result_from_image(result)
+	}
+	if result := Surface_Prepare(&compositor.surfaces, rt, display, target_width, target_height, scale_x, scale_y); result != .Ok {
+		return compositor_result_from_surface(result)
 	}
 	compositor.prepared_runtime = rt
 	compositor.prepared_revision = display.revision
@@ -163,11 +169,17 @@ Compositor_Encode :: proc(
 			); result != .Ok {
 				return compositor_result_from_icon(result)
 			}
-		} else {
+		} else if alicorn.paint_command_is_image(command) {
 			if result := Image_Draw_Command(
 				&compositor.images, pass, rt, command_index, command, target_width, target_height,
 			); result != .Ok {
 				return compositor_result_from_image(result)
+			}
+		} else {
+			if result := Surface_Draw_Command(
+				&compositor.surfaces, pass, command_index, command, target_width, target_height,
+			); result != .Ok {
+				return compositor_result_from_surface(result)
 			}
 		}
 	}
@@ -193,6 +205,7 @@ Compositor_Complete_Submission :: proc(compositor: ^WebGPU_Compositor, serial: u
 Compositor_Destroy :: proc(compositor: ^WebGPU_Compositor) {
 	if compositor == nil { return }
 	Image_Destroy(&compositor.images)
+	Surface_Destroy(&compositor.surfaces)
 	Text_Destroy(&compositor.text)
 	Icon_Destroy(&compositor.icons)
 	Solid_Destroy(&compositor.solid)
@@ -231,6 +244,16 @@ compositor_result_from_image :: proc(result: Image_Result) -> Compositor_Result 
 	switch result {
 	case .Ok: return .Ok
 	case .Invalid_Input: return .Invalid_Input
+	case .Resource_Failure: return .Resource_Failure
+	}
+	return .Resource_Failure
+}
+
+compositor_result_from_surface :: proc(result: Surface_Result) -> Compositor_Result {
+	switch result {
+	case .Ok: return .Ok
+	case .Invalid_Input: return .Invalid_Input
+	case .Unsupported_Command: return .Unsupported_Command
 	case .Resource_Failure: return .Resource_Failure
 	}
 	return .Resource_Failure

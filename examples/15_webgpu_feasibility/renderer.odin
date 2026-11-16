@@ -461,7 +461,7 @@ start_offscreen_readback :: proc() {
 	}
 	if !mixed_text_found { fmt.panicf("Alicorn mixed compositor fixture did not find retained text") }
 	composite_clip := alicorn.Rect{0, 0, f32(READBACK_WIDTH), f32(READBACK_HEIGHT)}
-	mixed_commands := make([dynamic]alicorn.Paint_Command, 0, 12, allocator=context.temp_allocator)
+	mixed_commands := make([dynamic]alicorn.Paint_Command, 0, 16, allocator=context.temp_allocator)
 	append(&mixed_commands, alicorn.paint_surface_command(
 		0, composite_clip, composite_clip, alicorn.Color{0.08, 0.12, 0.18, 1},
 	))
@@ -482,6 +482,18 @@ start_offscreen_readback :: proc() {
 			}
 		}
 	}
+	geometry_command, geometry_found := fixture_custom_geometry_command(
+		text_display, state.compositor_custom_surface_ids[0],
+		{22, 44, 20, 18}, {22, 44, 20, 18},
+	)
+	if !geometry_found { fmt.panicf("Alicorn custom geometry fixture did not retain its Geometry_Paint command") }
+	append(&mixed_commands, geometry_command)
+	waveform_command, waveform_found := fixture_custom_geometry_command(
+		text_display, state.compositor_custom_surface_ids[1],
+		{44, 44, 18, 18}, {44, 44, 18, 18},
+	)
+	if !waveform_found { fmt.panicf("Alicorn waveform fixture did not retain its Geometry_Paint command") }
+	append(&mixed_commands, waveform_command)
 	append(&mixed_commands, alicorn.paint_surface_command(
 		0, {0, 0, f32(READBACK_WIDTH), f32(READBACK_HEIGHT)}, {62, 63, 1, 1}, alicorn.Color{0.08, 0.12, 0.18, 1},
 	))
@@ -523,18 +535,22 @@ start_offscreen_readback :: proc() {
 	composite_image_uploads := state.compositor.images.vertex_upload_count
 	composite_image_texture_uploads := state.compositor.images.texture_upload_count
 	composite_image_texture_bytes := state.compositor.images.texture_upload_bytes
+	composite_surface_meshes := state.compositor.surfaces.mesh_rebuild_count
+	composite_surface_uploads := state.compositor.surfaces.vertex_upload_count
 	if composite_solid_meshes != 1 || composite_solid_uploads != 1 ||
 	   composite_text_meshes != 1 || composite_text_uploads != 1 || composite_atlas_uploads == 0 ||
 	   composite_icon_meshes != 1 || composite_icon_uploads != 1 || composite_icon_atlas_uploads != 2 ||
 	   state.compositor.icons.atlas_upload_bytes != 1536*1024 ||
 	   composite_image_meshes != 1 || composite_image_uploads != 1 || composite_image_texture_uploads != 2 ||
-	   composite_image_texture_bytes != 2*4*4*4 || state.compositor.images.resident_bytes != 2*4*4*4 {
-		fmt.panicf("initial mixed composition expected retained solid/text/icon/image meshes and texture uploads")
+	   composite_image_texture_bytes != 2*4*4*4 || state.compositor.images.resident_bytes != 2*4*4*4 ||
+	   composite_surface_meshes != 1 || composite_surface_uploads != 1 || len(state.compositor.surfaces.draws) != 2 {
+		fmt.panicf("initial mixed composition expected retained solid/text/icon/image/custom-surface meshes and uploads")
 	}
-	fmt.printf("[webgpu-feasibility] mixed paint-order compositor PASS commands=%d solid_meshes=%d text_meshes=%d icon_meshes=%d icon_vertex_uploads=%d icon_atlas_pages=%d icon_atlas_bytes=%d image_meshes=%d image_vertex_uploads=%d image_texture_uploads=%d image_texture_bytes=%d\n",
+	fmt.printf("[webgpu-feasibility] mixed paint-order compositor PASS commands=%d solid_meshes=%d text_meshes=%d icon_meshes=%d icon_vertex_uploads=%d icon_atlas_pages=%d icon_atlas_bytes=%d image_meshes=%d image_vertex_uploads=%d image_texture_uploads=%d image_texture_bytes=%d custom_surface_meshes=%d custom_surface_vertex_uploads=%d custom_surface_vertices=%d\n",
 		len(mixed_display.commands), composite_solid_meshes, composite_text_meshes, composite_icon_meshes,
 		composite_icon_uploads, composite_icon_atlas_uploads, state.compositor.icons.atlas_upload_bytes,
-		composite_image_meshes, composite_image_uploads, composite_image_texture_uploads, composite_image_texture_bytes)
+		composite_image_meshes, composite_image_uploads, composite_image_texture_uploads, composite_image_texture_bytes,
+		composite_surface_meshes, composite_surface_uploads, len(state.compositor.surfaces.vertices))
 	// 63 RGBA8 texels use 252 bytes; the 256-byte row pitch exercises the
 	// required four-byte per-row padding in both native and browser readback.
 	layout:=wgpu.TexelCopyBufferLayout{bytesPerRow=READBACK_BYTES_PER_ROW,rowsPerImage=READBACK_HEIGHT}
@@ -623,7 +639,10 @@ start_offscreen_readback :: proc() {
 	   state.compositor.images.vertex_upload_count != composite_image_uploads ||
 	   state.compositor.images.texture_upload_count != composite_image_texture_uploads ||
 	   state.compositor.images.texture_upload_bytes != composite_image_texture_bytes ||
-	   state.compositor.images.mesh_cache_hits != 1 {
+	   state.compositor.images.mesh_cache_hits != 1 ||
+	   state.compositor.surfaces.mesh_rebuild_count != composite_surface_meshes ||
+	   state.compositor.surfaces.vertex_upload_count != composite_surface_uploads ||
+	   state.compositor.surfaces.mesh_cache_hits != 1 {
 		fmt.panicf("unchanged mixed paint rebuilt or uploaded retained renderer products")
 	}
 	moved_image_commands := make([dynamic]alicorn.Paint_Command, len(mixed_display.commands), allocator=context.temp_allocator)
@@ -775,6 +794,17 @@ build_text_runtime :: proc() {
 	)
 	alicorn.surface_end(&ui)
 	alicorn.container_end(&ui)
+	alicorn.container_begin(
+		&ui, .Container, label="webgpu-custom-surface-probes",
+		style=alicorn.layout_style(.Row, width=f32(READBACK_WIDTH), height=18, gap=1),
+	)
+	state.compositor_custom_surface_ids[0] = alicorn.gpu_geometry_surface(
+		&ui, "webgpu-custom-geometry", alicorn.layout_style(width=20, height=18),
+	)
+	state.compositor_custom_surface_ids[1] = alicorn.gpu_surface(
+		&ui, "webgpu-custom-waveform", alicorn.Rect{0, 0, 18, 18}, 18, 18, 1,
+	)
+	alicorn.container_end(&ui)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 	for index in 0..<len(state.compositor_material_surface_ids) {
@@ -784,6 +814,26 @@ build_text_runtime :: proc() {
 			fmt.panicf("Alicorn material fixture surface %d was not retained", index)
 		}
 		state.compositor_material_surface_bounds[index] = node.bounds
+	}
+	geometry_rectangles := [1]alicorn.GPU_Surface_Filled_Rectangle{{
+		bounds={9, 10, 4, 5}, color={1, 0.1, 0.05, 1},
+	}}
+	geometry_segments := [1]alicorn.GPU_Surface_Line_Segment{{
+		start={8, 3}, end={14, 3}, thickness=2, color={0.1, 0.9, 0.2, 1},
+	}}
+	geometry_circles := [1]alicorn.GPU_Surface_Filled_Circle{{
+		center={15, 5}, radius=3, color={0.1, 0.2, 0.95, 1},
+	}}
+	geometry_markers := [1]alicorn.GPU_Surface_Point_Marker{{
+		center={19, 13}, diameter=6, color={0.95, 0.65, 0.1, 1},
+	}}
+	if !alicorn.gpu_surface_update_geometry_with_rectangles_and_markers(
+		&state.text_runtime, state.compositor_custom_surface_ids[0],
+		geometry_rectangles[:], geometry_segments[:], geometry_circles[:], geometry_markers[:],
+	) { fmt.panicf("Alicorn custom geometry fixture payload was rejected") }
+	waveform_samples := [2]f32{0, 1}
+	if !alicorn.gpu_surface_update(&state.text_runtime, state.compositor_custom_surface_ids[1], waveform_samples[:]) {
+		fmt.panicf("Alicorn waveform fixture payload was rejected")
 	}
 	display, display_ok := alicorn.paint_display_list(&state.text_runtime)
 	if !display_ok || len(display.commands) == 0 {
@@ -810,6 +860,20 @@ build_compositor_images :: proc() {
 	blue_handle, blue_error := alicorn.image_adopt_decoded(&state.text_runtime, &blue_decoded)
 	if blue_error != .None || len(blue_decoded.rgba8) != 0 { fmt.panicf("could not adopt blue compositor image: %v", blue_error) }
 	state.compositor_image_a, state.compositor_image_b = red_handle, blue_handle
+}
+
+fixture_custom_geometry_command :: proc(
+	display: alicorn.Paint_Display_List_View,
+	owner: alicorn.Node_ID,
+	bounds, clip: alicorn.Rect,
+) -> (command: alicorn.Paint_Command, found: bool) {
+	for candidate in display.commands {
+		if candidate.owner != owner || !alicorn.paint_command_is_geometry(candidate) { continue }
+		command = candidate
+		command.bounds, command.clip = bounds, clip
+		return command, true
+	}
+	return
 }
 
 build_offscreen_probe_scene :: proc() -> int {
@@ -912,6 +976,12 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		composite_image_blend_pixel := offscreen_pixel(pixels, 8, 52, 3*READBACK_BUFFER_BYTES)
 		composite_image_blue_pixel := offscreen_pixel(pixels, 13, 52, 3*READBACK_BUFFER_BYTES)
 		composite_image_clip_pixel := offscreen_pixel(pixels, 17, 52, 3*READBACK_BUFFER_BYTES)
+		custom_geometry_rectangle_pixel := offscreen_pixel(pixels, 33, 56, 3*READBACK_BUFFER_BYTES)
+		custom_geometry_segment_pixel := offscreen_pixel(pixels, 33, 47, 3*READBACK_BUFFER_BYTES)
+		custom_geometry_circle_pixel := offscreen_pixel(pixels, 37, 49, 3*READBACK_BUFFER_BYTES)
+		custom_geometry_marker_pixel := offscreen_pixel(pixels, 40, 57, 3*READBACK_BUFFER_BYTES)
+		custom_geometry_clip_pixel := offscreen_pixel(pixels, 43, 57, 3*READBACK_BUFFER_BYTES)
+		custom_waveform_pixel := offscreen_pixel(pixels, 60, 46, 3*READBACK_BUFFER_BYTES)
 		gradient_bounds := state.compositor_material_surface_bounds[0]
 		raised_bounds := state.compositor_material_surface_bounds[1]
 		recessed_bounds := state.compositor_material_surface_bounds[2]
@@ -1004,6 +1074,12 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		image_blend_ok := offscreen_pixel_near(composite_image_blend_pixel, [4]u8{127, 0, 128, 255}, 3)
 		image_blue_ok := offscreen_pixel_near(composite_image_blue_pixel, [4]u8{10, 15, 151, 255}, 3)
 		image_clip_ok := offscreen_pixel_near(composite_image_clip_pixel, [4]u8{20, 31, 46, 255}, 3)
+		custom_geometry_rectangle_ok := offscreen_pixel_near(custom_geometry_rectangle_pixel, [4]u8{255, 26, 13, 255}, 2)
+		custom_geometry_segment_ok := offscreen_pixel_near(custom_geometry_segment_pixel, [4]u8{26, 230, 51, 255}, 2)
+		custom_geometry_circle_ok := offscreen_pixel_near(custom_geometry_circle_pixel, [4]u8{26, 51, 242, 255}, 2)
+		custom_geometry_marker_ok := offscreen_pixel_near(custom_geometry_marker_pixel, [4]u8{242, 166, 26, 255}, 4)
+		custom_geometry_clip_ok := offscreen_pixel_near(custom_geometry_clip_pixel, [4]u8{20, 31, 46, 255}, 3)
+		custom_waveform_ok := offscreen_pixel_near(custom_waveform_pixel, [4]u8{77, 224, 245, 255}, 3)
 		material_gradient_left_ok := offscreen_pixel_near(material_gradient_left_pixel, [4]u8{193, 47, 60, 255}, 5)
 		material_gradient_right_ok := offscreen_pixel_near(material_gradient_right_pixel, [4]u8{97, 105, 152, 255}, 5)
 		material_raised_interior_ok := offscreen_pixel_near(material_raised_interior_pixel, [4]u8{102, 102, 102, 255}, 2)
@@ -1012,9 +1088,9 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		material_recessed_top_ok := offscreen_pixel_near(material_recessed_top_pixel, [4]u8{96, 96, 96, 255}, 4)
 		material_ok := material_gradient_left_ok && material_gradient_right_ok && material_raised_interior_ok &&
 			material_raised_top_ok && material_recessed_interior_ok && material_recessed_top_ok
-		ok=clear_ok && solid_ok && checker_ok && patch_ok && blend_ok && glyph_ok && clip_ok && outside_clip_ok && rounded_ok && rounded_corner_ok && last_row_ok && partial_buffer_ok && uniform_ok && display_blend_ok && display_clip_x_ok && display_clip_y_ok && text_visible && composite_overlay_ok && composite_text_visible && composite_icon_visible && composite_icon_clip && composite_second_icon_visible && image_red_ok && image_blend_ok && image_blue_ok && image_clip_ok && material_ok
-		fmt.printf("[webgpu-feasibility] async RGBA8 readback %s texture=%dx%d row_pitch=%d padding_per_row=%d bytes=%d clear=%v solid=%v checker=%v partial_texture=%v partial_buffer=%v uniform=%v blend=%v glyph=%v clip=%v outside_clip=%v rounded=%v rounded_corner=%v last_row=%v runtime_display_blend=%v runtime_clip_x=%v runtime_clip_y=%v runtime_text_visible=%v composite_overlay_order=%v composite_offset_text=%v composite_icon_visible=%v composite_icon_clip=%v composite_second_icon_page_switch=%v composite_image_red=%v composite_image_alpha_blend=%v composite_image_blue=%v composite_image_clip=%v material_gradient_left=%v material_gradient_right=%v material_raised_face=%v material_raised_bevel=%v material_recessed_face=%v material_recessed_bevel=%v\n",
-			"PASS" if ok else "FAIL",READBACK_WIDTH,READBACK_HEIGHT,READBACK_BYTES_PER_ROW,READBACK_BYTES_PER_ROW-READBACK_WIDTH*READBACK_BYTES_PER_PIXEL,len(pixels),clear_ok,solid_ok,checker_ok,patch_ok,partial_buffer_ok,uniform_ok,blend_ok,glyph_ok,clip_ok,outside_clip_ok,rounded_ok,rounded_corner_ok,last_row_ok,display_blend_ok,display_clip_x_ok,display_clip_y_ok,text_visible,composite_overlay_ok,composite_text_visible,composite_icon_visible,composite_icon_clip,composite_second_icon_visible,image_red_ok,image_blend_ok,image_blue_ok,image_clip_ok,material_gradient_left_ok,material_gradient_right_ok,material_raised_interior_ok,material_raised_top_ok,material_recessed_interior_ok,material_recessed_top_ok)
+		ok=clear_ok && solid_ok && checker_ok && patch_ok && blend_ok && glyph_ok && clip_ok && outside_clip_ok && rounded_ok && rounded_corner_ok && last_row_ok && partial_buffer_ok && uniform_ok && display_blend_ok && display_clip_x_ok && display_clip_y_ok && text_visible && composite_overlay_ok && composite_text_visible && composite_icon_visible && composite_icon_clip && composite_second_icon_visible && image_red_ok && image_blend_ok && image_blue_ok && image_clip_ok && custom_geometry_rectangle_ok && custom_geometry_segment_ok && custom_geometry_circle_ok && custom_geometry_marker_ok && custom_geometry_clip_ok && custom_waveform_ok && material_ok
+		fmt.printf("[webgpu-feasibility] async RGBA8 readback %s texture=%dx%d row_pitch=%d padding_per_row=%d bytes=%d clear=%v solid=%v checker=%v partial_texture=%v partial_buffer=%v uniform=%v blend=%v glyph=%v clip=%v outside_clip=%v rounded=%v rounded_corner=%v last_row=%v runtime_display_blend=%v runtime_clip_x=%v runtime_clip_y=%v runtime_text_visible=%v composite_overlay_order=%v composite_offset_text=%v composite_icon_visible=%v composite_icon_clip=%v composite_second_icon_page_switch=%v composite_image_red=%v composite_image_alpha_blend=%v composite_image_blue=%v composite_image_clip=%v custom_geometry_rectangle=%v custom_geometry_segment=%v custom_geometry_circle=%v custom_geometry_marker=%v custom_geometry_clip=%v custom_waveform=%v material_gradient_left=%v material_gradient_right=%v material_raised_face=%v material_raised_bevel=%v material_recessed_face=%v material_recessed_bevel=%v\n",
+			"PASS" if ok else "FAIL",READBACK_WIDTH,READBACK_HEIGHT,READBACK_BYTES_PER_ROW,READBACK_BYTES_PER_ROW-READBACK_WIDTH*READBACK_BYTES_PER_PIXEL,len(pixels),clear_ok,solid_ok,checker_ok,patch_ok,partial_buffer_ok,uniform_ok,blend_ok,glyph_ok,clip_ok,outside_clip_ok,rounded_ok,rounded_corner_ok,last_row_ok,display_blend_ok,display_clip_x_ok,display_clip_y_ok,text_visible,composite_overlay_ok,composite_text_visible,composite_icon_visible,composite_icon_clip,composite_second_icon_visible,image_red_ok,image_blend_ok,image_blue_ok,image_clip_ok,custom_geometry_rectangle_ok,custom_geometry_segment_ok,custom_geometry_circle_ok,custom_geometry_marker_ok,custom_geometry_clip_ok,custom_waveform_ok,material_gradient_left_ok,material_gradient_right_ok,material_raised_interior_ok,material_raised_top_ok,material_recessed_interior_ok,material_recessed_top_ok)
 	} else {
 		fmt.printf("[webgpu-feasibility] async RGBA8 readback FAIL bytes=%d expected=%d\n",len(pixels),READBACK_TOTAL_BYTES)
 	}
