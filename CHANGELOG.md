@@ -26,6 +26,14 @@ changelogs.
   Stops resolve through ordinary core or namespaced theme color roles, share the
   existing surface vertex-color path, and preserve the solid-fill fast path.
 
+### Validation
+
+- Added dense point-marker GPU readback and cost fixtures for 1,280px and
+  1,920px sample views. They cover 3px/4px markers, overlap, clipping, and
+  fractional DPI, and are wired to Metal and D3D12 CI. The readback currently
+  uses an analytic ellipse oracle; native wxWidgets pixel parity remains an
+  open acceptance check. See [issue #201 research](docs/research/issue-201-dense-retained-markers.md).
+
 ## [0.2.1] — 2026-11-10
 
 Alicorn remains an experimental native GUI runtime for Odin. This release
