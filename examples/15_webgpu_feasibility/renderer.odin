@@ -1162,6 +1162,17 @@ build_text_runtime :: proc() {
 		inner_shadow_strength=0.5,
 	})
 	if probe_material == alicorn.MATERIAL_FLAT { fmt.panicf("Alicorn material fixture could not register analytic relief") }
+	accessibility_probe_material := alicorn.style_material_register(&state.text_runtime, alicorn.Style_Material{
+		kind=.Analytic_Relief,
+		bevel_width=0.5,
+		bevel_strength=0.2,
+		inner_shadow_strength=0.2,
+		outer_shadow_strength=0.4,
+		outer_shadow_radius=2,
+	})
+	if accessibility_probe_material == alicorn.MATERIAL_FLAT {
+		fmt.panicf("Alicorn material fixture could not register the accessibility variant source")
+	}
 	alicorn.container_begin(
 		&ui, .Container, label="webgpu-material-probes",
 		style=alicorn.layout_style(.Row, width=f32(READBACK_WIDTH), height=18, gap=1),
@@ -1177,7 +1188,7 @@ build_text_runtime :: proc() {
 	state.compositor_material_surface_ids[1] = alicorn.surface_begin(
 		&ui, alicorn.surface_core_color_role(.Surface),
 		key=alicorn.key_string("webgpu-material-raised"), label="webgpu-material-raised",
-		style=alicorn.layout_style(width=20, height=18),
+		style=alicorn.layout_style(width=14, height=18),
 		material=probe_material, physical_height=1,
 		fill=alicorn.Color{0.4, 0.4, 0.4, 1},
 	)
@@ -1185,11 +1196,28 @@ build_text_runtime :: proc() {
 	state.compositor_material_surface_ids[2] = alicorn.surface_begin(
 		&ui, alicorn.surface_core_color_role(.Surface),
 		key=alicorn.key_string("webgpu-material-recessed"), label="webgpu-material-recessed",
-		style=alicorn.layout_style(width=20, height=18),
+		style=alicorn.layout_style(width=13, height=18),
 		material=probe_material, physical_height=-1,
 		fill=alicorn.Color{0.4, 0.4, 0.4, 1},
 	)
 	alicorn.surface_end(&ui)
+	accessibility_scope := alicorn.style_environment_push(&ui, alicorn.Style_Environment{
+		accessibility=alicorn.Accessibility_Appearance_Preferences{
+			increased_contrast=true,
+			reduce_transparency=true,
+		},
+		accessibility_set=true,
+	})
+	state.compositor_material_surface_ids[3] = alicorn.surface_begin(
+		&ui, alicorn.surface_core_color_role(.Surface),
+		key=alicorn.key_string("webgpu-material-accessibility-rounded"), label="webgpu-material-accessibility-rounded",
+		style=alicorn.layout_style(width=13, height=18),
+		shape=alicorn.surface_shape_rounded_corners(alicorn.Surface_Corner_Radii{5, 1, 5, 1}),
+		material=accessibility_probe_material, physical_height=1,
+		fill=alicorn.Color{0.4, 0.4, 0.4, 1},
+	)
+	alicorn.surface_end(&ui)
+	alicorn.style_environment_pop(&ui, accessibility_scope)
 	alicorn.container_end(&ui)
 	alicorn.container_begin(
 		&ui, .Container, label="webgpu-custom-surface-probes",
@@ -1211,6 +1239,17 @@ build_text_runtime :: proc() {
 			fmt.panicf("Alicorn material fixture surface %d was not retained", index)
 		}
 		state.compositor_material_surface_bounds[index] = node.bounds
+	}
+	accessibility_surface := state.text_runtime.semantic_surfaces[state.compositor_material_surface_ids[3]]
+	resolved_accessibility_material, accessibility_material_ok := alicorn.style_material_resolve(
+		&state.text_runtime, accessibility_surface.material,
+	)
+	state.material_accessibility_variant_passed = accessibility_material_ok &&
+		resolved_accessibility_material.bevel_width >= 1.5 &&
+		resolved_accessibility_material.bevel_strength >= 0.75 &&
+		resolved_accessibility_material.outer_shadow_strength == 0
+	if !state.material_accessibility_variant_passed {
+		fmt.panicf("increased contrast/reduced transparency did not resolve the expected rounded material variant: %v", resolved_accessibility_material)
 	}
 	geometry_rectangles := [1]alicorn.GPU_Surface_Filled_Rectangle{{
 		bounds={9, 10, 4, 5}, color={1, 0.1, 0.05, 1},
@@ -1621,6 +1660,7 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		gradient_bounds := state.compositor_material_surface_bounds[0]
 		raised_bounds := state.compositor_material_surface_bounds[1]
 		recessed_bounds := state.compositor_material_surface_bounds[2]
+		accessibility_bounds := state.compositor_material_surface_bounds[3]
 		gradient_y := clamp(int(gradient_bounds.y+gradient_bounds.h*0.5), 0, READBACK_HEIGHT-1)
 		gradient_left_x := clamp(int(gradient_bounds.x)+4, 0, READBACK_WIDTH-1)
 		gradient_right_x := clamp(int(gradient_bounds.x)+16, 0, READBACK_WIDTH-1)
@@ -1630,18 +1670,40 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		recessed_center_x := clamp(int(recessed_bounds.x+recessed_bounds.w*0.5), 0, READBACK_WIDTH-1)
 		recessed_center_y := clamp(int(recessed_bounds.y+recessed_bounds.h*0.5), 0, READBACK_HEIGHT-1)
 		recessed_top_y := clamp(int(recessed_bounds.y)+1, 0, READBACK_HEIGHT-1)
+		accessibility_center_x := clamp(int(accessibility_bounds.x+accessibility_bounds.w*0.5), 0, READBACK_WIDTH-1)
+		accessibility_center_y := clamp(int(accessibility_bounds.y+accessibility_bounds.h*0.5), 0, READBACK_HEIGHT-1)
+		// Sample the outer bevel band itself. The next pixel inward overlaps the
+		// separately rendered inner-shadow band and can partially cancel it.
+		accessibility_top_y := clamp(int(accessibility_bounds.y), 0, READBACK_HEIGHT-1)
+		accessibility_corner_x := clamp(int(accessibility_bounds.x), 0, READBACK_WIDTH-1)
+		accessibility_corner_y := clamp(int(accessibility_bounds.y), 0, READBACK_HEIGHT-1)
+		accessibility_shadow_x := clamp(int(accessibility_bounds.x+accessibility_bounds.w*0.5), 0, READBACK_WIDTH-1)
+		accessibility_shadow_y := clamp(int(accessibility_bounds.y)-2, 0, READBACK_HEIGHT-1)
 		material_gradient_left_pixel := offscreen_pixel(pixels, gradient_left_x, gradient_y, 3*READBACK_BUFFER_BYTES)
 		material_gradient_right_pixel := offscreen_pixel(pixels, gradient_right_x, gradient_y, 3*READBACK_BUFFER_BYTES)
 		material_raised_interior_pixel := offscreen_pixel(pixels, raised_center_x, raised_center_y, 3*READBACK_BUFFER_BYTES)
 		material_raised_top_pixel := offscreen_pixel(pixels, raised_center_x, raised_top_y, 3*READBACK_BUFFER_BYTES)
 		material_recessed_interior_pixel := offscreen_pixel(pixels, recessed_center_x, recessed_center_y, 3*READBACK_BUFFER_BYTES)
 		material_recessed_top_pixel := offscreen_pixel(pixels, recessed_center_x, recessed_top_y, 3*READBACK_BUFFER_BYTES)
+		material_accessibility_interior_pixel := offscreen_pixel(
+			pixels, accessibility_center_x, accessibility_center_y, 3*READBACK_BUFFER_BYTES,
+		)
+		material_accessibility_bevel_pixel := offscreen_pixel(
+			pixels, accessibility_center_x, accessibility_top_y, 3*READBACK_BUFFER_BYTES,
+		)
+		material_accessibility_corner_pixel := offscreen_pixel(
+			pixels, accessibility_corner_x, accessibility_corner_y, 3*READBACK_BUFFER_BYTES,
+		)
+		material_accessibility_shadow_pixel := offscreen_pixel(
+			pixels, accessibility_shadow_x, accessibility_shadow_y, 3*READBACK_BUFFER_BYTES,
+		)
 		composite_overlay_uniform := true
-		for y in 0..<24 {
+		// Rounded fills intentionally extend their antialias fringe by 0.75 px;
+		// the material row begins at y=24, so y=23 is part of that fringe.
+		for y in 0..<23 {
 			for x in 0..<READBACK_WIDTH {
-				if !offscreen_pixel_near(
-					offscreen_pixel(pixels, x, y, 3*READBACK_BUFFER_BYTES), [4]u8{204, 26, 26, 255}, 1,
-				) {
+				pixel := offscreen_pixel(pixels, x, y, 3*READBACK_BUFFER_BYTES)
+				if !offscreen_pixel_near(pixel, [4]u8{204, 26, 26, 255}, 1) {
 					composite_overlay_uniform = false
 					break
 				}
@@ -1741,11 +1803,19 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		material_raised_top_ok := offscreen_pixel_near(material_raised_top_pixel, [4]u8{112, 112, 112, 255}, 4)
 		material_recessed_interior_ok := offscreen_pixel_near(material_recessed_interior_pixel, [4]u8{102, 102, 102, 255}, 2)
 		material_recessed_top_ok := offscreen_pixel_near(material_recessed_top_pixel, [4]u8{96, 96, 96, 255}, 4)
+		material_accessibility_interior_ok := offscreen_pixel_near(
+			material_accessibility_interior_pixel, [4]u8{102, 102, 102, 255}, 2,
+		)
+		material_accessibility_bevel_ok := int(material_accessibility_bevel_pixel[0]) > int(material_accessibility_interior_pixel[0])+4
+		material_accessibility_corner_ok := offscreen_pixel_near(material_accessibility_corner_pixel, [4]u8{20, 31, 46, 255}, 2)
+		material_accessibility_shadow_suppressed := offscreen_pixel_near(material_accessibility_shadow_pixel, [4]u8{204, 26, 26, 255}, 1)
+		material_accessibility_ok := state.material_accessibility_variant_passed && material_accessibility_interior_ok &&
+			material_accessibility_bevel_ok && material_accessibility_corner_ok && material_accessibility_shadow_suppressed
 		material_ok := material_gradient_left_ok && material_gradient_right_ok && material_raised_interior_ok &&
-			material_raised_top_ok && material_recessed_interior_ok && material_recessed_top_ok
+			material_raised_top_ok && material_recessed_interior_ok && material_recessed_top_ok && material_accessibility_ok
 		ok=clear_ok && solid_ok && checker_ok && patch_ok && blend_ok && glyph_ok && clip_ok && outside_clip_ok && rounded_ok && rounded_corner_ok && last_row_ok && partial_buffer_ok && uniform_ok && display_blend_ok && display_clip_x_ok && display_clip_y_ok && text_visible && composite_overlay_ok && composite_text_visible && composite_icon_visible && composite_icon_clip && composite_second_icon_visible && image_red_ok && image_blend_ok && image_blue_ok && image_clip_ok && cropped_capture_matches && second_cropped_capture_matches && backdrop_blur_mixed_ok && backdrop_clip_ok && backdrop_prefix_change_ok && backdrop_changed_clip_ok && backdrop_resized_pixel_ok && backdrop_fallback_matches_normal && state.multiple_backdrop_pixel_passed && custom_geometry_rectangle_ok && custom_geometry_segment_ok && custom_geometry_circle_ok && custom_geometry_marker_ok && custom_geometry_clip_ok && custom_waveform_ok && motion_geometry_ok && material_ok
-		fmt.printf("[webgpu-feasibility] async RGBA8 readback %s texture=%dx%d row_pitch=%d padding_per_row=%d bytes=%d clear=%v solid=%v checker=%v partial_texture=%v partial_buffer=%v uniform=%v blend=%v glyph=%v clip=%v outside_clip=%v rounded=%v rounded_corner=%v last_row=%v runtime_display_blend=%v runtime_clip_x=%v runtime_clip_y=%v runtime_text_visible=%v composite_overlay_order=%v composite_offset_text=%v composite_icon_visible=%v composite_icon_clip=%v composite_second_icon_page_switch=%v composite_image_red=%v composite_image_alpha_blend=%v composite_image_blue=%v composite_image_clip=%v crop_capture_a=%v crop_capture_b=%v backdrop_blur_mixed=%v backdrop_clip=%v backdrop_prefix_change=%v backdrop_changed_clip=%v backdrop_resized=%v backdrop_over_budget_fallback_matches_plain_paint=%v custom_geometry_rectangle=%v custom_geometry_segment=%v custom_geometry_circle=%v custom_geometry_marker=%v custom_geometry_clip=%v custom_waveform=%v material_gradient_left=%v material_gradient_right=%v material_raised_face=%v material_raised_bevel=%v material_recessed_face=%v material_recessed_bevel=%v\n",
-			"PASS" if ok else "FAIL",READBACK_WIDTH,READBACK_HEIGHT,READBACK_BYTES_PER_ROW,READBACK_BYTES_PER_ROW-READBACK_WIDTH*READBACK_BYTES_PER_PIXEL,len(pixels),clear_ok,solid_ok,checker_ok,patch_ok,partial_buffer_ok,uniform_ok,blend_ok,glyph_ok,clip_ok,outside_clip_ok,rounded_ok,rounded_corner_ok,last_row_ok,display_blend_ok,display_clip_x_ok,display_clip_y_ok,text_visible,composite_overlay_ok,composite_text_visible,composite_icon_visible,composite_icon_clip,composite_second_icon_visible,image_red_ok,image_blend_ok,image_blue_ok,image_clip_ok,cropped_capture_matches,second_cropped_capture_matches,backdrop_blur_mixed_ok,backdrop_clip_ok,backdrop_prefix_change_ok,backdrop_changed_clip_ok,backdrop_resized_pixel_ok,backdrop_fallback_matches_normal,custom_geometry_rectangle_ok,custom_geometry_segment_ok,custom_geometry_circle_ok,custom_geometry_marker_ok,custom_geometry_clip_ok,custom_waveform_ok,material_gradient_left_ok,material_gradient_right_ok,material_raised_interior_ok,material_raised_top_ok,material_recessed_interior_ok,material_recessed_top_ok)
+		fmt.printf("[webgpu-feasibility] async RGBA8 readback %s texture=%dx%d row_pitch=%d padding_per_row=%d bytes=%d clear=%v solid=%v checker=%v partial_texture=%v partial_buffer=%v uniform=%v blend=%v glyph=%v clip=%v outside_clip=%v rounded=%v rounded_corner=%v last_row=%v runtime_display_blend=%v runtime_clip_x=%v runtime_clip_y=%v runtime_text_visible=%v composite_overlay_order=%v composite_offset_text=%v composite_icon_visible=%v composite_icon_clip=%v composite_second_icon_page_switch=%v composite_image_red=%v composite_image_alpha_blend=%v composite_image_blue=%v composite_image_clip=%v crop_capture_a=%v crop_capture_b=%v backdrop_blur_mixed=%v backdrop_clip=%v backdrop_prefix_change=%v backdrop_changed_clip=%v backdrop_resized=%v backdrop_over_budget_fallback_matches_plain_paint=%v custom_geometry_rectangle=%v custom_geometry_segment=%v custom_geometry_circle=%v custom_geometry_marker=%v custom_geometry_clip=%v custom_waveform=%v material_gradient_left=%v material_gradient_right=%v material_raised_face=%v material_raised_bevel=%v material_recessed_face=%v material_recessed_bevel=%v material_accessibility_variant=%v material_accessibility_bevel=%v rounded_material_corner=%v reduced_transparency_shadow=%v\n",
+			"PASS" if ok else "FAIL",READBACK_WIDTH,READBACK_HEIGHT,READBACK_BYTES_PER_ROW,READBACK_BYTES_PER_ROW-READBACK_WIDTH*READBACK_BYTES_PER_PIXEL,len(pixels),clear_ok,solid_ok,checker_ok,patch_ok,partial_buffer_ok,uniform_ok,blend_ok,glyph_ok,clip_ok,outside_clip_ok,rounded_ok,rounded_corner_ok,last_row_ok,display_blend_ok,display_clip_x_ok,display_clip_y_ok,text_visible,composite_overlay_ok,composite_text_visible,composite_icon_visible,composite_icon_clip,composite_second_icon_visible,image_red_ok,image_blend_ok,image_blue_ok,image_clip_ok,cropped_capture_matches,second_cropped_capture_matches,backdrop_blur_mixed_ok,backdrop_clip_ok,backdrop_prefix_change_ok,backdrop_changed_clip_ok,backdrop_resized_pixel_ok,backdrop_fallback_matches_normal,custom_geometry_rectangle_ok,custom_geometry_segment_ok,custom_geometry_circle_ok,custom_geometry_marker_ok,custom_geometry_clip_ok,custom_waveform_ok,material_gradient_left_ok,material_gradient_right_ok,material_raised_interior_ok,material_raised_top_ok,material_recessed_interior_ok,material_recessed_top_ok,state.material_accessibility_variant_passed,material_accessibility_bevel_ok,material_accessibility_corner_ok,material_accessibility_shadow_suppressed)
 		fmt.printf("[webgpu-feasibility] custom geometry translation/opacity pixel %s moved_pixel=%v original_pixel=%v\n",
 			"PASS" if motion_geometry_ok else "FAIL", motion_geometry_moved_pixel, motion_geometry_origin_pixel)
 	} else {

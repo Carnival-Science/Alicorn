@@ -57,7 +57,7 @@ uploads remain renderer-specific.
 | --- | --- | --- |
 | 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: the pre-change Windows SDL_GPU reference and a supplemental D3D12 effects profile are recorded in `docs/validation/sdl-gpu-reference-windows-2026-11-15.md`; Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes, but the browser adapter acceleration class is not surfaced. Physical Linux GPU/Wayland, genuine driver/OS loss and recovery, same-workload production comparison, and application-level stage/working-set measurements remain open |
 | 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring, CPU solid/custom-surface mesh assembly, and text/image/icon preparation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
-| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and D3D12 fixtures exercise per-resource custom-surface caching, budget pressure, in-flight protection, instance transforms, readback, and resize. One shared compositor preserves interleaved paint order; text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, clipping, waveform samples, and cropped mixed-renderer readback pass Windows D3D12 and the current browser WebGPU readback. Shared CPU backdrop planning/meshes feed renderer-owned WebGPU prefix capture, filtering, and in-order composition for up to four markers within one aggregate 48 MiB tracked mesh+texture allocation budget. Two overlapping markers pass pixel readback on Windows D3D12/Vulkan and browser WebGPU; the later marker's capture includes the earlier marker's composed result. D3D12 also verifies unchanged-prefix reuse, changed-prefix invalidation, resized-target retirement behind the prior queue serial, and exact ordinary-paint parity when a valid effect exceeds budget. Browser adapter acceleration class is not reported. Rounded/accessibility material parity, application host presentation, and broader cross-platform GPU validation remain open |
+| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and D3D12 fixtures exercise per-resource custom-surface caching, budget pressure, in-flight protection, instance transforms, readback, and resize. One shared compositor preserves interleaved paint order; text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, clipping, waveform samples, and cropped mixed-renderer readback pass Windows D3D12 and the current browser WebGPU readback. Shared CPU backdrop planning/meshes feed renderer-owned WebGPU prefix capture, filtering, and in-order composition for up to four markers within one aggregate 48 MiB tracked mesh+texture allocation budget. Two overlapping markers pass pixel readback on Windows D3D12/Vulkan and browser WebGPU; the later marker's capture includes the earlier marker's composed result. D3D12 also verifies unchanged-prefix reuse, changed-prefix invalidation, resized-target retirement behind the prior queue serial, and exact ordinary-paint parity when a valid effect exceeds budget. A Windows-only fixture slice now verifies one per-corner rounded relief surface under increased contrast and reduced transparency on D3D12/Vulkan; the updated WASM build passes, but its new material pixels have not yet been replayed in a browser. Full theme/accessibility combinations, application host presentation, and broader cross-platform GPU validation remain open |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | In progress: image, custom-geometry, and backdrop resources have bounded asynchronous retirement and completion-driven release tests; async readback is exercised. Genuine device loss/recreation and primary/secondary window teardown/recreation remain unvalidated. Intentional `DeviceDestroy` callbacks are tracked separately and do not count as driver-loss evidence |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
@@ -1115,3 +1115,34 @@ application presentation. It does not establish SDR parity for all output
 formats, genuine device loss/recreation, secondary-window lifecycle, or
 production performance. Intentional `DeviceDestroy` callbacks remain separate
 from driver/OS-initiated loss evidence.
+
+### Phase 2 rounded accessibility-material fixture (Windows, 2026-11-15)
+
+The shared feasibility scene now includes a per-corner rounded raised surface
+whose registered material starts with a narrow, low-strength bevel and a
+translucent outer shadow. Its style environment enables increased contrast and
+reduced transparency. The fixture asserts that material resolution widens and
+strengthens the bevel and removes the outer shadow, then checks actual GPU
+readback for the face, bevel band, rounded corner, and unsullied underlay where
+the shadow would have appeared. The existing paint-order probe excludes the
+single row occupied by the rounded fill's documented 0.75-pixel antialias
+fringe; it still checks uniform overlay across the fully covered rows.
+
+Validation with Odin `dev-2026-09-nightly:a2fb372` on Windows x64 and an NVIDIA
+GeForce RTX 2080 SUPER:
+
+- `odin check renderer/webgpu -no-entry-point` passed, and
+  `odin test renderer/cpu` passed all 20 tests.
+- `examples/15_webgpu_feasibility/build.ps1` built the native interactive,
+  readback, and resize programs and the `js_wasm32` artifact.
+- The complete asynchronous fixture readback passed on Windows D3D12 and
+  Vulkan, including the new material variant, bevel, corner, and reduced-
+  transparency checks plus all existing readback and resource-lifecycle
+  assertions.
+- A live browser capture was attempted, but the Windows UI capture helper
+  timed out twice. The WASM compilation passed; the new material pixel checks
+  therefore still need a browser replay.
+
+This is a focused geometry/accessibility fixture, not full material parity.
+It does not cover the theme/accessibility matrix, production host presentation,
+other GPU vendors, or cross-platform pixel variance.
