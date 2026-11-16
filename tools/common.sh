@@ -53,6 +53,13 @@ alicorn_odin_with_linker_flags() {
 	alicorn_odin_executable=$1
 	alicorn_linker_flags=$2
 	shift 2
+	if [ -n "${ALICORN_SDL_LINK_FLAGS:-}" ]; then
+		if [ -n "$alicorn_linker_flags" ]; then
+			alicorn_linker_flags="$alicorn_linker_flags $ALICORN_SDL_LINK_FLAGS"
+		else
+			alicorn_linker_flags=$ALICORN_SDL_LINK_FLAGS
+		fi
+	fi
 	alicorn_binding_root=$(alicorn_accesskit_binding_root) || return $?
 	alicorn_c_library_directory=$(alicorn_accesskit_library_directory) || return $?
 	if [ -n "$alicorn_linker_flags" ]; then

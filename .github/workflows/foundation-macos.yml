@@ -19,8 +19,17 @@ jobs:
           echo "ODIN_ROOT=$odin_root" >> "$GITHUB_ENV"
           echo "ALICORN_ODIN=$odin_root/odin" >> "$GITHUB_ENV"
 
-      - name: Install SDL3 for the native host contract test
-        run: brew install sdl3
+      - name: Install SDL build tools
+        run: brew install cmake
+
+      - name: Build pinned SDL3 for native host checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          source tools/macos_sdl.sh
+          alicorn_build_pinned_macos_sdl shared "$RUNNER_TEMP/alicorn-sdl"
+          echo "ALICORN_SDL_LINK_FLAGS=-L$ALICORN_MACOS_SDL_PREFIX/lib -Wl,-rpath,$ALICORN_MACOS_SDL_PREFIX/lib" >> "$GITHUB_ENV"
+          echo "DYLD_LIBRARY_PATH=$ALICORN_MACOS_SDL_PREFIX/lib" >> "$GITHUB_ENV"
 
       - name: Report Odin installation
         shell: sh
