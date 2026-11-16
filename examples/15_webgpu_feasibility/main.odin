@@ -502,7 +502,7 @@ on_device :: proc "c" (status: wgpu.RequestDeviceStatus, device: wgpu.Device, me
 		state.presenter = presenter
 		state.presenter_created = true
 	}
-	when FEASIBILITY_TEST_SURFACE_PRESENTER || FEASIBILITY_TEST_WEB_CANVAS_PRESENTER {
+	when FEASIBILITY_TEST_SURFACE_PRESENTER {
 		build_surface_runtime()
 		surface_presenter, surface_presenter_ok := webgpu_renderer.WebGPU_Presenter_Create(
 			state.device, state.queue, state.config.format, &state.surface_runtime,
@@ -520,11 +520,18 @@ on_device :: proc "c" (status: wgpu.RequestDeviceStatus, device: wgpu.Device, me
 	state.config.presentMode = .Fifo
 	wgpu.SurfaceConfigure(state.surface, &state.config)
 	state.ready, state.dirty = true, true
+	when FEASIBILITY_TEST_WEB_CANVAS_PRESENTER {
+		browser_host_init()
+	}
 	start_offscreen_readback()
 }
 
 resize :: proc() {
 	if !state.ready || state.surface == nil || state.device == nil { return }
+	when FEASIBILITY_TEST_WEB_CANVAS_PRESENTER {
+		browser_host_resize()
+		return
+	}
 	state.width, state.height = os_get_framebuffer_size()
 	os_set_surface_size(state.width, state.height)
 	state.config.width, state.config.height = max(state.width, 1), max(state.height, 1)
@@ -571,10 +578,12 @@ webgpu_resize :: proc() {
 @(export)
 webgpu_restart :: proc() {
 	context = state.ctx
-	when !FEASIBILITY_TEST_WEB_CANVAS_PRESENTER {
+	when FEASIBILITY_TEST_WEB_CANVAS_PRESENTER {
+		browser_host_surface_wake(nil)
+	} else {
 		state.animation_seconds = 0
+		state.dirty = true
 	}
-	state.dirty = true
 }
 
 @(export)
@@ -585,29 +594,26 @@ webgpu_init_state :: proc() -> i32 {
 }
 
 @(private="file", export)
-step :: proc(dt: f32) -> bool {
+step :: proc(dt: f32, now_ns: u64) -> bool {
 	context = state.ctx
 	if state.device_lost { return false }
 	begin_test_explicit_device_destroy()
 	if !state.ready { return false }
 	when FEASIBILITY_TEST_WEB_CANVAS_PRESENTER {
-		if state.surface_present_count > 0 { _ = surface_runtime_motion_tick(dt) }
+		_ = dt
+		return browser_host_step(now_ns)
+	} else {
+		_ = now_ns
+		if state.animation_seconds < ANIMATION_SECONDS {
+			state.animation_seconds += dt
+			state.dirty = true
+		}
 		if state.dirty {
-			if state.surface_presenter_completion_pending { return false }
 			state.dirty = false
 			render_surface_frame()
 		}
-		return state.surface_motion_active || state.dirty
+		return state.animation_seconds < ANIMATION_SECONDS || state.dirty
 	}
-	if state.animation_seconds < ANIMATION_SECONDS {
-		state.animation_seconds += dt
-		state.dirty = true
-	}
-	if state.dirty {
-		state.dirty = false
-		render_surface_frame()
-	}
-	return state.animation_seconds < ANIMATION_SECONDS || state.dirty
 }
 
 finish :: proc() {

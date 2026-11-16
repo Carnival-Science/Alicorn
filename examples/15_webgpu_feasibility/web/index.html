@@ -12,7 +12,7 @@ canvas{width:min(100vw,calc((100vh - 40px)*16/9));height:auto;aspect-ratio:16/9;
 #resize{border:1px solid #45505a;border-radius:4px;background:#242d35;color:#dfe6e8;padding:5px 9px;cursor:pointer}
 </style></head>
 <body>
-<canvas id="wgpu-canvas"></canvas>
+<canvas id="wgpu-canvas" tabindex="0" aria-label="Alicorn WebGPU hosted runtime example"></canvas>
 <div id="footer"><div><div id="status">Starting the shared Alicorn retained WebGPU renderer…</div><div id="diagnostics" role="status" aria-live="polite">GPU readback probes pending.</div></div><button id="resize" type="button">Resize surface</button></div>
 <script src="./odin.js"></script><script src="./wgpu.js"></script><script src="./alicorn_demand_scheduler.js"></script>
 <script>
@@ -111,21 +111,23 @@ canvas{width:min(100vw,calc((100vh - 40px)*16/9));height:auto;aspect-ratio:16/9;
    }
    const dt=previous===0?0:Math.min((timestamp-previous)/1000,0.05);
    previous=timestamp;
-   animationActive=!!exports.step(dt,context);
+   animationActive=!!exports.step(dt,timestampNs,context);
+   const nextWakeNs=exports.browser_host_next_wake_ns(context);
    if(animationActive){
     status.textContent="Visual work is pending; requestAnimationFrame is scheduled for motion or surface recovery.";
-    return {hasMoreWork:true,nextWakeNs:0n};
+    return {hasMoreWork:true,nextWakeNs};
    }
-   return {hasMoreWork:false,nextWakeNs:0n};
+   return {hasMoreWork:false,nextWakeNs};
   },
   onIdle:stats=>{
-   status.textContent="Settled: demand-driven idle ("+stats.framesRequested+" frame requests; "+initializationWaitFrames+" initialization wake frames). Resize or click to present the retained display again.";
+   status.textContent="Settled: demand-driven idle ("+stats.framesRequested+" frame requests; "+initializationWaitFrames+" initialization wake frames). Resize, click, or type to exercise the retained host.";
   },
   onError:error=>{
    status.textContent="Browser runtime error: "+String(error&&error.message||error);
    console.error("[webgpu-feasibility] scheduled frame failed",error);
   },
  });
+ window.__alicornDemandScheduler=scheduler;
  const dispatchCallback=wgpuInterface.callCallback.bind(wgpuInterface);
  wgpuInterface.callCallback=(callback,args)=>{
   console.info("[webgpu-feasibility] callback dispatch status="+args[0]);
@@ -148,7 +150,7 @@ canvas{width:min(100vw,calc((100vh - 40px)*16/9));height:auto;aspect-ratio:16/9;
   if(document.hidden) previous=0;
   scheduler.setVisible(!document.hidden);
  });
- window.addEventListener("pagehide",()=>{scheduler.dispose();exports._end?.()},{once:true});
+ window.addEventListener("pagehide",()=>{scheduler.dispose();exports.browser_host_shutdown(context)},{once:true});
 })().catch(error=>{
  document.querySelector("#status").textContent="WebGPU fixture failed: "+error;
  console.error(error);

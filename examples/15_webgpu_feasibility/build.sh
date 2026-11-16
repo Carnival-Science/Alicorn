@@ -38,7 +38,7 @@ if ! command -v wasm-ld >/dev/null 2>&1; then
 	exit 1
 fi
 echo 'Building browser js_wasm32 fixture'
-"$ODIN" build . -target:js_wasm32 -o:size -define:FEASIBILITY_TEST_WEB_CANVAS_PRESENTER=true -out:web/feasibility.wasm -extra-linker-flags:--export-table
+"$ODIN" build . -collection:alicorn=../.. -target:js_wasm32 -o:size -define:FEASIBILITY_TEST_WEB_CANVAS_PRESENTER=true -out:web/feasibility.wasm -extra-linker-flags:--export-table
 ODIN_ROOT=$("$ODIN" root)
 cp "$ODIN_ROOT/core/sys/wasm/js/odin.js" web/odin.js
 cp "$ODIN_ROOT/vendor/wgpu/wgpu.js" web/wgpu.js

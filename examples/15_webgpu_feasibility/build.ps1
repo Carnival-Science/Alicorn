@@ -25,7 +25,7 @@ try {
 	Copy-Item (Join-Path $odinRoot 'vendor\sdl3\SDL3.dll') (Join-Path $root 'out\SDL3.dll') -Force
 	$wgpuDll=Join-Path $odinRoot 'vendor\wgpu\lib\wgpu-windows-x86_64-msvc-release\lib\wgpu_native.dll'
 	if (Test-Path -LiteralPath $wgpuDll) { Copy-Item $wgpuDll (Join-Path $root 'out\wgpu_native.dll') -Force }
-	& $Odin build . -target:js_wasm32 -o:size -define:FEASIBILITY_TEST_WEB_CANVAS_PRESENTER=true -out:web\feasibility.wasm -extra-linker-flags:--export-table
+	& $Odin build . -collection:alicorn=../.. -target:js_wasm32 -o:size -define:FEASIBILITY_TEST_WEB_CANVAS_PRESENTER=true -out:web\feasibility.wasm -extra-linker-flags:--export-table
 	if ($LASTEXITCODE -ne 0) { throw "Browser fixture build failed: $LASTEXITCODE" }
 	$odinRoot=& $Odin root
 	Copy-Item (Join-Path $odinRoot 'core\sys\wasm\js\odin.js') (Join-Path $root 'web\odin.js') -Force
