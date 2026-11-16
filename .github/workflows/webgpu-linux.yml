@@ -33,6 +33,10 @@ jobs:
         shell: sh
         run: sh tools/setup_linux_wgpu_native.sh "$ODIN_ROOT"
 
+      - name: Compile the shared Alicorn UI package for browser WASM
+        shell: sh
+        run: sh tools/check_web_ui_package.sh --odin "$ALICORN_ODIN"
+
       - name: Build native and browser fixture, then smoke Vulkan through X11
         shell: bash
         run: |

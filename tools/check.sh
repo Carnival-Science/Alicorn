@@ -29,6 +29,8 @@ mkdir -p "$OUT_DIR"
 ACCESSKIT_BINDING_ROOT=$(alicorn_accesskit_binding_root)
 sh "$ACCESSKIT_BINDING_ROOT/tools/check.sh" --odin "$ODIN" --cache-root "$REPO_ROOT/.deps/accesskit"
 
+sh "$SCRIPT_DIR/check_web_ui_package.sh" --odin "$ODIN"
+
 git diff --check
 
 "$ODIN" build tests "-out:$OUT_DIR/alicorn_tests"
