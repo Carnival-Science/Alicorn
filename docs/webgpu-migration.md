@@ -57,7 +57,7 @@ uploads remain renderer-specific.
 | --- | --- | --- |
 | 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: the pre-change Windows SDL_GPU reference and a supplemental D3D12 effects profile are recorded in `docs/validation/sdl-gpu-reference-windows-2026-11-15.md`; Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes, but the browser adapter acceleration class is not surfaced. Physical Linux GPU/Wayland, genuine driver/OS loss and recovery, same-workload production comparison, and application-level stage/working-set measurements remain open |
 | 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring, CPU solid/custom-surface mesh assembly, and text/image/icon preparation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
-| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and D3D12 fixtures exercise per-resource custom-surface caching, budget pressure, in-flight protection, instance transforms, readback, and resize. One shared compositor preserves interleaved paint order; text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, clipping, waveform samples, and cropped mixed-renderer readback pass Windows D3D12 and the current browser WebGPU readback. Shared CPU backdrop planning/meshes feed renderer-owned WebGPU prefix capture, filtering, and in-order composition for up to four markers within one aggregate 48 MiB tracked mesh+texture allocation budget. Two overlapping markers pass pixel readback on Windows D3D12/Vulkan and browser WebGPU; the later marker's capture includes the earlier marker's composed result. D3D12 also verifies unchanged-prefix reuse, changed-prefix invalidation, resized-target retirement behind the prior queue serial, and exact ordinary-paint parity when a valid effect exceeds budget. A Windows-only fixture slice now verifies one per-corner rounded relief surface under increased contrast and reduced transparency on D3D12/Vulkan; the updated WASM build passes, but its new material pixels have not yet been replayed in a browser. Full theme/accessibility combinations, application host presentation, and broader cross-platform GPU validation remain open |
+| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and D3D12 fixtures exercise per-resource custom-surface caching, budget pressure, in-flight protection, instance transforms, readback, and resize. One shared compositor preserves interleaved paint order; text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, clipping, waveform samples, and cropped mixed-renderer readback pass Windows D3D12 and the current browser WebGPU readback. Shared CPU backdrop planning/meshes feed renderer-owned WebGPU prefix capture, filtering, and in-order composition for up to four markers within one aggregate 48 MiB tracked mesh+texture allocation budget. Two overlapping markers pass pixel readback on Windows D3D12/Vulkan and browser WebGPU; the later marker's capture includes the earlier marker's composed result. D3D12 also verifies unchanged-prefix reuse, changed-prefix invalidation, resized-target retirement behind the prior queue serial, and exact ordinary-paint parity when a valid effect exceeds budget. Six shared WGSL sources are compile-time loaded for native and `js_wasm32` builds. A Windows-only fixture slice verifies one per-corner rounded relief surface under increased contrast and reduced transparency on D3D12/Vulkan; its WASM build passes, but those new material pixels have not yet been replayed in a browser. Full theme/accessibility combinations, application host presentation, and broader cross-platform GPU validation remain open |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | In progress: image, custom-geometry, and backdrop resources have bounded asynchronous retirement and completion-driven release tests; async readback is exercised. Genuine device loss/recreation and primary/secondary window teardown/recreation remain unvalidated. Intentional `DeviceDestroy` callbacks are tracked separately and do not count as driver-loss evidence |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
@@ -1146,3 +1146,29 @@ GeForce RTX 2080 SUPER:
 This is a focused geometry/accessibility fixture, not full material parity.
 It does not cover the theme/accessibility matrix, production host presentation,
 other GPU vendors, or cross-platform pixel variance.
+
+### Phase 2 compile-time WGSL inventory (Windows, 2026-11-15)
+
+The six renderer shaders now live as readable `.wgsl` files in
+`renderer/webgpu/shaders/`. Odin `#load(..., string)` embeds them at compile
+time, leaving the same shader bytes in native and `js_wasm32` builds without
+runtime file access. The inventory documents each pipeline's vertex/resource
+contract. Extraction was checked against the previous Odin raw strings; all
+six WGSL bodies were byte-for-byte identical.
+
+Validation on Windows x64 with Odin `dev-2026-09-nightly:a2fb372` and an NVIDIA
+GeForce RTX 2080 SUPER:
+
+- `examples/15_webgpu_feasibility/build.ps1` rebuilt the native interactive,
+  readback, and resize programs and the `js_wasm32` artifact with compile-time
+  shader loading.
+- The complete readback smoke passed on D3D12 and Vulkan, including solid,
+  text, icons, images, custom surfaces, backdrop effects, and the accessibility
+  material checks. This verifies native shader module creation and unchanged
+  raster output for the extracted shader bodies.
+- The browser artifact compiled, but a live browser replay was not repeated in
+  this slice; the new material pixels still need browser runtime evidence.
+
+The old SDL_GPU shader artifacts remain until Phase 5. This extraction changes
+source organization only; it does not alter rendering policy or create a
+second shader implementation.
