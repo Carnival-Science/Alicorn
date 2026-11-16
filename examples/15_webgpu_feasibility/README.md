@@ -50,10 +50,14 @@ the renderer to restore the target scissor after the sentinel; drawing the two
 icons also exercises atlas bind-group switching. The compositor checks that
 surface, text, icon, and image meshes reuse cached products; both icon atlas
 pages and both Runtime images upload once. Image bounds changes rebuild their
-mesh without resending unchanged pixels. Custom-surface geometry and waveform
-share one retained mesh upload; unchanged preparation reuses it. Releasing an image while a submitted
-frame uses its texture queues it for retirement; a queue-completion serial
-releases it only after the host reports completion. GPU image residency is
+mesh without resending unchanged pixels. Each custom geometry resource gets
+its own retained mesh buffer, while a shared instance stream carries placement,
+scale, and opacity. Unchanged preparation reuses both resource meshes;
+placement and opacity changes upload only instance data. Growing a waveform
+payload rebuilds only that resource and keeps its old buffer alive through the
+last-use queue serial. Releasing an image while a submitted frame uses its
+texture queues it for retirement; a queue-completion serial releases it only
+after the host reports completion. GPU image residency is
 bounded to 128 MiB, so a host must deliver completion serials to reclaim retired
 bytes under cache pressure. Native Vulkan and browser readbacks pass the
 gradient endpoint and raised/recessed face and bevel probes. Production
@@ -74,6 +78,19 @@ For a bounded native adapter/render/readback smoke that exits on completion:
 ~~~powershell
 .\out\webgpu_feasibility_smoke.exe
 ~~~
+
+Both smoke executables accept an explicit native backend when collecting
+backend-specific evidence:
+
+~~~powershell
+.\out\webgpu_feasibility_smoke.exe --backend=vulkan
+.\out\webgpu_feasibility_smoke.exe --backend=d3d12
+.\out\webgpu_feasibility_resize_smoke.exe --backend=d3d12
+~~~
+
+The fixture logs both the requested backend and the adapter's reported backend;
+count a result only when those agree. The unqualified invocation leaves backend
+selection to wgpu-native.
 
 The smoke exits nonzero if any pixel probe or the queue-completion callback
 fails or either asynchronous completion callback does not arrive within 15

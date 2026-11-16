@@ -7,6 +7,7 @@ import "vendor:wgpu"
 
 OS :: struct {}
 
+os_requested_backend :: proc() -> (wgpu.BackendType, bool) { return .Undefined, true }
 os_init :: proc() {}
 os_run :: proc() {}
 os_process_gpu_events :: proc() {}

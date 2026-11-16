@@ -103,6 +103,12 @@ main :: proc() {
 	state.vertices = make([dynamic]Vertex, 0, 4096)
 	state.draws = make([dynamic]Draw_Command, 0, 32)
 	state.glyph_quads = make([dynamic]Glyph_Quad, 0, 96)
+	requested_backend, backend_valid := os_requested_backend()
+	if !backend_valid {
+		fmt.eprintln("[webgpu-feasibility] unsupported --backend selector (supported: vulkan, d3d12)")
+		os_exit_failure()
+	}
+	fmt.printf("[webgpu-feasibility] requested backend=%v\n", requested_backend)
 	os_init()
 	state.instance = wgpu.CreateInstance(nil)
 	if state.instance == nil { fmt.panicf("WebGPU instance creation failed") }
@@ -111,6 +117,7 @@ main :: proc() {
 	wgpu.InstanceRequestAdapter(state.instance, &wgpu.RequestAdapterOptions{
 		compatibleSurface = state.surface,
 		powerPreference = .HighPerformance,
+		backendType = requested_backend,
 	}, {callback = on_adapter})
 	os_run()
 	when FEASIBILITY_TEST_QUIT_AFTER_READBACK {

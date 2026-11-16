@@ -57,7 +57,7 @@ uploads remain renderer-specific.
 | --- | --- | --- |
 | 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes on an NVIDIA Turing adapter; physical Linux GPU/Wayland, genuine driver/OS loss and recovery, comparative baselines, and production parity remain open |
 | 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring, CPU solid/custom-surface mesh assembly, and text/image/icon preparation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
-| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan fixture exercises per-resource custom-surface caching and instance transforms; prior browser WebGPU fixture passes custom-surface pixels and the current WASM build compiles, but this cache follow-up has not had a live browser replay. One shared compositor preserves interleaved paint order. Text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, rectangles, segments, circles, masked markers, clipping, and waveform samples pass representative native pixel probes. Rounded/accessibility material parity, effects, and application host presentation remain outstanding |
+| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and explicitly selected D3D12 fixtures exercise per-resource custom-surface caching, instance transforms, readback, and resize; prior browser WebGPU fixture passes custom-surface pixels and the current WASM build compiles, but this cache follow-up has not had a live browser replay. One shared compositor preserves interleaved paint order. Text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, rectangles, segments, circles, masked markers, clipping, and waveform samples pass representative native pixel probes. Rounded/accessibility material parity, effects, and application host presentation remain outstanding |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | Not started |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
@@ -769,12 +769,14 @@ Validation on this slice:
   probes, image retirement, and queue completion passing.
 - `git diff --check` passed after the implementation and documentation updates.
 
-This is shared-renderer fixture parity on local Windows Vulkan and the tested
-browser adapter. It is not Windows D3D12 or macOS Metal custom-surface evidence,
-SDL_GPU pixel-differential comparison, Punks app instrumentation, production
-host presentation, cache-performance benchmarking, or genuine driver/OS device
-loss and recovery. Intentional device destruction remains a separate probe and
-must not be counted as genuine device loss.
+This initial shared-geometry slice established fixture parity on local Windows
+Vulkan and the tested browser adapter; it did not validate custom-surface
+rendering on D3D12 or macOS Metal. The per-resource cache follow-up below adds
+Windows D3D12 evidence. Neither slice provides an SDL_GPU pixel-differential
+comparison, Punks app instrumentation, production host presentation,
+cache-performance benchmark, or genuine driver/OS device-loss and recovery
+evidence. Intentional device destruction remains a separate probe and must not
+be counted as genuine device loss.
 
 ## Phase 2 renderer-local custom geometry cache (2026-11-15)
 
@@ -816,13 +818,17 @@ Validation on the local Windows candidate:
 - Native readback and resize smokes passed on Windows Vulkan / NVIDIA GeForce
   RTX 2080 SUPER. The motion readback measured the moved half-opacity pixel as
   `[137,28,30,255]`; both resize presentations passed.
+- After adding explicit backend selection to the fixture, readback and resize
+  smokes also passed with `--backend=d3d12`; the adapter reported D3D12 on the
+  NVIDIA GeForce RTX 2080 SUPER. Both runs verified the per-resource cache,
+  moved geometry pixels, queue-serial retirement, and surface presentations.
 - The live browser window capture helper timed out twice after refreshing its
   window selection. The current WASM candidate builds, but this cache slice has
   no live browser replay result recorded.
 - `git diff --check` passed.
 
 This is cache-correctness and native pixel evidence, not a WebGPU performance
-claim. Windows D3D12, macOS Metal, live browser replay for this candidate,
+claim. macOS Metal cache readback/resize, live browser replay for this candidate,
 cache-pressure stress, Punks instrumentation, and genuine driver/OS loss and
 recovery remain open. Intentional `DeviceDestroy` and a driver-initiated lost
 device are separate evidence categories.

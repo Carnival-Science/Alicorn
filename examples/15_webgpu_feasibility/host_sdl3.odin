@@ -3,6 +3,7 @@ package webgpu_feasibility
 
 import "core:fmt"
 import "core:os"
+import "core:strings"
 import "core:sync"
 import "vendor:wgpu"
 import SDL "vendor:sdl3"
@@ -11,6 +12,17 @@ import "vendor:wgpu/sdl3glue"
 OS :: struct { window: ^SDL.Window }
 
 SMOKE_TIMEOUT_SECONDS :: 15.0
+
+os_requested_backend :: proc() -> (wgpu.BackendType, bool) {
+	for argument in os.args {
+		if argument == "--backend=d3d12" { return .D3D12, true }
+		if argument == "--backend=vulkan" { return .Vulkan, true }
+		if strings.has_prefix(argument, "--backend=") {
+			return .Undefined, false
+		}
+	}
+	return .Undefined, true
+}
 
 os_init :: proc() {
 	if !SDL.Init({.VIDEO}) { fmt.panicf("SDL init failed: %s",SDL.GetError()) }
