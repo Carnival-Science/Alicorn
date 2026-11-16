@@ -38,7 +38,7 @@ if ! command -v wasm-ld >/dev/null 2>&1; then
 	exit 1
 fi
 echo 'Building browser js_wasm32 fixture'
-"$ODIN" build . -target:js_wasm32 -o:size -out:web/feasibility.wasm -extra-linker-flags:--export-table
+"$ODIN" build . -target:js_wasm32 -o:size -define:FEASIBILITY_TEST_WEB_CANVAS_PRESENTER=true -out:web/feasibility.wasm -extra-linker-flags:--export-table
 ODIN_ROOT=$("$ODIN" root)
 cp "$ODIN_ROOT/core/sys/wasm/js/odin.js" web/odin.js
 cp "$ODIN_ROOT/vendor/wgpu/wgpu.js" web/wgpu.js
@@ -47,4 +47,4 @@ printf 'Native readback smoke: %s/out/webgpu_feasibility_smoke\n' "$SCRIPT_DIR"
 printf 'Native host-owned presenter smoke: %s/out/webgpu_feasibility_presenter_smoke\n' "$SCRIPT_DIR"
 printf 'Native SDL surface presenter smoke: %s/out/webgpu_feasibility_surface_presenter\n' "$SCRIPT_DIR"
 printf 'Native resize smoke: %s/out/webgpu_feasibility_resize_smoke\n' "$SCRIPT_DIR"
-printf 'Browser: serve %s/web on localhost and open /index.html\n' "$SCRIPT_DIR"
+printf 'Browser shared-renderer fixture: serve %s/web on localhost and open /index.html\n' "$SCRIPT_DIR"

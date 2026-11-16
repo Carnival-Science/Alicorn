@@ -13,7 +13,7 @@ canvas{width:min(100vw,calc((100vh - 40px)*16/9));height:auto;aspect-ratio:16/9;
 </style></head>
 <body>
 <canvas id="wgpu-canvas"></canvas>
-<div id="footer"><div><div id="status">Starting shared Odin WebGPU fixture… click the canvas to replay.</div><div id="diagnostics" role="status" aria-live="polite">GPU readback probes pending.</div></div><button id="resize" type="button">Resize surface</button></div>
+<div id="footer"><div><div id="status">Starting the shared Alicorn retained WebGPU renderer…</div><div id="diagnostics" role="status" aria-live="polite">GPU readback probes pending.</div></div><button id="resize" type="button">Resize surface</button></div>
 <script src="./odin.js"></script><script src="./wgpu.js"></script>
 <script>
 (async()=>{
@@ -110,7 +110,7 @@ canvas{width:min(100vw,calc((100vh - 40px)*16/9));height:auto;aspect-ratio:16/9;
    idleTimer=setTimeout(()=>{
     idleTimer=0;
     if(!scheduled&&rafRequests===settledRequests){
-     status.textContent="Settled: no animation frame requests for 500 ms ("+rafRequests+" total; "+initializationWaitFrames+" initialization wake frames). Resize for one frame; click to replay.";
+     status.textContent="Settled: no animation frame requests for 500 ms ("+rafRequests+" total; "+initializationWaitFrames+" initialization wake frames). Resize or click to present the retained display again.";
     }
    },500);
   }
@@ -128,7 +128,7 @@ canvas{width:min(100vw,calc((100vh - 40px)*16/9));height:auto;aspect-ratio:16/9;
   canvas.style.width=canvas.dataset.compact==="true"?"":"min(68vw,calc((100vh - 40px)*16/9))";
   canvas.dataset.compact=canvas.dataset.compact==="true"?"false":"true";
   exports.webgpu_resize(context);previous=0;requestFrame();
-  status.textContent="Surface resized; presentation frame scheduled.";
+  status.textContent="Surface resized; shared Alicorn renderer frame scheduled.";
  });
  document.querySelector("#wgpu-canvas").addEventListener("pointerdown",()=>{
   exports.webgpu_restart(context);previous=0;requestFrame();

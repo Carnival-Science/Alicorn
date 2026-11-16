@@ -30,6 +30,7 @@ FEASIBILITY_TEST_RESIZE :: #config(FEASIBILITY_TEST_RESIZE, false)
 FEASIBILITY_TEST_COMPOSITOR_RECREATION :: #config(FEASIBILITY_TEST_COMPOSITOR_RECREATION, false)
 FEASIBILITY_TEST_WEBGPU_PRESENTER :: #config(FEASIBILITY_TEST_WEBGPU_PRESENTER, false)
 FEASIBILITY_TEST_SURFACE_PRESENTER :: #config(FEASIBILITY_TEST_SURFACE_PRESENTER, false)
+FEASIBILITY_TEST_WEB_CANVAS_PRESENTER :: #config(FEASIBILITY_TEST_WEB_CANVAS_PRESENTER, false)
 SURFACE_CACHE_PRESSURE_BATCH_COUNT :: 120
 SURFACE_CACHE_PRESSURE_FIRST_WIDTH :: 100
 SURFACE_CACHE_PRESSURE_SECOND_WIDTH :: SURFACE_CACHE_PRESSURE_FIRST_WIDTH + SURFACE_CACHE_PRESSURE_BATCH_COUNT
@@ -379,7 +380,7 @@ on_surface_presenter_queue_done :: proc "c" (
 		webgpu_renderer.WebGPU_Presenter_Complete_Submission(
 			&state.surface_presenter, state.surface_presenter_submission,
 		)
-	fmt.printf("[webgpu-feasibility] SDL surface presenter queue completion %s serial=%d in_flight=%d status=%v message=%s\n",
+	fmt.printf("[webgpu-feasibility] host surface presenter queue completion %s serial=%d in_flight=%d status=%v message=%s\n",
 		"PASS" if state.surface_presenter_completion_passed else "FAIL",
 		state.surface_presenter_submission.serial,
 		webgpu_renderer.WebGPU_Presenter_In_Flight(&state.surface_presenter),
@@ -491,12 +492,12 @@ on_device :: proc "c" (status: wgpu.RequestDeviceStatus, device: wgpu.Device, me
 		state.presenter = presenter
 		state.presenter_created = true
 	}
-	when FEASIBILITY_TEST_SURFACE_PRESENTER {
+	when FEASIBILITY_TEST_SURFACE_PRESENTER || FEASIBILITY_TEST_WEB_CANVAS_PRESENTER {
 		build_surface_runtime()
 		surface_presenter, surface_presenter_ok := webgpu_renderer.WebGPU_Presenter_Create(
 			state.device, state.queue, state.config.format, &state.surface_runtime,
 		)
-		if !surface_presenter_ok { fmt.panicf("host-owned SDL surface presenter creation failed") }
+		if !surface_presenter_ok { fmt.panicf("host-owned surface presenter creation failed") }
 		state.surface_presenter = surface_presenter
 		state.surface_presenter_created = true
 	}
@@ -539,7 +540,9 @@ webgpu_resize :: proc() {
 @(export)
 webgpu_restart :: proc() {
 	context = state.ctx
-	state.animation_seconds = 0
+	when !FEASIBILITY_TEST_WEB_CANVAS_PRESENTER {
+		state.animation_seconds = 0
+	}
 	state.dirty = true
 }
 
@@ -556,6 +559,14 @@ step :: proc(dt: f32) -> bool {
 	if state.device_lost { return false }
 	begin_test_explicit_device_destroy()
 	if !state.ready { return false }
+	when FEASIBILITY_TEST_WEB_CANVAS_PRESENTER {
+		if state.dirty {
+			if state.surface_presenter_completion_pending { return false }
+			state.dirty = false
+			render_surface_frame()
+		}
+		return state.dirty
+	}
 	if state.animation_seconds < ANIMATION_SECONDS {
 		state.animation_seconds += dt
 		state.dirty = true

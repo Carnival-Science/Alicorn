@@ -207,7 +207,40 @@ render_surface_frame :: proc() {
 	defer wgpu.TextureRelease(surface_texture.texture)
 	view:=wgpu.TextureCreateView(surface_texture.texture)
 	defer wgpu.TextureViewRelease(view)
-	when FEASIBILITY_TEST_SURFACE_PRESENTER {
+	when FEASIBILITY_TEST_WEB_CANVAS_PRESENTER {
+		display, display_ok := alicorn.paint_display_list(&state.surface_runtime)
+		if !display_ok { fmt.panicf("Alicorn browser canvas display list unavailable") }
+		encoder := wgpu.DeviceCreateCommandEncoder(state.device)
+		if encoder == nil { fmt.panicf("browser canvas command encoder creation failed") }
+		defer wgpu.CommandEncoderRelease(encoder)
+		scale := min(
+			f32(state.config.width)/f32(SURFACE_PRESENTER_LOGICAL_WIDTH),
+			f32(state.config.height)/f32(SURFACE_PRESENTER_LOGICAL_HEIGHT),
+		)
+		if result := webgpu_renderer.WebGPU_Presenter_Encode(
+			&state.surface_presenter, display, encoder, view,
+			state.config.width, state.config.height, scale, scale,
+			true, wgpu.Color{0.04, 0.06, 0.08, 1},
+		); result != .Ok {
+			fmt.panicf("Alicorn browser canvas WebGPU encode failed: %v", result)
+		}
+		command := wgpu.CommandEncoderFinish(encoder)
+		if command == nil {
+			_ = webgpu_renderer.WebGPU_Presenter_Cancel_Frame(&state.surface_presenter)
+			fmt.panicf("browser canvas command buffer finish failed")
+		}
+		defer wgpu.CommandBufferRelease(command)
+		wgpu.QueueSubmit(state.queue, {command})
+		submission, submitted := webgpu_renderer.WebGPU_Presenter_Submission_Succeeded(&state.surface_presenter)
+		if !submitted { fmt.panicf("browser canvas presenter submission commit failed") }
+		state.surface_presenter_submission = submission
+		state.surface_presenter_completion_pending = true
+		wgpu.QueueOnSubmittedWorkDone(state.queue, {mode=.AllowProcessEvents, callback=on_surface_presenter_queue_done})
+		wgpu.SurfacePresent(state.surface)
+		state.surface_present_count += 1
+		fmt.printf("[webgpu-feasibility] Alicorn retained display presented to browser canvas revision=%d size=%dx%d scale=%.3f\n",
+			submission.display_revision, state.config.width, state.config.height, scale)
+	} else when FEASIBILITY_TEST_SURFACE_PRESENTER {
 		if state.surface_present_count != 0 { return }
 		display, display_ok := alicorn.paint_display_list(&state.surface_runtime)
 		if !display_ok { fmt.panicf("Alicorn SDL surface display list unavailable") }
@@ -1381,11 +1414,13 @@ build_surface_runtime :: proc() {
 	if !alicorn.text_engine_load_font_role(&state.surface_runtime.text_engine, .UI, FONT_DATA) {
 		fmt.panicf("Alicorn SDL surface fixture could not load the bundled UI font")
 	}
-	alicorn.invalidate_root(&state.surface_runtime, "SDL WebGPU surface presenter smoke")
-	output, output_status := alicorn.presentation_output_register(&state.surface_runtime)
-	if output_status != .Ok { fmt.panicf("SDL WebGPU surface output registration failed: %v", output_status) }
-	state.surface_output = output
-	state.surface_output_registered = true
+	alicorn.invalidate_root(&state.surface_runtime, "WebGPU surface presenter fixture")
+	when FEASIBILITY_TEST_SURFACE_PRESENTER {
+		output, output_status := alicorn.presentation_output_register(&state.surface_runtime)
+		if output_status != .Ok { fmt.panicf("SDL WebGPU surface output registration failed: %v", output_status) }
+		state.surface_output = output
+		state.surface_output_registered = true
+	}
 	ui, should_build := alicorn.begin_frame(&state.surface_runtime)
 	if !should_build { fmt.panicf("SDL WebGPU surface Runtime rejected its initial description") }
 	state.surface_runtime_root = alicorn.container_begin(
@@ -1395,10 +1430,12 @@ build_surface_runtime :: proc() {
 			height=f32(SURFACE_PRESENTER_LOGICAL_HEIGHT),
 			padding=32, gap=12, clip=true),
 	)
-	if status := alicorn.presentation_output_bind_root(
-		&state.surface_runtime, state.surface_output, state.surface_runtime_root,
-	); status != .Ok {
-		fmt.panicf("SDL WebGPU surface output root binding failed: %v", status)
+	when FEASIBILITY_TEST_SURFACE_PRESENTER {
+		if status := alicorn.presentation_output_bind_root(
+			&state.surface_runtime, state.surface_output, state.surface_runtime_root,
+		); status != .Ok {
+			fmt.panicf("SDL WebGPU surface output root binding failed: %v", status)
+		}
 	}
 	alicorn.surface_begin(
 		&ui, alicorn.surface_core_color_role(.Surface),
@@ -1407,7 +1444,7 @@ build_surface_runtime :: proc() {
 		fill=alicorn.Color{0.10, 0.14, 0.19, 1},
 	)
 	alicorn.text(
-		&ui, "Alicorn retained display on an SDL WebGPU surface",
+		&ui, "Alicorn retained display on a WebGPU surface",
 		key=alicorn.key_string("webgpu-surface-title"),
 		style=alicorn.layout_style(width=860, height=42, padding=12),
 		text_style=alicorn.Text_Style{font_size=28, overflow=.Clip},
@@ -1415,19 +1452,23 @@ build_surface_runtime :: proc() {
 	)
 	alicorn.surface_end(&ui)
 	alicorn.text(
-		&ui, "SDL owns the window and swapchain. Alicorn owns the retained paint stream and its renderer resources.",
+		&ui, "The host owns the surface and frame schedule. Alicorn owns retained paint and renderer composition.",
 		key=alicorn.key_string("webgpu-surface-description"),
 		style=alicorn.layout_style(width=896, height=36),
 		text_style=alicorn.Text_Style{font_size=18, overflow=.Clip},
-		color=alicorn.Color{0.78, 0.83, 0.88, 1},
+		color=alicorn.Color{0.16, 0.20, 0.27, 1},
 	)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 	display, display_ok := alicorn.paint_display_list(&state.surface_runtime)
-	snapshot, snapshot_status := alicorn.presentation_output_snapshot(&state.surface_runtime, state.surface_output)
-	if !display_ok || len(display.commands) == 0 || snapshot_status != .Ok || !snapshot.pending ||
-	   snapshot.root != state.surface_runtime_root || snapshot.revision != display.revision {
-		fmt.panicf("SDL WebGPU surface Runtime output was not published with its first display revision")
+	if !display_ok || len(display.commands) == 0 {
+		fmt.panicf("WebGPU surface Runtime did not publish its first retained display revision")
+	}
+	when FEASIBILITY_TEST_SURFACE_PRESENTER {
+		snapshot, snapshot_status := alicorn.presentation_output_snapshot(&state.surface_runtime, state.surface_output)
+		if snapshot_status != .Ok || !snapshot.pending || snapshot.root != state.surface_runtime_root || snapshot.revision != display.revision {
+			fmt.panicf("SDL WebGPU surface Runtime output was not published with its first display revision")
+		}
 	}
 }
 

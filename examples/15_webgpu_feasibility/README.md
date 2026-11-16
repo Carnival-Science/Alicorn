@@ -211,13 +211,16 @@ localhost or HTTPS:
 python -m http.server 8080 --directory web
 ~~~
 
-Open http://localhost:8080/. After the animation, confirm the status reports no
-new `requestAnimationFrame` requests for 500 ms. Resize once and confirm a
-single presentation is scheduled; click the canvas to replay. A WASM build
-alone is not browser-GPU validation; the browser needs `navigator.gpu` and a
-functioning adapter. The status also reports how many one-shot frames occurred
-while waiting for adapter/device callbacks; the browser host must not poll with
-a continuous animation-frame loop during initialization.
+Open http://localhost:8080/. The browser canvas now creates the same retained
+Alicorn Runtime and passes its display list to `WebGPU_Presenter_Encode`; the
+SDL native surface smoke uses that same Runtime composition and presenter.
+Resize or click the canvas to request another frame, and confirm the status
+reports no new `requestAnimationFrame` requests for 500 ms after the queue
+completion callback. A WASM build alone is not browser-GPU validation; the
+browser needs `navigator.gpu` and a functioning adapter. The status also reports
+how many one-shot frames occurred while waiting for adapter/device callbacks;
+the browser host must not poll with a continuous animation-frame loop during
+initialization.
 
 The fixture uses default device limits because of Odin binding issue #8174. It
 has passed an actual browser WebGPU runtime/readback session and native Windows

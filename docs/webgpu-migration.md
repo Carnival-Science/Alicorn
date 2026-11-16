@@ -753,10 +753,11 @@ Run the native boundary probe with:
 .\out\webgpu_feasibility_presenter_smoke.exe --backend=d3d12
 ~~~
 
-This proves the host-owned frame contract around the feasibility compositor,
-not a production SDL3 window presenter, externally managed native surface,
-browser canvas presenter, or real device-loss recovery. No adapter, SDL, or
-browser responsibilities have moved into the renderer. Phase 1 and Phase 6
+That earlier offscreen boundary smoke proves the host-owned frame contract
+around the feasibility compositor, but by itself does not prove native-surface
+or browser-canvas presentation, or real device-loss recovery. The surface
+presentation evidence is recorded in the following sections. No adapter, SDL,
+or browser responsibilities have moved into the renderer. Phase 1 and Phase 6
 remain open.
 
 ## SDL-created native surface presenter smoke (Windows, 2026-11-16)
@@ -778,8 +779,32 @@ pairs agreed. Each run presented one frame at 960×540, acknowledged output
 revision 1, completed submission serial 1 with zero frames in flight, and
 unregistered the output before Runtime teardown. The surface target does not
 read back swapchain pixels or claim scanout. This is evidence for an
-SDL-created native surface, not an externally managed surface or browser
-canvas. Those remain open host integrations.
+SDL-created native surface; externally managed native surfaces remain an open
+host integration. Browser canvas evidence follows separately.
+
+## Browser canvas shared-renderer smoke (Windows browser, 2026-11-16)
+
+The `js_wasm32` build now selects `FEASIBILITY_TEST_WEB_CANVAS_PRESENTER`. It
+creates the same retained Runtime composition used by the native SDL surface
+smoke and calls the same `WebGPU_Presenter_Encode` implementation into the
+browser canvas surface. JavaScript remains a surface, input-trigger, and
+completion-callback host; it does not compose paint commands.
+
+The local WebGPU fixture opened in the Windows browser created a WebGPU adapter
+and device, passed its existing mixed-paint offscreen readback, presented
+Runtime display revision 1 to an 870×489 canvas at scale 0.906, and completed
+queue serial 1 with zero frames in flight. Pressing Resize produced a second
+presenter submission and successful queue completion. After that, the page
+reported no new animation-frame requests for 500 ms (six total, including two
+initialization wake frames). The browser run does not identify whether the
+adapter was hardware- or software-backed, so it is API/runtime correctness
+evidence, not acceleration or performance evidence.
+
+The canvas smoke presents a small retained surface-and-text composition. The
+mixed paint list's solid, shaped text, icons, images, materials, custom
+geometry, and waveform are separately covered by the shared compositor's
+offscreen pixel readback. This does not yet validate a real application or
+browser input/accessibility projection.
 
 ## Phase 2 image renderer slice (2026-11-15)
 
