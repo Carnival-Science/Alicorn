@@ -189,11 +189,16 @@ test_presentation_outputs_global_invalidation_visibility_and_retirement :: proc(
 	_ = presentation_output_frame_submission_succeeded(&rt, right, right_snapshot.revision)
 
 	request_presentation(&rt, "shared chrome changed")
+	frames_built_before_redraw := rt.stats.frames_built
+	revision_before_redraw := rt.presentation_revision
 	presentation_outputs_test_flush(&rt)
 	left_snapshot, _ = presentation_output_snapshot(&rt, left)
 	right_snapshot, _ = presentation_output_snapshot(&rt, right)
 	testing.expect(t, left_snapshot.pending && right_snapshot.pending,
 		"a shared presentation invalidation should dirty every output")
+	testing.expect(t, !rt.invalidated && rt.stats.frames_built == frames_built_before_redraw &&
+		rt.presentation_revision > revision_before_redraw && left_snapshot.revision > left_snapshot.acknowledged_revision,
+		"a host redraw after surface reconfiguration should publish a fresh retained output revision without rebuilding the application description")
 	testing.expect(t, presentation_output_set_visible(&rt, right, false) == .Ok,
 		"the host should be able to hide the right output")
 	testing.expect(t, frame_needs_submission(&rt), "visible left output should remain schedulable")

@@ -529,6 +529,27 @@ resize :: proc() {
 	os_set_surface_size(state.width, state.height)
 	state.config.width, state.config.height = max(state.width, 1), max(state.height, 1)
 	wgpu.SurfaceConfigure(state.surface, &state.config)
+	when FEASIBILITY_TEST_SURFACE_PRESENTER || FEASIBILITY_TEST_WEB_CANVAS_PRESENTER {
+		// Surface reconfiguration can discard every pixel in the presentation
+		// target even when Alicorn's retained display list has not changed. Ask
+		// for a retained-only presentation frame so the output gets a fresh
+		// submission revision without rerunning application description/layout.
+		if state.surface_runtime_ready && state.surface_output_registered {
+			before, before_status := alicorn.presentation_output_snapshot(&state.surface_runtime, state.surface_output)
+			if before_status != .Ok { fmt.panicf("WebGPU surface resize could not query output before redraw: %v", before_status) }
+			alicorn.request_presentation(&state.surface_runtime, "WebGPU surface reconfigured")
+			ui, ready := alicorn.begin_presentation_frame(&state.surface_runtime)
+			if !ready { fmt.panicf("WebGPU surface resize could not flush its retained redraw request") }
+			alicorn.end_presentation_frame(&ui)
+			after, after_status := alicorn.presentation_output_snapshot(&state.surface_runtime, state.surface_output)
+			if after_status != .Ok || !after.pending || after.root != before.root || after.revision <= before.revision {
+				fmt.panicf("WebGPU surface resize did not publish a pending retained redraw: status=%v before=%d after=%d pending=%v",
+					after_status, before.revision, after.revision, after.pending)
+			}
+			fmt.printf("[webgpu-feasibility] surface resize retained redraw PASS revision=%d->%d\n",
+				before.revision, after.revision)
+		}
+	}
 	state.dirty = true
 	when FEASIBILITY_TEST_RESIZE {
 		if !state.test_resize_pre_applied && state.test_resize_pre_requested && state.animation_seconds<ANIMATION_SECONDS {

@@ -226,9 +226,13 @@ Alicorn Runtime and passes its display list to `WebGPU_Presenter_Encode`; the
 Browser and SDL native surface smokes use that same Runtime composition and
 presenter, obtaining output-scoped views through
 `paint_display_list_for_output` and acknowledging the matching output revision.
-Resize or click the canvas to request another frame, and confirm the status
-reports no new `requestAnimationFrame` requests for 500 ms after the queue
-completion callback. A WASM build alone is not browser-GPU validation; the
+Use **Resize surface** to resize the browser canvas in both directions. Each
+surface reconfiguration flushes a retained-only frame, so a cleared canvas is
+repainted at a fresh output revision without rerunning the application
+description. The footer reports the new submission and then returns to no new
+`requestAnimationFrame` requests for 500 ms after the queue completion callback.
+Click the canvas to request another frame. A WASM build alone is not
+browser-GPU validation; the
 browser needs `navigator.gpu` and a functioning adapter. The status also reports
 how many one-shot frames occurred while waiting for adapter/device callbacks;
 the browser host must not poll with a continuous animation-frame loop during
