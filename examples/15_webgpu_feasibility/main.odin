@@ -19,7 +19,7 @@ CAPTURE_HEIGHT :: READBACK_HEIGHT - CAPTURE_ORIGIN_Y
 READBACK_BYTES_PER_PIXEL :: 4
 READBACK_BYTES_PER_ROW :: 256
 READBACK_BUFFER_BYTES :: READBACK_BYTES_PER_ROW * READBACK_HEIGHT
-READBACK_TARGET_COUNT :: 7
+READBACK_TARGET_COUNT :: 9
 READBACK_TOTAL_BYTES :: READBACK_BUFFER_BYTES * READBACK_TARGET_COUNT
 FEASIBILITY_TEST_DEVICE_LOSS :: #config(FEASIBILITY_TEST_DEVICE_LOSS, false)
 FEASIBILITY_TEST_DEVICE_LOSS_EARLY :: #config(FEASIBILITY_TEST_DEVICE_LOSS_EARLY, false)
@@ -56,11 +56,14 @@ state: struct {
 	text_renderer: webgpu_renderer.Text_Renderer,
 	text_runtime_ready: bool,
 	compositor: webgpu_renderer.WebGPU_Compositor,
+	backdrop_compositor: webgpu_renderer.WebGPU_Compositor,
 	compositor_image_a, compositor_image_b: alicorn.Image_Handle,
 	compositor_material_surface_ids: [3]alicorn.Node_ID,
 	compositor_material_surface_bounds: [3]alicorn.Rect,
 	compositor_custom_surface_ids: [2]alicorn.Node_ID,
 	compositor_completion_serial: u64,
+	backdrop_completion_serial: u64,
+	backdrop_effect_pixel_passed: bool,
 	image_retirement_passed: bool,
 	surface_resource_retirement_passed: bool,
 	surface_cache_pressure_inflight_passed, surface_cache_pressure_passed: bool,
@@ -68,6 +71,8 @@ state: struct {
 	surface_cache_pressure_evictions_before_probe: u64,
 	composite_offscreen_texture: wgpu.Texture,
 	composite_offscreen_view: wgpu.TextureView,
+	backdrop_offscreen_texture: wgpu.Texture,
+	backdrop_offscreen_view: wgpu.TextureView,
 	capture_offscreen_texture: wgpu.Texture,
 	capture_offscreen_view: wgpu.TextureView,
 	config: wgpu.SurfaceConfiguration,
@@ -223,6 +228,11 @@ on_queue_work_done :: proc "c" (status:wgpu.QueueWorkDoneStatus, message:wgpu.St
 	state.queue_work_done_pending = false
 	state.queue_work_done = true
 	state.queue_work_done_ok = status == .Success
+	if state.backdrop_completion_serial > 0 && status == .Success {
+		if !webgpu_renderer.Compositor_Complete_Submission(&state.backdrop_compositor, state.backdrop_completion_serial) {
+			state.queue_work_done_ok = false
+		}
+	}
 	if state.compositor_completion_serial > 0 && status == .Success {
 		completion_ok := webgpu_renderer.Compositor_Complete_Submission(&state.compositor, state.compositor_completion_serial)
 		state.image_retirement_passed = completion_ok && len(state.compositor.images.retired) == 0 &&
@@ -337,6 +347,9 @@ on_device :: proc "c" (status: wgpu.RequestDeviceStatus, device: wgpu.Device, me
 	compositor, compositor_ok := webgpu_renderer.Compositor_Create(state.device, state.queue, .RGBA8Unorm)
 	if !compositor_ok { fmt.panicf("Alicorn WebGPU compositor initialization failed") }
 	state.compositor = compositor
+	backdrop_compositor, backdrop_compositor_ok := webgpu_renderer.Compositor_Create(state.device, state.queue, .RGBA8Unorm)
+	if !backdrop_compositor_ok { fmt.panicf("Alicorn WebGPU backdrop compositor initialization failed") }
+	state.backdrop_compositor = backdrop_compositor
 	fmt.println("[webgpu-feasibility] text runtime built")
 	state.width, state.height = os_get_framebuffer_size()
 	os_set_surface_size(state.width, state.height)
@@ -406,6 +419,7 @@ step :: proc(dt: f32) -> bool {
 
 finish :: proc() {
 	webgpu_renderer.Compositor_Destroy(&state.compositor)
+	webgpu_renderer.Compositor_Destroy(&state.backdrop_compositor)
 	webgpu_renderer.Text_Destroy(&state.text_renderer)
 	webgpu_renderer.Solid_Destroy(&state.solid_renderer)
 	if state.text_runtime_ready {
@@ -423,6 +437,8 @@ finish :: proc() {
 	if state.text_offscreen_texture != nil { wgpu.TextureDestroy(state.text_offscreen_texture); wgpu.TextureRelease(state.text_offscreen_texture) }
 	if state.composite_offscreen_view != nil { wgpu.TextureViewRelease(state.composite_offscreen_view) }
 	if state.composite_offscreen_texture != nil { wgpu.TextureDestroy(state.composite_offscreen_texture); wgpu.TextureRelease(state.composite_offscreen_texture) }
+	if state.backdrop_offscreen_view != nil { wgpu.TextureViewRelease(state.backdrop_offscreen_view) }
+	if state.backdrop_offscreen_texture != nil { wgpu.TextureDestroy(state.backdrop_offscreen_texture); wgpu.TextureRelease(state.backdrop_offscreen_texture) }
 	if state.capture_offscreen_view != nil { wgpu.TextureViewRelease(state.capture_offscreen_view) }
 	if state.capture_offscreen_texture != nil { wgpu.TextureDestroy(state.capture_offscreen_texture); wgpu.TextureRelease(state.capture_offscreen_texture) }
 	if state.offscreen_view != nil { wgpu.TextureViewRelease(state.offscreen_view) }

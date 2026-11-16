@@ -67,8 +67,17 @@ and (0, 0), in one command encoder. Each crop uses a separate dynamic viewport
 slot, and every RGBA8 pixel is compared with the matching full-frame region.
 This exercises queued origin isolation and translated/clipped scissors without
 rebuilding retained meshes. Both crop comparisons passed the Windows D3D12
-smoke; the WASM build includes them, but a live browser replay has not yet been
-recorded.
+smoke and the later live browser replay.
+
+The fixture also creates a second production `WebGPU_Compositor` and renders a
+backdrop-effect marker into an offscreen target. It captures the paint prefix
+to renderer-owned sampleable textures, runs both shared-mesh Gaussian passes,
+and composites at the marker in paint order. Readback checks blurred pixels
+contain contributions from both sides of the source boundary and that pixels
+outside the effect clip remain unchanged. The Windows D3D12 probe passed on
+2026-11-15, and the same fixture passed live browser readback. The browser
+adapter's hardware/software class was not reported. This single-marker probe
+does not establish full effect parity or application host integration.
 
 ## Windows native
 
@@ -164,14 +173,17 @@ while waiting for adapter/device callbacks; the browser host must not poll with
 a continuous animation-frame loop during initialization.
 
 The fixture uses default device limits because of Odin binding issue #8174. It
-has passed an actual browser WebGPU runtime/readback session on an NVIDIA
-Turing adapter as well as native Windows Vulkan; a successful browser build
-alone does not count as runtime evidence. It does not validate fallback-font
-chains, backdrop effects, device recreation, secondary windows,
-application-window presentation, or production performance. The mixed paint
-list is fixture-only; it covers solid surfaces, text, icons, images, materials,
-and custom geometry, while retained effects and other remaining renderer
-families are still untested here.
+has passed an actual browser WebGPU runtime/readback session and native Windows
+Vulkan on an NVIDIA Turing adapter; a successful browser build alone does not
+count as runtime evidence. The backdrop-effect readback also passed in both a
+Windows D3D12 run and a live browser replay, including
+unchanged-prefix reuse and changed-prefix invalidation. The browser status did
+not identify the adapter's hardware/software acceleration class, so that run
+is correctness evidence rather than a performance measurement. The fixture
+does not validate fallback-font chains, effect-texture resize retirement and
+budget fallback, device recreation, secondary windows, application-window
+presentation, or production performance. The mixed paint list is fixture-only;
+it covers solid surfaces, text, icons, images, materials, and custom geometry.
 
 ## Opt-in device-destruction callback probe
 

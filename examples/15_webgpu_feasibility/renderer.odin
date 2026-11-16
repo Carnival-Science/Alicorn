@@ -348,6 +348,11 @@ start_offscreen_readback :: proc() {
 		size={width=READBACK_WIDTH,height=READBACK_HEIGHT,depthOrArrayLayers=1},format=.RGBA8Unorm,mipLevelCount=1,sampleCount=1,
 	})
 	state.composite_offscreen_view=wgpu.TextureCreateView(state.composite_offscreen_texture)
+	state.backdrop_offscreen_texture=wgpu.DeviceCreateTexture(state.device,&wgpu.TextureDescriptor{
+		label="Alicorn backdrop effect paint-order readback target",usage={.RenderAttachment,.CopySrc},dimension=._2D,
+		size={width=READBACK_WIDTH,height=READBACK_HEIGHT,depthOrArrayLayers=1},format=.RGBA8Unorm,mipLevelCount=1,sampleCount=1,
+	})
+	state.backdrop_offscreen_view=wgpu.TextureCreateView(state.backdrop_offscreen_texture)
 	state.capture_offscreen_texture=wgpu.DeviceCreateTexture(state.device,&wgpu.TextureDescriptor{
 		label="Alicorn cropped compositor capture target",usage={.RenderAttachment,.CopySrc},dimension=._2D,
 		size={width=CAPTURE_WIDTH,height=CAPTURE_HEIGHT,depthOrArrayLayers=1},format=.RGBA8Unorm,mipLevelCount=1,sampleCount=1,
@@ -614,6 +619,7 @@ start_offscreen_readback :: proc() {
 	webgpu_renderer.Text_Commit_Submission(&state.text_renderer, &state.text_runtime)
 	state.compositor_completion_serial = webgpu_renderer.Compositor_Commit_Submission(&state.compositor, &state.text_runtime)
 	if state.compositor_completion_serial == 0 { fmt.panicf("mixed compositor submission did not receive a completion serial") }
+	run_backdrop_effect_probe()
 	if result := webgpu_renderer.Text_Prepare(
 		&state.text_renderer, &state.text_runtime, text_display,
 		READBACK_WIDTH, READBACK_HEIGHT, 1, 1,
@@ -824,6 +830,139 @@ fmt.printf("[webgpu-feasibility] retained text cache PASS mesh_rebuilds=%d verte
 	wgpu.QueueOnSubmittedWorkDone(state.queue,{mode=.AllowProcessEvents,callback=on_queue_work_done})
 	state.readback_pending=true
 	wgpu.BufferMapAsync(state.readback_buffer,{.Read},0,READBACK_TOTAL_BYTES,{mode=.AllowProcessEvents,callback=on_readback})
+}
+
+run_backdrop_effect_probe :: proc() {
+	viewport := alicorn.Rect{0, 0, f32(READBACK_WIDTH), f32(READBACK_HEIGHT)}
+	region := alicorn.Rect{20, 20, 24, 24}
+	clip := alicorn.Rect{24, 20, 16, 24}
+	commands := make([dynamic]alicorn.Paint_Command, 0, 5, allocator=context.temp_allocator)
+	append(&commands,
+		alicorn.paint_surface_command(1, viewport, viewport, alicorn.Color{0.04, 0.06, 0.08, 1}),
+		alicorn.paint_surface_command(1, {16, 12, 12, 40}, viewport, alicorn.Color{1, 0, 0, 1}),
+		alicorn.paint_surface_command(1, {32, 12, 12, 40}, viewport, alicorn.Color{0, 0, 1, 1}),
+		alicorn.paint_backdrop_effect_command(alicorn.Node_ID(2), region, clip, alicorn.backdrop_blur(2)),
+		alicorn.paint_surface_command(2, region, clip, alicorn.Color{1, 1, 1, 0.12}),
+	)
+	display := alicorn.Paint_Display_List_View{commands=commands[:], revision=1}
+	if result := webgpu_renderer.Compositor_Prepare(
+		&state.backdrop_compositor, &state.text_runtime, display, READBACK_WIDTH, READBACK_HEIGHT, 1, 1,
+	); result != .Ok {
+		fmt.panicf("Alicorn backdrop effect compositor preparation failed: %v", result)
+	}
+	if !state.backdrop_compositor.backdrop_ready || state.backdrop_compositor.backdrop_plan.width != 36 ||
+	   state.backdrop_compositor.backdrop_plan.height != 36 {
+		fmt.panicf("Alicorn backdrop effect plan did not include the expected six-pixel Gaussian halo")
+	}
+	encoder := wgpu.DeviceCreateCommandEncoder(state.device)
+	if encoder == nil { fmt.panicf("Alicorn backdrop effect command encoder creation failed") }
+	if result := webgpu_renderer.Compositor_Encode(
+		&state.backdrop_compositor, &state.text_runtime, display, state.backdrop_offscreen_view,
+		READBACK_WIDTH, READBACK_HEIGHT, 1, 1, encoder, true, wgpu.Color{0.04, 0.06, 0.08, 1},
+	); result != .Ok {
+		fmt.panicf("Alicorn backdrop effect compositor encoding failed: %v", result)
+	}
+	layout := wgpu.TexelCopyBufferLayout{
+		bytesPerRow=READBACK_BYTES_PER_ROW,
+		rowsPerImage=READBACK_HEIGHT,
+		offset=7*READBACK_BUFFER_BYTES,
+	}
+	source := wgpu.TexelCopyTextureInfo{texture=state.backdrop_offscreen_texture, aspect=.All}
+	destination := wgpu.TexelCopyBufferInfo{layout=layout, buffer=state.readback_buffer}
+	wgpu.CommandEncoderCopyTextureToBuffer(encoder, &source, &destination,
+		&wgpu.Extent3D{width=READBACK_WIDTH, height=READBACK_HEIGHT, depthOrArrayLayers=1})
+	command := wgpu.CommandEncoderFinish(encoder)
+	wgpu.CommandEncoderRelease(encoder)
+	if command == nil { webgpu_renderer.Compositor_Abort_Submission(&state.backdrop_compositor); fmt.panicf("Alicorn backdrop effect command finish failed") }
+	wgpu.QueueSubmit(state.queue, {command})
+	wgpu.CommandBufferRelease(command)
+	state.backdrop_completion_serial = webgpu_renderer.Compositor_Commit_Submission(&state.backdrop_compositor, &state.text_runtime)
+	if state.backdrop_completion_serial == 0 { fmt.panicf("backdrop effect frame did not receive a completion serial") }
+	fmt.printf("[webgpu-feasibility] backdrop initial frame capture=%d filters=%d/%d composite=%d texture_bytes=%d cache_budget=%d\n",
+		state.backdrop_compositor.backdrop.capture_count,
+		state.backdrop_compositor.backdrop.horizontal_pass_count,
+		state.backdrop_compositor.backdrop.vertical_pass_count,
+		state.backdrop_compositor.backdrop.composite_count,
+		state.backdrop_compositor.backdrop.resident_bytes,
+		webgpu_renderer.WEBGPU_BACKDROP_EFFECT_RESIDENT_BUDGET_BYTES)
+	if result := webgpu_renderer.Compositor_Prepare(
+		&state.backdrop_compositor, &state.text_runtime, display, READBACK_WIDTH, READBACK_HEIGHT, 1, 1,
+	); result != .Ok {
+		fmt.panicf("unchanged backdrop prefix preparation failed: %v", result)
+	}
+	if state.backdrop_compositor.backdrop.cache_hits != 1 || state.backdrop_compositor.backdrop.capture_count != 1 ||
+	   state.backdrop_compositor.backdrop.horizontal_pass_count != 1 || state.backdrop_compositor.backdrop.vertical_pass_count != 1 {
+		fmt.panicf("unchanged backdrop prefix did not reuse its completed output")
+	}
+	backdrop_probe_submit(display, 7)
+	initial_prefix_generation := state.backdrop_compositor.backdrop_plan.source_generation
+	commands[2] = alicorn.paint_surface_command(1, {32, 12, 12, 40}, viewport, alicorn.Color{0, 1, 0, 1})
+	display.revision += 1
+	if result := webgpu_renderer.Compositor_Prepare(
+		&state.backdrop_compositor, &state.text_runtime, display, READBACK_WIDTH, READBACK_HEIGHT, 1, 1,
+	); result != .Ok {
+		fmt.panicf("changed backdrop prefix preparation failed: %v", result)
+	}
+	if state.backdrop_compositor.backdrop.cache_hits != 1 ||
+	   state.backdrop_compositor.backdrop_plan.source_generation == initial_prefix_generation ||
+	   state.backdrop_compositor.backdrop.mesh_rebuild_count != 1 {
+		fmt.panicf("changed backdrop prefix counters differ: cache=%d capture=%d horizontal=%d vertical=%d mesh=%d",
+			state.backdrop_compositor.backdrop.cache_hits,
+			state.backdrop_compositor.backdrop.capture_count,
+			state.backdrop_compositor.backdrop.horizontal_pass_count,
+			state.backdrop_compositor.backdrop.vertical_pass_count,
+			state.backdrop_compositor.backdrop.mesh_rebuild_count)
+	}
+	backdrop_probe_submit(display, 8)
+	if state.backdrop_compositor.backdrop.capture_count != 2 ||
+	   state.backdrop_compositor.backdrop.horizontal_pass_count != 2 || state.backdrop_compositor.backdrop.vertical_pass_count != 2 ||
+	   state.backdrop_compositor.backdrop.composite_count != 3 {
+		fmt.panicf("changed backdrop prefix did not encode a new capture/filter result")
+	}
+	state.backdrop_effect_pixel_passed = true
+	fmt.printf("[webgpu-feasibility] backdrop WebGPU prefix cache PASS capture=%d filters=%d/%d composite=%d cache_hits=%d mesh_rebuilds=%d texture_bytes=%d cache_budget=%d\n",
+		state.backdrop_compositor.backdrop.capture_count,
+		state.backdrop_compositor.backdrop.horizontal_pass_count,
+		state.backdrop_compositor.backdrop.vertical_pass_count,
+		state.backdrop_compositor.backdrop.composite_count,
+		state.backdrop_compositor.backdrop.cache_hits,
+		state.backdrop_compositor.backdrop.mesh_rebuild_count,
+		state.backdrop_compositor.backdrop.resident_bytes,
+		webgpu_renderer.WEBGPU_BACKDROP_EFFECT_RESIDENT_BUDGET_BYTES)
+}
+
+backdrop_probe_submit :: proc(display: alicorn.Paint_Display_List_View, readback_slot: int) {
+	if readback_slot < 0 || readback_slot >= READBACK_TARGET_COUNT { fmt.panicf("backdrop probe readback slot is out of range") }
+	encoder := wgpu.DeviceCreateCommandEncoder(state.device)
+	if encoder == nil { fmt.panicf("Alicorn backdrop effect command encoder creation failed") }
+	if result := webgpu_renderer.Compositor_Encode(
+		&state.backdrop_compositor, &state.text_runtime, display, state.backdrop_offscreen_view,
+		READBACK_WIDTH, READBACK_HEIGHT, 1, 1, encoder, true, wgpu.Color{0.04, 0.06, 0.08, 1},
+	); result != .Ok {
+		wgpu.CommandEncoderRelease(encoder)
+		webgpu_renderer.Compositor_Abort_Submission(&state.backdrop_compositor)
+		fmt.panicf("Alicorn backdrop effect compositor encoding failed: %v", result)
+	}
+	layout := wgpu.TexelCopyBufferLayout{
+		bytesPerRow=READBACK_BYTES_PER_ROW,
+		rowsPerImage=READBACK_HEIGHT,
+		offset=u64(readback_slot)*READBACK_BUFFER_BYTES,
+	}
+	source := wgpu.TexelCopyTextureInfo{texture=state.backdrop_offscreen_texture, aspect=.All}
+	destination := wgpu.TexelCopyBufferInfo{layout=layout, buffer=state.readback_buffer}
+	wgpu.CommandEncoderCopyTextureToBuffer(encoder, &source, &destination,
+		&wgpu.Extent3D{width=READBACK_WIDTH, height=READBACK_HEIGHT, depthOrArrayLayers=1})
+	command := wgpu.CommandEncoderFinish(encoder)
+	wgpu.CommandEncoderRelease(encoder)
+	if command == nil {
+		webgpu_renderer.Compositor_Abort_Submission(&state.backdrop_compositor)
+		fmt.panicf("backdrop effect command finish failed")
+	}
+	wgpu.QueueSubmit(state.queue, {command})
+	wgpu.CommandBufferRelease(command)
+	serial := webgpu_renderer.Compositor_Commit_Submission(&state.backdrop_compositor, &state.text_runtime)
+	if serial == 0 { fmt.panicf("backdrop effect frame did not receive a completion serial") }
+	state.backdrop_completion_serial = serial
 }
 
 // Build a real retained paint list for the first production WebGPU slice. The
@@ -1285,6 +1424,10 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		composite_image_blend_pixel := offscreen_pixel(pixels, 8, 52, 3*READBACK_BUFFER_BYTES)
 		composite_image_blue_pixel := offscreen_pixel(pixels, 13, 52, 3*READBACK_BUFFER_BYTES)
 		composite_image_clip_pixel := offscreen_pixel(pixels, 17, 52, 3*READBACK_BUFFER_BYTES)
+		backdrop_center_pixel := offscreen_pixel(pixels, 30, 32, 7*READBACK_BUFFER_BYTES)
+		backdrop_outside_clip_pixel := offscreen_pixel(pixels, 22, 32, 7*READBACK_BUFFER_BYTES)
+		backdrop_changed_center_pixel := offscreen_pixel(pixels, 30, 32, 8*READBACK_BUFFER_BYTES)
+		backdrop_changed_outside_clip_pixel := offscreen_pixel(pixels, 22, 32, 8*READBACK_BUFFER_BYTES)
 		cropped_capture_matches := true
 		second_cropped_capture_matches := true
 		for y in 0..<CAPTURE_HEIGHT {
@@ -1409,6 +1552,11 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		image_blend_ok := offscreen_pixel_near(composite_image_blend_pixel, [4]u8{127, 0, 128, 255}, 3)
 		image_blue_ok := offscreen_pixel_near(composite_image_blue_pixel, [4]u8{10, 15, 151, 255}, 3)
 		image_clip_ok := offscreen_pixel_near(composite_image_clip_pixel, [4]u8{20, 31, 46, 255}, 3)
+		backdrop_blur_mixed_ok := backdrop_center_pixel[0] > 20 && backdrop_center_pixel[2] > 20 && backdrop_center_pixel[3] == 255
+		backdrop_clip_ok := offscreen_pixel_near(backdrop_outside_clip_pixel, [4]u8{255, 0, 0, 255}, 2)
+		backdrop_prefix_change_ok := backdrop_changed_center_pixel[0] > 20 && backdrop_changed_center_pixel[1] > 20 && backdrop_changed_center_pixel[3] == 255
+		backdrop_changed_clip_ok := offscreen_pixel_near(backdrop_changed_outside_clip_pixel, [4]u8{255, 0, 0, 255}, 2)
+		state.backdrop_effect_pixel_passed = backdrop_blur_mixed_ok && backdrop_clip_ok && backdrop_prefix_change_ok && backdrop_changed_clip_ok
 		custom_geometry_rectangle_ok := offscreen_pixel_near(custom_geometry_rectangle_pixel, [4]u8{255, 26, 13, 255}, 2)
 		custom_geometry_segment_ok := offscreen_pixel_near(custom_geometry_segment_pixel, [4]u8{26, 230, 51, 255}, 2)
 		custom_geometry_circle_ok := offscreen_pixel_near(custom_geometry_circle_pixel, [4]u8{26, 51, 242, 255}, 2)
@@ -1425,9 +1573,9 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		material_recessed_top_ok := offscreen_pixel_near(material_recessed_top_pixel, [4]u8{96, 96, 96, 255}, 4)
 		material_ok := material_gradient_left_ok && material_gradient_right_ok && material_raised_interior_ok &&
 			material_raised_top_ok && material_recessed_interior_ok && material_recessed_top_ok
-		ok=clear_ok && solid_ok && checker_ok && patch_ok && blend_ok && glyph_ok && clip_ok && outside_clip_ok && rounded_ok && rounded_corner_ok && last_row_ok && partial_buffer_ok && uniform_ok && display_blend_ok && display_clip_x_ok && display_clip_y_ok && text_visible && composite_overlay_ok && composite_text_visible && composite_icon_visible && composite_icon_clip && composite_second_icon_visible && image_red_ok && image_blend_ok && image_blue_ok && image_clip_ok && cropped_capture_matches && second_cropped_capture_matches && custom_geometry_rectangle_ok && custom_geometry_segment_ok && custom_geometry_circle_ok && custom_geometry_marker_ok && custom_geometry_clip_ok && custom_waveform_ok && motion_geometry_ok && material_ok
-		fmt.printf("[webgpu-feasibility] async RGBA8 readback %s texture=%dx%d row_pitch=%d padding_per_row=%d bytes=%d clear=%v solid=%v checker=%v partial_texture=%v partial_buffer=%v uniform=%v blend=%v glyph=%v clip=%v outside_clip=%v rounded=%v rounded_corner=%v last_row=%v runtime_display_blend=%v runtime_clip_x=%v runtime_clip_y=%v runtime_text_visible=%v composite_overlay_order=%v composite_offset_text=%v composite_icon_visible=%v composite_icon_clip=%v composite_second_icon_page_switch=%v composite_image_red=%v composite_image_alpha_blend=%v composite_image_blue=%v composite_image_clip=%v crop_capture_a=%v crop_capture_b=%v custom_geometry_rectangle=%v custom_geometry_segment=%v custom_geometry_circle=%v custom_geometry_marker=%v custom_geometry_clip=%v custom_waveform=%v material_gradient_left=%v material_gradient_right=%v material_raised_face=%v material_raised_bevel=%v material_recessed_face=%v material_recessed_bevel=%v\n",
-			"PASS" if ok else "FAIL",READBACK_WIDTH,READBACK_HEIGHT,READBACK_BYTES_PER_ROW,READBACK_BYTES_PER_ROW-READBACK_WIDTH*READBACK_BYTES_PER_PIXEL,len(pixels),clear_ok,solid_ok,checker_ok,patch_ok,partial_buffer_ok,uniform_ok,blend_ok,glyph_ok,clip_ok,outside_clip_ok,rounded_ok,rounded_corner_ok,last_row_ok,display_blend_ok,display_clip_x_ok,display_clip_y_ok,text_visible,composite_overlay_ok,composite_text_visible,composite_icon_visible,composite_icon_clip,composite_second_icon_visible,image_red_ok,image_blend_ok,image_blue_ok,image_clip_ok,cropped_capture_matches,second_cropped_capture_matches,custom_geometry_rectangle_ok,custom_geometry_segment_ok,custom_geometry_circle_ok,custom_geometry_marker_ok,custom_geometry_clip_ok,custom_waveform_ok,material_gradient_left_ok,material_gradient_right_ok,material_raised_interior_ok,material_raised_top_ok,material_recessed_interior_ok,material_recessed_top_ok)
+		ok=clear_ok && solid_ok && checker_ok && patch_ok && blend_ok && glyph_ok && clip_ok && outside_clip_ok && rounded_ok && rounded_corner_ok && last_row_ok && partial_buffer_ok && uniform_ok && display_blend_ok && display_clip_x_ok && display_clip_y_ok && text_visible && composite_overlay_ok && composite_text_visible && composite_icon_visible && composite_icon_clip && composite_second_icon_visible && image_red_ok && image_blend_ok && image_blue_ok && image_clip_ok && cropped_capture_matches && second_cropped_capture_matches && backdrop_blur_mixed_ok && backdrop_clip_ok && backdrop_prefix_change_ok && backdrop_changed_clip_ok && custom_geometry_rectangle_ok && custom_geometry_segment_ok && custom_geometry_circle_ok && custom_geometry_marker_ok && custom_geometry_clip_ok && custom_waveform_ok && motion_geometry_ok && material_ok
+		fmt.printf("[webgpu-feasibility] async RGBA8 readback %s texture=%dx%d row_pitch=%d padding_per_row=%d bytes=%d clear=%v solid=%v checker=%v partial_texture=%v partial_buffer=%v uniform=%v blend=%v glyph=%v clip=%v outside_clip=%v rounded=%v rounded_corner=%v last_row=%v runtime_display_blend=%v runtime_clip_x=%v runtime_clip_y=%v runtime_text_visible=%v composite_overlay_order=%v composite_offset_text=%v composite_icon_visible=%v composite_icon_clip=%v composite_second_icon_page_switch=%v composite_image_red=%v composite_image_alpha_blend=%v composite_image_blue=%v composite_image_clip=%v crop_capture_a=%v crop_capture_b=%v backdrop_blur_mixed=%v backdrop_clip=%v backdrop_prefix_change=%v backdrop_changed_clip=%v custom_geometry_rectangle=%v custom_geometry_segment=%v custom_geometry_circle=%v custom_geometry_marker=%v custom_geometry_clip=%v custom_waveform=%v material_gradient_left=%v material_gradient_right=%v material_raised_face=%v material_raised_bevel=%v material_recessed_face=%v material_recessed_bevel=%v\n",
+			"PASS" if ok else "FAIL",READBACK_WIDTH,READBACK_HEIGHT,READBACK_BYTES_PER_ROW,READBACK_BYTES_PER_ROW-READBACK_WIDTH*READBACK_BYTES_PER_PIXEL,len(pixels),clear_ok,solid_ok,checker_ok,patch_ok,partial_buffer_ok,uniform_ok,blend_ok,glyph_ok,clip_ok,outside_clip_ok,rounded_ok,rounded_corner_ok,last_row_ok,display_blend_ok,display_clip_x_ok,display_clip_y_ok,text_visible,composite_overlay_ok,composite_text_visible,composite_icon_visible,composite_icon_clip,composite_second_icon_visible,image_red_ok,image_blend_ok,image_blue_ok,image_clip_ok,cropped_capture_matches,second_cropped_capture_matches,backdrop_blur_mixed_ok,backdrop_clip_ok,backdrop_prefix_change_ok,backdrop_changed_clip_ok,custom_geometry_rectangle_ok,custom_geometry_segment_ok,custom_geometry_circle_ok,custom_geometry_marker_ok,custom_geometry_clip_ok,custom_waveform_ok,material_gradient_left_ok,material_gradient_right_ok,material_raised_interior_ok,material_raised_top_ok,material_recessed_interior_ok,material_recessed_top_ok)
 		fmt.printf("[webgpu-feasibility] custom geometry translation/opacity pixel %s moved_pixel=%v original_pixel=%v\n",
 			"PASS" if motion_geometry_ok else "FAIL", motion_geometry_moved_pixel, motion_geometry_origin_pixel)
 	} else {

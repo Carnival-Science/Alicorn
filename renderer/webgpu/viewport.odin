@@ -7,8 +7,11 @@ import "vendor:wgpu"
 // a bounded set of additional slots lets one retained mesh serve several
 // cropped captures in one command submission without overwriting their origins.
 VIEW_UNIFORM_CAPTURE_OFFSET :: u32(256)
-VIEW_UNIFORM_MAX_CAPTURE_VIEWS :: u32(64)
-VIEW_UNIFORM_SLOT_COUNT :: u32(1) + VIEW_UNIFORM_MAX_CAPTURE_VIEWS
+// Reserve the final uniform slot for the compositor's internal backdrop
+// capture. Public cropped captures may claim slots 1..63.
+VIEW_UNIFORM_MAX_CAPTURE_VIEWS :: u32(63)
+VIEW_UNIFORM_SLOT_COUNT :: u32(1) + VIEW_UNIFORM_MAX_CAPTURE_VIEWS + 1
+VIEW_UNIFORM_EFFECT_CAPTURE_SLOT :: VIEW_UNIFORM_SLOT_COUNT - 1
 VIEW_UNIFORM_BYTES :: u64(size_of([4]f32))
 VIEW_UNIFORM_BUFFER_BYTES :: u64(VIEW_UNIFORM_CAPTURE_OFFSET) * u64(VIEW_UNIFORM_SLOT_COUNT-1) + VIEW_UNIFORM_BYTES
 

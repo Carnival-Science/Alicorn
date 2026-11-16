@@ -57,7 +57,7 @@ uploads remain renderer-specific.
 | --- | --- | --- |
 | 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: the pre-change Windows SDL_GPU reference and a supplemental D3D12 effects profile are recorded in `docs/validation/sdl-gpu-reference-windows-2026-11-15.md`; Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes on an NVIDIA Turing adapter. Physical Linux GPU/Wayland, genuine driver/OS loss and recovery, same-workload production comparison, and application-level stage/working-set measurements remain open |
 | 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring, CPU solid/custom-surface mesh assembly, and text/image/icon preparation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
-| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and explicitly selected D3D12 fixtures exercise per-resource custom-surface caching, cache-budget pressure, in-flight protection, instance transforms, readback, and resize; prior browser WebGPU fixture passes custom-surface pixels and the current WASM build compiles, but the cache follow-up has not had a live browser replay. One shared compositor preserves interleaved paint order. Text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, rectangles, segments, circles, masked markers, clipping, waveform samples, and a cropped target matching a full mixed-renderer pixel region pass Windows D3D12 readback. Backend-neutral backdrop planning, Gaussian sampling, prefix identity/localization, and filter/composite mesh generation now live in `renderer/cpu`; GPU sampleable capture/filter/composite, browser replay of the new crop path, rounded/accessibility material parity, and application host presentation remain outstanding |
+| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and D3D12 fixtures exercise per-resource custom-surface caching, budget pressure, in-flight protection, instance transforms, readback, and resize. One shared compositor preserves interleaved paint order; text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, clipping, waveform samples, and cropped mixed-renderer readback pass Windows D3D12 and the current browser WebGPU readback. Shared CPU backdrop planning/meshes feed renderer-owned WebGPU prefix capture, two WGSL filter passes, and in-order composite; D3D12 and browser readbacks now cover unchanged-prefix cache reuse and changed-prefix invalidation. Browser adapter acceleration class is not reported. Resized-effect cache retirement/budget fallback, rounded/accessibility material parity, application host presentation, and broader cross-platform GPU validation remain open |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | Not started |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
@@ -592,7 +592,10 @@ below, to validate independent invalidation and safe retirement. It has not yet
 been benchmarked against the aggregate path or a Punks application workload;
 the prototype's single-machine performance result does not predict WebGPU
 latency. Preserve the same output, scale, idle, ordering, and memory checks
-before claiming a performance benefit.
+before claiming a performance benefit. Across Alicorn consumers, the contract
+remains ordinary retained geometry declarations; any reuse or upload
+optimization belongs in the renderer and must remain bounded, revision-aware,
+and reconstructible after device loss.
 
 ## Hosted Linux x64 validation (2026-11-15)
 
@@ -970,9 +973,10 @@ uniform supplies the crop extent and origin, and the shared WGSL subtracts the
 origin while mapping into the target. Solid, text, custom-surface scissors are
 translated and clipped to the crop; icons and images use the target's local
 viewport bounds. The prepared meshes and main viewport are not rebuilt or
-overwritten. Up to 64 distinct capture slots are available per submitted
-compositor frame, and a slot cannot be reused until the host commits that
-submission, so later queue writes cannot change an earlier capture's origin.
+overwritten. Up to 63 public capture slots are available per submitted
+compositor frame; the final dynamic-uniform slot is private to backdrop halo
+capture. A slot cannot be reused until the host commits that submission, so
+later queue writes cannot change an earlier capture's origin.
 
 The fixture renders its 63×64 mixed paint list as a full frame and as two 45×36
 crops, at physical origins (18, 28) and (0, 0), in the same command encoder.
@@ -998,15 +1002,62 @@ RTX 2080 SUPER, D3D12:
 - `webgpu_feasibility_smoke.exe --backend=d3d12` passed all existing readbacks
   and reported `crop_capture_a=true crop_capture_b=true`, comparing every
   pixel exactly.
-- A live browser replay of this new crop comparison was not completed: the
-  Windows browser-capture helper timed out twice. The WASM build is not being
-  counted as browser runtime validation.
+- The later live browser fixture replay reported both crop comparisons true.
+  Earlier attempts using the Windows browser-capture helper timed out; that
+  limitation has since been superseded by this browser runtime evidence.
 
-This is cropped encoding infrastructure, not the WebGPU backdrop effect
-pipeline. The caller still owns the render target, encoder, submission, and
+This crop path is now also used internally by the backdrop effect renderer.
+The caller still owns the presentation target, encoder, submission, and
 completion flow; the renderer neither inspects nor samples a host presentation
-surface. `Compositor_Prepare` still rejects effect marker commands. The next
-effect slice must allocate bounded renderer-owned sampleable capture textures,
-encode the paint prefix, filter with the shared Gaussian mesh, composite in
-paint order, and retire textures by queue completion. No application API or
-host ownership contract changed.
+surface. The following section records the first WebGPU effect slice.
+
+## Phase 2 shared WebGPU backdrop effect slice (Windows D3D12, 2026-11-15)
+
+The shared compositor now accepts one backdrop-effect marker and interprets it
+as a paint boundary. It encodes the preceding retained paint commands into a
+bounded, renderer-owned sampleable crop, runs horizontal and vertical Gaussian
+filter passes using the shared `renderer/cpu` mesh and bilinear-paired taps,
+then composites through the same prepared mesh at the marker's original paint
+position. The host continues to own its target view, encoder, queue submission,
+and completion callback. The renderer does not require a sampleable host
+surface. If the effect is unsupported or its bounded texture budget is
+exceeded, the marker is skipped and ordinary paint remains available.
+
+Effect GPU objects and pipeline creation are lazy: a compositor with no active
+effect marker does not initialize the backdrop renderer. The current cache is
+limited to one effect output per compositor. It keys the cached pixels from
+the shared prefix identity and effect plan, skips capture/filter work on an
+unchanged prefix, and retires resized texture sets only after the host-reported
+completion serial. A renderer-local 48 MiB texture budget bounds this slice.
+This follows Alicorn #164: applications continue to express retained geometry
+through existing APIs; optimization stays renderer-local rather than adding a
+public GPU canvas API.
+
+Validation on Windows D3D12 with an NVIDIA GeForce RTX 2080 SUPER and Odin
+`dev-2026-09-nightly:a2fb372`; a separate browser runtime/readback replay used
+the `js_wasm32` artifact:
+
+- `odin check renderer/webgpu -no-entry-point` and
+  `odin check examples/15_webgpu_feasibility` passed after lazy initialization.
+- `examples/15_webgpu_feasibility/build.ps1` rebuilt native interactive,
+  readback, and resize fixtures plus the `js_wasm32` WASM fixture.
+- `webgpu_feasibility_smoke.exe --backend=d3d12` passed. Across three ordered
+  submissions it reported two captures, two horizontal and two vertical filter
+  passes, three composites, one unchanged-prefix cache hit, one mesh build, and
+  68,040 bytes of backdrop texture residency against the 50,331,648-byte
+  budget. Pixel checks passed for both red/blue and changed red/green blurred
+  content and for pixels beyond the effect clip.
+- Existing text, image, icon, material, custom geometry, crop, retained cache,
+  cache-pressure, and queue-retirement checks in the same smoke also passed.
+- The local browser replay reached the idle-settled state and reported the
+  offscreen readback PASS, including both crop comparisons and backdrop
+  mixed-color, clip, cache-hit, and prefix-invalidation probes. Its exposed
+  status did not identify whether the adapter was hardware or software-backed;
+  this is correctness evidence, not GPU-performance evidence.
+
+This is the first GPU effect execution slice, not complete effect parity. The
+single-marker limit, resized-effect texture retirement and budget-fallback
+pixels, SDR output-format constraints, genuine device-loss/recreation,
+application-host integration, and macOS/Linux GPU validation remain open.
+Explicit device destruction is still distinct from genuine driver/OS-initiated
+device loss and recovery.
