@@ -48,7 +48,6 @@ test_backdrop_effect_local_prefix_moves_only_bounds_and_clip :: proc(t: ^testing
 	draw.translation = {4, 5}
 	display := [1]alicorn.Paint_Command{draw}
 	local := Backdrop_Effect_Local_Prefix(display[:], {10, 20, 1, 1}, context.temp_allocator)
-	defer delete(local)
 	testing.expect(t, len(local) == 1, "local prefix should preserve the command count")
 	if len(local) != 1 { return }
 	original_text, original_is_text := draw.payload.(alicorn.Text_Paint)

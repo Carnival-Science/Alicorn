@@ -57,7 +57,7 @@ uploads remain renderer-specific.
 | --- | --- | --- |
 | 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: the pre-change Windows SDL_GPU reference and a supplemental D3D12 effects profile are recorded in `docs/validation/sdl-gpu-reference-windows-2026-11-15.md`; Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes on an NVIDIA Turing adapter. Physical Linux GPU/Wayland, genuine driver/OS loss and recovery, same-workload production comparison, and application-level stage/working-set measurements remain open |
 | 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring, CPU solid/custom-surface mesh assembly, and text/image/icon preparation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
-| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and explicitly selected D3D12 fixtures exercise per-resource custom-surface caching, cache-budget pressure, in-flight protection, instance transforms, readback, and resize; prior browser WebGPU fixture passes custom-surface pixels and the current WASM build compiles, but the cache follow-up has not had a live browser replay. One shared compositor preserves interleaved paint order. Text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, rectangles, segments, circles, masked markers, clipping, and waveform samples pass representative native pixel probes. Backend-neutral backdrop plan, Gaussian sampling, prefix identity and localization now live in `renderer/cpu`; rounded/accessibility material parity, GPU effect capture/filter/composite, and application host presentation remain outstanding |
+| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and explicitly selected D3D12 fixtures exercise per-resource custom-surface caching, cache-budget pressure, in-flight protection, instance transforms, readback, and resize; prior browser WebGPU fixture passes custom-surface pixels and the current WASM build compiles, but the cache follow-up has not had a live browser replay. One shared compositor preserves interleaved paint order. Text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, rectangles, segments, circles, masked markers, clipping, and waveform samples pass representative native pixel probes. Backend-neutral backdrop planning, Gaussian sampling, prefix identity/localization, and filter/composite mesh generation now live in `renderer/cpu`; rounded/accessibility material parity, GPU effect capture/filter/composite, and application host presentation remain outstanding |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | Not started |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
@@ -918,3 +918,45 @@ surface acquisition, encoding/submission, and completion delivery; the shared
 renderer owns cache policy and retires resources by the host-reported queue
 serial. Intentional device destruction remains distinct from genuine
 driver/OS-initiated loss.
+
+## Phase 2 shared backdrop effect mesh (Windows, 2026-11-15)
+
+The bilinear-paired Gaussian filter quads and final backdrop composite quad now
+come from `renderer/cpu/effects_mesh.odin`. The shared mesh preserves the
+existing tap ordering and weights, horizontal and vertical UV offsets,
+out-of-range sampling halo for clamp-to-edge samplers, and physically snapped
+composite origin. SDL_GPU consumes this CPU product; WebGPU can use the same
+vertices when effect capture and filtering are implemented. GPU textures,
+samplers, passes, uploads, cache slots, and retirement remain backend-owned.
+
+The fixed mesh capacity is derived from the maximum supported tap count. Tests
+cover ordinary and maximum kernels, vertex ordering and attributes, the
+composite location, and rejecting a forged plan before modifying output memory.
+The SDL effect plan is explicitly adapted to the shared CPU plan, keeping its
+backend-specific texture-byte charge separate from shared geometry policy. A
+test helper also stopped attempting to free a temporary-allocator slice.
+
+Validation on the Windows D3D12 candidate with Odin `dev-2026-11-nightly:08539cd`:
+
+- `odin test renderer/cpu` passed all 18 CPU-renderer tests.
+- `tools/check_web_ui_package.ps1 -Odin C:\odin\odin.exe` passed, compiling
+  the backend-neutral CPU package for the `js_wasm32` consumer.
+- `tools/test.ps1 -Odin C:\odin\odin.exe` passed the full regression suite,
+  including 352 Runtime tests and 197 native SDL_GPU tests. Existing warnings
+  about large stack locals in native secondary-window tests remain.
+- `tools/validate_effects.ps1 -Odin C:\odin\odin.exe -Driver direct3d12`
+  passed all nine Gaussian scale/sigma readbacks with maximum RGBA8 error 1,
+  painter order intact, cache/fresh output equal, and payload-revision
+  invalidation checks passing. One hundred unchanged attempts produced no new
+  passes, allocations, or submissions; effect resources retired to zero live
+  bytes.
+- `git diff --check` passed.
+
+This validates a shared CPU mesh and unchanged Windows reference pixels. It
+does not implement WebGPU backdrop capture, filtering, or composition, and it
+does not require a host-owned presentation target to be sampleable or
+copyable. External targets remain borrowed render attachments; the future
+effect path must capture the paint prefix into renderer-owned sampleable
+textures. WebGPU effect parity, macOS/Linux GPU validation, host presentation
+integration, and genuine driver/OS device-loss recovery remain open.
+Intentional device destruction remains separate evidence.

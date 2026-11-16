@@ -1,7 +1,6 @@
 package alicorn_sdl_gpu
 
 import "core:c"
-import "core:math"
 import alicorn "../../runtime"
 import cpu_renderer "../../renderer/cpu"
 import "vendor:sdl3"
@@ -32,7 +31,7 @@ NATIVE_EFFECT_MAX_SIGMA_PIXELS :: cpu_renderer.BACKDROP_EFFECT_MAX_SIGMA_PIXELS
 NATIVE_EFFECT_MAX_GAUSSIAN_RADIUS_PIXELS :: cpu_renderer.BACKDROP_EFFECT_MAX_GAUSSIAN_RADIUS_PIXELS
 NATIVE_EFFECT_MAX_GAUSSIAN_KERNEL_WIDTH :: cpu_renderer.BACKDROP_EFFECT_MAX_GAUSSIAN_KERNEL_WIDTH
 NATIVE_EFFECT_MAX_FILTER_TAPS :: cpu_renderer.BACKDROP_EFFECT_MAX_FILTER_TAPS
-NATIVE_EFFECT_VERTEX_COUNT :: NATIVE_EFFECT_MAX_FILTER_TAPS*12+6
+NATIVE_EFFECT_VERTEX_COUNT :: cpu_renderer.BACKDROP_EFFECT_MAX_MESH_VERTICES
 NATIVE_EFFECT_VERTEX_BYTES :: u64(NATIVE_EFFECT_VERTEX_COUNT * size_of(Native_Text_Vertex))
 NATIVE_EFFECT_FILTER_FORMAT :: sdl3.GPUTextureFormat.R16G16B16A16_FLOAT
 
@@ -310,7 +309,12 @@ native_effect_plan :: proc(request: Native_Effect_Request) -> (plan: Native_Effe
 // charge; GPU formats and fixed filter buffers are accounted for here.
 native_effect_plan_valid :: proc(plan: Native_Effect_Plan) -> bool {
 	if !plan.active { return true }
-	cpu_plan := cpu_renderer.Backdrop_Effect_Plan{
+	return plan.bytes == native_effect_byte_size(plan.width, plan.height) &&
+		cpu_renderer.Backdrop_Effect_Plan_Valid(native_effect_cpu_plan(plan))
+}
+
+native_effect_cpu_plan :: proc(plan: Native_Effect_Plan) -> cpu_renderer.Backdrop_Effect_Plan {
+	return cpu_renderer.Backdrop_Effect_Plan{
 		active=plan.active,
 		source_bounds=plan.source_bounds,
 		output_clip=plan.output_clip,
@@ -322,8 +326,6 @@ native_effect_plan_valid :: proc(plan: Native_Effect_Plan) -> bool {
 		key=plan.key,
 		source_generation=plan.source_generation,
 	}
-	return plan.bytes == native_effect_byte_size(plan.width, plan.height) &&
-		cpu_renderer.Backdrop_Effect_Plan_Valid(cpu_plan)
 }
 native_effect_make :: proc(
 	device: ^sdl3.GPUDevice,
@@ -446,31 +448,9 @@ native_effect_create_fixed :: proc(cache: ^Native_Effect_Cache) -> bool {
 	return true
 }
 
-native_effect_quad :: proc(vertices: ^[NATIVE_EFFECT_VERTEX_COUNT]Native_Text_Vertex, first: int, x0, y0, x1, y1, u0, v0, u1, v1, weight: f32) {
-	color := [4]f32{weight, weight, weight, weight}
-	a := Native_Text_Vertex{{x0,y0,0}, color, {u0,v0}}
-	b := Native_Text_Vertex{{x1,y0,0}, color, {u1,v0}}
-	c := Native_Text_Vertex{{x1,y1,0}, color, {u1,v1}}
-	d := Native_Text_Vertex{{x0,y1,0}, color, {u0,v1}}
-	vertices[first+0], vertices[first+1], vertices[first+2] = a,b,c
-	vertices[first+3], vertices[first+4], vertices[first+5] = a,c,d
-}
-
 native_effect_build_vertices :: proc(cache: ^Native_Effect_Cache) {
-	w, h := f32(cache.plan.width), f32(cache.plan.height)
-	taps, tap_count, ok := native_effect_gaussian_taps(cache.plan.sigma_pixels)
-	if !ok || tap_count != cache.plan.filter_tap_count { return }
-	for tap in 0..<tap_count {
-		sample := taps[tap]
-		du, dv := sample.offset_pixels/w, sample.offset_pixels/h
-		native_effect_quad(&cache.vertices, tap*6, 0,0,w,h, du,0,1+du,1, sample.weight)
-		native_effect_quad(&cache.vertices, tap_count*6+tap*6, 0,0,w,h, 0,dv,1,1+dv, sample.weight)
-	}
-	// Use the physical snapped origin, avoiding subpixel texture resampling.
-	x := f32(math.round(f64(cache.plan.source_bounds.x)*f64(cache.plan.scale)))
-	y := f32(math.round(f64(cache.plan.source_bounds.y)*f64(cache.plan.scale)))
-	native_effect_quad(&cache.vertices, tap_count*12, x,y,x+w,y+h, 0,0,1,1, 1)
-	cache.vertex_upload_pending = true
+	_, _, ok := cpu_renderer.Backdrop_Effect_Build_Mesh(native_effect_cpu_plan(cache.plan), &cache.vertices)
+	if ok { cache.vertex_upload_pending = true }
 }
 
 native_effect_prepare :: proc(cache: ^Native_Effect_Cache, plan: Native_Effect_Plan) -> Native_Effect_Status {
