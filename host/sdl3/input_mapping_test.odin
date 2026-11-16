@@ -110,3 +110,42 @@ test_sdl_control_key_mappings_are_backend_independent :: proc(t: ^testing.T) {
 	testing.expect(t, context_menu_key_from_sdl(sdl3.K_TAB) == .Other,
 		"unhandled context-menu keys remain available to Tab traversal and app shortcuts")
 }
+
+@(test)
+test_sdl_text_key_mapping_preserves_platform_editing_conventions :: proc(t: ^testing.T) {
+	word_modifier := sdl3.KMOD_CTRL if ODIN_OS != .Darwin else sdl3.KMOD_ALT
+	word_left, word_ok := text_key_event_from_sdl(sdl3.K_LEFT, word_modifier|sdl3.KMOD_SHIFT)
+	testing.expect(t, word_ok && word_left.key == .Word_Left && word_left.shift &&
+		word_left.control == (ODIN_OS != .Darwin) && word_left.alt == (ODIN_OS == .Darwin),
+		"platform word modifier is mapped while raw modifiers remain available")
+
+	line_modifier := sdl3.KMOD_GUI if ODIN_OS == .Darwin else sdl3.Keymod{}
+	line_end, line_ok := text_key_event_from_sdl(sdl3.K_RIGHT, line_modifier)
+	if ODIN_OS == .Darwin {
+		testing.expect(t, line_ok && line_end.key == .Line_End && line_end.super,
+			"Command-Right maps to line end on macOS")
+	} else {
+		testing.expect(t, line_ok && line_end.key == .Right && !line_end.super,
+			"GUI modifier does not alter line navigation on Windows/Linux")
+	}
+
+	document_modifier := sdl3.KMOD_CTRL if ODIN_OS != .Darwin else sdl3.KMOD_GUI
+	home, home_ok := text_key_event_from_sdl(sdl3.K_HOME, document_modifier)
+	testing.expect(t, home_ok && home.key == .Document_Start,
+		"platform document modifier maps Home to document start")
+
+	up, up_ok := text_key_event_from_sdl(sdl3.K_UP, document_modifier)
+	if ODIN_OS == .Darwin {
+		testing.expect(t, up_ok && up.key == .Document_Start,
+			"Command-Up maps to document start on macOS")
+	} else {
+		testing.expect(t, up_ok && up.key == .Up,
+			"Control-Up remains visual-line navigation on Windows/Linux")
+	}
+
+	word_delete, delete_ok := text_key_event_from_sdl(sdl3.K_BACKSPACE, word_modifier)
+	testing.expect(t, delete_ok && word_delete.key == .Delete_Word_Backward,
+		"platform word modifier maps Backspace to word deletion")
+	_, printable_ok := text_key_event_from_sdl(sdl3.K_A, {})
+	testing.expect(t, !printable_ok, "ordinary printable keys stay on the text-input/IME path")
+}

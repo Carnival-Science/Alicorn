@@ -4,6 +4,7 @@ import "core:c"
 import "core:strings"
 import alicorn "../../runtime"
 import "vendor:sdl3"
+import sdl_host "alicorn:host/sdl3"
 
 Native_Text_Input_State :: struct {
 	active: bool,
@@ -135,46 +136,7 @@ native_application_text_key_event :: proc(
 	key: sdl3.Keycode,
 	mod: sdl3.Keymod,
 ) -> (event: Application_Text_Key_Event, mapped: bool) {
-	word := native_text_word_modifier(mod)
-	line := native_text_line_modifier(mod)
-	document := native_text_document_modifier(mod)
-	switch key {
-	case sdl3.K_LEFT:
-		if line { event.key = .Line_Start }
-		else if word { event.key = .Word_Left }
-		else { event.key = .Left }
-	case sdl3.K_RIGHT:
-		if line { event.key = .Line_End }
-		else if word { event.key = .Word_Right }
-		else { event.key = .Right }
-	case sdl3.K_HOME: event.key = .Document_Start if document else .Home
-	case sdl3.K_END: event.key = .Document_End if document else .End
-	case sdl3.K_UP:
-		when ODIN_OS == .Darwin {
-			event.key = .Document_Start if document else .Up
-		} else { event.key = .Up }
-	case sdl3.K_DOWN:
-		when ODIN_OS == .Darwin {
-			event.key = .Document_End if document else .Down
-		} else { event.key = .Down }
-	case sdl3.K_PAGEUP: event.key = .Page_Up
-	case sdl3.K_PAGEDOWN: event.key = .Page_Down
-	case sdl3.K_BACKSPACE:
-		if line { event.key = .Delete_Line_Backward }
-		else if word { event.key = .Delete_Word_Backward }
-		else { event.key = .Backspace }
-	case sdl3.K_DELETE:
-		if line { event.key = .Delete_Line_Forward }
-		else if word { event.key = .Delete_Word_Forward }
-		else { event.key = .Delete }
-	case sdl3.K_TAB: event.key = .Tab
-	case: return {}, false
-	}
-	event.shift = native_text_modifier(mod, sdl3.KMOD_SHIFT)
-	event.control = native_text_modifier(mod, sdl3.KMOD_CTRL)
-	event.alt = native_text_modifier(mod, sdl3.KMOD_ALT)
-	event.super = native_text_modifier(mod, sdl3.KMOD_GUI)
-	return event, true
+	return sdl_host.text_key_event_from_sdl(key, mod)
 }
 
 native_dispatch_application_text_key :: proc(
@@ -499,35 +461,11 @@ native_text_modifier :: proc(mod: sdl3.Keymod, mask: sdl3.Keymod) -> bool {
 }
 
 native_text_primary_modifier :: proc(mod: sdl3.Keymod) -> bool {
-	when ODIN_OS == .Darwin {
-		return native_text_modifier(mod, sdl3.KMOD_GUI)
-	} else {
-		return native_text_modifier(mod, sdl3.KMOD_CTRL)
-	}
+	return sdl_host.text_primary_modifier_from_sdl(mod)
 }
 
 native_text_word_modifier :: proc(mod: sdl3.Keymod) -> bool {
-	when ODIN_OS == .Darwin {
-		return native_text_modifier(mod, sdl3.KMOD_ALT)
-	} else {
-		return native_text_modifier(mod, sdl3.KMOD_CTRL)
-	}
-}
-
-native_text_line_modifier :: proc(mod: sdl3.Keymod) -> bool {
-	when ODIN_OS == .Darwin {
-		return native_text_modifier(mod, sdl3.KMOD_GUI)
-	} else {
-		return false
-	}
-}
-
-native_text_document_modifier :: proc(mod: sdl3.Keymod) -> bool {
-	when ODIN_OS == .Darwin {
-		return native_text_primary_modifier(mod)
-	} else {
-		return native_text_modifier(mod, sdl3.KMOD_CTRL)
-	}
+	return sdl_host.text_word_modifier_from_sdl(mod)
 }
 
 native_text_apply_key_edit :: proc(

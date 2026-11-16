@@ -28,6 +28,84 @@ pointer_modifiers_from_sdl :: proc(modifiers: sdl3.Keymod) -> alicorn.Input_Modi
 	}
 }
 
+text_primary_modifier_from_sdl :: proc(modifiers: sdl3.Keymod) -> bool {
+	when ODIN_OS == .Darwin {
+		return input_modifier_is_set(modifiers, sdl3.KMOD_GUI)
+	} else {
+		return input_modifier_is_set(modifiers, sdl3.KMOD_CTRL)
+	}
+}
+
+text_word_modifier_from_sdl :: proc(modifiers: sdl3.Keymod) -> bool {
+	when ODIN_OS == .Darwin {
+		return input_modifier_is_set(modifiers, sdl3.KMOD_ALT)
+	} else {
+		return input_modifier_is_set(modifiers, sdl3.KMOD_CTRL)
+	}
+}
+
+text_line_modifier_from_sdl :: proc(modifiers: sdl3.Keymod) -> bool {
+	when ODIN_OS == .Darwin {
+		return input_modifier_is_set(modifiers, sdl3.KMOD_GUI)
+	} else {
+		return false
+	}
+}
+
+text_document_modifier_from_sdl :: proc(modifiers: sdl3.Keymod) -> bool {
+	when ODIN_OS == .Darwin {
+		return text_primary_modifier_from_sdl(modifiers)
+	} else {
+		return input_modifier_is_set(modifiers, sdl3.KMOD_CTRL)
+	}
+}
+
+text_key_event_from_sdl :: proc(
+	key: sdl3.Keycode,
+	modifiers: sdl3.Keymod,
+) -> (event: alicorn.Application_Text_Key_Event, mapped: bool) {
+	word := text_word_modifier_from_sdl(modifiers)
+	line := text_line_modifier_from_sdl(modifiers)
+	document := text_document_modifier_from_sdl(modifiers)
+	switch key {
+	case sdl3.K_LEFT:
+		if line { event.key = .Line_Start }
+		else if word { event.key = .Word_Left }
+		else { event.key = .Left }
+	case sdl3.K_RIGHT:
+		if line { event.key = .Line_End }
+		else if word { event.key = .Word_Right }
+		else { event.key = .Right }
+	case sdl3.K_HOME: event.key = .Document_Start if document else .Home
+	case sdl3.K_END: event.key = .Document_End if document else .End
+	case sdl3.K_UP:
+		when ODIN_OS == .Darwin {
+			event.key = .Document_Start if document else .Up
+		} else { event.key = .Up }
+	case sdl3.K_DOWN:
+		when ODIN_OS == .Darwin {
+			event.key = .Document_End if document else .Down
+		} else { event.key = .Down }
+	case sdl3.K_PAGEUP: event.key = .Page_Up
+	case sdl3.K_PAGEDOWN: event.key = .Page_Down
+	case sdl3.K_BACKSPACE:
+		if line { event.key = .Delete_Line_Backward }
+		else if word { event.key = .Delete_Word_Backward }
+		else { event.key = .Backspace }
+	case sdl3.K_DELETE:
+		if line { event.key = .Delete_Line_Forward }
+		else if word { event.key = .Delete_Word_Forward }
+		else { event.key = .Delete }
+	case sdl3.K_TAB: event.key = .Tab
+	case: return {}, false
+	}
+	event.shift = input_modifier_is_set(modifiers, sdl3.KMOD_SHIFT)
+	event.control = input_modifier_is_set(modifiers, sdl3.KMOD_CTRL)
+	event.alt = input_modifier_is_set(modifiers, sdl3.KMOD_ALT)
+	event.super = input_modifier_is_set(modifiers, sdl3.KMOD_GUI)
+	return event, true
+}
+
 pointer_button_from_sdl :: proc(button: int, modifiers: alicorn.Input_Modifiers) -> int {
 	when ODIN_OS == .Darwin {
 		// Cocoa's conventional context-click gesture is Control + primary click.
