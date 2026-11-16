@@ -1193,3 +1193,10 @@ backdrop, image, surface, and queue-completion retirement assertions. The
 source-patched explicit-destroy callback matrix was not rerun in this slice;
 the earlier Windows and hosted macOS results remain the recorded callback
 evidence. Genuine driver/OS loss and device recreation remain unvalidated.
+
+The full `tools/test.ps1 -Odin C:\odin\odin.exe` suite also passed on this
+candidate: 352 Runtime tests, 197 SDL_GPU integration tests, AccessKit ABI/UIA,
+foundation, restoration, and native host-contract checks. Existing large-stack
+warnings for `Native_Secondary_Window` test locals remain. This verifies the
+temporary SDL_GPU reference and preserved host/runtime contracts; it is not
+production WebGPU integration evidence.
