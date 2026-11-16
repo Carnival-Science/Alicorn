@@ -63,18 +63,18 @@ opt-in device-loss callback fires. Build from
 
 ```powershell
 $collection = (Resolve-Path '..\..\out\odin-overlay\vendor').Path
-C:\odin\odin.exe build . -define:FEASIBILITY_TEST_DEVICE_LOSS=true `
-  -define:FEASIBILITY_TEST_DEVICE_LOSS_EARLY=true `
+C:\odin\odin.exe build . -define:FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY=true `
+  -define:FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_EARLY=true `
   "-collection:vendor=$collection" -out:out\device-loss-early.exe
-C:\odin\odin.exe build . -define:FEASIBILITY_TEST_DEVICE_LOSS=true `
-  -define:FEASIBILITY_TEST_DEVICE_LOSS_SPONTANEOUS=true `
-  -define:FEASIBILITY_TEST_DEVICE_LOSS_EARLY=true `
+C:\odin\odin.exe build . -define:FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY=true `
+  -define:FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_SPONTANEOUS_CALLBACK=true `
+  -define:FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_EARLY=true `
   "-collection:vendor=$collection" -out:out\device-loss-spontaneous.exe
-C:\odin\odin.exe build . -define:FEASIBILITY_TEST_DEVICE_LOSS=true `
-  -define:FEASIBILITY_TEST_DEVICE_LOSS_RELEASE_BEFORE_POLL=true `
-  -define:FEASIBILITY_TEST_DEVICE_LOSS_EARLY=true `
+C:\odin\odin.exe build . -define:FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY=true `
+  -define:FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_RELEASE_BEFORE_POLL=true `
+  -define:FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_EARLY=true `
   "-collection:vendor=$collection" -out:out\device-loss-release-before-poll.exe
-C:\odin\odin.exe build . -define:FEASIBILITY_TEST_DEVICE_LOSS=true `
+C:\odin\odin.exe build . -define:FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY=true `
   "-collection:vendor=$collection" -out:out\device-loss-after-readback.exe
 Copy-Item C:\odin\vendor\sdl3\SDL3.dll out\SDL3.dll -Force
 ```

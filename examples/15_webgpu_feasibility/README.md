@@ -199,13 +199,16 @@ browser variant with:
 
 ~~~powershell
 C:\odin\odin.exe build . -target:js_wasm32 -o:size `
-    -define:FEASIBILITY_TEST_DEVICE_LOSS=true `
+    -define:FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY=true `
     -out:web\feasibility.wasm -extra-linker-flags:--export-table
 ~~~
 
 Reload the page. The browser should print the successful readback followed by a
-`device loss notification reason=Destroyed` message. Rebuild the normal variant
-afterward with `.\build.ps1 -Odin C:\odin\odin.exe`.
+`device loss notification reason=Destroyed` message. The probe's final result
+is labeled `explicit-destroy callback probe PASS` and requires exactly one
+`Destroyed` reason. This confirms intentional destruction callback delivery;
+it is not evidence of driver/OS-initiated loss or recovery. Rebuild the normal
+variant afterward with `.\build.ps1 -Odin C:\odin\odin.exe`.
 
 The unmodified Odin wgpu-native binary passes rendering/readback but does not
 deliver the native destroy callback on the tested Windows D3D12 setup. Source

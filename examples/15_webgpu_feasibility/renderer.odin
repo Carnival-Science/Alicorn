@@ -1827,12 +1827,12 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 			state.quit=true
 		}
 	}
-	when FEASIBILITY_TEST_DEVICE_LOSS {
+	when FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY {
 		if ok {
 			// Defer destroy until the host has returned from this callback. In
 			// particular, native wgpuDevicePoll must not be re-entered by destroying
 			// the device from one of the callbacks it is currently dispatching.
-			state.test_device_loss_pending=true
+			state.test_explicit_destroy_pending=true
 		}
 	}
 }
@@ -1851,13 +1851,13 @@ offscreen_pixel_near :: proc(actual,expected:[4]u8,tolerance:u8=3) -> bool {
 	return true
 }
 
-begin_test_device_loss :: proc() {
-	when FEASIBILITY_TEST_DEVICE_LOSS {
-		if state.test_device_loss_pending && !state.test_device_loss_triggered {
-			state.test_device_loss_pending=false
-			state.test_device_loss_triggered=true
+begin_test_explicit_device_destroy :: proc() {
+	when FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY {
+		if state.test_explicit_destroy_pending && !state.test_explicit_destroy_triggered {
+			state.test_explicit_destroy_pending=false
+			state.test_explicit_destroy_triggered=true
 			state.ready=false
-			when FEASIBILITY_TEST_DEVICE_LOSS_RELEASE_BEFORE_POLL {
+			when FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_RELEASE_BEFORE_POLL {
 				device := state.device
 				state.device = nil
 				wgpu.DeviceDestroy(device)

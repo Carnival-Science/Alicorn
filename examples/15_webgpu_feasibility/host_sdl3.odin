@@ -34,7 +34,7 @@ os_run :: proc() {
 	last:=SDL.GetPerformanceCounter()
 	smoke_elapsed:=0.0
 	for !state.quit {
-		begin_test_device_loss()
+		begin_test_explicit_device_destroy()
 		now:=SDL.GetPerformanceCounter()
 		dt:=f32(f64(now-last)/f64(SDL.GetPerformanceFrequency()))
 		last=now
@@ -85,7 +85,7 @@ os_run :: proc() {
 		event:SDL.Event
 		for SDL.PollEvent(&event) { handle_event(event) }
 		os_process_gpu_events()
-		when FEASIBILITY_TEST_DEVICE_LOSS {
+		when FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY {
 			if sync.atomic_load(&state.device_lost_callback_count) > 0 {
 				state.device_lost = true
 				state.ready = false
@@ -106,12 +106,12 @@ os_run :: proc() {
 				state.quit = true
 			}
 		}
-		when FEASIBILITY_TEST_DEVICE_LOSS {
+		when FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY {
 			smoke_elapsed += f64(dt)
 			if smoke_elapsed >= SMOKE_TIMEOUT_SECONDS && !state.device_lost {
-				fmt.printf("[webgpu-feasibility] device-loss callback probe timed out after %.1f seconds (triggered=%v callbacks=%d)\n",
+				fmt.printf("[webgpu-feasibility] explicit-destroy callback probe timed out after %.1f seconds (triggered=%v callbacks=%d)\n",
 					SMOKE_TIMEOUT_SECONDS,
-					state.test_device_loss_triggered,
+					state.test_explicit_destroy_triggered,
 					sync.atomic_load(&state.device_lost_callback_count),
 				)
 				state.quit = true
@@ -122,7 +122,7 @@ os_run :: proc() {
 		when FEASIBILITY_TEST_RESIZE {
 			needs_wakeup = needs_wakeup || (state.ready && (!state.test_resize_pre_frame || !state.test_resize_post_frame))
 		}
-		when FEASIBILITY_TEST_DEVICE_LOSS {
+		when FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY {
 			needs_wakeup = needs_wakeup || (!state.ready && !state.device_lost)
 		}
 		if needs_wakeup {
@@ -131,28 +131,31 @@ os_run :: proc() {
 			handle_event(event)
 		}
 	}
-	when FEASIBILITY_TEST_DEVICE_LOSS {
+	when FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY {
 		callback_count := sync.atomic_load(&state.device_lost_callback_count)
-		state.test_device_loss_passed = state.test_device_loss_triggered && state.device_lost && callback_count == 1
-		if !state.test_device_loss_passed {
-			fmt.printf("[webgpu-feasibility] device-loss callback probe FAIL before teardown (triggered=%v lost=%v callbacks=%d)\n",
-				state.test_device_loss_triggered,
+		reason := wgpu.DeviceLostReason(sync.atomic_load(&state.device_loss_reason_raw))
+		state.test_explicit_destroy_callback_passed = state.test_explicit_destroy_triggered && state.device_lost &&
+			callback_count == 1 && reason == .Destroyed
+		if !state.test_explicit_destroy_callback_passed {
+			fmt.printf("[webgpu-feasibility] explicit-destroy callback probe FAIL before teardown (triggered=%v invalidated=%v reason=%v callbacks=%d; expected exactly one Destroyed callback)\n",
+				state.test_explicit_destroy_triggered,
 				state.device_lost,
+				reason,
 				callback_count,
 			)
 		}
 	}
 	finish()
-	when FEASIBILITY_TEST_DEVICE_LOSS {
+	when FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY {
 		callback_count_after_teardown := sync.atomic_load(&state.device_lost_callback_count)
-		if !state.test_device_loss_passed || callback_count_after_teardown != 1 {
-			fmt.printf("[webgpu-feasibility] device-loss callback probe FAIL after teardown (passed_before_teardown=%v callbacks=%d)\n",
-				state.test_device_loss_passed,
+		if !state.test_explicit_destroy_callback_passed || callback_count_after_teardown != 1 {
+			fmt.printf("[webgpu-feasibility] explicit-destroy callback probe FAIL after teardown (passed_before_teardown=%v callbacks=%d)\n",
+				state.test_explicit_destroy_callback_passed,
 				callback_count_after_teardown,
 			)
 			os_exit_failure()
 		}
-		fmt.println("[webgpu-feasibility] device-loss callback probe PASS: exactly one callback before teardown")
+		fmt.println("[webgpu-feasibility] explicit-destroy callback probe PASS: exactly one reason=Destroyed callback before teardown; this is not driver/OS loss evidence")
 	}
 	SDL.DestroyWindow(state.os.window)
 	SDL.Quit()
@@ -176,7 +179,7 @@ os_get_surface :: proc(instance:wgpu.Instance)->wgpu.Surface {
 }
 os_process_gpu_events :: proc() {
 	needs_poll := state.readback_pending || state.queue_work_done_pending
-	when FEASIBILITY_TEST_DEVICE_LOSS {
+	when FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY {
 		needs_poll = needs_poll || (!state.ready && !state.device_lost)
 	}
 	if state.device != nil && needs_poll {
@@ -184,9 +187,9 @@ os_process_gpu_events :: proc() {
 		// device-scoped callbacks. Poll only while an async operation is pending;
 		// settled native windows block in SDL_WaitEvent.
 		_ = wgpu.DevicePoll(state.device, false)
-		when FEASIBILITY_TEST_DEVICE_LOSS {
-			if !state.ready && !state.device_lost && !state.native_loss_wait_probed {
-				state.native_loss_wait_probed = true
+		when FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY {
+			if !state.ready && !state.device_lost && !state.native_destroy_wait_probed {
+				state.native_destroy_wait_probed = true
 				queue_empty := wgpu.DevicePoll(state.device, true)
 				fmt.printf("[webgpu-feasibility] blocking device poll returned queue_empty=%v device_lost=%v\n", queue_empty, state.device_lost)
 				// Finish through the normal teardown path after the diagnostic poll;

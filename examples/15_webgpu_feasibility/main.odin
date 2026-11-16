@@ -21,10 +21,10 @@ READBACK_BYTES_PER_ROW :: 256
 READBACK_BUFFER_BYTES :: READBACK_BYTES_PER_ROW * READBACK_HEIGHT
 READBACK_TARGET_COUNT :: 14
 READBACK_TOTAL_BYTES :: READBACK_BUFFER_BYTES * READBACK_TARGET_COUNT
-FEASIBILITY_TEST_DEVICE_LOSS :: #config(FEASIBILITY_TEST_DEVICE_LOSS, false)
-FEASIBILITY_TEST_DEVICE_LOSS_EARLY :: #config(FEASIBILITY_TEST_DEVICE_LOSS_EARLY, false)
-FEASIBILITY_TEST_DEVICE_LOSS_SPONTANEOUS :: #config(FEASIBILITY_TEST_DEVICE_LOSS_SPONTANEOUS, false)
-FEASIBILITY_TEST_DEVICE_LOSS_RELEASE_BEFORE_POLL :: #config(FEASIBILITY_TEST_DEVICE_LOSS_RELEASE_BEFORE_POLL, false)
+FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY :: #config(FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY, false)
+FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_EARLY :: #config(FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_EARLY, false)
+FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_SPONTANEOUS_CALLBACK :: #config(FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_SPONTANEOUS_CALLBACK, false)
+FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_RELEASE_BEFORE_POLL :: #config(FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_RELEASE_BEFORE_POLL, false)
 FEASIBILITY_TEST_QUIT_AFTER_READBACK :: #config(FEASIBILITY_TEST_QUIT_AFTER_READBACK, false)
 FEASIBILITY_TEST_RESIZE :: #config(FEASIBILITY_TEST_RESIZE, false)
 SURFACE_CACHE_PRESSURE_BATCH_COUNT :: 120
@@ -113,11 +113,12 @@ state: struct {
 	width, height: u32,
 	animation_seconds: f32,
 	ready, dirty, quit, device_lost: bool,
-	test_device_loss_pending: bool,
-	test_device_loss_triggered: bool,
-	test_device_loss_passed: bool,
+	test_explicit_destroy_pending: bool,
+	test_explicit_destroy_triggered: bool,
+	test_explicit_destroy_callback_passed: bool,
 	device_lost_callback_count: i64,
-	native_loss_wait_probed: bool,
+	device_loss_reason_raw: i64,
+	native_destroy_wait_probed: bool,
 }
 
 main :: proc() {
@@ -218,7 +219,7 @@ on_adapter :: proc "c" (status: wgpu.RequestAdapterStatus, adapter: wgpu.Adapter
 	}
 	wgpu.SurfaceCapabilitiesFreeMembers(caps)
 	loss_callback_mode := wgpu.CallbackMode.AllowProcessEvents
-	when FEASIBILITY_TEST_DEVICE_LOSS_SPONTANEOUS {
+	when FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_SPONTANEOUS_CALLBACK {
 		loss_callback_mode = .AllowSpontaneos
 	}
 	fmt.println("[webgpu-feasibility] device request submit")
@@ -231,8 +232,9 @@ on_adapter :: proc "c" (status: wgpu.RequestAdapterStatus, adapter: wgpu.Adapter
 
 on_device_lost :: proc "c" (device:^wgpu.Device, reason:wgpu.DeviceLostReason, message:wgpu.StringView, userdata1,userdata2:rawptr) {
 	context=state.ctx
+	sync.atomic_store(&state.device_loss_reason_raw, i64(reason))
 	sync.atomic_add(&state.device_lost_callback_count, 1)
-	when !FEASIBILITY_TEST_DEVICE_LOSS {
+	when !FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY {
 		state.device_lost=true
 		state.ready=false
 	}
@@ -358,9 +360,9 @@ on_device :: proc "c" (status: wgpu.RequestDeviceStatus, device: wgpu.Device, me
 	if status != .Success || device == nil { fmt.panicf("device request failed: %v %s", status, message) }
 	state.device = device
 	state.queue = wgpu.DeviceGetQueue(device)
-	when FEASIBILITY_TEST_DEVICE_LOSS_EARLY {
+	when FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_EARLY {
 		fmt.println("[webgpu-feasibility] early device-destroy probe: no GPU resources or submissions")
-		state.test_device_loss_pending=true
+		state.test_explicit_destroy_pending=true
 		return
 	}
 	create_resources()
@@ -433,7 +435,7 @@ webgpu_init_state :: proc() -> i32 {
 step :: proc(dt: f32) -> bool {
 	context = state.ctx
 	if state.device_lost { return false }
-	begin_test_device_loss()
+	begin_test_explicit_device_destroy()
 	if !state.ready { return false }
 	if state.animation_seconds < ANIMATION_SECONDS {
 		state.animation_seconds += dt

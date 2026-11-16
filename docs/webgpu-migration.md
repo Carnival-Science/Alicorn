@@ -273,10 +273,12 @@ Both targets also reported successful `QueueOnSubmittedWorkDone` callbacks;
 the bounded native smoke waits for both queue completion and async readback
 before exit.
 
-An opt-in destruction experiment (`FEASIBILITY_TEST_DEVICE_LOSS=true`) delivered
+An opt-in explicit-destruction experiment (`FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY=true`) delivered
 the `Destroyed` device-loss callback in browser WebGPU after the readback
-passed. Destruction is deferred until the host loop regains control, so it does
-not occur reentrantly inside the map callback. On Windows wgpu-native/D3D12,
+passed. Its executable assertion now requires the exact `Destroyed` reason and
+labels the result as an explicit-destroy callback pass. Destruction is deferred
+until the host loop regains control, so it does not occur reentrantly inside
+the map callback. On Windows wgpu-native/D3D12,
 both the full readback test and a minimal early-destroy test (before GPU
 resources or submissions) fail to deliver the callback. The early probe was
 repeated with both `AllowProcessEvents` and `AllowSpontaneous` callback modes.
@@ -1172,3 +1174,22 @@ GeForce RTX 2080 SUPER:
 The old SDL_GPU shader artifacts remain until Phase 5. This extraction changes
 source organization only; it does not alter rendering policy or create a
 second shader implementation.
+
+### Explicit-destruction probe labeling follow-up (Windows, 2026-11-15)
+
+The feasibility probe and its build flags are named for the operation they
+perform: `FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY`. The result now asserts
+exactly one callback with `reason=Destroyed`, and the success message states
+that this does not count as driver/OS-loss evidence. This keeps callback
+delivery under intentional teardown separate from genuine loss and recovery in
+the validation matrix.
+
+Validation with `C:\odin\odin.exe` (`dev-2026-11-nightly:08539cd`) passed the
+native and `js_wasm32` checks for the explicit-destroy configuration, plus the
+shared renderer package check. The fixture built for native interactive use,
+Windows asynchronous smoke, and `js_wasm32`; the D3D12 smoke passed on an
+NVIDIA GeForce RTX 2080 SUPER, including pixel readback, geometry cache,
+backdrop, image, surface, and queue-completion retirement assertions. The
+source-patched explicit-destroy callback matrix was not rerun in this slice;
+the earlier Windows and hosted macOS results remain the recorded callback
+evidence. Genuine driver/OS loss and device recreation remain unvalidated.

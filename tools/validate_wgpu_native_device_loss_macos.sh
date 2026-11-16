@@ -93,17 +93,17 @@ build_and_run() {
 }
 
 build_and_run process-events \
-	-define:FEASIBILITY_TEST_DEVICE_LOSS=true \
-	-define:FEASIBILITY_TEST_DEVICE_LOSS_EARLY=true
+	-define:FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY=true \
+	-define:FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_EARLY=true
 build_and_run spontaneous \
-	-define:FEASIBILITY_TEST_DEVICE_LOSS=true \
-	-define:FEASIBILITY_TEST_DEVICE_LOSS_EARLY=true \
-	-define:FEASIBILITY_TEST_DEVICE_LOSS_SPONTANEOUS=true
+	-define:FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY=true \
+	-define:FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_EARLY=true \
+	-define:FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_SPONTANEOUS_CALLBACK=true
 build_and_run release-before-poll \
-	-define:FEASIBILITY_TEST_DEVICE_LOSS=true \
-	-define:FEASIBILITY_TEST_DEVICE_LOSS_EARLY=true \
-	-define:FEASIBILITY_TEST_DEVICE_LOSS_RELEASE_BEFORE_POLL=true
+	-define:FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY=true \
+	-define:FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_EARLY=true \
+	-define:FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_RELEASE_BEFORE_POLL=true
 build_and_run after-readback \
-	-define:FEASIBILITY_TEST_DEVICE_LOSS=true
+	-define:FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY=true
 
-echo 'Patched macOS Metal device-loss callback probes passed.'
+echo 'Patched macOS Metal explicit-destroy callback probes passed (not driver-loss tests).'
