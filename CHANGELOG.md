@@ -8,6 +8,10 @@ changelogs.
 
 ### Added
 
+- Added typed retained color motion for solid semantic-surface fills. The
+  response interpolates Alicorn's linear-sRGB channels with constant straight
+  alpha, keeps target hit/accessibility geometry static, and snaps on reparent
+  or when its semantic-surface fill binding is removed.
 - Added `Sdl_GPU_Presenter_Encode_Window`, which prepares a frame in an owned
   offscreen target before acquiring the swapchain and only blits after
   acquisition. Encoding failures remain cancellable, and successful submission

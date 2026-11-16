@@ -45,6 +45,9 @@ Paint_Command :: struct {
 	// Semantic surface gradient data stays in the Runtime's computed-style
 	// sidecar; this marker occupies existing alignment padding.
 	semantic_surface_gradient: bool,
+	// Marks the fill command emitted by a semantic surface, allowing the
+	// retained motion compositor to replace only that typed paint property.
+	semantic_surface_fill: bool,
 	payload:     Paint_Payload,
 }
 

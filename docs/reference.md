@@ -1412,41 +1412,58 @@ system file drops or arbitrary MIME payloads.
   the last target. Failed deferred applications are reported in runtime
   diagnostics.
 - `Style_Theme.motion_policy` controls default settling responses separately
-  for translation and opacity. An unset policy resolves to the library default
-  without animating any node implicitly; applications still opt in with
-  `ui.motion`. Reduce Motion snaps spatial changes by default. A theme may opt
-  into an opacity-only response; while Reduce Motion is active, Alicorn accepts
+  for translation, opacity, and semantic-surface color. An unset policy
+  resolves to the library default without animating any node implicitly;
+  applications still opt in with `ui.motion`. Reduce Motion snaps spatial and
+  color changes by default. A theme may opt into an opacity-only response;
+  while Reduce Motion is active, Alicorn accepts
   it only when its conservative settlement bound is established and no longer
   than 250 ms. A slower or uncertified fade snaps and records the rewrite. The
   preference is reevaluated on each description, so enabling Reduce Motion
-  mid-flight snaps spatial motion (or uses the bounded opacity response)
-  deterministically.
+  mid-flight snaps spatial and color motion (or uses the bounded opacity
+  response) deterministically.
 - Low-level retained motion remains available. It is bound to a live `Node_ID` through
   `motion_owner_begin`; the returned handle carries a process-unique runtime
   lifetime identity and runtime-local owner generation, so cross-runtime use,
   retirement, release, and identity reuse invalidate old handles.
   `motion_owner_release` cancels and removes an owner's sidecar while keeping
-  the node alive; it resets presentation to neutral translation and opacity on
-  the next composition. Commit a different resting presentation before release
-  if snapping back to neutral is not appropriate. Omitting a motion declaration
-  from a later description leaves a still-retained owner moving toward its last
+  the node alive; it resets translation and opacity and restores style-resolved
+  semantic-surface fill on the next composition. Commit a different resting
+  presentation before release if snapping back to neutral is not appropriate.
+  Omitting a motion declaration from a later description leaves a still-retained owner moving toward its last
   target; omission is not cancellation. Retiring its node removes the record.
-  `motion_opacity`
-  and `motion_translation` accept typed targets, a `Motion_Config`, an
-  explicit `Settle` / `Direct` / `Snap` mode, and an injected `Motion_Time`.
-  The first `Settle` starts from neutral presentation (opacity 1, translation
-  zero); use `Snap` for an initial state that should already be at its target.
+  `motion_opacity`, `motion_translation`, and `motion_surface_color` accept
+  typed targets, a `Motion_Config`, an explicit `Settle` / `Direct` / `Snap`
+  mode, and an injected `Motion_Time`. The first `Settle` starts opacity at 1
+  and translation at zero; color starts from the resolved semantic-surface
+  fill. Use `Snap` for an initial state that should already be at its target.
   `motion_presentation` reports target and last-presented values separately.
   Translation accumulates through painted descendants in parent-local logical
-  units; opacity multiplies through the subtree. Target layout, clips, hit
-  regions, and accessibility bounds remain unchanged in this initial policy.
-  Reveal is limited to structurally noninteractive subtrees. Visual opacity
-  does not defer semantic or accessibility exposure, so reveal must not hide
-  essential instructions or controls.
+  units; opacity multiplies through the subtree. A typed surface-color target
+  affects only the solid semantic-surface fill command owned by that node.
+  `Color` channels are normalized linear-sRGB, so RGB interpolation is
+  componentwise in linear light; straight alpha remains constant and must equal
+  the currently resolved fill alpha. RGB and alpha must remain in `[0,1]`;
+  gradients and non-surface paint are unsupported. Color motion may require
+  renderer paint/material upload work and is not a compositor-only guarantee.
+  `Motion_Interaction_Policy.Target_Static` is the explicit initial interaction
+  contract: layout, clips, hit regions, semantic/accessibility bounds, and focus
+  identity remain at their logical target geometry. Pointer-down capture stays
+  latched to that logical target, and release activation uses the ordinary
+  logical hit target. Parent-local translations are composed before the host
+  applies DPI scaling. Reparenting drops the old owner's motion sidecar so no
+  old-parent residual transfers into new local coordinates.
+  Reveal is a paint-only entrance intent, distinct from an exit/tombstone
+  lifecycle. It is limited to structurally noninteractive subtrees. Visual
+  opacity does not defer semantic or accessibility exposure, so reveal must
+  not hide essential instructions or controls; it never removes nodes or
+  defers their hit/accessibility registration.
   `motion_tick` samples the retained responses and requests a presentation-only
-  frame when visible values change. A custom host can flush that work with
-  `begin_presentation_frame` / `end_presentation_frame`; these frames do not
-  call application description, reconciliation, measurement, or layout. The
+  frame when visible values change. Motion-only frames do not invoke app
+  description, reconciliation, measurement, or layout; translation/opacity
+  composition remains retained, while color changes still update the surface
+  paint value and may require backend upload. A custom host flushes that work
+  with `begin_presentation_frame` / `end_presentation_frame`. The
   SDL host schedules one coalesced presentation deadline per native window and
   samples at a bounded display-like cadence using its monotonic nanosecond
   clock. `Application_Services.motion_clock` supplies that same clock through

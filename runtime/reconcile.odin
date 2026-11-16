@@ -493,6 +493,9 @@ copy_node_description :: proc(
 			if text_style_span_has_effect(span) { append(&node.text_style_spans, span) }
 		}
 	}
+	if node.parent != d.parent {
+		motion_owner_snap_reparented(rt, node.id)
+	}
 	node.parent = d.parent
 	if kind_changed && node.kind == .Custom_Surface {
 		gpu_surface_image_layers_destroy(rt, node.id)
@@ -533,6 +536,7 @@ copy_node_description :: proc(
 	} else {
 		delete_key(&rt.semantic_surfaces, node.id)
 	}
+	motion_surface_color_reconcile(rt, node.id)
 	if semantic_surface_style.defined && semantic_surface_style.open_top_edge != 0 {
 		rt.surface_top_edge_links[node.id] = semantic_surface_style.open_top_edge
 	} else { delete_key(&rt.surface_top_edge_links, node.id) }

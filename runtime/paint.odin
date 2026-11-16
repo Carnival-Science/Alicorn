@@ -238,6 +238,12 @@ compose_subtree :: proc(
 	if part_visible {
 		for cached_command in node.paint {
 			command := cached_command
+			if presentation.has_surface_color && command.semantic_surface_fill {
+				if surface, ok := command.payload.(Surface_Paint); ok {
+					surface.fill = presentation.surface_color
+					command.payload = surface
+				}
+			}
 			command.opacity *= presentation.opacity
 			command.translation[0] += presentation.translation[0]
 			command.translation[1] += presentation.translation[1]
@@ -443,6 +449,7 @@ update_paint :: proc(rt: ^Runtime) {
 							top_edge_gap=semantic_surface_top_edge_gap(rt, node, semantic_surface_style),
 						)
 						surface_command.semantic_surface_gradient = resolved_surface.gradient.axis != .None
+						surface_command.semantic_surface_fill = true
 						append(&node.paint, surface_command)
 					}
 				} else if node.paint_background {

@@ -36,6 +36,7 @@ Motion_Mode :: alicorn.Motion_Mode
 Motion_Intent :: alicorn.Motion_Intent
 Motion_Target :: alicorn.Motion_Target
 Motion_Clip_Policy :: alicorn.Motion_Clip_Policy
+Motion_Interaction_Policy :: alicorn.Motion_Interaction_Policy
 Motion_Theme_Policy :: alicorn.Motion_Theme_Policy
 Motion_Reduced_Motion_Policy :: alicorn.Motion_Reduced_Motion_Policy
 Motion_Owner_Handle :: alicorn.Motion_Owner_Handle
@@ -138,6 +139,21 @@ motion_translation :: proc(
 ) -> Motion_Runtime_Status {
 	if ctx == nil || ctx.runtime == nil { return .Invalid_Runtime }
 	return alicorn.motion_target_translation(ctx.runtime, handle, target, config, mode, at)
+}
+
+// motion_surface_color retargets a solid semantic-surface fill in linear-sRGB.
+// The target must preserve the current straight-alpha value. Motion remains a
+// paint property and does not change layout, hit testing, or semantic bounds.
+motion_surface_color :: proc(
+	ctx: ^UI,
+	handle: Motion_Owner_Handle,
+	target: Color,
+	config: Motion_Config,
+	mode: Motion_Mode,
+	at: Motion_Time,
+) -> Motion_Runtime_Status {
+	if ctx == nil || ctx.runtime == nil { return .Invalid_Runtime }
+	return alicorn.motion_target_surface_color(ctx.runtime, handle, target, config, mode, at)
 }
 
 // motion_tick samples opted-in properties at an injected monotonic timestamp.

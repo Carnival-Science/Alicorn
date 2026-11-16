@@ -619,8 +619,7 @@ style_theme_motion_policy :: proc(rt: ^Runtime, theme_id: Style_Theme_ID) -> Mot
 	index := u64(u32(resolved_id))
 	if index == 0 || index > u64(len(rt.style_themes)) { return DEFAULT_MOTION_THEME_POLICY }
 	policy := rt.style_themes[index-1].motion_policy
-	if policy.defined { return policy }
-	return DEFAULT_MOTION_THEME_POLICY
+	return motion_theme_policy_with_defaults(policy)
 }
 
 style_theme_color :: proc(rt: ^Runtime, theme: Style_Theme_ID, role: Style_Color_Role) -> Color {

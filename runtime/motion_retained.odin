@@ -36,6 +36,7 @@ Motion_Runtime_Status :: enum {
 	Runtime_Identity_Limit,
 	Invalid_Value,
 	Invalid_Configuration,
+	Unsupported_Property,
 	Time_Rewound,
 	Clock_Unavailable,
 	Interactive_Reveal_Unsupported,
@@ -111,6 +112,22 @@ Motion_Diagnostic_Owner_Snapshot :: struct {
 	clock_time: Motion_Time,
 	translation: Motion_Property_Snapshot,
 	opacity: Motion_Property_Snapshot,
+	surface_color: Motion_Color_Property_Snapshot,
+}
+
+Motion_Color_Property_Snapshot :: struct {
+	has_value: bool,
+	active: bool,
+	deadline_established: bool,
+	mode: Motion_Mode,
+	config: Motion_Config,
+	target: Color,
+	presented: Color,
+	velocity: [3]f64,
+	raw_presented: [3]f64,
+	sampled_at: Motion_Time,
+	start_time: Motion_Time,
+	settle_after_ns: u64,
 }
 
 Motion_Diagnostic_Event :: struct {
@@ -175,8 +192,11 @@ Motion_Presentation :: struct {
 	presented_translation: [2]f32,
 	target_opacity: f64,
 	presented_opacity: f32,
+	target_surface_color: Color,
+	presented_surface_color: Color,
 	has_translation: bool,
 	has_opacity: bool,
+	has_surface_color: bool,
 	active: bool,
 	deadline_established: bool,
 	status: Motion_Runtime_Status,
@@ -218,6 +238,12 @@ Motion_Retained_Owner :: struct {
 	opacity_active: bool,
 	opacity_deadline_established: bool,
 	opacity_clamped: bool,
+	has_surface_color: bool,
+	surface_color: Motion_Color_Response,
+	presented_surface_color: Color,
+	surface_color_sampled_at: Motion_Time,
+	surface_color_active: bool,
+	surface_color_deadline_established: bool,
 }
 
 // Motion_Intent_Request keeps the ordinary UI wrapper declarative: a request
@@ -235,6 +261,8 @@ Motion_Intent_Request :: struct {
 Motion_Composition_Values :: struct {
 	translation: [2]f32,
 	opacity: f32,
+	surface_color: Color,
+	has_surface_color: bool,
 	clip_policy: Motion_Clip_Policy,
 }
 
@@ -248,6 +276,116 @@ motion_runtime_status :: proc(status: Motion_Status) -> Motion_Runtime_Status {
 	case .Numeric_Overflow: return .Numeric_Overflow
 	}
 	return .Invalid_Value
+}
+
+motion_surface_color_is_valid :: proc(color: Color) -> bool {
+	return semantic_surface_color_is_valid(color)
+}
+
+motion_color_response_share_deadline :: proc(response: ^Motion_Color_Response) {
+	if response == nil { return }
+	established := response.r.deadline_established && response.g.deadline_established && response.b.deadline_established
+	if !established {
+		response.r.deadline_established = false
+		response.g.deadline_established = false
+		response.b.deadline_established = false
+		response.r.settle_after_ns, response.g.settle_after_ns, response.b.settle_after_ns = 0, 0, 0
+		return
+	}
+	deadline := max(response.r.settle_after_ns, max(response.g.settle_after_ns, response.b.settle_after_ns))
+	response.r.settle_after_ns, response.g.settle_after_ns, response.b.settle_after_ns = deadline, deadline, deadline
+}
+
+motion_color_response_set_target :: proc(
+	response: Motion_Color_Response,
+	initialized: bool,
+	base, target: Color,
+	config: Motion_Config,
+	mode: Motion_Mode,
+	at: Motion_Time,
+) -> (next: Motion_Color_Response, status: Motion_Status) {
+	if !motion_surface_color_is_valid(base) || !motion_surface_color_is_valid(target) || base.a != target.a {
+		return response, .Invalid_Value
+	}
+	var_status := Motion_Status.Ok
+	next.r, var_status = motion_scalar_set_target(response.r, initialized, f64(base.r), f64(target.r), config, mode, at)
+	if var_status != .Ok { return response, var_status }
+	next.g, var_status = motion_scalar_set_target(response.g, initialized, f64(base.g), f64(target.g), config, mode, at)
+	if var_status != .Ok { return response, var_status }
+	next.b, var_status = motion_scalar_set_target(response.b, initialized, f64(base.b), f64(target.b), config, mode, at)
+	if var_status != .Ok { return response, var_status }
+	motion_color_response_share_deadline(&next)
+	return next, .Ok
+}
+
+motion_color_response_sample :: proc(response: Motion_Color_Response, alpha: f32, at: Motion_Time) -> Motion_Color_Sample {
+	r := motion_scalar_sample(response.r, at)
+	if r.status != .Ok { return Motion_Color_Sample{status=r.status} }
+	g := motion_scalar_sample(response.g, at)
+	if g.status != .Ok { return Motion_Color_Sample{status=g.status} }
+	b := motion_scalar_sample(response.b, at)
+	if b.status != .Ok { return Motion_Color_Sample{status=b.status} }
+	active := r.active || g.active || b.active
+	return Motion_Color_Sample{
+		value=Color{f32(clamp(r.value, f64(0), f64(1))), f32(clamp(g.value, f64(0), f64(1))), f32(clamp(b.value, f64(0), f64(1))), alpha},
+		raw=[3]f64{r.value, g.value, b.value},
+		velocity=[3]f64{r.velocity, g.velocity, b.velocity},
+		active=active,
+		settled=!active,
+		deadline_established=r.deadline_established && g.deadline_established && b.deadline_established,
+		status=.Ok,
+	}
+}
+
+motion_surface_color_base :: proc(rt: ^Runtime, owner: Node_ID) -> (base: Color, supported: bool) {
+	if rt == nil { return {}, false }
+	node, node_found := rt.nodes[owner]
+	style, style_found := rt.semantic_surfaces[owner]
+	if !node_found || node == nil || !node.active || !style_found || !style.defined || style.gradient.axis != .None {
+		return {}, false
+	}
+	resolved := style_semantic_surface_resolve_retained(rt, node, style)
+	if !motion_surface_color_is_valid(resolved.fill) { return {}, false }
+	return resolved.fill, true
+}
+
+motion_surface_color_cancel :: proc(rt: ^Runtime, owner: Node_ID, reason: string) {
+	if rt == nil || rt.motion_owners == nil { return }
+	state, found := rt.motion_owners[owner]
+	if !found || !state.has_surface_color { return }
+	state.has_surface_color = false
+	state.surface_color_active = false
+	state.surface_color_deadline_established = true
+	state.surface_color = Motion_Color_Response{}
+	state.presented_surface_color = Color{}
+	rt.motion_owners[owner] = state
+	motion_request_presentation(rt, reason)
+}
+
+// A semantic fill can be removed or replaced by a gradient while a color
+// response is retained. Cancel only that property so translation/opacity on
+// the same owner remain independent.
+motion_surface_color_reconcile :: proc(rt: ^Runtime, owner: Node_ID) {
+	if rt == nil || rt.motion_owners == nil { return }
+	state, found := rt.motion_owners[owner]
+	if !found || !state.has_surface_color { return }
+	base, supported := motion_surface_color_base(rt, owner)
+	if !supported || base.a != state.presented_surface_color.a {
+		motion_surface_color_cancel(rt, owner, "semantic surface color binding changed")
+	}
+}
+
+// A parent-local presentation has no well-defined value after reparenting.
+// Drop the owner's complete sidecar; a same-frame declarative intent may
+// acquire a fresh generation after reconciliation and establish new targets.
+motion_owner_snap_reparented :: proc(rt: ^Runtime, owner: Node_ID) {
+	if rt == nil || rt.motion_owners == nil { return }
+	state, found := rt.motion_owners[owner]
+	if !found { return }
+	visible_change := state.presented_translation != [2]f32{} ||
+		(state.has_opacity && state.presented_opacity != 1) || state.has_surface_color
+	delete_key(&rt.motion_owners, owner)
+	if visible_change { motion_request_presentation(rt, "retained motion owner reparented") }
 }
 
 motion_diagnostics_ensure :: proc(rt: ^Runtime) -> ^Motion_Diagnostics {
@@ -335,6 +473,26 @@ motion_diagnostics_owner_snapshot :: proc(rt: ^Runtime, owner: Node_ID) -> Motio
 			settle_after_ns=state.opacity.settle_after_ns,
 		}
 	}
+	if state.has_surface_color {
+		sample := motion_color_response_sample(state.surface_color, state.presented_surface_color.a, state.surface_color_sampled_at)
+		snapshot.surface_color = Motion_Color_Property_Snapshot{
+			has_value=true,
+			active=state.surface_color_active,
+			deadline_established=state.surface_color_deadline_established,
+			mode=state.surface_color.r.mode,
+			config=state.surface_color.r.config,
+			target=Color{
+				f32(state.surface_color.r.target), f32(state.surface_color.g.target),
+				f32(state.surface_color.b.target), state.presented_surface_color.a,
+			},
+			presented=state.presented_surface_color,
+			velocity=sample.velocity,
+			raw_presented=sample.raw,
+			sampled_at=state.surface_color_sampled_at,
+			start_time=state.surface_color.r.start_time,
+			settle_after_ns=state.surface_color.r.settle_after_ns,
+		}
+	}
 	return snapshot
 }
 
@@ -420,7 +578,11 @@ motion_diagnostic_record :: proc(
 			last.owner.opacity.has_value == event.owner.opacity.has_value &&
 			last.owner.opacity.target == event.owner.opacity.target &&
 			last.owner.opacity.mode == event.owner.opacity.mode &&
-			last.owner.opacity.config == event.owner.opacity.config
+			last.owner.opacity.config == event.owner.opacity.config &&
+			last.owner.surface_color.has_value == event.owner.surface_color.has_value &&
+			last.owner.surface_color.target == event.owner.surface_color.target &&
+			last.owner.surface_color.mode == event.owner.surface_color.mode &&
+			last.owner.surface_color.config == event.owner.surface_color.config
 		if last.kind == event.kind && last.reason == event.reason && last.clock_source == event.clock_source &&
 			last.owner.owner == event.owner.owner &&
 			last.status == event.status && last.owner.cause == event.owner.cause &&
@@ -551,11 +713,19 @@ motion_intent_queue :: proc(
 		motion_diagnostic_record(rt, .Failure, owner, .Invalid_Value, source, cause, coalesce=true)
 		return .Invalid_Value
 	}
+	if target.has_surface_color && !motion_surface_color_is_valid(target.surface_color) {
+		motion_diagnostic_record(rt, .Failure, owner, .Invalid_Value, source, cause, coalesce=true)
+		return .Invalid_Value
+	}
+	if target.interaction_policy != .Target_Static {
+		motion_diagnostic_record(rt, .Failure, owner, .Unsupported_Property, source, cause, coalesce=true)
+		return .Unsupported_Property
+	}
 	if target.clip_policy != .Static && target.clip_policy != .Follow_Visual {
 		motion_diagnostic_record(rt, .Failure, owner, .Invalid_Value, source, cause, coalesce=true)
 		return .Invalid_Value
 	}
-	if !target.has_translation && !target.has_opacity && target.clip_policy == .Static { return .Ok }
+	if !target.has_translation && !target.has_opacity && !target.has_surface_color && target.clip_policy == .Static { return .Ok }
 	if _, described := rt.seen[owner]; !described {
 		motion_diagnostic_record(rt, .Failure, owner, .Owner_Not_Described, source, cause, coalesce=true)
 		return .Owner_Not_Described
@@ -686,11 +856,12 @@ motion_reveal_subtree_is_noninteractive :: proc(rt: ^Runtime, owner: Node_ID) ->
 @(private)
 motion_intent_mode_resolve :: proc(
 	intent: Motion_Intent,
-	reduced_motion, disabled, opacity_property: bool,
+	reduced_motion, disabled, opacity_property, surface_color_property: bool,
 	policy: Motion_Theme_Policy,
 ) -> (mode: Motion_Mode, config: Motion_Config) {
 	config = policy.translation
 	if opacity_property { config = policy.opacity }
+	if surface_color_property { config = policy.surface_color }
 	if disabled || intent == .Snap { return .Snap, config }
 	if intent == .Direct { return .Direct, config }
 	if reduced_motion {
@@ -750,6 +921,10 @@ motion_composition_values :: proc(rt: ^Runtime, owner: Node_ID) -> Motion_Compos
 	if !found { return result }
 	if state.has_translation { result.translation = state.presented_translation }
 	if state.has_opacity { result.opacity = state.presented_opacity }
+	if state.has_surface_color {
+		result.surface_color = state.presented_surface_color
+		result.has_surface_color = true
+	}
 	result.clip_policy = state.clip_policy
 	return result
 }
@@ -758,9 +933,10 @@ motion_presentation :: proc(rt: ^Runtime, handle: Motion_Owner_Handle) -> Motion
 	if rt == nil { return Motion_Presentation{status=.Invalid_Runtime} }
 	if !motion_owner_is_current(rt, handle) { return Motion_Presentation{status=.Stale_Owner} }
 	state := rt.motion_owners[handle.node]
-	active := state.translation_active || state.opacity_active
+	active := state.translation_active || state.opacity_active || state.surface_color_active
 	deadline_established := (!state.translation_active || state.translation_deadline_established) &&
-		(!state.opacity_active || state.opacity_deadline_established)
+		(!state.opacity_active || state.opacity_deadline_established) &&
+		(!state.surface_color_active || state.surface_color_deadline_established)
 	return Motion_Presentation{
 		target_translation=Motion_Vector2{
 			state.translation.x.target if state.has_translation else 0,
@@ -769,8 +945,16 @@ motion_presentation :: proc(rt: ^Runtime, handle: Motion_Owner_Handle) -> Motion
 		presented_translation=state.presented_translation,
 		target_opacity=state.opacity.target if state.has_opacity else 1,
 		presented_opacity=state.presented_opacity if state.has_opacity else 1,
+		target_surface_color=Color{
+			f32(state.surface_color.r.target) if state.has_surface_color else 0,
+			f32(state.surface_color.g.target) if state.has_surface_color else 0,
+			f32(state.surface_color.b.target) if state.has_surface_color else 0,
+			state.presented_surface_color.a if state.has_surface_color else 1,
+		},
+		presented_surface_color=state.presented_surface_color,
 		has_translation=state.has_translation,
 		has_opacity=state.has_opacity,
+		has_surface_color=state.has_surface_color,
 		active=active,
 		deadline_established=deadline_established,
 		status=.Ok,
@@ -945,6 +1129,105 @@ motion_target_opacity :: proc(
 	return .Ok
 }
 
+// motion_target_surface_color animates the fill of a retained semantic
+// surface. It is an explicit paint property, not a renderer-independent
+// promise that changing color avoids paint/upload work. RGB is linear-sRGB;
+// alpha must match the current fill and remains constant for the response.
+motion_target_surface_color :: proc(
+	rt: ^Runtime,
+	handle: Motion_Owner_Handle,
+	target: Color,
+	config: Motion_Config,
+	mode: Motion_Mode,
+	at: Motion_Time,
+	source: Source_Site = {},
+	cause: Cause_Context = {},
+	record_diagnostics := true,
+	loc := #caller_location,
+) -> Motion_Runtime_Status {
+	if rt == nil { return .Invalid_Runtime }
+	event_source := source
+	if event_source.file == "" { event_source = Source_Site{loc.file_path, int(loc.line), int(loc.column), "motion surface color"} }
+	if !motion_surface_color_is_valid(target) {
+		if record_diagnostics { return motion_diagnostic_failure(rt, handle.node, .Invalid_Value, event_source, cause, "motion surface color") }
+		return .Invalid_Value
+	}
+	if !motion_config_valid(config) {
+		if record_diagnostics { return motion_diagnostic_failure(rt, handle.node, .Invalid_Configuration, event_source, cause, "motion surface color") }
+		return .Invalid_Configuration
+	}
+	if !motion_mode_valid(mode) {
+		if record_diagnostics { return motion_diagnostic_failure(rt, handle.node, .Invalid_Value, event_source, cause, "motion surface color") }
+		return .Invalid_Value
+	}
+	if !motion_owner_is_current(rt, handle) {
+		if record_diagnostics { motion_diagnostic_record(rt, .Failure, handle.node, .Stale_Owner, event_source, cause, coalesce=true) }
+		return .Stale_Owner
+	}
+	base, supported := motion_surface_color_base(rt, handle.node)
+	if !supported {
+		motion_surface_color_cancel(rt, handle.node, "unsupported semantic surface color binding removed")
+		if record_diagnostics { return motion_diagnostic_failure(rt, handle.node, .Unsupported_Property, event_source, cause, "motion surface color requires a solid semantic surface") }
+		return .Unsupported_Property
+	}
+	if base.a != target.a {
+		if record_diagnostics { return motion_diagnostic_failure(rt, handle.node, .Invalid_Value, event_source, cause, "motion surface color alpha must remain constant") }
+		return .Invalid_Value
+	}
+	if rt.motion_clock_initialized && i64(at) < i64(rt.motion_time) {
+		if record_diagnostics { return motion_diagnostic_failure(rt, handle.node, .Time_Rewound, event_source, cause, "motion surface color") }
+		return .Time_Rewound
+	}
+	preflight := motion_tick(rt, at)
+	if preflight.status != .Ok {
+		if record_diagnostics && preflight.status == .Time_Rewound {
+			return motion_diagnostic_failure(rt, handle.node, preflight.status, event_source, cause, "motion surface color")
+		}
+		return preflight.status
+	}
+	state := rt.motion_owners[handle.node]
+	before := state
+	if state.has_surface_color { base = state.presented_surface_color }
+	next, kernel_status := motion_color_response_set_target(
+		state.surface_color, state.has_surface_color, base, target, config, mode, at,
+	)
+	if kernel_status != .Ok {
+		status := motion_runtime_status(kernel_status)
+		if record_diagnostics { return motion_diagnostic_failure(rt, handle.node, status, event_source, cause, "motion surface color") }
+		return status
+	}
+	if state.has_surface_color && state.surface_color == next {
+		if record_diagnostics { motion_diagnostic_record(rt, .Unchanged_Target, handle.node, source=event_source, cause=cause, coalesce=true) }
+		return .Ok
+	}
+	sample := motion_color_response_sample(next, target.a, at)
+	if sample.status != .Ok {
+		status := motion_runtime_status(sample.status)
+		if record_diagnostics { return motion_diagnostic_failure(rt, handle.node, status, event_source, cause, "motion surface color") }
+		return status
+	}
+	state.surface_color = next
+	state.has_surface_color = true
+	state.presented_surface_color = sample.value
+	state.surface_color_sampled_at = at
+	state.surface_color_active = sample.active
+	state.surface_color_deadline_established = sample.deadline_established
+	if record_diagnostics {
+		state.intent = .Settle if mode == .Settle else (.Direct if mode == .Direct else .Snap)
+		state.source = event_source
+		state.cause = cause
+	}
+	rt.motion_owners[handle.node] = state
+	motion_request_presentation(rt, "retained semantic surface color target changed")
+	if record_diagnostics {
+		kind: Motion_Diagnostic_Kind = .Target_Declared
+		if before.has_surface_color { kind = .Retarget }
+		if before.has_surface_color && before.surface_color.r.mode != state.surface_color.r.mode { kind = .Mode_Change }
+		motion_diagnostic_record(rt, kind, handle.node, source=event_source, cause=cause)
+	}
+	return .Ok
+}
+
 motion_target_translation :: proc(
 	rt: ^Runtime,
 	handle: Motion_Owner_Handle,
@@ -1068,16 +1351,23 @@ motion_apply_intent :: proc(
 		abs(target.translation.y) > MOTION_TRANSLATION_COMPONENT_MAX) {
 		return .Invalid_Value
 	}
+	if target.has_surface_color && !motion_surface_color_is_valid(target.surface_color) { return .Invalid_Value }
 	if target.clip_policy != .Static && target.clip_policy != .Follow_Visual {
 		return .Invalid_Value
 	}
-	if !target.has_translation && !target.has_opacity && target.clip_policy == .Static { return .Ok }
+	if target.interaction_policy != .Target_Static { return .Unsupported_Property }
+	if !target.has_translation && !target.has_opacity && !target.has_surface_color && target.clip_policy == .Static { return .Ok }
 	if !rt.motion_clock_initialized { return .Clock_Unavailable }
 	event_source := source
 	node, found := rt.nodes[owner]
 	if !found || node == nil || !node.active { return .Owner_Not_Retained }
 	if intent == .Reveal && !motion_reveal_subtree_is_noninteractive(rt, owner) {
 		return .Interactive_Reveal_Unsupported
+	}
+	if target.has_surface_color {
+		base, supported := motion_surface_color_base(rt, owner)
+		if !supported { return .Unsupported_Property }
+		if target.surface_color.a != base.a { return .Invalid_Value }
 	}
 	if event_source.file == "" {
 		event_source = Source_Site{loc.file_path, int(loc.line), int(loc.column), "motion intent"}
@@ -1091,10 +1381,13 @@ motion_apply_intent :: proc(
 	if current.status != .Ok { return current.status }
 	reduced := node.style_environment.accessibility.reduce_motion
 	translation_mode, translation_config := motion_intent_mode_resolve(
-		intent, reduced, node.disabled, false, policy,
+		intent, reduced, node.disabled, false, false, policy,
 	)
 	opacity_mode, opacity_config := motion_intent_mode_resolve(
-		intent, reduced, node.disabled, true, policy,
+		intent, reduced, node.disabled, true, false, policy,
+	)
+	color_mode, color_config := motion_intent_mode_resolve(
+		intent, reduced, node.disabled, false, true, policy,
 	)
 	if intent == .Reveal {
 		// The fresh frame is paint-only hidden/offset before the response starts.
@@ -1130,6 +1423,12 @@ motion_apply_intent :: proc(
 			return status
 		}
 	}
+	if target.has_surface_color {
+		if status := motion_target_surface_color(rt, handle, target.surface_color, color_config, color_mode, rt.motion_time,
+			source=event_source, cause=cause, record_diagnostics=false); status != .Ok {
+			return status
+		}
+	}
 	reduced_opacity_bounded_snap := false
 	if reduced && policy.reduced_motion == .Opacity_Fade && target.has_opacity && opacity_mode == .Settle {
 		candidate := rt.motion_owners[owner].opacity
@@ -1155,12 +1454,15 @@ motion_apply_intent :: proc(
 		(!before.has_translation || before.translation != state.translation)
 	opacity_changed := target.has_opacity &&
 		(!before.has_opacity || before.opacity != state.opacity)
+	color_changed := target.has_surface_color &&
+		(!before.has_surface_color || before.surface_color != state.surface_color)
 	clip_policy_changed := before.clip_policy != target.clip_policy
 	state.clip_policy = target.clip_policy
 	translation_mode_changed := before.has_translation && target.has_translation &&
 		before.translation.x.mode != state.translation.x.mode
 	opacity_mode_changed := before.has_opacity && target.has_opacity && before.opacity.mode != state.opacity.mode
-	if translation_changed || opacity_changed || clip_policy_changed {
+	color_mode_changed := before.has_surface_color && target.has_surface_color && before.surface_color.r.mode != state.surface_color.r.mode
+	if translation_changed || opacity_changed || color_changed || clip_policy_changed {
 		state.intent = intent
 		state.source = event_source
 		state.cause = cause
@@ -1168,10 +1470,10 @@ motion_apply_intent :: proc(
 	}
 	diagnostics := motion_diagnostics_ensure(rt)
 	diagnostics.stats.intent_declarations += 1
-	if translation_changed || opacity_changed {
-		if translation_mode_changed || opacity_mode_changed {
+	if translation_changed || opacity_changed || color_changed {
+		if translation_mode_changed || opacity_mode_changed || color_mode_changed {
 			motion_diagnostic_record(rt, .Mode_Change, owner, source=event_source, cause=cause)
-		} else if before.has_translation || before.has_opacity {
+		} else if before.has_translation || before.has_opacity || before.has_surface_color {
 			motion_diagnostic_record(rt, .Retarget, owner, source=event_source, cause=cause)
 		} else {
 			motion_diagnostic_record(rt, .Target_Declared, owner, source=event_source, cause=cause)
@@ -1179,14 +1481,16 @@ motion_apply_intent :: proc(
 	} else {
 		motion_diagnostic_record(rt, .Unchanged_Target, owner, source=event_source, cause=cause, coalesce=true)
 	}
-	if clip_policy_changed && !translation_changed && !opacity_changed {
+	if clip_policy_changed && !translation_changed && !opacity_changed && !color_changed {
 		motion_request_presentation(rt, "motion clip policy changed")
 	}
-	if intent == .Reveal && ((!before.has_translation && target.has_translation) || (!before.has_opacity && target.has_opacity)) {
+	if intent == .Reveal && ((!before.has_translation && target.has_translation) || (!before.has_opacity && target.has_opacity) ||
+		(!before.has_surface_color && target.has_surface_color)) {
 		motion_diagnostic_record(rt, .Reveal, owner, source=event_source, cause=cause, coalesce=true)
 	}
 	if reduced && intent != .Direct && intent != .Snap &&
-		((target.has_translation && translation_mode == .Snap) || (target.has_opacity && opacity_mode == .Snap)) {
+		((target.has_translation && translation_mode == .Snap) || (target.has_opacity && opacity_mode == .Snap) ||
+		 (target.has_surface_color && color_mode == .Snap)) {
 		reason := Motion_Diagnostic_Reason(.None)
 		if reduced_opacity_bounded_snap { reason = .Reduced_Opacity_Fade_Exceeded_Bound }
 		motion_diagnostic_record(rt, .Reduced_Motion_Rewrite, owner, source=event_source, cause=cause, reason=reason, coalesce=true)
@@ -1205,6 +1509,13 @@ motion_sample_validate :: proc(state: Motion_Retained_Owner, at: Motion_Time) ->
 		_, x_ok := motion_value_to_f32(sample.value.x)
 		_, y_ok := motion_value_to_f32(sample.value.y)
 		if !x_ok || !y_ok { return .Numeric_Overflow }
+	}
+	if state.has_surface_color {
+		sample := motion_color_response_sample(state.surface_color, state.presented_surface_color.a, at)
+		if sample.status != .Ok { return motion_runtime_status(sample.status) }
+		for channel in sample.raw {
+			if !number_is_finite(channel) { return .Numeric_Overflow }
+		}
 	}
 	return .Ok
 }
@@ -1230,6 +1541,7 @@ motion_tick :: proc(rt: ^Runtime, at: Motion_Time) -> Motion_Tick_Result {
 			for _, state in rt.motion_owners {
 				if state.has_translation { rt.motion_diagnostics.stats.property_samples += 1 }
 				if state.has_opacity { rt.motion_diagnostics.stats.property_samples += 1 }
+				if state.has_surface_color { rt.motion_diagnostics.stats.property_samples += 1 }
 			}
 		}
 		if rt.style_transition_owners != nil {
@@ -1305,6 +1617,20 @@ motion_tick :: proc(rt: ^Runtime, at: Motion_Time) -> Motion_Tick_Result {
 				if !sample.deadline_established { result.unestablished_deadlines += 1 }
 			}
 		}
+		if state.has_surface_color {
+			sample := motion_color_response_sample(state.surface_color, state.presented_surface_color.a, at)
+			if state.surface_color_active && !sample.active { settled = true }
+			if sample.value != state.presented_surface_color { changed = true }
+			state.presented_surface_color = sample.value
+			state.surface_color_sampled_at = at
+			state.surface_color_active = sample.active
+			state.surface_color_deadline_established = sample.deadline_established
+			if sample.active {
+				result.active_properties += 1
+				owner_active = true
+				if !sample.deadline_established { result.unestablished_deadlines += 1 }
+			}
+		}
 		if owner_active { result.active_owners += 1 }
 		if changed { result.changed_owners += 1 }
 		if settled { motion_diagnostic_record(rt, .Settled, owner) }
@@ -1348,7 +1674,7 @@ motion_tick :: proc(rt: ^Runtime, at: Motion_Time) -> Motion_Tick_Result {
 motion_retained_owner_is_active :: proc(rt: ^Runtime, owner: Node_ID) -> bool {
 	if rt == nil || rt.motion_owners == nil { return false }
 	state, found := rt.motion_owners[owner]
-	return found && (state.opacity_active || state.translation_active)
+	return found && (state.opacity_active || state.translation_active || state.surface_color_active)
 }
 
 motion_activity :: proc(rt: ^Runtime) -> Motion_Activity {
@@ -1366,6 +1692,11 @@ motion_activity :: proc(rt: ^Runtime) -> Motion_Activity {
 			result.active_properties += 1
 			owner_active = true
 			if !state.translation_deadline_established { result.unestablished_deadlines += 1 }
+		}
+		if state.surface_color_active {
+			result.active_properties += 1
+			owner_active = true
+			if !state.surface_color_deadline_established { result.unestablished_deadlines += 1 }
 		}
 		if owner_active { result.active_owners += 1 }
 	}
@@ -1407,6 +1738,12 @@ motion_snap_unestablished :: proc(rt: ^Runtime, at: Motion_Time) -> Motion_Tick_
 				return Motion_Tick_Result{status=status}
 			}
 		}
+		if state.surface_color_active && !state.surface_color_deadline_established {
+			if status := motion_sample_validate(state, at); status != .Ok {
+				motion_diagnostic_record(rt, .Failure, owner, status, coalesce=true)
+				return Motion_Tick_Result{status=status}
+			}
+		}
 	}
 	result := Motion_Tick_Result{status=.Ok}
 	rt.motion_time = at
@@ -1442,6 +1779,26 @@ motion_snap_unestablished :: proc(rt: ^Runtime, at: Motion_Time) -> Motion_Tick_
 			state.translation_deadline_established = true
 			snapped = true
 		}
+		if state.surface_color_active && !state.surface_color_deadline_established {
+			target := Color{
+				f32(state.surface_color.r.target), f32(state.surface_color.g.target),
+				f32(state.surface_color.b.target), state.presented_surface_color.a,
+			}
+			next, status := motion_color_response_set_target(
+				state.surface_color, true, state.presented_surface_color, target,
+				state.surface_color.r.config, .Snap, at,
+			)
+			if status != .Ok { return Motion_Tick_Result{status=motion_runtime_status(status)} }
+			sample := motion_color_response_sample(next, target.a, at)
+			if sample.status != .Ok { return Motion_Tick_Result{status=motion_runtime_status(sample.status)} }
+			changed = changed || sample.value != state.presented_surface_color
+			state.surface_color = next
+			state.presented_surface_color = sample.value
+			state.surface_color_sampled_at = at
+			state.surface_color_active = false
+			state.surface_color_deadline_established = true
+			snapped = true
+		}
 		if changed { result.changed_owners += 1 }
 		if snapped { motion_diagnostic_record(rt, .Bounded_Snap, owner) }
 	}
@@ -1468,8 +1825,9 @@ motion_retire_owner :: proc(rt: ^Runtime, owner: Node_ID) {
 
 // motion_owner_release cancels an owner's current motion, removes its sidecar
 // record, and leaves the retained node alive. Releasing resets its presentation
-// to the neutral transform and opacity on the next composition; callers that
-// need another resting presentation should commit that state before releasing.
+// to neutral translation/opacity and restores style-resolved semantic fill on
+// the next composition; callers that need another resting presentation should
+// commit that state before releasing.
 motion_owner_release :: proc(rt: ^Runtime, handle: Motion_Owner_Handle, loc := #caller_location) -> Motion_Runtime_Status {
 	if rt == nil { return .Invalid_Runtime }
 	source := Source_Site{loc.file_path, int(loc.line), int(loc.column), "motion release"}
@@ -1478,7 +1836,7 @@ motion_owner_release :: proc(rt: ^Runtime, handle: Motion_Owner_Handle, loc := #
 		return .Stale_Owner
 	}
 	state := rt.motion_owners[handle.node]
-	visible_change := state.presented_translation != [2]f32{} ||
+	visible_change := state.presented_translation != [2]f32{} || state.has_surface_color ||
 		(state.has_opacity && state.presented_opacity != 1)
 	motion_diagnostic_record(rt, .Release, handle.node, source=source, cause=trace_current_cause(rt))
 	delete_key(&rt.motion_owners, handle.node)
@@ -1502,6 +1860,8 @@ motion_compose_subtree :: proc(
 			inherited_translation[1]+local.translation[1],
 		},
 		opacity=clamp(inherited_opacity*local.opacity, f32(0), f32(1)),
+		surface_color=local.surface_color,
+		has_surface_color=local.has_surface_color,
 		clip_policy=local.clip_policy,
 	}
 }

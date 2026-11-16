@@ -51,6 +51,241 @@ motion_retained_test_find_command :: proc(rt: ^Runtime, owner: Node_ID) -> (comm
 	return
 }
 
+motion_retained_test_build_button :: proc(rt: ^Runtime) -> Node_ID {
+	ui, ready := begin_frame(rt)
+	if !ready { return 0 }
+	container_begin_simple(&ui, .Root, key="motion-input-root", style=layout_style(.Column))
+	id, _ := button_ex(&ui, "M", key="motion-input-button", explicit_key=true,
+		style=layout_style(.Row, width=32, height=40))
+	container_end(&ui)
+	end_frame(&ui)
+	return id
+}
+
+motion_retained_test_build_reparented_surface :: proc(rt: ^Runtime, right: bool) -> Node_ID {
+	invalidate_root(rt, "motion reparent fixture update")
+	ui, ready := begin_frame(rt)
+	if !ready { return 0 }
+	container_begin_simple(&ui, .Root, key="motion-reparent-root", style=layout_style(.Row, width=300, height=100))
+	container_begin_simple(&ui, .Container, key="motion-reparent-left", style=layout_style(.Column, width=140, height=80))
+	if !right {
+		id := surface_begin(&ui, surface_core_color_role(.Accent), key="motion-reparent-child",
+			style=layout_style(.Row, width=40, height=30), fill=Color{0.3, 0.4, 0.5, 1})
+		surface_end(&ui)
+		container_end(&ui)
+		container_begin_simple(&ui, .Container, key="motion-reparent-right", style=layout_style(.Column, width=140, height=80))
+		container_end(&ui)
+		container_end(&ui)
+		end_frame(&ui)
+		return id
+	}
+	container_end(&ui)
+	container_begin_simple(&ui, .Container, key="motion-reparent-right", style=layout_style(.Column, width=140, height=80))
+	id := surface_begin(&ui, surface_core_color_role(.Accent), key="motion-reparent-child",
+		style=layout_style(.Row, width=40, height=30), fill=Color{0.3, 0.4, 0.5, 1})
+	surface_end(&ui)
+	container_end(&ui)
+	container_end(&ui)
+	end_frame(&ui)
+	return id
+}
+
+@(test)
+test_retained_motion_surface_color_is_linear_static_and_paint_only :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 320, 180})
+	defer destroy_runtime(&rt)
+	_, child, sibling := motion_retained_test_build(&rt, true)
+	if child == 0 || sibling == 0 { testing.expect(t, false, "semantic surface fixture should build"); return }
+	base, supported := motion_surface_color_base(&rt, child)
+	handle, owner_status := motion_owner_begin(&rt, child)
+	_ = motion_clock_set_time(&rt, Motion_Time(0))
+	theme := DEFAULT_STYLE_THEME
+	theme.motion_policy = Motion_Theme_Policy{
+		defined=true,
+		translation=DEFAULT_MOTION_THEME_POLICY.translation,
+		opacity=DEFAULT_MOTION_THEME_POLICY.opacity,
+		reduced_motion=.Snap,
+		reduced_opacity=DEFAULT_MOTION_THEME_POLICY.reduced_opacity,
+	}
+	theme_id := style_theme_register(&rt, theme)
+	if node, found := rt.nodes[child]; found { node.style_environment.theme = theme_id }
+	testing.expect(t, theme_id != 0 &&
+		style_theme_motion_policy(&rt, theme_id).surface_color == DEFAULT_MOTION_THEME_POLICY.surface_color,
+		"older custom themes that omit the new color response should inherit its safe library default")
+	target_color := Color{0.1, 0.9, 0.3, 1}
+	expected_r_response, expected_r_status := motion_scalar_set_target(
+		Motion_Scalar_Response{}, false, f64(base.r), f64(target_color.r),
+		DEFAULT_MOTION_THEME_POLICY.surface_color, .Settle, Motion_Time(0),
+	)
+	expected_r := motion_scalar_sample(expected_r_response, Motion_Time(50_000_000))
+	status := motion_apply_intent(&rt, child,
+		Motion_Target{surface_color=target_color, has_surface_color=true}, .Settle)
+	before := rt.stats
+	ui, ready := begin_presentation_frame(&rt)
+	if ready { end_presentation_frame(&ui) }
+	first_command, first_found := motion_retained_test_find_command(&rt, child)
+	first_fill, first_is_surface := first_command.payload.(Surface_Paint)
+	_ = motion_tick(&rt, Motion_Time(50_000_000))
+	ui, ready = begin_presentation_frame(&rt)
+	if ready { end_presentation_frame(&ui) }
+	state := motion_presentation(&rt, handle)
+	command, command_found := motion_retained_test_find_command(&rt, child)
+	fill, fill_is_surface := command.payload.(Surface_Paint)
+	sibling_command, sibling_found := motion_retained_test_find_command(&rt, sibling)
+	sibling_fill, sibling_is_surface := sibling_command.payload.(Surface_Paint)
+	stage_work_unchanged := rt.stats.frames_built == before.frames_built &&
+		rt.stats.reconcile_nodes_visited == before.reconcile_nodes_visited &&
+		rt.stats.measure_nodes_executed == before.measure_nodes_executed &&
+		rt.stats.layout_nodes_visited == before.layout_nodes_visited && rt.stats.layout_updates == before.layout_updates
+	testing.expect(t, supported && status == .Ok && owner_status == .Ok && ready && first_found && first_is_surface &&
+		first_command.semantic_surface_fill && first_fill.fill == base,
+		"legacy theme policies may omit the new color field; the default typed response starts at the current semantic fill")
+	testing.expect(t, state.status == .Ok && state.has_surface_color && state.active &&
+		state.presented_surface_color.a == base.a && state.presented_surface_color.r < base.r &&
+		state.presented_surface_color.g > base.g && state.presented_surface_color.b > base.b &&
+		expected_r_status == .Ok && abs(f64(state.presented_surface_color.r)-expected_r.value) < 0.00001 &&
+		fill_is_surface && command.semantic_surface_fill && fill.fill == state.presented_surface_color,
+		"RGB samples should use the linear-sRGB scalar response, keep straight alpha fixed, and affect only semantic fill")
+	testing.expect(t, sibling_found && sibling_is_surface && sibling_fill.fill == Color{0.1, 0.4, 0.7, 1} && stage_work_unchanged,
+		"the color target must not bleed to a sibling or rebuild description, reconciliation, measurement, or layout")
+	direct_target := Color{0.6, 0.25, 0.9, 1}
+	direct_status := motion_target_surface_color(&rt, handle, direct_target,
+		DEFAULT_MOTION_THEME_POLICY.surface_color, .Direct, Motion_Time(60_000_000))
+	direct := motion_presentation(&rt, handle)
+	testing.expect(t, direct_status == .Ok && !direct.active && direct.presented_surface_color == direct_target,
+		"Direct color mode should publish its declared solid fill without spring lag")
+	alpha_status := motion_apply_intent(&rt, child,
+		Motion_Target{surface_color=Color{0.2, 0.3, 0.4, 0.5}, has_surface_color=true}, .Snap)
+	range_status := motion_apply_intent(&rt, child,
+		Motion_Target{surface_color=Color{1.1, 0.3, 0.4, 1}, has_surface_color=true}, .Snap)
+	testing.expect(t, alpha_status == .Invalid_Value && range_status == .Invalid_Value,
+		"surface color motion rejects alpha changes and RGB values outside normalized linear-sRGB gamut")
+	release_status := motion_owner_release(&rt, handle)
+	ui, ready = begin_presentation_frame(&rt)
+	if ready { end_presentation_frame(&ui) }
+	released_command, released_found := motion_retained_test_find_command(&rt, child)
+	released_fill, released_is_surface := released_command.payload.(Surface_Paint)
+	testing.expect(t, release_status == .Ok && released_found && released_is_surface && released_fill.fill == base,
+		"releasing the typed color owner restores the current style-resolved semantic fill")
+}
+
+@(test)
+test_ui_motion_intent_queues_typed_semantic_surface_color_after_reconciliation :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 180, 100})
+	defer destroy_runtime(&rt)
+	_ = motion_clock_set_time(&rt, Motion_Time(0))
+	ui, ready := begin_frame(&rt)
+	if !ready { testing.expect(t, false, "fixture should begin a declarative frame"); return }
+	container_begin_simple(&ui, .Root, key="motion-color-queue-root", style=layout_style(.Column))
+	id := surface_begin(&ui, surface_core_color_role(.Accent), key="motion-color-queue-surface",
+		style=layout_style(.Row, width=80, height=32), fill=Color{0.2, 0.4, 0.6, 1})
+	target := Motion_Target{surface_color=Color{0.8, 0.7, 0.1, 1}, has_surface_color=true}
+	queue_status := motion_intent_queue(&rt, id, target, .Snap)
+	surface_end(&ui)
+	container_end(&ui)
+	end_frame(&ui)
+	handle, handle_status := motion_owner_begin(&rt, id)
+	present_ui, present := begin_presentation_frame(&rt)
+	if present { end_presentation_frame(&present_ui) }
+	command, command_found := motion_retained_test_find_command(&rt, id)
+	fill, is_surface := command.payload.(Surface_Paint)
+	presentation := motion_presentation(&rt, handle)
+	testing.expect(t, queue_status == .Ok && handle_status == .Ok && present && command_found && is_surface &&
+		command.semantic_surface_fill && fill.fill == target.surface_color && presentation.has_surface_color &&
+		presentation.presented_surface_color == target.surface_color,
+		"declarative motion queues the typed fill target until the retained node and semantic style are reconciled")
+}
+
+@(test)
+test_retained_motion_static_interaction_policy_preserves_capture_and_semantic_bounds :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 320, 180})
+	defer destroy_runtime(&rt)
+	button_id := motion_retained_test_build_button(&rt)
+	if button_id == 0 { testing.expect(t, false, "button fixture should build"); return }
+	button_node := rt.nodes[button_id]
+	logical_bounds := button_node.hit_bounds
+	semantic_before, semantic_found := semantic_node_lookup(&rt, semantic_visual_id(button_id))
+	_ = focus(&rt, button_id)
+	_ = motion_clock_set_time(&rt, Motion_Time(0))
+	status := motion_apply_intent(&rt, button_id,
+		Motion_Target{translation=Motion_Vector2{180, 0}, has_translation=true, interaction_policy=.Target_Static}, .Settle)
+	handle, handle_status := motion_owner_begin(&rt, button_id)
+	ui, ready := begin_presentation_frame(&rt)
+	if ready { end_presentation_frame(&ui) }
+	_ = motion_tick(&rt, Motion_Time(50_000_000))
+	ui, ready = begin_presentation_frame(&rt)
+	if ready { end_presentation_frame(&ui) }
+	moved_command, command_found := motion_retained_test_find_command(&rt, button_id)
+	center_x, center_y := logical_bounds.x+logical_bounds.w*0.5, logical_bounds.y+logical_bounds.h*0.5
+	moved_x := center_x+moved_command.translation[0]
+	moved_hit := hit_test(&rt, moved_x, center_y)
+	static_hit := hit_test(&rt, center_x, center_y)
+	semantic_after, after_found := semantic_node_lookup(&rt, semantic_visual_id(button_id))
+	_ = process_pointer(&rt, Pointer_Event{kind=.Down, x=center_x, y=center_y, button=POINTER_BUTTON_PRIMARY})
+	captured := rt.captured_node
+	_ = motion_tick(&rt, Motion_Time(60_000_000))
+	_ = process_pointer(&rt, Pointer_Event{kind=.Up, x=center_x, y=center_y, button=POINTER_BUTTON_PRIMARY})
+	presentation := motion_presentation(&rt, handle)
+	testing.expect(t, status == .Ok && handle_status == .Ok && ready && command_found && moved_command.translation[0] > logical_bounds.w &&
+		presentation.active,
+		"the Button subtree may move visually while its interaction owner remains the same retained node")
+	testing.expect(t, semantic_found && after_found && rt.nodes[button_id].hit_bounds == logical_bounds &&
+		semantic_before.has_bounds && semantic_after.bounds == semantic_before.bounds &&
+		static_hit == button_id && moved_hit != button_id,
+		"hit testing and accessible bounds stay at logical target geometry under Target_Static")
+	testing.expect(t, captured == button_id && rt.activation_node == button_id && rt.focused == button_id,
+		"pointer capture, activation, and keyboard focus remain attached to the logical Button identity")
+}
+
+@(test)
+test_retained_motion_surface_color_rejects_unsupported_bindings_and_cancels_on_removal :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 320, 180})
+	defer destroy_runtime(&rt)
+	_, child, _ := motion_retained_test_build(&rt, true)
+	_ = motion_clock_set_time(&rt, Motion_Time(0))
+	color_target := Motion_Target{surface_color=Color{0.2, 0.4, 0.6, 1}, has_surface_color=true}
+	style := rt.semantic_surfaces[child]
+	style.gradient = surface_gradient_to(surface_core_color_role(.Accent), .Horizontal)
+	rt.semantic_surfaces[child] = style
+	gradient_status := motion_apply_intent(&rt, child, color_target, .Snap)
+	style.gradient = SURFACE_GRADIENT_DISABLED
+	rt.semantic_surfaces[child] = style
+	handle, handle_status := motion_owner_begin(&rt, child)
+	set_status := motion_target_surface_color(&rt, handle, color_target.surface_color,
+		DEFAULT_MOTION_THEME_POLICY.surface_color, .Snap, Motion_Time(0))
+	delete_key(&rt.semantic_surfaces, child)
+	motion_surface_color_reconcile(&rt, child)
+	_, current := rt.motion_owners[child]
+	rt_container := new_runtime(Rect{0, 0, 64, 64})
+	defer destroy_runtime(&rt_container)
+	_, container, _ := motion_clip_test_build(&rt_container)
+	_ = motion_clock_set_time(&rt_container, Motion_Time(0))
+	container_status := motion_apply_intent(&rt_container, container, color_target, .Snap)
+	testing.expect(t, container_status == .Unsupported_Property && gradient_status == .Unsupported_Property,
+		"only nodes with solid semantic-surface fill bindings may opt into typed color motion")
+	testing.expect(t, handle_status == .Ok && set_status == .Ok && current && !rt.motion_owners[child].has_surface_color,
+		"removing a fill binding cancels only its retained color slot instead of leaving stale presentation paint")
+}
+
+@(test)
+test_retained_motion_reparenting_does_not_transfer_parent_local_presentation :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 320, 180})
+	defer destroy_runtime(&rt)
+	old_id := motion_retained_test_build_reparented_surface(&rt, false)
+	_ = motion_clock_set_time(&rt, Motion_Time(0))
+	status := motion_apply_intent(&rt, old_id,
+		Motion_Target{translation=Motion_Vector2{30, 0}, has_translation=true}, .Snap)
+	handle, handle_status := motion_owner_begin(&rt, old_id)
+	new_id := motion_retained_test_build_reparented_surface(&rt, true)
+	command, command_found := motion_retained_test_find_command(&rt, new_id)
+	_, retained := rt.motion_owners[new_id]
+	testing.expect(t, status == .Ok && handle_status == .Ok && old_id != new_id &&
+		motion_presentation(&rt, handle).status == .Stale_Owner,
+		"reparenting changes parent-scoped identity and invalidates the old local-coordinate owner")
+	testing.expect(t, !retained && command_found && command.translation == [2]f32{},
+		"a reparented node starts at its new logical position without inheriting the old parent's residual")
+}
+
 motion_clip_test_build :: proc(rt: ^Runtime) -> (outer, moving, label: Node_ID) {
 	ui, ready := begin_frame(rt)
 	if !ready { return }
@@ -490,6 +725,7 @@ test_motion_intent_uses_new_theme_policy_without_changing_owner_identity :: proc
 		defined=true,
 		translation=Motion_Config{omega=7, position_tolerance=0.02, velocity_tolerance=0.04},
 		opacity=DEFAULT_MOTION_THEME_POLICY.opacity,
+		surface_color=DEFAULT_MOTION_THEME_POLICY.surface_color,
 		reduced_motion=.Snap,
 		reduced_opacity=DEFAULT_MOTION_THEME_POLICY.reduced_opacity,
 	}
@@ -517,6 +753,7 @@ test_reduced_motion_theme_policy_only_allows_opted_in_opacity_fade :: proc(t: ^t
 		defined=true,
 		translation=DEFAULT_MOTION_THEME_POLICY.translation,
 		opacity=DEFAULT_MOTION_THEME_POLICY.opacity,
+		surface_color=DEFAULT_MOTION_THEME_POLICY.surface_color,
 		reduced_motion=.Opacity_Fade,
 		reduced_opacity=Motion_Config{omega=100, position_tolerance=0.005, velocity_tolerance=0.02},
 	}
@@ -554,6 +791,7 @@ test_reduced_motion_opacity_fade_over_250ms_is_snapped_and_explained :: proc(t: 
 		defined=true,
 		translation=DEFAULT_MOTION_THEME_POLICY.translation,
 		opacity=DEFAULT_MOTION_THEME_POLICY.opacity,
+		surface_color=DEFAULT_MOTION_THEME_POLICY.surface_color,
 		reduced_motion=.Opacity_Fade,
 		reduced_opacity=Motion_Config{omega=1, position_tolerance=0.001, velocity_tolerance=0.001},
 	}

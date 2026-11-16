@@ -497,12 +497,35 @@ inspector_overlay_motion :: proc(ui: ^UI, inspected: ^Runtime, selected: Node_ID
 			append(&lines, "Translation coordinate space: parent-local logical units")
 			inspector_overlay_motion_property_lines(&lines, "Translation", snapshot.translation, "logical units")
 			inspector_overlay_motion_property_lines(&lines, "Opacity", snapshot.opacity, "opacity")
+			color := snapshot.surface_color
+			if !color.has_value {
+				append(&lines, "Surface color: not declared")
+			} else {
+				append(&lines, fmt.tprintf("Surface color: mode=%v active=%t", color.mode, color.active))
+				append(&lines, fmt.tprintf("  linear-sRGB target=(%.4f, %.4f, %.4f, α=%.4f)",
+					color.target.r, color.target.g, color.target.b, color.target.a))
+				append(&lines, fmt.tprintf("  presented=(%.4f, %.4f, %.4f, α=%.4f)",
+					color.presented.r, color.presented.g, color.presented.b, color.presented.a))
+				append(&lines, fmt.tprintf("  unclamped sample=(%.5f, %.5f, %.5f)",
+					color.raw_presented[0], color.raw_presented[1], color.raw_presented[2]))
+				append(&lines, fmt.tprintf("  velocity=(%.5f, %.5f, %.5f) linear-sRGB/s",
+					color.velocity[0], color.velocity[1], color.velocity[2]))
+				if color.active && color.deadline_established {
+					append(&lines, fmt.tprintf("  settle upper bound: start t=%d ns + %d ns",
+						i64(color.start_time), color.settle_after_ns))
+				} else if color.active {
+					append(&lines, "  settle upper bound: not established; native host applies its bounded snap policy")
+				} else {
+					append(&lines, "  settled: yes")
+				}
+			}
 		}
 	}
 	append(&lines, "", "Input and accessibility policy")
 	append(&lines, "Hit tests use target geometry; paint translation does not move hit regions.")
+	append(&lines, "Motion interaction policy: Target_Static; pointer-down capture stays with the logical target.")
 	append(&lines, fmt.tprintf("Pointer capture=%d activation=%d", inspected.captured_node, inspected.activation_node))
-	append(&lines, "Semantic and accessibility bounds follow logical target geometry; motion is paint-only.")
+	append(&lines, "Semantic/accessibility bounds and focus identity follow logical target geometry; motion is paint-only.")
 	append(&lines, "Retained-order hit testing; motion does not update the hit index.")
 	stats := motion_diagnostics_stats(inspected)
 	append(&lines, "", fmt.tprintf("Motion ticks=%d owner visits=%d", stats.sample_ticks, stats.owner_visits))
