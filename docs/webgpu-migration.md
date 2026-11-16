@@ -62,7 +62,7 @@ uploads remain renderer-specific.
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | In progress: image, custom-geometry, and backdrop resources have bounded asynchronous retirement and completion-driven release tests; async readback is exercised. Same-device compositor teardown/rebuild now reproduces every RGBA pixel on Windows D3D12 and Vulkan from retained Runtime products. Genuine driver/OS device loss and device recovery, plus primary/secondary window teardown/recreation, remain unvalidated. Intentional `DeviceDestroy` callbacks are tracked separately and do not count as driver-loss evidence |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
-| 6. Browser host | interaction, accessibility, text/IME, lifecycle and demand-driven scheduling complete | In progress: reusable demand-driven scheduling, host-side key mapping, DOM input routing, and Hosted_Runtime surface presentation live in `host/web/`. The browser feasibility example wires those pieces together and builds for `js_wasm32`; on Windows, both agent validation and owner validation against a refreshed `http://localhost:8091/` confirmed retained button input, text entry, resize persistence, and demand-driven idle without a runtime trap. An earlier `RuntimeError: unreachable executed` came from a stale page instance and was not reproduced after reload. Browser composition/IME, DOM accessibility projection, production `ui.run` integration, and application dogfooding remain outstanding |
+| 6. Browser host | interaction, accessibility, text/IME, lifecycle and demand-driven scheduling complete | In progress: reusable demand-driven scheduling, host-side key mapping, DOM input routing, optional textarea-backed UTF-8/IME input, and Hosted_Runtime surface presentation live in `host/web/`. The browser feasibility example wires those pieces together and builds for `js_wasm32`; on Windows, agent and owner validation against a refreshed `http://localhost:8091/` confirmed retained button input, text entry, resize persistence, and demand-driven idle without a runtime trap. An earlier `RuntimeError: unreachable executed` came from a stale page instance and was not reproduced after reload. This slice now routes composition preedit/commit/cancel and positions the input proxy from retained caret geometry; physical IME validation, DOM accessibility projection, production `ui.run` integration, and application dogfooding remain outstanding |
 | 7. Release readiness | docs, reproducible setup, CI and substantive shared-renderer web example | Not started |
 
 The Phase 0 evidence authorizes bounded, testable renderer slices; it does not
@@ -1600,6 +1600,38 @@ pointer coordinates/modifiers. The current keypress path therefore does not
 complete IME behavior; those gaps must be resolved before browser text-input
 acceptance. `ui.run`, canvas sizing/WebGPU frame scheduling integration,
 accessibility projection, and browser application dogfooding also remain open.
+
+### Phase 6 browser text-input proxy (Windows `js_wasm32` and headless tests, 2026-11-16)
+
+`Browser_Input` now accepts an optional host-provided textarea ID. When present,
+the adapter moves DOM focus between the canvas and that textarea as Alicorn's
+focused retained control changes. The textarea is only a browser input surface;
+all committed edits and composition state still flow through
+`hosted_runtime_text_input`. Regular text, paste, and IME commits use a UTF-8
+safe value read rather than the JS event projection's UTF-16-sized key buffer.
+Composition input events call Hosted_Runtime Preedit, composition end commits
+once (with a short duplicate-input guard), and Escape marks the active
+composition for cancellation. DOM UTF-16 selection offsets are converted to
+Unicode-scalar indexes, and the textarea is placed at the Runtime's retained
+text-input caret geometry for candidate-window positioning.
+
+The browser feasibility page now provides this textarea and wires the helper
+after each Hosted_Runtime step. The bridge remains opt-in so a host without a
+DOM text control retains the existing keyboard fallback. This does not provide
+the browser accessibility projection or production `ui.run` host.
+
+Validation with `C:\odin\odin.exe` (`dev-2026-11-nightly:08539cd`):
+
+- `odin test host/web -collection:alicorn=.` passed all 6 host-policy tests,
+  including UTF-16 offsets around accented, CJK, and astral Unicode scalars.
+- `odin test runtime -collection:alicorn=.` passed all 356 Runtime tests.
+- The hosted feasibility example built for `js_wasm32` with the shared canvas
+  presenter enabled.
+
+No physical IME session was available for this validation. Windows and macOS
+IME candidate behavior, composition cancellation in supported browsers, and
+screen-reader behavior remain hands-on acceptance work; compilation and the
+pure offset tests do not establish those platform results.
 
 ### Phase 1/6 Hosted browser surface coordinator (Windows `js_wasm32`, 2026-11-16)
 

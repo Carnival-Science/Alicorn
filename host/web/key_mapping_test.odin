@@ -110,3 +110,24 @@ test_web_keypress_filter_preserves_text_and_ime_ownership :: proc(t: ^testing.T)
 	testing.expect(t, !web_keypress_is_text(Browser_Key_Event{code="KeyA"}, "Dead", false))
 	testing.expect(t, !web_keypress_is_text(Browser_Key_Event{code="Enter"}, "Enter", false))
 }
+
+@(test)
+test_browser_utf16_selection_offsets_map_to_utf8_characters :: proc(t: ^testing.T) {
+	value := "aé字😀z"
+	testing.expect(t, browser_utf16_offset_to_character_index(value, 0) == 0)
+	testing.expect(t, browser_utf16_offset_to_character_index(value, 1) == 1)
+	testing.expect(t, browser_utf16_offset_to_character_index(value, 2) == 2)
+	testing.expect(t, browser_utf16_offset_to_character_index(value, 3) == 3)
+	testing.expect(t, browser_utf16_offset_to_character_index(value, 3, round_up=true) == 3,
+		"a selection endpoint exactly at a surrogate pair's start stays before it")
+	testing.expect(t, browser_utf16_offset_to_character_index(value, 4) == 3,
+		"an offset inside an emoji surrogate pair rounds down for a selection start")
+	testing.expect(t, browser_utf16_offset_to_character_index(value, 4, round_up=true) == 4,
+		"an offset inside an emoji surrogate pair rounds up for a selection end")
+	testing.expect(t, browser_utf16_offset_to_character_index(value, 5) == 4)
+	testing.expect(t, browser_utf16_offset_to_character_index(value, 5, round_up=true) == 4,
+		"a selection endpoint exactly after a surrogate pair stays after it")
+	testing.expect(t, browser_utf16_offset_to_character_index(value, 6) == 5)
+	testing.expect(t, browser_utf16_offset_to_character_index(value, 99) == 5,
+		"out-of-range DOM offsets clamp to the end of the string")
+}

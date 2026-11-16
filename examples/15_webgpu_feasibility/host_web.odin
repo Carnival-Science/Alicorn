@@ -146,6 +146,7 @@ browser_host_init :: proc() {
 		browser_host_surface_wake,
 		rawptr(&browser_host_runtime.presenter),
 		browser_host_api.browser_surface_visibility_changed,
+		"wgpu-text-input",
 	) {
 		fmt.panicf("browser Hosted_Runtime input listener installation failed")
 	}
@@ -200,6 +201,7 @@ browser_host_step :: proc(now_ns: u64) -> bool {
 		fmt.eprintln("[webgpu-feasibility] browser canvas presentation failed:", presentation)
 		return false
 	}
+	browser_host_api.browser_input_update_text_input_area(&browser_host_runtime.input)
 	return step.has_more_work
 }
 

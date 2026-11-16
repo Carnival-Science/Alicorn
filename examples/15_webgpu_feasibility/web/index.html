@@ -7,12 +7,14 @@
 html,body{height:100%;margin:0;background:#101319;color:#dfe6e8;font:14px system-ui}
 body{display:grid;grid-template-rows:1fr auto}
 canvas{width:min(100vw,calc((100vh - 40px)*16/9));height:auto;aspect-ratio:16/9;display:block;margin:auto;touch-action:none}
+#wgpu-text-input{position:fixed;left:0;top:0;width:1px;height:1px;box-sizing:border-box;padding:0;border:0;resize:none;overflow:hidden;opacity:0;color:transparent;background:transparent;caret-color:transparent;font:1px/1px monospace;white-space:pre;pointer-events:none;z-index:1}
 #footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;background:#191f25;color:#abb8bd}
 #diagnostics{font:11px ui-monospace,monospace;color:#91c8a3;margin-top:3px;overflow-wrap:anywhere;white-space:pre-wrap;max-height:54px;overflow:auto}
 #resize{border:1px solid #45505a;border-radius:4px;background:#242d35;color:#dfe6e8;padding:5px 9px;cursor:pointer}
 </style></head>
 <body>
 <canvas id="wgpu-canvas" tabindex="0" aria-label="Alicorn WebGPU hosted runtime example"></canvas>
+<textarea id="wgpu-text-input" tabindex="-1" aria-label="Alicorn text entry" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
 <div id="footer"><div><div id="status">Starting the shared Alicorn retained WebGPU renderer…</div><div id="diagnostics" role="status" aria-live="polite">GPU readback probes pending.</div></div><button id="resize" type="button">Resize surface</button></div>
 <script src="./odin.js"></script><script src="./wgpu.js"></script><script src="./alicorn_demand_scheduler.js"></script>
 <script>

@@ -27,6 +27,44 @@ web_keypress_is_text :: proc(event: Browser_Key_Event, key: string, composing: b
 	return true
 }
 
+// browser_utf16_offset_to_character_index converts DOM selection offsets into
+// Alicorn's Unicode-scalar character indexes. DOM text controls count UTF-16
+// code units; Hosted_Runtime text composition counts UTF-8 characters. When a
+// position falls inside a surrogate pair, callers choose whether to round it
+// toward the start or end of that scalar.
+browser_utf16_offset_to_character_index :: proc(value: string, utf16_offset: int, round_up := false) -> int {
+	if utf16_offset <= 0 { return 0 }
+	byte_offset := 0
+	unit_offset := 0
+	character_index := 0
+	for byte_offset < len(value) {
+		first := value[byte_offset]
+		byte_count := 1
+		utf16_units := 1
+		switch {
+		case first < 0x80:
+			byte_count = 1
+		case first & 0xE0 == 0xC0:
+			byte_count = 2
+		case first & 0xF0 == 0xE0:
+			byte_count = 3
+		case first & 0xF8 == 0xF0:
+			byte_count = 4
+			utf16_units = 2
+		}
+		if byte_offset+byte_count > len(value) { byte_count = len(value)-byte_offset }
+		if unit_offset == utf16_offset { return character_index }
+		if unit_offset+utf16_units > utf16_offset {
+			return character_index + (1 if round_up else 0)
+		}
+		unit_offset += utf16_units
+		byte_offset += max(byte_count, 1)
+		character_index += 1
+		if unit_offset == utf16_offset { return character_index }
+	}
+	return character_index
+}
+
 // web_scroll_event converts DOM wheel values to Alicorn's line-like deltas.
 // Pixel deltas are normalized to a 24 CSS-pixel step; page deltas are scaled
 // by the canvas height. DOM wheel signs describe scrolling direction, while
