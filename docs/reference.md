@@ -1365,6 +1365,29 @@ system file drops or arbitrary MIME payloads.
   menu shortcuts are checked before generic text keys.
 - `Runtime_Config` optionally configures persistent and scratch backing
   allocators when calling `new_runtime`.
+- The analytic motion kernel stores scalar and 2D responses by value and
+  accepts an explicit `Motion_Time` in signed monotonic nanoseconds. Sampling
+  evaluates the critically damped residual directly, without integrating
+  frames:
+
+  ```text
+  R(t) = (r0 + (v0 + omega*r0) * t) * exp(-omega*t)
+  P(t) = target + R(t)
+  ```
+
+  Between explicit target changes, the target is stationary. `Settle` samples
+  the old response at the supplied time, then rebases the residual while
+  preserving presented position and velocity; assigning its current target is
+  an exact no-op. `Direct` follows each supplied target without spring lag, and
+  `Snap` commits one target immediately. `omega` is reciprocal seconds.
+  Position and velocity tolerances use the animated property's units, and both
+  must be satisfied before settlement. The runtime uses a conservative bound
+  on both residual envelopes, not an exact spring-settlement time; a response
+  without a certified bounded deadline stays active for the host's bounded
+  fallback. The sampler uses `f64` math and has no allocator calls. Numerical
+  tests use stated absolute tolerances, so replay aims for numerical agreement
+  rather than bit-identical `exp` results across platforms. Underdamped springs
+  and continuously moving-target velocity are not part of this response model.
 - The beginner-facing `ui.motion` declaration queues a target and response
   intent during the node's description; Alicorn applies it after reconciliation
   has the complete current subtree and style environment. The application

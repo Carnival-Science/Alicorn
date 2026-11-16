@@ -28,6 +28,11 @@ changelogs.
 
 ### Validation
 
+- Added explicit analytic-motion coverage for 30/60/144 Hz sampling, a missed
+  200 ms interval, and 1,000 unchanged-target assignments. The reference now
+  documents the response equation, retarget and settlement contracts, numeric
+  precision expectations, and unsupported spring variants. See
+  [issue #137 research](docs/research/issue-137-analytic-residual-motion.md).
 - Added a `Hosted_Runtime` conformance fixture for two independent presentation
   targets. It covers output-local description changes, shared resize, failed
   submission, visibility, stale acknowledgements, target removal/recreation,
