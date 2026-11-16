@@ -8,6 +8,10 @@ changelogs.
 
 ### Added
 
+- Added `Sdl_GPU_Presenter_Encode_Window`, which prepares a frame in an owned
+  offscreen target before acquiring the swapchain and only blits after
+  acquisition. Encoding failures remain cancellable, and successful submission
+  still controls Runtime acknowledgement.
 - Added optional per-output presentation revisions for hosts that render
   disjoint retained subtrees into separate native targets. Outputs can be
   hidden, retired, and acknowledged independently without changing the

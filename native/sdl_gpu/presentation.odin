@@ -1,6 +1,7 @@
 package alicorn_sdl_gpu
 
 import alicorn "../../runtime"
+import "core:c"
 import "core:mem"
 import "core:sync"
 import "vendor:sdl3"
@@ -34,6 +35,10 @@ sdl_gpu_presenter_internal_state :: struct {
 	allocator:       mem.Allocator,
 	device:          ^sdl3.GPUDevice,
 	runtime:         ^alicorn.Runtime,
+	target_format:        sdl3.GPUTextureFormat,
+	window_target:        ^sdl3.GPUTexture,
+	window_target_width:  sdl3.Uint32,
+	window_target_height: sdl3.Uint32,
 	generation:      u64,
 	text:            Native_Text_Renderer,
 	surface:         Native_Surface_Renderer,
@@ -54,6 +59,12 @@ sdl_gpu_presenter_state :: proc(presenter: ^Sdl_GPU_Presenter) -> ^sdl_gpu_prese
 
 sdl_gpu_presenter_release_renderers :: proc(state: ^sdl_gpu_presenter_internal_state) {
 	if state == nil { return }
+	if state.window_target != nil {
+		sdl3.ReleaseGPUTexture(state.device, state.window_target)
+		state.window_target = nil
+		state.window_target_width = 0
+		state.window_target_height = 0
+	}
 	native_solid_destroy(&state.solid)
 	native_surface_destroy(&state.surface)
 	native_text_destroy(&state.text)
@@ -74,6 +85,7 @@ Sdl_GPU_Presenter_Create :: proc(
 	state.allocator = state_allocator
 	state.device = device
 	state.runtime = runtime
+	state.target_format = target_format
 	state.generation = sync.atomic_add(&sdl_gpu_presenter_generation_counter, 1) + 1
 	if state.generation == 0 {
 		state.generation = sync.atomic_add(&sdl_gpu_presenter_generation_counter, 1) + 1
@@ -132,11 +144,58 @@ sdl_gpu_presenter_wait_oldest :: proc(state: ^sdl_gpu_presenter_internal_state) 
 	)
 }
 
-// Encode the current completed Runtime display into a host-owned SDL_GPU
-// command buffer and target. The borrowed display list and all Runtime sidecars
-// are consumed synchronously; no Runtime memory or command-buffer pointer is
-// retained by the presenter. A false result after preflight means the caller
-// must cancel its command buffer, then call Sdl_GPU_Presenter_Cancel_Frame.
+sdl_gpu_presenter_wait_all :: proc(state: ^sdl_gpu_presenter_internal_state) -> bool {
+	if state == nil { return false }
+	for len(state.in_flight) > 0 {
+		if !sdl_gpu_presenter_wait_oldest(state) { return false }
+	}
+	return true
+}
+
+sdl_gpu_presenter_ensure_window_target :: proc(
+	state: ^sdl_gpu_presenter_internal_state,
+	width, height: sdl3.Uint32,
+) -> bool {
+	if state == nil || width == 0 || height == 0 { return false }
+	if state.window_target != nil && state.window_target_width == width &&
+		state.window_target_height == height {
+		return true
+	}
+	usage := sdl3.GPUTextureUsageFlags{.COLOR_TARGET, .SAMPLER}
+	if !sdl3.GPUTextureSupportsFormat(state.device, state.target_format, .D2, usage) {
+		return false
+	}
+	replacement := sdl3.CreateGPUTexture(state.device, sdl3.GPUTextureCreateInfo{
+		type=.D2,
+		format=state.target_format,
+		usage=usage,
+		width=width,
+		height=height,
+		layer_count_or_depth=1,
+		num_levels=1,
+		sample_count=._1,
+	})
+	if replacement == nil { return false }
+	// The old target may still be read by an earlier submitted blit. Allocate
+	// first so a failed replacement leaves the current presenter usable, then
+	// retire all prior uses before releasing the old texture.
+	if !sdl_gpu_presenter_wait_all(state) {
+		sdl3.ReleaseGPUTexture(state.device, replacement)
+		return false
+	}
+	if state.window_target != nil { sdl3.ReleaseGPUTexture(state.device, state.window_target) }
+	state.window_target = replacement
+	state.window_target_width = width
+	state.window_target_height = height
+	return true
+}
+
+// Encode the current completed Runtime display into a host-owned offscreen SDL_GPU
+// target. The borrowed display list and all Runtime sidecars are consumed
+// synchronously; no Runtime memory or command-buffer pointer is retained by the
+// presenter. Use Sdl_GPU_Presenter_Encode_Window for swapchain presentation. A
+// false result after encoding begins means the caller must cancel its command
+// buffer, then call Sdl_GPU_Presenter_Cancel_Frame.
 //
 // clear_background defaults to false because the host owns target clearing. If
 // enabled, the standard Alicorn dark background is cleared before paint.
@@ -180,6 +239,82 @@ Sdl_GPU_Presenter_Encode :: proc(
 		scale_y,
 		clear_background=clear_background,
 	)
+}
+
+// Encode and present a frame to a host-owned SDL window without exposing the
+// acquired swapchain texture to fallible renderer work. Alicorn first renders
+// synchronously into a presenter-owned texture. Only after that succeeds does
+// this procedure acquire the swapchain texture and issue a single SDL blit.
+// Thus every false return occurs before a drawable swapchain texture is held,
+// and the caller may cancel the command buffer before Cancel_Frame.
+//
+// The window must already be claimed by the presenter's device. Its current
+// drawable pixel dimensions and swapchain format are queried before rendering;
+// if the acquired dimensions change in the meantime, the final blit scales the
+// completed image to the actual swapchain size. The standard Alicorn background
+// is always cleared so newly allocated or resized targets are fully defined.
+Sdl_GPU_Presenter_Encode_Window :: proc(
+	presenter: ^Sdl_GPU_Presenter,
+	command: ^sdl3.GPUCommandBuffer,
+	window: ^sdl3.Window,
+	logical_to_pixel_x, logical_to_pixel_y: f32,
+) -> bool {
+	state := sdl_gpu_presenter_state(presenter)
+	if state == nil || command == nil || window == nil || state.frame_pending ||
+		logical_to_pixel_x <= 0 || logical_to_pixel_y <= 0 ||
+		logical_to_pixel_x != logical_to_pixel_x || logical_to_pixel_y != logical_to_pixel_y {
+		return false
+	}
+	if sdl3.GetGPUSwapchainTextureFormat(state.device, window) != state.target_format { return false }
+	pixel_width, pixel_height: c.int
+	if !sdl3.GetWindowSizeInPixels(window, &pixel_width, &pixel_height) || pixel_width <= 0 || pixel_height <= 0 {
+		return false
+	}
+	width, height := sdl3.Uint32(pixel_width), sdl3.Uint32(pixel_height)
+	if !sdl_gpu_presenter_ensure_window_target(state, width, height) { return false }
+	if !Sdl_GPU_Presenter_Encode(
+		presenter,
+		command,
+		state.window_target,
+		state.window_target_width,
+		state.window_target_height,
+		logical_to_pixel_x,
+		logical_to_pixel_y,
+		clear_background=true,
+	) {
+		return false
+	}
+
+	swapchain: ^sdl3.GPUTexture
+	swapchain_width, swapchain_height: sdl3.Uint32
+	if !sdl3.WaitAndAcquireGPUSwapchainTexture(
+		command, window, &swapchain, &swapchain_width, &swapchain_height,
+	) {
+		return false
+	}
+	// SDL may report success with a nil swapchain texture for a minimized
+	// window. In that case no target was acquired and cancellation remains safe.
+	if swapchain == nil { return false }
+
+	// SDL_BlitGPUTexture returns void. Keep this as the only operation after a
+	// non-nil swapchain target is acquired; no renderer preparation or error path
+	// follows it.
+	sdl3.BlitGPUTexture(command, sdl3.GPUBlitInfo{
+		source=sdl3.GPUBlitRegion{
+			texture=state.window_target,
+			w=state.window_target_width,
+			h=state.window_target_height,
+		},
+		destination=sdl3.GPUBlitRegion{
+			texture=swapchain,
+			w=swapchain_width,
+			h=swapchain_height,
+		},
+		load_op=.DONT_CARE,
+		flip_mode=.NONE,
+		filter=.LINEAR,
+	})
+	return true
 }
 
 // Cancel a frame after the host has canceled the command buffer. If a submit

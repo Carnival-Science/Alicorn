@@ -152,11 +152,18 @@ state alive until it returns. See the complete
 
 ### Host-owned SDL_GPU presentation
 
-For a host that owns its own SDL event loop and GPU frame, create an
-`Sdl_GPU_Presenter` with the host's `GPUDevice`, target texture format, and
-borrowed `Runtime`. Call `Sdl_GPU_Presenter_Encode` with the host's command
-buffer, target, pixel dimensions, and logical-to-pixel scales. The host submits
-that command buffer, then passes the acquired fence to
+For a host that owns its own SDL event loop, create an `Sdl_GPU_Presenter` with
+the host's `GPUDevice`, window swapchain format, and borrowed `Runtime`. For
+window presentation, call `Sdl_GPU_Presenter_Encode_Window` with the host's
+command buffer, claimed window, and logical-to-pixel scales. It completes all
+fallible rendering into a presenter-owned offscreen texture before acquiring
+the swapchain texture, then records a single final blit. Every false return
+occurs before a non-nil swapchain texture is acquired, so the host may cancel
+the command buffer and then call `Sdl_GPU_Presenter_Cancel_Frame`. The lower
+level `Sdl_GPU_Presenter_Encode` accepts an arbitrary target and is for
+offscreen targets only; do not pass it an acquired swapchain texture.
+
+The host submits the command buffer, then passes the acquired fence to
 `Sdl_GPU_Presenter_Submission_Succeeded`; this transfers fence ownership to the
 presenter and returns a `Sdl_GPU_Submission` token. Use
 `Sdl_GPU_Presenter_Wait` or `Sdl_GPU_Presenter_Poll` to retire submitted work,
@@ -171,14 +178,15 @@ borrow its Runtime with `hosted_runtime_borrow` when creating the presenter.
 `Sdl_GPU_Presenter_Submission_Succeeded` acknowledges the Runtime frame itself;
 do not also call `hosted_runtime_frame_submission_succeeded` for that frame.
 
-The Runtime/device, window, command buffers, and targets remain host-owned. The
-Runtime display list is borrowed and consumed synchronously by encode. A target
-must match the format supplied at presenter creation and remain alive until its
-submission token completes. If encode fails after beginning a frame, cancel the
-host command buffer before calling `Sdl_GPU_Presenter_Cancel_Frame`. This API
-renders surfaces, text, icons, images, and custom geometry; it rejects backdrop
-effects and does not provide native input, accessibility, menu, titlebar, or
-event-loop integration. See the
+The Runtime/device, window, and command buffers remain host-owned. The Runtime
+display list is borrowed and consumed synchronously by encode. An offscreen
+target supplied to `Sdl_GPU_Presenter_Encode` must match the format supplied at
+presenter creation and remain alive until its submission token completes. The
+window path owns only its reusable intermediate texture; it retires submitted
+work before replacing that texture on resize. Both paths render surfaces, text,
+icons, images, and custom geometry; they reject backdrop effects and do not
+provide native input, accessibility, menu, titlebar, or event-loop integration.
+See the
 [host-owned presentation research note](research/issue-162-host-owned-presentation.md)
 and [external host fixture](../examples/15_host_owned_sdl_gpu/main.odin).
 
