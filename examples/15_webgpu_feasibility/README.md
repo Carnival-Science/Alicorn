@@ -61,7 +61,14 @@ after the host reports completion. GPU image residency is
 bounded to 128 MiB, so a host must deliver completion serials to reclaim retired
 bytes under cache pressure. Native Vulkan and browser readbacks pass the
 gradient endpoint and raised/recessed face and bevel probes. Production
-application hosts are not integrated yet.
+application hosts are not integrated yet. A fifth target is reused for two
+45×36 crops of the same prepared mixed paint list, at physical origins (18, 28)
+and (0, 0), in one command encoder. Each crop uses a separate dynamic viewport
+slot, and every RGBA8 pixel is compared with the matching full-frame region.
+This exercises queued origin isolation and translated/clipped scissors without
+rebuilding retained meshes. Both crop comparisons passed the Windows D3D12
+smoke; the WASM build includes them, but a live browser replay has not yet been
+recorded.
 
 ## Windows native
 

@@ -11,7 +11,7 @@ IMAGE_GPU_CACHE_BUDGET_BYTES :: 128 * 1024 * 1024
 IMAGE_WGSL :: `
 struct View_Uniform {
 	physical_size: vec2<f32>,
-	_padding: vec2<f32>,
+	origin_px: vec2<f32>,
 };
 @group(0) @binding(0) var<uniform> view: View_Uniform;
 @group(1) @binding(0) var image_texture: texture_2d<f32>;
@@ -30,7 +30,8 @@ struct Vertex_Output {
 
 @vertex fn vs_main(input: Vertex_Input) -> Vertex_Output {
 	var output: Vertex_Output;
-	let top_left_ndc = input.position.xy / view.physical_size * 2.0 - vec2<f32>(1.0, 1.0);
+	let local_position = input.position.xy - view.origin_px;
+	let top_left_ndc = local_position / view.physical_size * 2.0 - vec2<f32>(1.0, 1.0);
 	output.position = vec4<f32>(top_left_ndc.x, -top_left_ndc.y, input.position.z, 1.0);
 	output.color = input.color;
 	output.uv = input.uv;
@@ -131,13 +132,13 @@ Image_Create :: proc(
 	renderer.view_buffer = wgpu.DeviceCreateBuffer(device, &wgpu.BufferDescriptor{
 		label="Alicorn WebGPU image viewport",
 		usage={.Uniform, .CopyDst},
-		size=u64(size_of([4]f32)),
+		size=VIEW_UNIFORM_BUFFER_BYTES,
 	})
 	if renderer.view_buffer == nil { return }
 	view_entry := wgpu.BindGroupLayoutEntry{
 		binding=0,
 		visibility={.Vertex},
-		buffer={type=.Uniform, minBindingSize=u64(size_of([4]f32))},
+		buffer={type=.Uniform, hasDynamicOffset=true, minBindingSize=VIEW_UNIFORM_BYTES},
 	}
 	renderer.view_layout = wgpu.DeviceCreateBindGroupLayout(device, &wgpu.BindGroupLayoutDescriptor{
 		label="Alicorn WebGPU image viewport layout",
@@ -149,7 +150,7 @@ Image_Create :: proc(
 		label="Alicorn WebGPU image viewport binding",
 		layout=renderer.view_layout,
 		entryCount=1,
-		entries=&wgpu.BindGroupEntry{binding=0, buffer=renderer.view_buffer, size=u64(size_of([4]f32))},
+		entries=&wgpu.BindGroupEntry{binding=0, buffer=renderer.view_buffer, size=VIEW_UNIFORM_BYTES},
 	})
 	if renderer.view_bind_group == nil { return }
 
@@ -361,6 +362,7 @@ Image_Draw_Command :: proc(
 	command_index: int,
 	command: alicorn.Paint_Command,
 	target_width, target_height: u32,
+	view_slot: u32 = 0,
 ) -> Image_Result {
 	if command_index < 0 || target_width == 0 || target_height == 0 { return .Invalid_Input }
 	if !alicorn.paint_command_is_image(command) { return .Ok }
@@ -378,7 +380,7 @@ Image_Draw_Command :: proc(
 	resource := renderer.resources[resource_index]
 	if resource.bind_group == nil { return .Resource_Failure }
 	wgpu.RenderPassEncoderSetPipeline(pass, renderer.pipeline)
-	wgpu.RenderPassEncoderSetBindGroup(pass, 0, renderer.view_bind_group)
+	if !webgpu_view_bind_group_set(pass, 0, renderer.view_bind_group, view_slot) { return .Invalid_Input }
 	wgpu.RenderPassEncoderSetBindGroup(pass, 1, resource.bind_group)
 	wgpu.RenderPassEncoderSetVertexBuffer(pass, 0, renderer.vertex_buffer, 0,
 		u64(len(renderer.vertices)*size_of(cpu_renderer.Vertex)))
@@ -584,8 +586,7 @@ image_vertex_buffer_ensure :: proc(renderer: ^Image_Renderer, required_vertices:
 
 image_viewport_upload_if_needed :: proc(renderer: ^Image_Renderer, width, height: u32) {
 	if renderer.viewport_valid && renderer.viewport_width == width && renderer.viewport_height == height { return }
-	viewport := [4]f32{f32(width), f32(height), 0, 0}
-	wgpu.QueueWriteBuffer(renderer.queue, renderer.view_buffer, 0, raw_data(viewport[:]), uint(size_of(viewport)))
+	if !webgpu_view_uniform_write(renderer.queue, renderer.view_buffer, width, height) { return }
 	renderer.viewport_valid = true
 	renderer.viewport_width, renderer.viewport_height = width, height
 	renderer.viewport_upload_count += 1

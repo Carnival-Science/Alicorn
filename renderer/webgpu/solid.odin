@@ -14,7 +14,7 @@ SOLID_INITIAL_VERTEX_CAPACITY :: 4096
 SOLID_WGSL :: `
 struct View_Uniform {
 	physical_size: vec2<f32>,
-	_padding: vec2<f32>,
+	origin_px: vec2<f32>,
 };
 @group(0) @binding(0) var<uniform> view: View_Uniform;
 
@@ -29,7 +29,8 @@ struct Vertex_Output {
 
 @vertex fn vs_main(input: Vertex_Input) -> Vertex_Output {
 	var output: Vertex_Output;
-	let top_left_ndc = input.position.xy / view.physical_size * 2.0 - vec2<f32>(1.0, 1.0);
+	let local_position = input.position.xy - view.origin_px;
+	let top_left_ndc = local_position / view.physical_size * 2.0 - vec2<f32>(1.0, 1.0);
 	output.position = vec4<f32>(top_left_ndc.x, -top_left_ndc.y, input.position.z, 1.0);
 	output.color = input.color;
 	return output;
@@ -97,7 +98,7 @@ Solid_Create :: proc(
 	renderer.uniform_buffer = wgpu.DeviceCreateBuffer(device, &wgpu.BufferDescriptor{
 		label="Alicorn WebGPU solid viewport",
 		usage={.Uniform, .CopyDst},
-		size=u64(size_of([4]f32)),
+		size=VIEW_UNIFORM_BUFFER_BYTES,
 	})
 	if renderer.uniform_buffer == nil { return }
 
@@ -114,7 +115,7 @@ Solid_Create :: proc(
 	layout_entry := wgpu.BindGroupLayoutEntry{
 		binding=0,
 		visibility={.Vertex},
-		buffer={type=.Uniform, minBindingSize=u64(size_of([4]f32))},
+		buffer={type=.Uniform, hasDynamicOffset=true, minBindingSize=VIEW_UNIFORM_BYTES},
 	}
 	renderer.bind_group_layout = wgpu.DeviceCreateBindGroupLayout(device, &wgpu.BindGroupLayoutDescriptor{
 		label="Alicorn WebGPU solid viewport layout",
@@ -166,7 +167,7 @@ Solid_Create :: proc(
 		entries=&wgpu.BindGroupEntry{
 			binding=0,
 			buffer=renderer.uniform_buffer,
-			size=u64(size_of([4]f32)),
+			size=VIEW_UNIFORM_BYTES,
 		},
 	})
 	if renderer.bind_group == nil { return }
@@ -259,8 +260,9 @@ Solid_Prepare :: proc(
 		renderer.mesh_rebuild_count += 1
 	}
 	if !renderer.viewport_uniform_valid || renderer.viewport_width != target_width || renderer.viewport_height != target_height {
-		viewport := [4]f32{f32(target_width), f32(target_height), 0, 0}
-		wgpu.QueueWriteBuffer(renderer.queue, renderer.uniform_buffer, 0, raw_data(viewport[:]), uint(size_of(viewport)))
+		if !webgpu_view_uniform_write(renderer.queue, renderer.uniform_buffer, target_width, target_height) {
+			return .Resource_Failure
+		}
 		renderer.viewport_uniform_valid = true
 		renderer.viewport_width, renderer.viewport_height = target_width, target_height
 		renderer.viewport_upload_count += 1
@@ -278,6 +280,10 @@ Solid_Draw_Command :: proc(
 	command: alicorn.Paint_Command,
 	target_width, target_height: u32,
 	scale_x, scale_y: f32,
+	view_slot: u32 = 0,
+	capture_origin_px: [2]int = {},
+	prepared_width: u32 = 0,
+	prepared_height: u32 = 0,
 ) -> Solid_Result {
 	if renderer == nil || pass == nil || renderer.pipeline == nil || renderer.vertex_buffer == nil ||
 	   renderer.bind_group == nil || command_index < 0 || target_width == 0 || target_height == 0 ||
@@ -286,13 +292,16 @@ Solid_Draw_Command :: proc(
 		return .Invalid_Input
 	}
 	if !alicorn.paint_command_is_surface(command) { return .Ok }
-	if !renderer.mesh_cache_valid || renderer.mesh_width != target_width || renderer.mesh_height != target_height ||
+	mesh_width, mesh_height := prepared_width, prepared_height
+	if mesh_width == 0 { mesh_width = target_width }
+	if mesh_height == 0 { mesh_height = target_height }
+	if !renderer.mesh_cache_valid || renderer.mesh_width != mesh_width || renderer.mesh_height != mesh_height ||
 	   renderer.mesh_scale_x != scale_x || renderer.mesh_scale_y != scale_y {
 		return .Invalid_Input
 	}
 	if len(renderer.vertices) == 0 { return .Ok }
 	wgpu.RenderPassEncoderSetPipeline(pass, renderer.pipeline)
-	wgpu.RenderPassEncoderSetBindGroup(pass, 0, renderer.bind_group)
+	if !webgpu_view_bind_group_set(pass, 0, renderer.bind_group, view_slot) { return .Invalid_Input }
 	wgpu.RenderPassEncoderSetVertexBuffer(pass, 0, renderer.vertex_buffer, 0,
 		u64(len(renderer.vertices)*size_of(cpu_renderer.Vertex)))
 	for draw in renderer.draws {
@@ -300,6 +309,10 @@ Solid_Draw_Command :: proc(
 		scissor := draw.scissor
 		if !draw.has_scissor {
 			scissor = cpu_renderer.Pixel_Rect{0, 0, int(target_width), int(target_height)}
+		} else if view_slot != 0 {
+			scissor = cpu_renderer.Pixel_Rect_Translate_Clip(
+				scissor, capture_origin_px[0], capture_origin_px[1], int(target_width), int(target_height),
+			)
 		}
 		if scissor.w <= 0 || scissor.h <= 0 { continue }
 		wgpu.RenderPassEncoderSetScissorRect(pass, u32(scissor.x), u32(scissor.y), u32(scissor.w), u32(scissor.h))

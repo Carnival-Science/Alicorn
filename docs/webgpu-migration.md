@@ -57,7 +57,7 @@ uploads remain renderer-specific.
 | --- | --- | --- |
 | 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: the pre-change Windows SDL_GPU reference and a supplemental D3D12 effects profile are recorded in `docs/validation/sdl-gpu-reference-windows-2026-11-15.md`; Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes on an NVIDIA Turing adapter. Physical Linux GPU/Wayland, genuine driver/OS loss and recovery, same-workload production comparison, and application-level stage/working-set measurements remain open |
 | 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring, CPU solid/custom-surface mesh assembly, and text/image/icon preparation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
-| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and explicitly selected D3D12 fixtures exercise per-resource custom-surface caching, cache-budget pressure, in-flight protection, instance transforms, readback, and resize; prior browser WebGPU fixture passes custom-surface pixels and the current WASM build compiles, but the cache follow-up has not had a live browser replay. One shared compositor preserves interleaved paint order. Text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, rectangles, segments, circles, masked markers, clipping, and waveform samples pass representative native pixel probes. Backend-neutral backdrop planning, Gaussian sampling, prefix identity/localization, and filter/composite mesh generation now live in `renderer/cpu`; rounded/accessibility material parity, GPU effect capture/filter/composite, and application host presentation remain outstanding |
+| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and explicitly selected D3D12 fixtures exercise per-resource custom-surface caching, cache-budget pressure, in-flight protection, instance transforms, readback, and resize; prior browser WebGPU fixture passes custom-surface pixels and the current WASM build compiles, but the cache follow-up has not had a live browser replay. One shared compositor preserves interleaved paint order. Text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, rectangles, segments, circles, masked markers, clipping, waveform samples, and a cropped target matching a full mixed-renderer pixel region pass Windows D3D12 readback. Backend-neutral backdrop planning, Gaussian sampling, prefix identity/localization, and filter/composite mesh generation now live in `renderer/cpu`; GPU sampleable capture/filter/composite, browser replay of the new crop path, rounded/accessibility material parity, and application host presentation remain outstanding |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | Not started |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
@@ -960,3 +960,53 @@ effect path must capture the paint prefix into renderer-owned sampleable
 textures. WebGPU effect parity, macOS/Linux GPU validation, host presentation
 integration, and genuine driver/OS device-loss recovery remain open.
 Intentional device destruction remains separate evidence.
+
+## Phase 2 cropped capture viewport encoding (Windows D3D12, 2026-11-15)
+
+`Compositor_Encode` can now draw a range of an already prepared full-display
+paint list into a caller-supplied cropped render target. The meshes and command
+coordinates remain in full-display physical pixels; an aligned dynamic view
+uniform supplies the crop extent and origin, and the shared WGSL subtracts the
+origin while mapping into the target. Solid, text, custom-surface scissors are
+translated and clipped to the crop; icons and images use the target's local
+viewport bounds. The prepared meshes and main viewport are not rebuilt or
+overwritten. Up to 64 distinct capture slots are available per submitted
+compositor frame, and a slot cannot be reused until the host commits that
+submission, so later queue writes cannot change an earlier capture's origin.
+
+The fixture renders its 63×64 mixed paint list as a full frame and as two 45×36
+crops, at physical origins (18, 28) and (0, 0), in the same command encoder.
+The capture texture is reused, with a copy between passes, and each crop uses a
+different dynamic uniform slot. It compares every RGBA8 pixel against the
+corresponding full-frame region. This covers the shared surface, text, icon,
+image, semantic material, and custom-geometry pipelines, including clip
+translation, paint ordering, and independent queued crop origins.
+
+Validation on Windows with Odin `dev-2026-11-nightly:08539cd`, NVIDIA GeForce
+RTX 2080 SUPER, D3D12:
+
+- `odin check renderer/webgpu -no-entry-point` and
+  `odin check examples/15_webgpu_feasibility` passed.
+- `odin test renderer/cpu` passed 19 tests; `odin test renderer/webgpu` passed
+  its capture-slot uniqueness test.
+- `tools/test.ps1 -Odin C:\odin\odin.exe` passed the full regression suite,
+  including 352 Runtime tests, 197 native SDL_GPU tests, AccessKit contract,
+  UIA, and foundation checks. Existing large-stack warnings for
+  `Native_Secondary_Window` test locals remain.
+- `examples/15_webgpu_feasibility/build.ps1 -Odin C:\odin\odin.exe` built the
+  native fixture and `js_wasm32` browser fixture.
+- `webgpu_feasibility_smoke.exe --backend=d3d12` passed all existing readbacks
+  and reported `crop_capture_a=true crop_capture_b=true`, comparing every
+  pixel exactly.
+- A live browser replay of this new crop comparison was not completed: the
+  Windows browser-capture helper timed out twice. The WASM build is not being
+  counted as browser runtime validation.
+
+This is cropped encoding infrastructure, not the WebGPU backdrop effect
+pipeline. The caller still owns the render target, encoder, submission, and
+completion flow; the renderer neither inspects nor samples a host presentation
+surface. `Compositor_Prepare` still rejects effect marker commands. The next
+effect slice must allocate bounded renderer-owned sampleable capture textures,
+encode the paint prefix, filter with the shared Gaussian mesh, composite in
+paint order, and retire textures by queue completion. No application API or
+host ownership contract changed.

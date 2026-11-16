@@ -13,7 +13,7 @@ TEXT_INITIAL_TRANSLATION_CAPACITY :: 32
 TEXT_WGSL :: `
 struct View_Uniform {
 	physical_size: vec2<f32>,
-	_padding: vec2<f32>,
+	origin_px: vec2<f32>,
 };
 @group(0) @binding(0) var<uniform> view: View_Uniform;
 @group(0) @binding(1) var<storage, read> translations: array<vec2<f32>>;
@@ -37,7 +37,8 @@ struct Vertex_Output {
 @vertex fn vs_main(input: Vertex_Input) -> Vertex_Output {
 	var output: Vertex_Output;
 	let physical = input.position.xy + translations[input.command_index];
-	let top_left_ndc = physical / view.physical_size * 2.0 - vec2<f32>(1.0, 1.0);
+	let local_position = physical - view.origin_px;
+	let top_left_ndc = local_position / view.physical_size * 2.0 - vec2<f32>(1.0, 1.0);
 	output.position = vec4<f32>(top_left_ndc.x, -top_left_ndc.y, input.position.z, 1.0);
 	output.color = input.color;
 	output.uv = input.uv;
@@ -146,7 +147,7 @@ Text_Create :: proc(device: wgpu.Device, queue: wgpu.Queue, format: wgpu.Texture
 	renderer.view_buffer = wgpu.DeviceCreateBuffer(device, &wgpu.BufferDescriptor{
 		label="Alicorn WebGPU text viewport",
 		usage={.Uniform, .CopyDst},
-		size=u64(size_of([4]f32)),
+		size=VIEW_UNIFORM_BUFFER_BYTES,
 	})
 	if renderer.view_buffer == nil { return }
 	renderer.translation_buffer = wgpu.DeviceCreateBuffer(device, &wgpu.BufferDescriptor{
@@ -156,7 +157,7 @@ Text_Create :: proc(device: wgpu.Device, queue: wgpu.Queue, format: wgpu.Texture
 	})
 	if renderer.translation_buffer == nil { return }
 	view_entries := [2]wgpu.BindGroupLayoutEntry{
-		{binding=0, visibility={.Vertex}, buffer={type=.Uniform, minBindingSize=u64(size_of([4]f32))}},
+		{binding=0, visibility={.Vertex}, buffer={type=.Uniform, hasDynamicOffset=true, minBindingSize=VIEW_UNIFORM_BYTES}},
 		{binding=1, visibility={.Vertex}, buffer={type=.ReadOnlyStorage, minBindingSize=u64(size_of([2]f32))}},
 	}
 	renderer.view_layout = wgpu.DeviceCreateBindGroupLayout(device, &wgpu.BindGroupLayoutDescriptor{
@@ -356,8 +357,9 @@ Text_Prepare :: proc(
 		renderer.translation_valid = true
 	}
 	if !renderer.viewport_valid || renderer.viewport_width != target_width || renderer.viewport_height != target_height {
-		viewport := [4]f32{f32(target_width), f32(target_height), 0, 0}
-		wgpu.QueueWriteBuffer(renderer.queue, renderer.view_buffer, 0, raw_data(viewport[:]), uint(size_of(viewport)))
+		if !webgpu_view_uniform_write(renderer.queue, renderer.view_buffer, target_width, target_height) {
+			return .Resource_Failure
+		}
 		renderer.viewport_width, renderer.viewport_height = target_width, target_height
 		renderer.viewport_valid = true
 		renderer.viewport_upload_count += 1
@@ -376,23 +378,39 @@ Text_Draw_Command :: proc(
 	command: alicorn.Paint_Command,
 	target_width, target_height: u32,
 	scale_x, scale_y: f32,
+	view_slot: u32 = 0,
+	capture_origin_px: [2]int = {},
+	prepared_width: u32 = 0,
+	prepared_height: u32 = 0,
 ) -> Text_Result {
 	if renderer == nil || pass == nil || renderer.pipeline == nil || renderer.vertex_buffer == nil ||
 	   command_index < 0 || target_width == 0 || target_height == 0 || scale_x <= 0 || scale_y <= 0 {
 		return .Invalid_Input
 	}
 	if !alicorn.paint_command_is_text(command) { return .Ok }
-	if !renderer.mesh_valid || renderer.mesh_width != target_width || renderer.mesh_height != target_height ||
+	mesh_width, mesh_height := prepared_width, prepared_height
+	if mesh_width == 0 { mesh_width = target_width }
+	if mesh_height == 0 { mesh_height = target_height }
+	if !renderer.mesh_valid || renderer.mesh_width != mesh_width || renderer.mesh_height != mesh_height ||
 	   renderer.mesh_scale_x != scale_x || renderer.mesh_scale_y != scale_y {
 		return .Invalid_Input
 	}
 	if len(renderer.vertices) == 0 { return .Ok }
 	x0, y0, x1, y1 := cpu_renderer.Logical_To_Pixel_Bounds(command.clip, scale_x, scale_y)
 	if x0 < 0 { x0 = 0 }; if y0 < 0 { y0 = 0 }
-	if x1 > int(target_width) { x1 = int(target_width) }; if y1 > int(target_height) { y1 = int(target_height) }
+	if x1 > int(mesh_width) { x1 = int(mesh_width) }; if y1 > int(mesh_height) { y1 = int(mesh_height) }
+	if view_slot != 0 {
+		localized := cpu_renderer.Pixel_Rect_Translate_Clip(
+			cpu_renderer.Pixel_Rect{x0, y0, x1-x0, y1-y0},
+			capture_origin_px[0], capture_origin_px[1], int(target_width), int(target_height),
+		)
+		x0, y0, x1, y1 = localized.x, localized.y, localized.x+localized.w, localized.y+localized.h
+	} else {
+		if x1 > int(target_width) { x1 = int(target_width) }; if y1 > int(target_height) { y1 = int(target_height) }
+	}
 	if x1 <= x0 || y1 <= y0 { return .Ok }
 	wgpu.RenderPassEncoderSetPipeline(pass, renderer.pipeline)
-	wgpu.RenderPassEncoderSetBindGroup(pass, 0, renderer.view_bind_group)
+	if !webgpu_view_bind_group_set(pass, 0, renderer.view_bind_group, view_slot) { return .Invalid_Input }
 	wgpu.RenderPassEncoderSetVertexBuffer(pass, 0, renderer.vertex_buffer, 0, u64(len(renderer.vertices)*size_of(Text_Vertex)))
 	wgpu.RenderPassEncoderSetScissorRect(pass, u32(x0), u32(y0), u32(x1-x0), u32(y1-y0))
 	for draw in renderer.draws {
@@ -444,7 +462,7 @@ Text_Destroy :: proc(renderer: ^Text_Renderer) {
 text_view_bind_group_rebuild :: proc(renderer: ^Text_Renderer) -> bool {
 	if renderer == nil || renderer.view_layout == nil || renderer.view_buffer == nil || renderer.translation_buffer == nil { return false }
 	entries := [2]wgpu.BindGroupEntry{
-		{binding=0, buffer=renderer.view_buffer, size=u64(size_of([4]f32))},
+		{binding=0, buffer=renderer.view_buffer, size=VIEW_UNIFORM_BYTES},
 		{binding=1, buffer=renderer.translation_buffer, size=u64(renderer.translation_capacity*size_of([2]f32))},
 	}
 	group := wgpu.DeviceCreateBindGroup(renderer.device, &wgpu.BindGroupDescriptor{

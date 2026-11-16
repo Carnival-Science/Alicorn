@@ -10,7 +10,7 @@ ICON_INITIAL_VERTEX_CAPACITY :: 1024
 ICON_WGSL :: `
 struct View_Uniform {
 	physical_size: vec2<f32>,
-	_padding: vec2<f32>,
+	origin_px: vec2<f32>,
 };
 @group(0) @binding(0) var<uniform> view: View_Uniform;
 @group(1) @binding(0) var atlas_texture: texture_2d<f32>;
@@ -29,7 +29,8 @@ struct Vertex_Output {
 
 @vertex fn vs_main(input: Vertex_Input) -> Vertex_Output {
 	var output: Vertex_Output;
-	let top_left_ndc = input.position.xy / view.physical_size * 2.0 - vec2<f32>(1.0, 1.0);
+	let local_position = input.position.xy - view.origin_px;
+	let top_left_ndc = local_position / view.physical_size * 2.0 - vec2<f32>(1.0, 1.0);
 	output.position = vec4<f32>(top_left_ndc.x, -top_left_ndc.y, input.position.z, 1.0);
 	output.color = input.color;
 	output.uv = input.uv;
@@ -103,13 +104,13 @@ Icon_Create :: proc(device: wgpu.Device, queue: wgpu.Queue, format: wgpu.Texture
 	renderer.view_buffer = wgpu.DeviceCreateBuffer(device, &wgpu.BufferDescriptor{
 		label="Alicorn WebGPU icon viewport",
 		usage={.Uniform, .CopyDst},
-		size=u64(size_of([4]f32)),
+		size=VIEW_UNIFORM_BUFFER_BYTES,
 	})
 	if renderer.view_buffer == nil { return }
 	view_entry := wgpu.BindGroupLayoutEntry{
 		binding=0,
 		visibility={.Vertex},
-		buffer={type=.Uniform, minBindingSize=u64(size_of([4]f32))},
+		buffer={type=.Uniform, hasDynamicOffset=true, minBindingSize=VIEW_UNIFORM_BYTES},
 	}
 	renderer.view_layout = wgpu.DeviceCreateBindGroupLayout(device, &wgpu.BindGroupLayoutDescriptor{
 		label="Alicorn WebGPU icon viewport layout",
@@ -121,7 +122,7 @@ Icon_Create :: proc(device: wgpu.Device, queue: wgpu.Queue, format: wgpu.Texture
 		label="Alicorn WebGPU icon viewport binding",
 		layout=renderer.view_layout,
 		entryCount=1,
-		entries=&wgpu.BindGroupEntry{binding=0, buffer=renderer.view_buffer, size=u64(size_of([4]f32))},
+		entries=&wgpu.BindGroupEntry{binding=0, buffer=renderer.view_buffer, size=VIEW_UNIFORM_BYTES},
 	})
 	if renderer.view_bind_group == nil { return }
 
@@ -246,8 +247,9 @@ Icon_Prepare :: proc(
 	renderer.mesh_valid = true
 	renderer.mesh_rebuild_count += 1
 	if !renderer.viewport_valid || renderer.viewport_width != target_width || renderer.viewport_height != target_height {
-		viewport := [4]f32{f32(target_width), f32(target_height), 0, 0}
-		wgpu.QueueWriteBuffer(renderer.queue, renderer.view_buffer, 0, raw_data(viewport[:]), uint(size_of(viewport)))
+		if !webgpu_view_uniform_write(renderer.queue, renderer.view_buffer, target_width, target_height) {
+			return .Resource_Failure
+		}
 		renderer.viewport_valid = true
 		renderer.viewport_width, renderer.viewport_height = target_width, target_height
 		renderer.viewport_upload_count += 1
@@ -261,6 +263,7 @@ Icon_Draw_Command :: proc(
 	command_index: int,
 	command: alicorn.Paint_Command,
 	target_width, target_height: u32,
+	view_slot: u32 = 0,
 ) -> Icon_Result {
 	if command_index < 0 || target_width == 0 || target_height == 0 {
 		return .Invalid_Input
@@ -275,7 +278,7 @@ Icon_Draw_Command :: proc(
 	}
 	if !renderer.mesh_valid { return .Invalid_Input }
 	wgpu.RenderPassEncoderSetPipeline(pass, renderer.pipeline)
-	wgpu.RenderPassEncoderSetBindGroup(pass, 0, renderer.view_bind_group)
+	if !webgpu_view_bind_group_set(pass, 0, renderer.view_bind_group, view_slot) { return .Invalid_Input }
 	wgpu.RenderPassEncoderSetVertexBuffer(pass, 0, renderer.vertex_buffer, 0,
 		u64(len(renderer.vertices)*size_of(cpu_renderer.Vertex)))
 	// Icon geometry is already clipped by the shared CPU quad builder. Restore

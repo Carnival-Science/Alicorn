@@ -348,6 +348,11 @@ start_offscreen_readback :: proc() {
 		size={width=READBACK_WIDTH,height=READBACK_HEIGHT,depthOrArrayLayers=1},format=.RGBA8Unorm,mipLevelCount=1,sampleCount=1,
 	})
 	state.composite_offscreen_view=wgpu.TextureCreateView(state.composite_offscreen_texture)
+	state.capture_offscreen_texture=wgpu.DeviceCreateTexture(state.device,&wgpu.TextureDescriptor{
+		label="Alicorn cropped compositor capture target",usage={.RenderAttachment,.CopySrc},dimension=._2D,
+		size={width=CAPTURE_WIDTH,height=CAPTURE_HEIGHT,depthOrArrayLayers=1},format=.RGBA8Unorm,mipLevelCount=1,sampleCount=1,
+	})
+	state.capture_offscreen_view=wgpu.TextureCreateView(state.capture_offscreen_texture)
 	state.readback_buffer=wgpu.DeviceCreateBuffer(state.device,&wgpu.BufferDescriptor{
 		label="mapped readback staging",usage={.CopyDst,.MapRead},size=READBACK_TOTAL_BYTES,
 	})
@@ -522,6 +527,33 @@ start_offscreen_readback :: proc() {
 	); result != .Ok {
 		fmt.panicf("Alicorn mixed WebGPU compositor encoding failed: %v", result)
 	}
+	if result := webgpu_renderer.Compositor_Encode(
+		&state.compositor, &state.text_runtime, mixed_display, state.capture_offscreen_view,
+		CAPTURE_WIDTH, CAPTURE_HEIGHT, 1, 1, encoder, true, wgpu.Color{0.04, 0.08, 0.12, 1},
+		true, [2]int{CAPTURE_ORIGIN_X, CAPTURE_ORIGIN_Y}, 1,
+	); result != .Ok {
+		fmt.panicf("Alicorn cropped WebGPU compositor capture failed: %v", result)
+	}
+	capture_layout := wgpu.TexelCopyBufferLayout{
+		bytesPerRow=READBACK_BYTES_PER_ROW,
+		rowsPerImage=CAPTURE_HEIGHT,
+		offset=5*READBACK_BUFFER_BYTES,
+	}
+	capture_source := wgpu.TexelCopyTextureInfo{texture=state.capture_offscreen_texture,aspect=.All}
+	capture_destination := wgpu.TexelCopyBufferInfo{layout=capture_layout,buffer=state.readback_buffer}
+	wgpu.CommandEncoderCopyTextureToBuffer(encoder,&capture_source,&capture_destination,
+		&wgpu.Extent3D{width=CAPTURE_WIDTH,height=CAPTURE_HEIGHT,depthOrArrayLayers=1})
+	if result := webgpu_renderer.Compositor_Encode(
+		&state.compositor, &state.text_runtime, mixed_display, state.capture_offscreen_view,
+		CAPTURE_WIDTH, CAPTURE_HEIGHT, 1, 1, encoder, true, wgpu.Color{0.04, 0.08, 0.12, 1},
+		true, [2]int{}, 2,
+	); result != .Ok {
+		fmt.panicf("Alicorn second cropped WebGPU compositor capture failed: %v", result)
+	}
+	capture_layout.offset = 6*READBACK_BUFFER_BYTES
+	capture_destination.layout = capture_layout
+	wgpu.CommandEncoderCopyTextureToBuffer(encoder,&capture_source,&capture_destination,
+		&wgpu.Extent3D{width=CAPTURE_WIDTH,height=CAPTURE_HEIGHT,depthOrArrayLayers=1})
 	composite_solid_meshes := state.compositor.solid.mesh_rebuild_count
 	composite_solid_uploads := state.compositor.solid.vertex_upload_count
 	composite_text_meshes := state.compositor.text.mesh_rebuild_count
@@ -1253,6 +1285,30 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		composite_image_blend_pixel := offscreen_pixel(pixels, 8, 52, 3*READBACK_BUFFER_BYTES)
 		composite_image_blue_pixel := offscreen_pixel(pixels, 13, 52, 3*READBACK_BUFFER_BYTES)
 		composite_image_clip_pixel := offscreen_pixel(pixels, 17, 52, 3*READBACK_BUFFER_BYTES)
+		cropped_capture_matches := true
+		second_cropped_capture_matches := true
+		for y in 0..<CAPTURE_HEIGHT {
+			for x in 0..<CAPTURE_WIDTH {
+				full_pixel := offscreen_pixel(pixels, x+CAPTURE_ORIGIN_X, y+CAPTURE_ORIGIN_Y, 3*READBACK_BUFFER_BYTES)
+				capture_pixel := offscreen_pixel(pixels, x, y, 5*READBACK_BUFFER_BYTES)
+				if full_pixel != capture_pixel {
+					cropped_capture_matches = false
+					break
+				}
+			}
+			if !cropped_capture_matches { break }
+		}
+		for y in 0..<CAPTURE_HEIGHT {
+			for x in 0..<CAPTURE_WIDTH {
+				full_pixel := offscreen_pixel(pixels, x, y, 3*READBACK_BUFFER_BYTES)
+				capture_pixel := offscreen_pixel(pixels, x, y, 6*READBACK_BUFFER_BYTES)
+				if full_pixel != capture_pixel {
+					second_cropped_capture_matches = false
+					break
+				}
+			}
+			if !second_cropped_capture_matches { break }
+		}
 		custom_geometry_rectangle_pixel := offscreen_pixel(pixels, 33, 56, 3*READBACK_BUFFER_BYTES)
 		custom_geometry_segment_pixel := offscreen_pixel(pixels, 33, 47, 3*READBACK_BUFFER_BYTES)
 		custom_geometry_circle_pixel := offscreen_pixel(pixels, 37, 49, 3*READBACK_BUFFER_BYTES)
@@ -1369,9 +1425,9 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		material_recessed_top_ok := offscreen_pixel_near(material_recessed_top_pixel, [4]u8{96, 96, 96, 255}, 4)
 		material_ok := material_gradient_left_ok && material_gradient_right_ok && material_raised_interior_ok &&
 			material_raised_top_ok && material_recessed_interior_ok && material_recessed_top_ok
-		ok=clear_ok && solid_ok && checker_ok && patch_ok && blend_ok && glyph_ok && clip_ok && outside_clip_ok && rounded_ok && rounded_corner_ok && last_row_ok && partial_buffer_ok && uniform_ok && display_blend_ok && display_clip_x_ok && display_clip_y_ok && text_visible && composite_overlay_ok && composite_text_visible && composite_icon_visible && composite_icon_clip && composite_second_icon_visible && image_red_ok && image_blend_ok && image_blue_ok && image_clip_ok && custom_geometry_rectangle_ok && custom_geometry_segment_ok && custom_geometry_circle_ok && custom_geometry_marker_ok && custom_geometry_clip_ok && custom_waveform_ok && motion_geometry_ok && material_ok
-		fmt.printf("[webgpu-feasibility] async RGBA8 readback %s texture=%dx%d row_pitch=%d padding_per_row=%d bytes=%d clear=%v solid=%v checker=%v partial_texture=%v partial_buffer=%v uniform=%v blend=%v glyph=%v clip=%v outside_clip=%v rounded=%v rounded_corner=%v last_row=%v runtime_display_blend=%v runtime_clip_x=%v runtime_clip_y=%v runtime_text_visible=%v composite_overlay_order=%v composite_offset_text=%v composite_icon_visible=%v composite_icon_clip=%v composite_second_icon_page_switch=%v composite_image_red=%v composite_image_alpha_blend=%v composite_image_blue=%v composite_image_clip=%v custom_geometry_rectangle=%v custom_geometry_segment=%v custom_geometry_circle=%v custom_geometry_marker=%v custom_geometry_clip=%v custom_waveform=%v material_gradient_left=%v material_gradient_right=%v material_raised_face=%v material_raised_bevel=%v material_recessed_face=%v material_recessed_bevel=%v\n",
-			"PASS" if ok else "FAIL",READBACK_WIDTH,READBACK_HEIGHT,READBACK_BYTES_PER_ROW,READBACK_BYTES_PER_ROW-READBACK_WIDTH*READBACK_BYTES_PER_PIXEL,len(pixels),clear_ok,solid_ok,checker_ok,patch_ok,partial_buffer_ok,uniform_ok,blend_ok,glyph_ok,clip_ok,outside_clip_ok,rounded_ok,rounded_corner_ok,last_row_ok,display_blend_ok,display_clip_x_ok,display_clip_y_ok,text_visible,composite_overlay_ok,composite_text_visible,composite_icon_visible,composite_icon_clip,composite_second_icon_visible,image_red_ok,image_blend_ok,image_blue_ok,image_clip_ok,custom_geometry_rectangle_ok,custom_geometry_segment_ok,custom_geometry_circle_ok,custom_geometry_marker_ok,custom_geometry_clip_ok,custom_waveform_ok,material_gradient_left_ok,material_gradient_right_ok,material_raised_interior_ok,material_raised_top_ok,material_recessed_interior_ok,material_recessed_top_ok)
+		ok=clear_ok && solid_ok && checker_ok && patch_ok && blend_ok && glyph_ok && clip_ok && outside_clip_ok && rounded_ok && rounded_corner_ok && last_row_ok && partial_buffer_ok && uniform_ok && display_blend_ok && display_clip_x_ok && display_clip_y_ok && text_visible && composite_overlay_ok && composite_text_visible && composite_icon_visible && composite_icon_clip && composite_second_icon_visible && image_red_ok && image_blend_ok && image_blue_ok && image_clip_ok && cropped_capture_matches && second_cropped_capture_matches && custom_geometry_rectangle_ok && custom_geometry_segment_ok && custom_geometry_circle_ok && custom_geometry_marker_ok && custom_geometry_clip_ok && custom_waveform_ok && motion_geometry_ok && material_ok
+		fmt.printf("[webgpu-feasibility] async RGBA8 readback %s texture=%dx%d row_pitch=%d padding_per_row=%d bytes=%d clear=%v solid=%v checker=%v partial_texture=%v partial_buffer=%v uniform=%v blend=%v glyph=%v clip=%v outside_clip=%v rounded=%v rounded_corner=%v last_row=%v runtime_display_blend=%v runtime_clip_x=%v runtime_clip_y=%v runtime_text_visible=%v composite_overlay_order=%v composite_offset_text=%v composite_icon_visible=%v composite_icon_clip=%v composite_second_icon_page_switch=%v composite_image_red=%v composite_image_alpha_blend=%v composite_image_blue=%v composite_image_clip=%v crop_capture_a=%v crop_capture_b=%v custom_geometry_rectangle=%v custom_geometry_segment=%v custom_geometry_circle=%v custom_geometry_marker=%v custom_geometry_clip=%v custom_waveform=%v material_gradient_left=%v material_gradient_right=%v material_raised_face=%v material_raised_bevel=%v material_recessed_face=%v material_recessed_bevel=%v\n",
+			"PASS" if ok else "FAIL",READBACK_WIDTH,READBACK_HEIGHT,READBACK_BYTES_PER_ROW,READBACK_BYTES_PER_ROW-READBACK_WIDTH*READBACK_BYTES_PER_PIXEL,len(pixels),clear_ok,solid_ok,checker_ok,patch_ok,partial_buffer_ok,uniform_ok,blend_ok,glyph_ok,clip_ok,outside_clip_ok,rounded_ok,rounded_corner_ok,last_row_ok,display_blend_ok,display_clip_x_ok,display_clip_y_ok,text_visible,composite_overlay_ok,composite_text_visible,composite_icon_visible,composite_icon_clip,composite_second_icon_visible,image_red_ok,image_blend_ok,image_blue_ok,image_clip_ok,cropped_capture_matches,second_cropped_capture_matches,custom_geometry_rectangle_ok,custom_geometry_segment_ok,custom_geometry_circle_ok,custom_geometry_marker_ok,custom_geometry_clip_ok,custom_waveform_ok,material_gradient_left_ok,material_gradient_right_ok,material_raised_interior_ok,material_raised_top_ok,material_recessed_interior_ok,material_recessed_top_ok)
 		fmt.printf("[webgpu-feasibility] custom geometry translation/opacity pixel %s moved_pixel=%v original_pixel=%v\n",
 			"PASS" if motion_geometry_ok else "FAIL", motion_geometry_moved_pixel, motion_geometry_origin_pixel)
 	} else {

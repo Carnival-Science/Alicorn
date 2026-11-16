@@ -12,7 +12,7 @@ SURFACE_GPU_CACHE_BUDGET_BYTES :: 64 * 1024 * 1024
 SURFACE_WGSL :: `
 struct View_Uniform {
 	physical_size: vec2<f32>,
-	_padding: vec2<f32>,
+	origin_px: vec2<f32>,
 };
 @group(0) @binding(0) var<uniform> view: View_Uniform;
 @group(1) @binding(0) var marker_texture: texture_2d<f32>;
@@ -33,7 +33,7 @@ struct Vertex_Output {
 
 @vertex fn vs_main(input: Vertex_Input) -> Vertex_Output {
 	var output: Vertex_Output;
-	let physical = input.position.xy * input.scale_origin.xy + input.scale_origin.zw;
+	let physical = input.position.xy * input.scale_origin.xy + input.scale_origin.zw - view.origin_px;
 	let top_left_ndc = physical / view.physical_size * 2.0 - vec2<f32>(1.0, 1.0);
 	output.position = vec4<f32>(top_left_ndc.x, -top_left_ndc.y, input.position.z, 1.0);
 	output.color = input.color;
@@ -142,13 +142,13 @@ Surface_Create :: proc(device: wgpu.Device, queue: wgpu.Queue, format: wgpu.Text
 	renderer.view_buffer = wgpu.DeviceCreateBuffer(device, &wgpu.BufferDescriptor{
 		label="Alicorn WebGPU custom surface viewport",
 		usage={.Uniform, .CopyDst},
-		size=u64(size_of([4]f32)),
+		size=VIEW_UNIFORM_BUFFER_BYTES,
 	})
 	if renderer.view_buffer == nil { return }
 	view_entry := wgpu.BindGroupLayoutEntry{
 		binding=0,
 		visibility={.Vertex},
-		buffer={type=.Uniform, minBindingSize=u64(size_of([4]f32))},
+		buffer={type=.Uniform, hasDynamicOffset=true, minBindingSize=VIEW_UNIFORM_BYTES},
 	}
 	renderer.view_layout = wgpu.DeviceCreateBindGroupLayout(device, &wgpu.BindGroupLayoutDescriptor{
 		label="Alicorn WebGPU custom surface viewport layout",
@@ -160,7 +160,7 @@ Surface_Create :: proc(device: wgpu.Device, queue: wgpu.Queue, format: wgpu.Text
 		label="Alicorn WebGPU custom surface viewport binding",
 		layout=renderer.view_layout,
 		entryCount=1,
-		entries=&wgpu.BindGroupEntry{binding=0, buffer=renderer.view_buffer, size=u64(size_of([4]f32))},
+		entries=&wgpu.BindGroupEntry{binding=0, buffer=renderer.view_buffer, size=VIEW_UNIFORM_BYTES},
 	})
 	if renderer.view_bind_group == nil { return }
 
@@ -373,6 +373,8 @@ Surface_Draw_Command :: proc(
 	command_index: int,
 	command: alicorn.Paint_Command,
 	target_width, target_height: u32,
+	view_slot: u32 = 0,
+	capture_origin_px: [2]int = {},
 ) -> Surface_Result {
 	if renderer == nil || pass == nil || command_index < 0 || target_width == 0 || target_height == 0 ||
 	   command_index >= len(renderer.command_draw_indices) || renderer.pipeline == nil ||
@@ -386,15 +388,21 @@ Surface_Draw_Command :: proc(
 	if draw_index >= len(renderer.draws) { return .Invalid_Input }
 	draw := renderer.draws[draw_index]
 	if draw.resource_index < 0 || draw.resource_index >= len(renderer.resources) { return .Invalid_Input }
-	if draw.scissor.w <= 0 || draw.scissor.h <= 0 { return .Ok }
+	scissor := draw.scissor
+	if view_slot != 0 {
+		scissor = cpu_renderer.Pixel_Rect_Translate_Clip(
+			scissor, capture_origin_px[0], capture_origin_px[1], int(target_width), int(target_height),
+		)
+	}
+	if scissor.w <= 0 || scissor.h <= 0 { return .Ok }
 	resource := renderer.resources[draw.resource_index]
 	if resource.vertex_buffer == nil || resource.vertex_count <= 0 { return .Resource_Failure }
 	wgpu.RenderPassEncoderSetPipeline(pass, renderer.pipeline)
-	wgpu.RenderPassEncoderSetBindGroup(pass, 0, renderer.view_bind_group)
+	if !webgpu_view_bind_group_set(pass, 0, renderer.view_bind_group, view_slot) { return .Invalid_Input }
 	wgpu.RenderPassEncoderSetBindGroup(pass, 1, renderer.marker_bind_group)
 	wgpu.RenderPassEncoderSetVertexBuffer(pass, 0, resource.vertex_buffer, 0, resource.byte_size)
 	wgpu.RenderPassEncoderSetVertexBuffer(pass, 1, renderer.instance_buffer, 0, renderer.instance_buffer_bytes)
-	wgpu.RenderPassEncoderSetScissorRect(pass, u32(draw.scissor.x), u32(draw.scissor.y), u32(draw.scissor.w), u32(draw.scissor.h))
+	wgpu.RenderPassEncoderSetScissorRect(pass, u32(scissor.x), u32(scissor.y), u32(scissor.w), u32(scissor.h))
 	wgpu.RenderPassEncoderDraw(pass, draw.vertex_count, 1, 0, draw.instance_index)
 	return .Ok
 }
@@ -476,8 +484,7 @@ surface_geometry_scissor :: proc(command: alicorn.Paint_Command, scale_x, scale_
 
 surface_viewport_upload_if_needed :: proc(renderer: ^Surface_Renderer, width, height: u32) {
 	if renderer.viewport_valid && renderer.viewport_width == width && renderer.viewport_height == height { return }
-	viewport := [4]f32{f32(width), f32(height), 0, 0}
-	wgpu.QueueWriteBuffer(renderer.queue, renderer.view_buffer, 0, raw_data(viewport[:]), uint(size_of(viewport)))
+	if !webgpu_view_uniform_write(renderer.queue, renderer.view_buffer, width, height) { return }
 	renderer.viewport_valid = true
 	renderer.viewport_width, renderer.viewport_height = width, height
 	renderer.viewport_upload_count += 1

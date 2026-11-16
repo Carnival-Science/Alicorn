@@ -30,6 +30,7 @@ WebGPU_Compositor :: struct {
 	prepared_width, prepared_height: u32,
 	prepared_scale_x, prepared_scale_y: f32,
 	prepared_valid: bool,
+	capture_view_slots_used: u64,
 }
 
 Compositor_Create :: proc(
@@ -108,7 +109,9 @@ Compositor_Prepare :: proc(
 // retained command at its original index. This shared composition path lets
 // surfaces, shaped text, and tinted icons interleave without sorting or
 // host-specific compositor code. Surface acquisition and queue submission
-// remain owned by the platform host.
+// remain owned by the platform host. Capture mode draws the already prepared
+// full-display meshes into a caller-supplied cropped target; its view slot must
+// be unique until the host commits the submission. The caller owns that target.
 Compositor_Encode :: proc(
 	compositor: ^WebGPU_Compositor,
 	rt: ^alicorn.Runtime,
@@ -119,14 +122,40 @@ Compositor_Encode :: proc(
 	encoder: wgpu.CommandEncoder,
 	clear_target: bool,
 	clear_color: wgpu.Color,
+	capture_view := false,
+	capture_origin_px: [2]int = {},
+	capture_view_slot: u32 = 0,
+	command_start := 0,
+	command_end := -1,
 ) -> Compositor_Result {
 	if compositor == nil || rt == nil || target == nil || encoder == nil ||
 	   !compositor.prepared_valid || compositor.prepared_runtime != rt ||
 	   compositor.prepared_revision != display.revision ||
 	   compositor.prepared_commands != raw_data(display.commands) ||
 	   compositor.prepared_command_count != len(display.commands) ||
-	   compositor.prepared_width != target_width || compositor.prepared_height != target_height ||
 	   compositor.prepared_scale_x != scale_x || compositor.prepared_scale_y != scale_y {
+		return .Invalid_Input
+	}
+	draw_command_end := command_end
+	if draw_command_end < 0 { draw_command_end = len(display.commands) }
+	if command_start < 0 || draw_command_end < command_start || draw_command_end > len(display.commands) {
+		return .Invalid_Input
+	}
+	if capture_view {
+		if capture_view_slot == 0 || capture_view_slot >= VIEW_UNIFORM_SLOT_COUNT ||
+		   capture_origin_px[0] < 0 || capture_origin_px[1] < 0 ||
+		   i64(capture_origin_px[0])+i64(target_width) > i64(compositor.prepared_width) ||
+		   i64(capture_origin_px[1])+i64(target_height) > i64(compositor.prepared_height) {
+			return .Invalid_Input
+		}
+		if !webgpu_view_capture_slot_available(compositor.capture_view_slots_used, capture_view_slot) {
+			return .Invalid_Input
+		}
+		if !compositor_capture_view_upload(compositor, target_width, target_height, capture_origin_px, capture_view_slot) {
+			return .Resource_Failure
+		}
+	} else if capture_view_slot != 0 || capture_origin_px[0] != 0 || capture_origin_px[1] != 0 ||
+	   compositor.prepared_width != target_width || compositor.prepared_height != target_height {
 		return .Invalid_Input
 	}
 	attachment := wgpu.RenderPassColorAttachment{
@@ -144,15 +173,20 @@ Compositor_Encode :: proc(
 		colorAttachments=&attachment,
 	})
 	if pass == nil { return .Resource_Failure }
+	if capture_view && !webgpu_view_capture_slot_claim(&compositor.capture_view_slots_used, capture_view_slot) {
+		return .Invalid_Input
+	}
 	defer {
 		wgpu.RenderPassEncoderEnd(pass)
 		wgpu.RenderPassEncoderRelease(pass)
 	}
-	for command, command_index in display.commands {
+	for command_index in command_start..<draw_command_end {
+		command := display.commands[command_index]
 		if alicorn.paint_command_is_surface(command) {
 			if result := Solid_Draw_Command(
 				&compositor.solid, pass, command_index, command,
 				target_width, target_height, scale_x, scale_y,
+				capture_view_slot, capture_origin_px, compositor.prepared_width, compositor.prepared_height,
 			); result != .Ok {
 				return compositor_result_from_solid(result)
 			}
@@ -160,30 +194,46 @@ Compositor_Encode :: proc(
 			if result := Text_Draw_Command(
 				&compositor.text, pass, command_index, command,
 				target_width, target_height, scale_x, scale_y,
+				capture_view_slot, capture_origin_px, compositor.prepared_width, compositor.prepared_height,
 			); result != .Ok {
 				return compositor_result_from_text(result)
 			}
 		} else if alicorn.paint_command_is_icon(command) {
 			if result := Icon_Draw_Command(
-				&compositor.icons, pass, command_index, command, target_width, target_height,
+				&compositor.icons, pass, command_index, command, target_width, target_height, capture_view_slot,
 			); result != .Ok {
 				return compositor_result_from_icon(result)
 			}
 		} else if alicorn.paint_command_is_image(command) {
 			if result := Image_Draw_Command(
-				&compositor.images, pass, rt, command_index, command, target_width, target_height,
+				&compositor.images, pass, rt, command_index, command, target_width, target_height, capture_view_slot,
 			); result != .Ok {
 				return compositor_result_from_image(result)
 			}
 		} else {
 			if result := Surface_Draw_Command(
 				&compositor.surfaces, pass, command_index, command, target_width, target_height,
+				capture_view_slot, capture_origin_px,
 			); result != .Ok {
 				return compositor_result_from_surface(result)
 			}
 		}
 	}
 	return .Ok
+}
+
+compositor_capture_view_upload :: proc(
+	compositor: ^WebGPU_Compositor,
+	width, height: u32,
+	origin_px: [2]int,
+	view_slot: u32,
+) -> bool {
+	return compositor != nil && view_slot > 0 && view_slot < VIEW_UNIFORM_SLOT_COUNT &&
+		webgpu_view_uniform_write(compositor.queue, compositor.solid.uniform_buffer, width, height, origin_px, view_slot) &&
+		webgpu_view_uniform_write(compositor.queue, compositor.text.view_buffer, width, height, origin_px, view_slot) &&
+		webgpu_view_uniform_write(compositor.queue, compositor.icons.view_buffer, width, height, origin_px, view_slot) &&
+		webgpu_view_uniform_write(compositor.queue, compositor.images.view_buffer, width, height, origin_px, view_slot) &&
+		webgpu_view_uniform_write(compositor.queue, compositor.surfaces.view_buffer, width, height, origin_px, view_slot)
 }
 
 // Call only after the host has submitted the command buffer. If a prepared
@@ -194,6 +244,7 @@ Compositor_Commit_Submission :: proc(compositor: ^WebGPU_Compositor, rt: ^alicor
 	Text_Commit_Submission(&compositor.text, rt)
 	serial := Image_Commit_Submission(&compositor.images, rt)
 	if serial == 0 || !Surface_Commit_Submission(&compositor.surfaces, serial) { return 0 }
+	compositor.capture_view_slots_used = 0
 	return serial
 }
 

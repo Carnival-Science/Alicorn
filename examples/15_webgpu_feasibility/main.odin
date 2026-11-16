@@ -12,10 +12,14 @@ ANIMATION_SECONDS :: 1.8
 VERTEX_CAPACITY :: 256 * 1024
 READBACK_WIDTH :: 63
 READBACK_HEIGHT :: 64
+CAPTURE_ORIGIN_X :: 18
+CAPTURE_ORIGIN_Y :: 28
+CAPTURE_WIDTH :: READBACK_WIDTH - CAPTURE_ORIGIN_X
+CAPTURE_HEIGHT :: READBACK_HEIGHT - CAPTURE_ORIGIN_Y
 READBACK_BYTES_PER_PIXEL :: 4
 READBACK_BYTES_PER_ROW :: 256
 READBACK_BUFFER_BYTES :: READBACK_BYTES_PER_ROW * READBACK_HEIGHT
-READBACK_TARGET_COUNT :: 5
+READBACK_TARGET_COUNT :: 7
 READBACK_TOTAL_BYTES :: READBACK_BUFFER_BYTES * READBACK_TARGET_COUNT
 FEASIBILITY_TEST_DEVICE_LOSS :: #config(FEASIBILITY_TEST_DEVICE_LOSS, false)
 FEASIBILITY_TEST_DEVICE_LOSS_EARLY :: #config(FEASIBILITY_TEST_DEVICE_LOSS_EARLY, false)
@@ -64,6 +68,8 @@ state: struct {
 	surface_cache_pressure_evictions_before_probe: u64,
 	composite_offscreen_texture: wgpu.Texture,
 	composite_offscreen_view: wgpu.TextureView,
+	capture_offscreen_texture: wgpu.Texture,
+	capture_offscreen_view: wgpu.TextureView,
 	config: wgpu.SurfaceConfiguration,
 	pipeline: wgpu.RenderPipeline,
 	offscreen_pipeline: wgpu.RenderPipeline,
@@ -417,6 +423,8 @@ finish :: proc() {
 	if state.text_offscreen_texture != nil { wgpu.TextureDestroy(state.text_offscreen_texture); wgpu.TextureRelease(state.text_offscreen_texture) }
 	if state.composite_offscreen_view != nil { wgpu.TextureViewRelease(state.composite_offscreen_view) }
 	if state.composite_offscreen_texture != nil { wgpu.TextureDestroy(state.composite_offscreen_texture); wgpu.TextureRelease(state.composite_offscreen_texture) }
+	if state.capture_offscreen_view != nil { wgpu.TextureViewRelease(state.capture_offscreen_view) }
+	if state.capture_offscreen_texture != nil { wgpu.TextureDestroy(state.capture_offscreen_texture); wgpu.TextureRelease(state.capture_offscreen_texture) }
 	if state.offscreen_view != nil { wgpu.TextureViewRelease(state.offscreen_view) }
 	if state.offscreen_texture != nil { wgpu.TextureDestroy(state.offscreen_texture); wgpu.TextureRelease(state.offscreen_texture) }
 	if state.bind_group != nil { wgpu.BindGroupRelease(state.bind_group) }
