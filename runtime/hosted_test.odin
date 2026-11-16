@@ -7,7 +7,7 @@ import "core:thread"
 import "core:strings"
 
 Hosted_Test_App :: struct {
-	descriptions, wakes, scheduled, stops, posts, pointer_cancels: int,
+	descriptions, wakes, scheduled, stops, posts, pointer_cancels, scroll_events: int,
 	button, field, scroll: Node_ID,
 	waker: Hosted_Waker,
 	worker_notified, worker_coalesced: bool,
@@ -68,6 +68,11 @@ hosted_test_pointer :: proc(data: rawptr, rt: ^Runtime, event: Pointer_Event, ta
 	if event.kind == .Cancel { app.pointer_cancels += 1 }
 }
 
+hosted_test_scroll :: proc(data: rawptr, rt: ^Runtime, event: Scroll_Event) {
+	app := (^Hosted_Test_App)(data)
+	app.scroll_events += 1
+}
+
 hosted_test_text_change :: proc(data: rawptr, rt: ^Runtime, change: Text_Change) {
 	app := (^Hosted_Test_App)(data)
 	if change.changed {
@@ -84,8 +89,20 @@ hosted_test_open :: proc(host: ^Hosted_Runtime, app: ^Hosted_Test_App) -> Hosted
 		post_wake_data=rawptr(app), post_wake=hosted_test_post, render=hosted_test_render,
 		on_initialize=hosted_test_init, on_start=hosted_test_start, on_wake=hosted_test_wake,
 		on_scheduled_wake=hosted_test_scheduled, on_stop=hosted_test_stop, on_pointer=hosted_test_pointer,
-		on_text_change=hosted_test_text_change,
+		on_text_change=hosted_test_text_change, on_scroll=hosted_test_scroll,
 	})
+}
+
+@(test)
+test_hosted_runtime_scroll_fallback_reports_delivery :: proc(t: ^testing.T) {
+	host: Hosted_Runtime
+	app: Hosted_Test_App
+	if hosted_test_open(&host, &app) != .Ok { testing.expect(t, false, "open failed"); return }
+	defer hosted_waker_release(&app.waker)
+	defer hosted_runtime_destroy(&host)
+	_, status := hosted_runtime_scroll(&host, Scroll_Event{delta_y=-1, x=-1, y=-1})
+	testing.expect(t, status == .Ok && app.scroll_events == 1,
+		"application scroll fallback must be delivered and reported handled")
 }
 
 @(test)
@@ -158,6 +175,28 @@ test_hosted_runtime_text_and_semantic_delivery :: proc(t: ^testing.T) {
 	button_id := rt.nodes[app.button].semantic_id
 	handled, action_status := hosted_runtime_accessibility_action(&host, button_id, .Press)
 	testing.expect(t, action_status == .Ok && handled)
+}
+
+@(test)
+test_hosted_runtime_text_key_routes_selection_and_edit_callbacks :: proc(t: ^testing.T) {
+	host: Hosted_Runtime
+	app: Hosted_Test_App
+	if hosted_test_open(&host, &app) != .Ok { testing.expect(t, false, "open failed"); return }
+	defer hosted_waker_release(&app.waker)
+	defer hosted_runtime_destroy(&host)
+	_ = hosted_runtime_step(&host, 1)
+	rt, _ := hosted_runtime_borrow(&host)
+	if app.field == 0 { testing.expect(t, false, "missing text field"); return }
+	_ = focus(rt, app.field)
+	result, status := hosted_runtime_text_key(&host, Application_Text_Key_Event{key=.Left, shift=true})
+	interaction, interaction_ok := text_field_interaction(rt, app.field)
+	testing.expect(t, status == .Ok && result == .Navigation && interaction_ok && interaction.has_selection)
+	result, status = hosted_runtime_text_key(&host, Application_Text_Key_Event{key=.Backspace})
+	value, value_ok := text_field_value(rt, app.field)
+	testing.expect(t, status == .Ok && result == .Edit && value_ok && len(value) < len("seed") && app.text_changes == 1)
+	_ = hosted_runtime_text_input(&host, app.field, .Preedit, "字", 0, 1)
+	result, status = hosted_runtime_text_key(&host, Application_Text_Key_Event{key=.Left})
+	testing.expect(t, status == .Ok && result == .Unhandled, "text key must not preempt active composition")
 }
 
 @(test)

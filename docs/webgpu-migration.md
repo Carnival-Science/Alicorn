@@ -62,7 +62,7 @@ uploads remain renderer-specific.
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | In progress: image, custom-geometry, and backdrop resources have bounded asynchronous retirement and completion-driven release tests; async readback is exercised. Same-device compositor teardown/rebuild now reproduces every RGBA pixel on Windows D3D12 and Vulkan from retained Runtime products. Genuine driver/OS device loss and device recovery, plus primary/secondary window teardown/recreation, remain unvalidated. Intentional `DeviceDestroy` callbacks are tracked separately and do not count as driver-loss evidence |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
-| 6. Browser host | interaction, accessibility, text/IME, lifecycle and demand-driven scheduling complete | In progress: reusable demand-driven browser scheduling and host-side browser key mapping now live in `host/web/`; the scheduler drives the WebGPU feasibility page, while key mapping is included in the `js_wasm32` package fixture. Production `ui.run`, DOM event routing, IME, accessibility projection, and application integration remain outstanding |
+| 6. Browser host | interaction, accessibility, text/IME, lifecycle and demand-driven scheduling complete | In progress: reusable demand-driven browser scheduling and host-side key mapping live in `host/web/`. `browser_input.odin` now attaches pointer, wheel, keyboard, focus, blur, and visibility events to a hosted Runtime; it is compile-checked for `js_wasm32`, but is not yet connected to production `ui.run` or exercised against a browser DOM. Basic keypress text commits and shared text-field navigation work; browser composition/IME, DOM accessibility projection, production host integration, and application dogfooding remain outstanding |
 | 7. Release readiness | docs, reproducible setup, CI and substantive shared-renderer web example | Not started |
 
 The Phase 0 evidence authorizes bounded, testable renderer slices; it does not
@@ -1565,3 +1565,38 @@ This is live browser surface-reconfiguration correctness evidence. It does not
 identify whether the browser adapter is hardware accelerated, measure visible
 frame latency, or establish native resize behavior for this exact retained-only
 redraw path. Those platform and performance checks remain open.
+
+### Phase 6 browser DOM input routing (Windows compile and headless tests, 2026-11-16)
+
+`host/web/browser_input.odin` now owns removable Odin WASM event listeners for
+canvas pointer-down and wheel, window pointer-move/up/cancel and blur, canvas
+keyboard/focus/blur, and document visibility. Window pointer listeners preserve
+an active drag when the pointer leaves the canvas; canvas-relative coordinates
+are derived from the live client rectangle. Wheel pixel, line, and page deltas
+are normalized into Alicorn's existing scroll event. Handled events wake a
+host-supplied demand scheduler, and visibility updates both Hosted_Runtime and
+the host scheduler.
+
+Hosted text-key delivery is now a Runtime API, so browser text-field caret
+navigation and deletion use the same selection, composition guard, and text
+change dispatch as other hosts. The DOM keypress path commits ordinary text
+strings, including multi-byte UTF-8 characters.
+
+Validation with `C:\odin\odin.exe` (`dev-2026-11-nightly:08539cd`):
+
+- `odin test host/web -collection:alicorn=.` passed all 5 browser policy tests,
+  including wheel-mode signs/scaling, context-menu shortcuts, and text-key
+  filtering.
+- `odin test runtime -collection:alicorn=.` passed all 356 Runtime tests,
+  including hosted text-key selection, edit callback delivery, composition
+  protection, and handled delivery of the application scroll fallback.
+- The `tests/fixtures/web_ui_package` target built for `js_wasm32`, compiling
+  the DOM event host, shared UI, CPU renderer, and WebGPU presenter boundary.
+
+This is an input adapter foundation, not a production browser host or live DOM
+interaction result. Odin's current event projection does not provide browser
+composition payloads, precise fractional pointer coordinates, or wheel-event
+pointer coordinates/modifiers. The current keypress path therefore does not
+complete IME behavior; those gaps must be resolved before browser text-input
+acceptance. `ui.run`, canvas sizing/WebGPU frame scheduling integration,
+accessibility projection, and browser application dogfooding also remain open.

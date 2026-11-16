@@ -72,3 +72,41 @@ test_web_text_navigation_mapping_matches_platform_shortcuts :: proc(t: ^testing.
 	_, unsupported := web_text_navigation_key(Browser_Key_Event{code="KeyA"}, .Windows)
 	testing.expect(t, !unsupported)
 }
+
+@(test)
+test_web_scroll_event_normalizes_dom_modes_and_signs :: proc(t: ^testing.T) {
+	pixels := web_scroll_event(48, 72, .Pixels, 240, 12, 16)
+	testing.expect(t, pixels.delta_x == -2 && pixels.delta_y == -3 &&
+		pixels.x == 12 && pixels.y == 16)
+	lines := web_scroll_event(2, 3, .Lines, 240, 0, 0)
+	testing.expect(t, lines.delta_x == -2 && lines.delta_y == -3)
+	pages := web_scroll_event(1, 2, .Pages, 240, 0, 0)
+	testing.expect(t, pages.delta_x == -10 && pages.delta_y == -20)
+	modified := web_scroll_event(0, 1, .Lines, 240, 1, 2,
+		alicorn.Input_Modifiers{control=true, shift=true})
+	testing.expect(t, modified.modifiers.control && modified.modifiers.shift)
+}
+
+@(test)
+test_web_context_menu_shortcuts_are_recognized :: proc(t: ^testing.T) {
+	key, ok := web_application_key(Browser_Key_Event{code="ContextMenu"}, .Windows)
+	testing.expect(t, ok && key == .Context_Menu)
+	key, ok = web_application_key(Browser_Key_Event{code="F10", shift=true}, .Windows)
+	testing.expect(t, ok && key == .Context_Menu)
+	_, ok = web_application_key(Browser_Key_Event{code="F10"}, .Windows)
+	testing.expect(t, !ok)
+}
+
+@(test)
+test_web_keypress_filter_preserves_text_and_ime_ownership :: proc(t: ^testing.T) {
+	testing.expect(t, web_keypress_is_text(Browser_Key_Event{code="KeyA"}, "a", false))
+	testing.expect(t, web_keypress_is_text(Browser_Key_Event{code="Space"}, " ", false))
+	testing.expect(t, web_keypress_is_text(Browser_Key_Event{code="KeyA"}, "字", false))
+	testing.expect(t, !web_keypress_is_text(Browser_Key_Event{code="KeyA", control=true}, "a", false))
+	testing.expect(t, web_keypress_is_text(Browser_Key_Event{code="KeyQ", control=true, alt=true}, "@", false))
+	testing.expect(t, web_keypress_is_text(Browser_Key_Event{code="KeyE", alt=true}, "€", false))
+	testing.expect(t, !web_keypress_is_text(Browser_Key_Event{code="KeyA", meta=true}, "a", false))
+	testing.expect(t, !web_keypress_is_text(Browser_Key_Event{code="KeyA"}, "a", true))
+	testing.expect(t, !web_keypress_is_text(Browser_Key_Event{code="KeyA"}, "Dead", false))
+	testing.expect(t, !web_keypress_is_text(Browser_Key_Event{code="Enter"}, "Enter", false))
+}

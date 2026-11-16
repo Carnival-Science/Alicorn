@@ -15,4 +15,5 @@ main :: proc() {
 	_ = cpu_renderer.Pixel_Edge(-2.5, 1.25)
 	_ = webgpu_renderer.Solid_Result.Ok
 	_, _ = web_host.web_application_key(web_host.Browser_Key_Event{code="ArrowLeft"}, .Other)
+	_ = web_host.web_scroll_event(0, 1, .Lines, 240, 0, 0)
 }

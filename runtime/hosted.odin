@@ -452,7 +452,10 @@ hosted_runtime_scroll :: proc(host: ^Hosted_Runtime, event: Scroll_Event) -> (ha
 		if target != 0 { handled = state.on_scroll_capture(state.app_state, &state.runtime, event, target) }
 	}
 	if !handled { handled = process_scroll(&state.runtime, event) }
-	if !handled && state.on_scroll != nil { state.on_scroll(state.app_state, &state.runtime, event) }
+	if !handled && state.on_scroll != nil {
+		state.on_scroll(state.app_state, &state.runtime, event)
+		handled = true
+	}
 	cause_end(&state.runtime, cause)
 	return handled, .Ok
 }
@@ -574,6 +577,25 @@ hosted_runtime_text_command :: proc(host: ^Hosted_Runtime, owner: Node_ID, comma
 	change = process_text_command(&state.runtime, target_owner, command)
 	if change.changed && state.on_text_change != nil { state.on_text_change(state.app_state, &state.runtime, change) }
 	return change, .Ok
+}
+
+// hosted_runtime_text_key routes a host-normalized navigation or deletion key
+// through Alicorn's shared Text_Field policy. The result reports whether the
+// focused field consumed it; edit callbacks follow the same interaction-scope
+// dispatch and ownership rules as native text input.
+hosted_runtime_text_key :: proc(
+	host: ^Hosted_Runtime,
+	event: Application_Text_Key_Event,
+) -> (result: Application_Text_Field_Key_Result, status: Hosted_Runtime_Status) {
+	state, access_status := hosted_runtime_get_state(host)
+	if access_status != .Ok { return .Unhandled, access_status }
+	owner := focused_node(&state.runtime)
+	route_result, change := application_route_text_field_key(&state.runtime, owner, event)
+	result = route_result
+	if route_result == .Edit {
+		application_dispatch_text_change(&state.runtime, state.app_state, state.on_text_change, change)
+	}
+	return result, .Ok
 }
 
 hosted_runtime_accessibility_action :: proc(

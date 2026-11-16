@@ -12,6 +12,53 @@ Browser_Key_Event :: struct {
 
 Browser_Platform :: enum { Windows, MacOS, Linux, Other }
 
+Browser_Wheel_Mode :: enum { Pixels, Lines, Pages }
+
+web_keypress_is_text :: proc(event: Browser_Key_Event, key: string, composing: bool) -> bool {
+	// Preserve Alt/Option and Ctrl+Alt keyboard layouts such as AltGr when the
+	// browser reports an actual text value. Ctrl-only and Meta chords remain
+	// application/browser shortcuts.
+	if composing || (event.control && !event.alt) || event.meta || len(key) == 0 { return false }
+	if key == "Dead" || key == "Process" || key == "Unidentified" { return false }
+	switch event.code {
+	case "Enter", "NumpadEnter", "Tab", "Backspace", "Delete", "Escape":
+		return false
+	}
+	return true
+}
+
+// web_scroll_event converts DOM wheel values to Alicorn's line-like deltas.
+// Pixel deltas are normalized to a 24 CSS-pixel step; page deltas are scaled
+// by the canvas height. DOM wheel signs describe scrolling direction, while
+// Alicorn's signs describe content movement, so both axes are inverted.
+web_scroll_event :: proc(
+	delta_x, delta_y: f64,
+	mode: Browser_Wheel_Mode,
+	viewport_height: f32,
+	x, y: f32,
+	modifiers: alicorn.Input_Modifiers = {},
+) -> alicorn.Scroll_Event {
+	scale: f32 = 1.0 / 24.0
+	switch mode {
+	case .Lines:
+		scale = 1
+	case .Pages:
+		scale = max(viewport_height, 24) / 24
+	case .Pixels:
+	}
+	resolved_x := -f32(delta_x) * scale
+	resolved_y := -f32(delta_y) * scale
+	return alicorn.Scroll_Event{
+		delta_x=resolved_x,
+		delta_y=resolved_y,
+		ticks_x=int(resolved_x),
+		ticks_y=int(resolved_y),
+		x=x,
+		y=y,
+		modifiers=modifiers,
+	}
+}
+
 web_key_primary_modifier :: proc(event: Browser_Key_Event, platform: Browser_Platform) -> bool {
 	return event.meta if platform == .MacOS else event.control
 }
@@ -59,6 +106,9 @@ web_application_key :: proc(
 	case "F2": return .Workspace_Rename, true
 	case "KeyO":
 		if primary && !menus_open { return .Open_Repository, true }
+	case "ContextMenu": return .Context_Menu, true
+	case "F10":
+		if event.shift { return .Context_Menu, true }
 	}
 	return {}, false
 }
