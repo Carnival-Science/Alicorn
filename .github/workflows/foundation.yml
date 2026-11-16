@@ -45,6 +45,20 @@ jobs:
           path: out/point-markers-d3d12.txt
           retention-days: 7
 
+      - name: Validate host-owned presenter swapchain failure recovery through Direct3D 12
+        shell: pwsh
+        run: |
+          ./tools/native_sdl_gpu.ps1 -Odin odin -PresentationValidation | Tee-Object -FilePath out/presentation-validation-d3d12.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload presenter Direct3D 12 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: presenter-d3d12
+          path: out/presentation-validation-d3d12.txt
+          retention-days: 7
+
       - name: Upload retained-effects Direct3D 12 evidence
         if: always()
         uses: actions/upload-artifact@v4

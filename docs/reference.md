@@ -159,13 +159,21 @@ command buffer, claimed window, and logical-to-pixel scales. It completes all
 fallible rendering into a presenter-owned offscreen texture before acquiring
 the swapchain texture, then records a single final blit. Every false return
 occurs before a non-nil swapchain texture is acquired, so the host may cancel
-the command buffer and then call `Sdl_GPU_Presenter_Cancel_Frame`. The lower
-level `Sdl_GPU_Presenter_Encode` accepts an arbitrary target and is for
-offscreen targets only; do not pass it an acquired swapchain texture.
+the command buffer and then call `Sdl_GPU_Presenter_Cancel_Frame` when a frame
+is pending. A true return means a drawable swapchain texture is held: submit
+that command buffer and do not cancel it. `Cancel_Frame` rejects cancellation
+after acquisition. The lower-level `Sdl_GPU_Presenter_Encode` accepts an
+arbitrary target and is for offscreen targets only; do not pass it an acquired
+swapchain texture.
 
 The host submits the command buffer, then passes the acquired fence to
 `Sdl_GPU_Presenter_Submission_Succeeded`; this transfers fence ownership to the
-presenter and returns a `Sdl_GPU_Submission` token. Use
+presenter and returns a `Sdl_GPU_Submission` token. For offscreen encoding, if
+a submit failure leaves GPU ownership ambiguous, wait for GPU idle before
+canceling the presenter frame. A window frame that returned successfully has
+already acquired a swapchain texture and cannot be rolled back through
+`Cancel_Frame`; treat a subsequent native submission failure as a host/GPU
+failure. Use
 `Sdl_GPU_Presenter_Wait` or `Sdl_GPU_Presenter_Poll` to retire submitted work,
 and `Sdl_GPU_Presenter_Destroy` before destroying the Runtime or device.
 Call presenter functions on the Runtime's owning host thread. The host must

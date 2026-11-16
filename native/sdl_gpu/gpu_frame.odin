@@ -68,6 +68,7 @@ draw_display_list :: proc(
 	native_menu: ^Native_Menu_Runtime = nil,
 	scratch_allocator := context.temp_allocator,
 	retained_effects: ^Native_Retained_Effects = nil,
+	validation_fail_after_background_clear := false,
 ) -> bool {
 	render_display := display
 	chrome: []alicorn.Paint_Command
@@ -139,6 +140,10 @@ draw_display_list :: proc(
 		if pass == nil { return false }
 		sdl3.EndGPURenderPass(pass)
 	}
+	// Keep a deterministic failure seam for the presenter boundary validation.
+	// It runs after work has been encoded to the caller's target, letting the
+	// test prove that canceling the command buffer leaves the prior target intact.
+	if validation_fail_after_background_clear { return false }
 
 	display_index := 0
 	text_command_index := 0

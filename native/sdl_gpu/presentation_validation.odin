@@ -1,7 +1,7 @@
 package alicorn_sdl_gpu
 
 // RunPresentationBoundaryValidation compares the ordinary SDL_GPU host path
-// with the public host-owned presenter on the Windows SDL_GPU backend.
+// with the public host-owned presenter on the active SDL_GPU backend.
 
 import "core:c"
 import "core:fmt"
@@ -31,6 +31,11 @@ Presentation_Validation_Renderers :: struct {
 
 presentation_validation_fail :: proc(message: string) -> ! {
 	fmt.eprintln("issue_162_validation", "FAIL", message, "SDL", sdl3.GetError())
+	os.exit(1)
+}
+
+presentation_validation_fail_204 :: proc(message: string) -> ! {
+	fmt.eprintln("issue_204_validation", "FAIL", message, "SDL", sdl3.GetError())
 	os.exit(1)
 }
 
@@ -176,6 +181,199 @@ presentation_validation_frame :: proc(
 	return encode_ns, true
 }
 
+presentation_validation_read_texture :: proc(
+	device: ^sdl3.GPUDevice,
+	target: ^sdl3.GPUTexture,
+	width, height: sdl3.Uint32,
+	download: ^sdl3.GPUTransferBuffer,
+	pixels: []u8,
+) -> bool {
+	byte_count := int(width*height*4)
+	if device == nil || target == nil || download == nil || width == 0 || height == 0 || len(pixels) < byte_count {
+		return false
+	}
+	command := sdl3.AcquireGPUCommandBuffer(device)
+	if command == nil { return false }
+	submitted := false
+	defer if !submitted { _ = sdl3.CancelGPUCommandBuffer(command) }
+	copy_pass := sdl3.BeginGPUCopyPass(command)
+	if copy_pass == nil { return false }
+	sdl3.DownloadFromGPUTexture(
+		copy_pass,
+		sdl3.GPUTextureRegion{texture=target, w=width, h=height, d=1},
+		sdl3.GPUTextureTransferInfo{transfer_buffer=download, pixels_per_row=width, rows_per_layer=height},
+	)
+	sdl3.EndGPUCopyPass(copy_pass)
+	fence := sdl3.SubmitGPUCommandBufferAndAcquireFence(command)
+	submitted = true
+	if fence == nil { return false }
+	fences := [1]^sdl3.GPUFence{fence}
+	ok := sdl3.WaitForGPUFences(device, true, &fences[0], 1)
+	sdl3.ReleaseGPUFence(device, fence)
+	if !ok { return false }
+	mapped := sdl3.MapGPUTransferBuffer(device, download, false)
+	if mapped == nil { return false }
+	copy(pixels[:byte_count], (cast([^]u8)mapped)[:byte_count])
+	sdl3.UnmapGPUTransferBuffer(device, download)
+	return true
+}
+
+presentation_validation_mark_pending :: proc(
+	rt: ^alicorn.Runtime,
+	app: ^Presentation_Validation_App,
+) {
+	alicorn.invalidate_root(rt, "issue-204 failure-injection retry")
+	if !presentation_validation_build(rt, app) || !alicorn.frame_needs_submission(rt) {
+		presentation_validation_fail_204("fixture did not create a pending Runtime revision")
+	}
+}
+
+presentation_validation_submit_window_frame :: proc(
+	presenter: ^Sdl_GPU_Presenter,
+	device: ^sdl3.GPUDevice,
+	window: ^sdl3.Window,
+	scale_x, scale_y: f32,
+) {
+	command := sdl3.AcquireGPUCommandBuffer(device)
+	if command == nil { presentation_validation_fail_204("window command-buffer acquisition failed") }
+	if !Sdl_GPU_Presenter_Encode_Window(presenter, command, window, scale_x, scale_y) {
+		state := sdl_gpu_presenter_state(presenter)
+		if state != nil && state.swapchain_acquired {
+			// Never cancel here: SDL forbids cancellation after swapchain acquire.
+			presentation_validation_fail_204("window encoding failed after acquiring the swapchain target")
+		}
+		command_canceled := sdl3.CancelGPUCommandBuffer(command)
+		frame_canceled := Sdl_GPU_Presenter_Cancel_Frame(presenter)
+		if !command_canceled || !frame_canceled {
+			presentation_validation_fail_204("pre-acquisition window failure could not be canceled")
+		}
+		presentation_validation_fail_204("window frame preparation or swapchain acquisition failed")
+	}
+	state := sdl_gpu_presenter_state(presenter)
+	if state == nil || !state.swapchain_acquired {
+		presentation_validation_fail_204("successful window encoding did not record swapchain ownership")
+	}
+	if Sdl_GPU_Presenter_Cancel_Frame(presenter) {
+		presentation_validation_fail_204("presenter allowed cancellation after swapchain acquisition")
+	}
+	fence := sdl3.SubmitGPUCommandBufferAndAcquireFence(command)
+	if fence == nil {
+		// The command has acquired the swapchain. There is no safe cancel path.
+		presentation_validation_fail_204("window command-buffer submission failed after swapchain acquisition")
+	}
+	submission, accepted := Sdl_GPU_Presenter_Submission_Succeeded(presenter, fence)
+	if !accepted {
+		fences := [1]^sdl3.GPUFence{fence}
+		_ = sdl3.WaitForGPUFences(device, true, &fences[0], 1)
+		sdl3.ReleaseGPUFence(device, fence)
+		presentation_validation_fail_204("presenter rejected the submitted window frame")
+	}
+	if !Sdl_GPU_Presenter_Wait(presenter, submission) {
+		presentation_validation_fail_204("window frame fence did not retire")
+	}
+}
+
+Presentation_Validation_Resource_Snapshot :: struct {
+	text_vertex_capacity: int,
+	text_atlas_pages: int,
+	solid_vertex_capacity: int,
+	icon_vertex_capacity: int,
+	image_vertex_capacity: int,
+	image_texture_count: int,
+	surface_resource_creations: u64,
+}
+
+presentation_validation_resource_snapshot :: proc(
+	state: ^sdl_gpu_presenter_internal_state,
+) -> Presentation_Validation_Resource_Snapshot {
+	return Presentation_Validation_Resource_Snapshot{
+		text_vertex_capacity=state.text.vertex_capacity,
+		text_atlas_pages=len(state.text.pages),
+		solid_vertex_capacity=state.solid.vertex_capacity,
+		icon_vertex_capacity=state.solid.icons.vertex_capacity,
+		image_vertex_capacity=state.solid.images.vertex_capacity,
+		image_texture_count=len(state.solid.images.images),
+		surface_resource_creations=state.surface.resource_creations,
+	}
+}
+
+presentation_validation_failure_case :: proc(
+	presenter: ^Sdl_GPU_Presenter,
+	rt: ^alicorn.Runtime,
+	app: ^Presentation_Validation_App,
+	device: ^sdl3.GPUDevice,
+	target: ^sdl3.GPUTexture,
+	width, height: sdl3.Uint32,
+	scale_x, scale_y: f32,
+	download: ^sdl3.GPUTransferBuffer,
+	failure_point: presenter_encode_failure_point,
+	case_name: string,
+	window: ^sdl3.Window = nil,
+) {
+	byte_count := int(width*height*4)
+	previous := make([]u8, byte_count)
+	after_failure := make([]u8, byte_count)
+	if previous == nil || after_failure == nil ||
+		!presentation_validation_read_texture(device, target, width, height, download, previous) {
+		presentation_validation_fail_204("could not capture the previous target contents")
+	}
+	presentation_validation_mark_pending(rt, app)
+	state := sdl_gpu_presenter_state(presenter)
+	in_flight_before := len(state.in_flight)
+	resources_before := presentation_validation_resource_snapshot(state)
+	command := sdl3.AcquireGPUCommandBuffer(device)
+	if command == nil { presentation_validation_fail_204("failure-injection command-buffer acquisition failed") }
+	encoded := false
+	if window == nil {
+		encoded = sdl_gpu_presenter_encode_with_failure(
+			presenter, command, target, width, height, scale_x, scale_y, true, failure_point,
+		)
+	} else {
+		encoded = sdl_gpu_presenter_encode_window_with_failure(
+			presenter, command, window, scale_x, scale_y, failure_point,
+		)
+	}
+	if encoded { presentation_validation_fail_204("injected encode failure unexpectedly succeeded") }
+	if state.swapchain_acquired {
+		// Keep this branch fatal without calling SDL_CancelGPUCommandBuffer.
+		presentation_validation_fail_204("injected pre-acquisition failure acquired a swapchain target")
+	}
+	if !state.frame_pending || !alicorn.frame_needs_submission(rt) {
+		presentation_validation_fail_204("failed frame was acknowledged or lost its pending presenter state")
+	}
+	if !sdl3.CancelGPUCommandBuffer(command) || !Sdl_GPU_Presenter_Cancel_Frame(presenter) {
+		presentation_validation_fail_204("offscreen failed frame could not be rolled back")
+	}
+	if !alicorn.frame_needs_submission(rt) || state.frame_pending || state.swapchain_acquired || len(state.in_flight) != in_flight_before {
+		presentation_validation_fail_204("rollback changed Runtime acknowledgement or presenter fence state")
+	}
+	if presentation_validation_resource_snapshot(state) != resources_before {
+		presentation_validation_fail_204("failed encoding changed presenter resource capacities or registrations")
+	}
+	if !presentation_validation_read_texture(device, target, width, height, download, after_failure) {
+		presentation_validation_fail_204("could not read the target after canceling the failed frame")
+	}
+	different, max_delta := presentation_validation_compare(previous, after_failure)
+	if different != 0 {
+		presentation_validation_fail_204("canceling a partial frame changed the previous target contents")
+	}
+	if window == nil {
+		_, ok := presentation_validation_frame(rt, nil, presenter, device, target, width, height)
+		if !ok { presentation_validation_fail_204("offscreen retry did not submit successfully") }
+	} else {
+		presentation_validation_submit_window_frame(presenter, device, window, scale_x, scale_y)
+	}
+	if alicorn.frame_needs_submission(rt) || state.frame_pending || state.swapchain_acquired {
+		presentation_validation_fail_204("valid retry did not consume the pending Runtime revision")
+	}
+	if presentation_validation_resource_snapshot(state) != resources_before {
+		presentation_validation_fail_204("valid retry grew presenter resources after the fixture was warmed")
+	}
+	fmt.println("issue_204_failure", "case", case_name, "failure_point", failure_point,
+		"target_bytes_changed", different, "max_delta", max_delta,
+		"fences_after_failure", in_flight_before, "resources_stable", true, "retry", "PASS")
+}
+
 presentation_validation_pointer_pair :: proc(rt: ^alicorn.Runtime, x, y: f32) {
 	_ = alicorn.process_pointer(rt, alicorn.Pointer_Event{kind=.Down, x=x, y=y, button=alicorn.POINTER_BUTTON_PRIMARY})
 	_ = alicorn.process_pointer(rt, alicorn.Pointer_Event{kind=.Up, x=x, y=y, button=alicorn.POINTER_BUTTON_PRIMARY})
@@ -196,6 +394,13 @@ RunPresentationBoundaryValidation :: proc() {
 	}
 	format := sdl3.GetGPUSwapchainTextureFormat(device, window)
 	if !sdl3.GPUTextureSupportsFormat(device, format, .D2, {.COLOR_TARGET}) { presentation_validation_fail("swapchain format is not an offscreen color target") }
+	if !sdl3.ShowWindow(window) { presentation_validation_fail_204("window could not be shown for swapchain-path validation") }
+	window_pixel_width, window_pixel_height: c.int
+	if !sdl3.GetWindowSizeInPixels(window, &window_pixel_width, &window_pixel_height) ||
+		window_pixel_width <= 0 || window_pixel_height <= 0 {
+		presentation_validation_fail_204("shown validation window has no drawable pixel size")
+	}
+	window_width, window_height := sdl3.Uint32(window_pixel_width), sdl3.Uint32(window_pixel_height)
 	w, h := PRESENTATION_VALIDATION_WIDTH, PRESENTATION_VALIDATION_HEIGHT
 	target := sdl3.CreateGPUTexture(device, sdl3.GPUTextureCreateInfo{type=.D2, format=format, usage={.COLOR_TARGET}, width=w, height=h, layer_count_or_depth=1, num_levels=1, sample_count=._1})
 	if target == nil { presentation_validation_fail("standalone target creation failed") }
@@ -203,7 +408,8 @@ RunPresentationBoundaryValidation :: proc() {
 	host_target := sdl3.CreateGPUTexture(device, sdl3.GPUTextureCreateInfo{type=.D2, format=format, usage={.COLOR_TARGET}, width=w, height=h, layer_count_or_depth=1, num_levels=1, sample_count=._1})
 	if host_target == nil { presentation_validation_fail("host-owned target creation failed") }
 	defer sdl3.ReleaseGPUTexture(device, host_target)
-	download := sdl3.CreateGPUTransferBuffer(device, sdl3.GPUTransferBufferCreateInfo{usage=.DOWNLOAD, size=w*h*4})
+	download_size := max(u32(w*h*4), u32(window_width*window_height*4))
+	download := sdl3.CreateGPUTransferBuffer(device, sdl3.GPUTransferBufferCreateInfo{usage=.DOWNLOAD, size=download_size})
 	if download == nil { presentation_validation_fail("pixel readback buffer creation failed") }
 	defer sdl3.ReleaseGPUTransferBuffer(device, download)
 
@@ -248,6 +454,49 @@ RunPresentationBoundaryValidation :: proc() {
 	if different != 0 { presentation_validation_fail("initial compositor pixels differ") }
 	fmt.println("issue_162_pixels", "state=initial", "size", w, "x", h, "different_bytes", different, "max_delta", max_delta,
 		"standalone_hash", presentation_validation_hash(standalone_pixels), "hosted_hash", presentation_validation_hash(host_pixels))
+
+	// Exercise the window-present path on a drawable window. Once a non-nil
+	// swapchain target has been acquired, cancellation is rejected by the
+	// presenter and the caller must submit the command buffer.
+	window_scale_x, window_scale_y := f32(window_width)/f32(w), f32(window_height)/f32(h)
+	presentation_validation_mark_pending(&host_rt, &host_app)
+	presentation_validation_submit_window_frame(&presenter, device, window, window_scale_x, window_scale_y)
+	window_state := sdl_gpu_presenter_state(&presenter)
+	if window_state == nil || window_state.window_target == nil ||
+		window_state.window_target_width != window_width || window_state.window_target_height != window_height {
+		presentation_validation_fail_204("window frame did not create its expected intermediate target")
+	}
+	window_byte_count := int(window_width*window_height*4)
+	window_pixels := make([]u8, window_byte_count)
+	if window_pixels == nil || !presentation_validation_read_texture(
+		device, window_state.window_target, window_width, window_height, download, window_pixels,
+	) {
+		presentation_validation_fail_204("window intermediate target readback failed")
+	}
+	fmt.println("issue_204_window", "swapchain_acquired", "true", "target", window_width, "x", window_height,
+		"prior_frame_hash", presentation_validation_hash(window_pixels), "status", "PASS")
+
+	// A failure before renderer work and a failure after background-clear
+	// commands have been recorded must both be cancellable before swapchain
+	// acquisition. Verify target preservation and then retry each revision.
+	presentation_validation_failure_case(
+		&presenter, &host_rt, &host_app, device, host_target, w, h, 1, 1,
+		download, .Before_Render, "offscreen-before-render",
+	)
+	presentation_validation_failure_case(
+		&presenter, &host_rt, &host_app, device, host_target, w, h, 1, 1,
+		download, .After_Background_Clear, "offscreen-after-clear",
+	)
+	presentation_validation_failure_case(
+		&presenter, &host_rt, &host_app, device, window_state.window_target,
+		window_width, window_height, window_scale_x, window_scale_y,
+		download, .Before_Render, "window-before-render", window=window,
+	)
+	presentation_validation_failure_case(
+		&presenter, &host_rt, &host_app, device, window_state.window_target,
+		window_width, window_height, window_scale_x, window_scale_y,
+		download, .After_Background_Clear, "window-after-clear", window=window,
+	)
 
 	// Apply identical native-normalized input directly to the same public
 	// Runtime input contract that an embedding event loop calls.
@@ -311,6 +560,8 @@ RunPresentationBoundaryValidation :: proc() {
 	hosted_frees_before_samples := host_allocations.persistent_free_calls
 	standalone_live_bytes_before_samples := allocations.persistent_requested_bytes_live
 	hosted_live_bytes_before_samples := host_allocations.persistent_requested_bytes_live
+	standalone_submits_before_samples := rt.stats.gpu_submits
+	hosted_submits_before_samples := host_rt.stats.gpu_submits
 	standalone_ns_total, hosted_ns_total: i64
 	for sample in 0..<PRESENTATION_VALIDATION_COST_SAMPLES {
 		if sample%2 == 0 {
@@ -329,11 +580,13 @@ RunPresentationBoundaryValidation :: proc() {
 	}
 	stats := alicorn.frame_stats_snapshot(&rt)
 	host_stats := alicorn.frame_stats_snapshot(&host_rt)
-	if stats.gpu_submits != host_stats.gpu_submits { presentation_validation_fail("standalone and hosted GPU submission counts differ") }
+	standalone_sample_submits := stats.gpu_submits - standalone_submits_before_samples
+	hosted_sample_submits := host_stats.gpu_submits - hosted_submits_before_samples
+	if standalone_sample_submits != hosted_sample_submits { presentation_validation_fail("standalone and hosted GPU submission deltas differ") }
 	fmt.println("issue_162_cost", "samples", PRESENTATION_VALIDATION_COST_SAMPLES,
 		"standalone_encode_mean_ns", standalone_ns_total/PRESENTATION_VALIDATION_COST_SAMPLES,
 		"hosted_encode_mean_ns", hosted_ns_total/PRESENTATION_VALIDATION_COST_SAMPLES,
-		"standalone_gpu_submits", stats.gpu_submits, "hosted_gpu_submits", host_stats.gpu_submits,
+		"standalone_gpu_submits", standalone_sample_submits, "hosted_gpu_submits", hosted_sample_submits,
 		"standalone_runtime_allocs_total", allocations.persistent_alloc_calls,
 		"hosted_runtime_allocs_total", host_allocations.persistent_alloc_calls,
 		"standalone_runtime_allocs_during_samples", allocations.persistent_alloc_calls-standalone_allocations_before_samples,
@@ -412,5 +665,7 @@ RunPresentationBoundaryValidation :: proc() {
 	alicorn.destroy_runtime(&rt)
 	if !sdl3.WaitForGPUIdle(device) { presentation_validation_fail("GPU did not idle after standalone teardown") }
 	fmt.println("issue_162_resource_order", "presenter_then_runtime_then_device", "PASS", "standalone_wait_then_renderer_then_runtime_then_device", "PASS")
-	fmt.println("issue_162_validation", "RESULT", "PASS", "backend", sdl3.GetGPUDeviceDriver(device), "host=Windows")
+	fmt.println("issue_162_validation", "RESULT", "PASS", "backend", sdl3.GetGPUDeviceDriver(device), "host=SDL_GPU")
+	fmt.println("issue_204_validation", "RESULT", "PASS", "backend", sdl3.GetGPUDeviceDriver(device),
+		"swapchain_safe_failure_rollback", "PASS", "valid_retry", "PASS")
 }
