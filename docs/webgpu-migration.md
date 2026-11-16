@@ -1964,6 +1964,11 @@ localhost:8091 page was also reloaded by the owner and clicked without the prior
 runtime error; its screenshot does not establish the exact served SHA, browser
 keyboard routing, physical GPU acceleration, or browser IME behavior.
 
+The browser fixture now includes an application-owned editor-key probe that
+reports the last normalized key and event count. Its `js_wasm32` build passes,
+but live interaction with this new probe remains unverified: the Windows
+computer-use capture timed out twice while inspecting the browser window.
+
 Validation with `C:\odin\odin.exe` on Windows:
 
 - Runtime tests passed (357), SDL3 host tests passed (7), browser-host tests
@@ -1971,8 +1976,8 @@ Validation with `C:\odin\odin.exe` on Windows:
   composition-gating cases.
 - The native Hosted_Runtime fixture passes on D3D12 and Vulkan, including the
   application-owned Left-key callback, text/IME routing, resize, and teardown.
-- The complete feasibility build produced all Windows native fixtures and the
-  `js_wasm32` browser fixture.
+- The full feasibility build produced all Windows native fixtures; after the
+  browser probe was added, its `js_wasm32` fixture rebuilt successfully.
 
 This closes the optional text-key callback adapter gap for native and hosted
 `ui.run` composition. Production `ui.run` host selection for WebGPU, browser

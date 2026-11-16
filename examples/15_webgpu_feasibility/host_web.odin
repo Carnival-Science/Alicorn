@@ -11,6 +11,9 @@ import browser_host_api "../../host/web"
 Browser_Feasibility_App :: struct {
 	button_active: bool,
 	field: alicorn.Text_Field_Buffer,
+	editor_key_owner: alicorn.Node_ID,
+	editor_key_events: int,
+	last_editor_key: alicorn.Application_Text_Navigation_Key,
 }
 
 browser_host_runtime: struct {
@@ -82,6 +85,41 @@ browser_host_app_render :: proc(app_state: rawptr, ui: ^alicorn.UI, _width, _hei
 		key=alicorn.key_string("browser-host-text-field"),
 		style=alicorn.layout_style(.Row, width=460, height=44, padding=8),
 	)
+	app.editor_key_owner, _ = alicorn.button_ex(
+		ui,
+		"App-owned editor key probe · click, then press an arrow key",
+		key="browser-host-editor-key-probe",
+		explicit_key=true,
+		style=alicorn.layout_style(.Row, width=460, height=44),
+	)
+	_ = alicorn.text_input_target(ui, app.editor_key_owner)
+	key_status := "Application editor-key callback: waiting for input."
+	if app.editor_key_events > 0 {
+		key_status = fmt.tprintf(
+			"Application editor-key callback: %v (%d events)",
+			app.last_editor_key,
+			app.editor_key_events,
+		)
+	}
+	alicorn.text(
+		ui,
+		key_status,
+		key=alicorn.key_string("browser-host-editor-key-status"),
+		style=alicorn.layout_style(.Row, height=30),
+	)
+}
+
+browser_host_app_text_key :: proc(
+	app_state: rawptr,
+	_rt: ^alicorn.Runtime,
+	owner: alicorn.Node_ID,
+	event: alicorn.Application_Text_Key_Event,
+) -> bool {
+	app := cast(^Browser_Feasibility_App)app_state
+	if app == nil || owner == 0 || owner != app.editor_key_owner { return false }
+	app.editor_key_events += 1
+	app.last_editor_key = event.key
+	return true
 }
 
 browser_host_surface_wake :: proc(_data: rawptr) {
@@ -99,6 +137,7 @@ browser_host_init :: proc() {
 		state=rawptr(&browser_host_runtime.app),
 		render=browser_host_app_render,
 		on_initialize=browser_host_app_initialize,
+		on_text_key=browser_host_app_text_key,
 	}
 	if result := browser_host_api.browser_application_init(
 		&browser_host_runtime.application,

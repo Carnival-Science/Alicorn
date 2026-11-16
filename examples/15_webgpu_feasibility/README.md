@@ -266,6 +266,12 @@ control should update the retained button state or insert text into the field;
 these interactions wake the same demand-driven browser host and do not switch
 to a separate application-side rendering loop.
 
+It also includes an application-owned editor-key probe. Click that control,
+then press Left/Right, Home, or End; the line below should report the normalized
+key and increment its event count. This exercises browser DOM keyboard routing
+through `Hosted_Runtime` into application state. It validates key delivery, not
+a complete browser text editor or physical IME behavior.
+
 Browser WebGPU presents the canvas as part of queue submission. Odin's current
 `vendor:wgpu` binding still types `SurfacePresent` as returning `Status`, while
 its JavaScript bridge implements it as a void no-op. The shared presenter
