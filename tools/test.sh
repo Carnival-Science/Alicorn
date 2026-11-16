@@ -33,6 +33,7 @@ sh "$ACCESSKIT_BINDING_ROOT/tools/check.sh" --odin "$ODIN" --cache-root "$REPO_R
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
 	build native/sdl_gpu_entry "-out:$OUT_DIR/alicorn_sdl_gpu"
 "$ODIN" test runtime
+"$ODIN" test host/web "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_web_host_tests"
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
 	test tests/fixtures/accessibility_contract \
 	"-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/accessibility_contract_tests"

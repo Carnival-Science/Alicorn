@@ -62,7 +62,7 @@ uploads remain renderer-specific.
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | In progress: image, custom-geometry, and backdrop resources have bounded asynchronous retirement and completion-driven release tests; async readback is exercised. Same-device compositor teardown/rebuild now reproduces every RGBA pixel on Windows D3D12 and Vulkan from retained Runtime products. Genuine driver/OS device loss and device recovery, plus primary/secondary window teardown/recreation, remain unvalidated. Intentional `DeviceDestroy` callbacks are tracked separately and do not count as driver-loss evidence |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
-| 6. Browser host | interaction, accessibility, text/IME, lifecycle and demand-driven scheduling complete | In progress: reusable demand-driven browser scheduling now lives in `host/web/demand_scheduler.js` and drives the WebGPU feasibility page. Production `ui.run`, browser input/IME, accessibility projection, and application integration remain outstanding |
+| 6. Browser host | interaction, accessibility, text/IME, lifecycle and demand-driven scheduling complete | In progress: reusable demand-driven browser scheduling and host-side browser key mapping now live in `host/web/`; the scheduler drives the WebGPU feasibility page, while key mapping is included in the `js_wasm32` package fixture. Production `ui.run`, DOM event routing, IME, accessibility projection, and application integration remain outstanding |
 | 7. Release readiness | docs, reproducible setup, CI and substantive shared-renderer web example | Not started |
 
 The Phase 0 evidence authorizes bounded, testable renderer slices; it does not
@@ -827,6 +827,25 @@ This is browser-host scheduling infrastructure exercised by the feasibility
 fixture, not yet a production `ui.run` browser host. No browser GPU execution
 was performed for this slice. Browser event/IME/clipboard integration, DOM/ARIA
 projection, host-owned canvas lifecycle, and app-level validation remain open.
+
+### Phase 6 browser key vocabulary (Windows and `js_wasm32`, 2026-11-16)
+
+`host/web/key_mapping.odin` translates normalized browser `KeyboardEvent.code`
+and modifier state into Alicorn's existing `Application_Key` and
+`Application_Text_Key_Event` vocabularies. It follows the native shortcut
+policy for application commands, Ctrl on Windows/Linux and Meta on macOS,
+platform word
+deletion/navigation, line boundaries, and document boundaries. Composition
+arbitration and focused text ownership remain host responsibilities; this
+helper deliberately does not dispatch events or depend on DOM APIs.
+
+Two Odin regressions cover application shortcuts, menu suppression, focused
+composition preemption policy, Windows/macOS text-navigation modifiers, and
+unsupported keys. Both passed on Windows; `host/web` passed a `js_wasm32`
+compile, and the browser package fixture now imports the mapping package. The
+standard Windows/macOS test scripts and Linux WebGPU workflow run these host
+policy tests. This is key translation policy, not browser event delivery or
+text/IME integration.
 
 ## SDL-created native surface presenter smoke (Windows, 2026-11-16)
 
