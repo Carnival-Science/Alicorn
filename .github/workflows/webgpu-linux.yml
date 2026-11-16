@@ -19,6 +19,9 @@ jobs:
           pkg-config --modversion sdl3
           wasm-ld --version
 
+      - name: Verify demand-driven browser scheduler
+        run: node tools/test_web_scheduler.js
+
       - name: Install pinned Odin Linux x64 SDK
         shell: bash
         run: |

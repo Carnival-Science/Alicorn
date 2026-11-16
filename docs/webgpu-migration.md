@@ -62,7 +62,7 @@ uploads remain renderer-specific.
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | In progress: image, custom-geometry, and backdrop resources have bounded asynchronous retirement and completion-driven release tests; async readback is exercised. Same-device compositor teardown/rebuild now reproduces every RGBA pixel on Windows D3D12 and Vulkan from retained Runtime products. Genuine driver/OS device loss and device recovery, plus primary/secondary window teardown/recreation, remain unvalidated. Intentional `DeviceDestroy` callbacks are tracked separately and do not count as driver-loss evidence |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
-| 6. Browser host | interaction, accessibility, text/IME, lifecycle and demand-driven scheduling complete | Not started |
+| 6. Browser host | interaction, accessibility, text/IME, lifecycle and demand-driven scheduling complete | In progress: reusable demand-driven browser scheduling now lives in `host/web/demand_scheduler.js` and drives the WebGPU feasibility page. Production `ui.run`, browser input/IME, accessibility projection, and application integration remain outstanding |
 | 7. Release readiness | docs, reproducible setup, CI and substantive shared-renderer web example | Not started |
 
 The Phase 0 evidence authorizes bounded, testable renderer slices; it does not
@@ -802,6 +802,31 @@ browser event loop or WebGPU surface host. Browser key-to-`Application_Key`
 translation, DOM text/IME and accessibility routing, one-shot animation-frame
 scheduling, and WGPU surface/device/presenter ownership remain open Phase 1/6
 work.
+
+### Phase 6 demand-driven scheduling foundation (Windows, 2026-11-16)
+
+`host/web/demand_scheduler.js` now owns the browser scheduling policy used by
+the WebGPU feasibility page. It coalesces input and asynchronous completion
+wakes into one animation frame, requests another frame only when the prior
+runtime step reports more work, and uses a single bounded timer for the next
+absolute monotonic deadline. Early timer delivery rechecks the deadline;
+hidden pages cancel pending frame/timer callbacks and resume with one current
+frame rather than replaying missed frames. The module owns no renderer,
+application state, paint decisions, or browser interaction policy.
+
+Seven deterministic Node regressions cover wake coalescing and idle quiescence,
+active-work frame chaining, deadline scheduling and early delivery, visibility
+suspension/resume, a wake arriving during a runtime step, long-deadline clamping,
+and initially hidden startup. All seven passed on Windows with Node 24.18.0.
+The same `js_wasm32` WebGPU feasibility fixture
+also rebuilt successfully against the updated page, and its build scripts copy
+the shared host scheduler alongside the Odin and WGPU browser support files.
+The Linux WebGPU workflow runs the scheduler regressions.
+
+This is browser-host scheduling infrastructure exercised by the feasibility
+fixture, not yet a production `ui.run` browser host. No browser GPU execution
+was performed for this slice. Browser event/IME/clipboard integration, DOM/ARIA
+projection, host-owned canvas lifecycle, and app-level validation remain open.
 
 ## SDL-created native surface presenter smoke (Windows, 2026-11-16)
 

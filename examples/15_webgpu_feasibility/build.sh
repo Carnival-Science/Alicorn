@@ -42,6 +42,7 @@ echo 'Building browser js_wasm32 fixture'
 ODIN_ROOT=$("$ODIN" root)
 cp "$ODIN_ROOT/core/sys/wasm/js/odin.js" web/odin.js
 cp "$ODIN_ROOT/vendor/wgpu/wgpu.js" web/wgpu.js
+cp "$REPO_ROOT/host/web/demand_scheduler.js" web/alicorn_demand_scheduler.js
 printf 'Native interactive: %s/out/webgpu_feasibility\n' "$SCRIPT_DIR"
 printf 'Native readback smoke: %s/out/webgpu_feasibility_smoke\n' "$SCRIPT_DIR"
 printf 'Native host-owned presenter smoke: %s/out/webgpu_feasibility_presenter_smoke\n' "$SCRIPT_DIR"
