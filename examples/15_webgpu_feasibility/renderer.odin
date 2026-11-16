@@ -2160,9 +2160,39 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 			material_accessibility_bevel_ok && material_accessibility_corner_ok && material_accessibility_shadow_suppressed
 		material_ok := material_gradient_left_ok && material_gradient_right_ok && material_raised_interior_ok &&
 			material_raised_top_ok && material_recessed_interior_ok && material_recessed_top_ok && material_accessibility_ok
-		ok=clear_ok && solid_ok && checker_ok && patch_ok && blend_ok && glyph_ok && clip_ok && outside_clip_ok && rounded_ok && rounded_corner_ok && last_row_ok && partial_buffer_ok && uniform_ok && display_blend_ok && display_clip_x_ok && display_clip_y_ok && text_visible && composite_overlay_ok && composite_text_visible && composite_icon_visible && composite_icon_clip && composite_second_icon_visible && image_red_ok && image_blend_ok && image_blue_ok && image_clip_ok && cropped_capture_matches && second_cropped_capture_matches && backdrop_blur_mixed_ok && backdrop_clip_ok && backdrop_prefix_change_ok && backdrop_changed_clip_ok && backdrop_resized_pixel_ok && backdrop_fallback_matches_normal && state.multiple_backdrop_pixel_passed && custom_geometry_rectangle_ok && custom_geometry_segment_ok && custom_geometry_circle_ok && custom_geometry_marker_ok && custom_geometry_clip_ok && custom_waveform_ok && motion_geometry_ok && material_ok
-		fmt.printf("[webgpu-feasibility] async RGBA8 readback %s texture=%dx%d row_pitch=%d padding_per_row=%d bytes=%d clear=%v solid=%v checker=%v partial_texture=%v partial_buffer=%v uniform=%v blend=%v glyph=%v clip=%v outside_clip=%v rounded=%v rounded_corner=%v last_row=%v runtime_display_blend=%v runtime_clip_x=%v runtime_clip_y=%v runtime_text_visible=%v composite_overlay_order=%v composite_offset_text=%v composite_icon_visible=%v composite_icon_clip=%v composite_second_icon_page_switch=%v composite_image_red=%v composite_image_alpha_blend=%v composite_image_blue=%v composite_image_clip=%v crop_capture_a=%v crop_capture_b=%v backdrop_blur_mixed=%v backdrop_clip=%v backdrop_prefix_change=%v backdrop_changed_clip=%v backdrop_resized=%v backdrop_over_budget_fallback_matches_plain_paint=%v custom_geometry_rectangle=%v custom_geometry_segment=%v custom_geometry_circle=%v custom_geometry_marker=%v custom_geometry_clip=%v custom_waveform=%v material_gradient_left=%v material_gradient_right=%v material_raised_face=%v material_raised_bevel=%v material_recessed_face=%v material_recessed_bevel=%v material_accessibility_variant=%v material_accessibility_bevel=%v rounded_material_corner=%v reduced_transparency_shadow=%v\n",
-			"PASS" if ok else "FAIL",READBACK_WIDTH,READBACK_HEIGHT,READBACK_BYTES_PER_ROW,READBACK_BYTES_PER_ROW-READBACK_WIDTH*READBACK_BYTES_PER_PIXEL,len(pixels),clear_ok,solid_ok,checker_ok,patch_ok,partial_buffer_ok,uniform_ok,blend_ok,glyph_ok,clip_ok,outside_clip_ok,rounded_ok,rounded_corner_ok,last_row_ok,display_blend_ok,display_clip_x_ok,display_clip_y_ok,text_visible,composite_overlay_ok,composite_text_visible,composite_icon_visible,composite_icon_clip,composite_second_icon_visible,image_red_ok,image_blend_ok,image_blue_ok,image_clip_ok,cropped_capture_matches,second_cropped_capture_matches,backdrop_blur_mixed_ok,backdrop_clip_ok,backdrop_prefix_change_ok,backdrop_changed_clip_ok,backdrop_resized_pixel_ok,backdrop_fallback_matches_normal,custom_geometry_rectangle_ok,custom_geometry_segment_ok,custom_geometry_circle_ok,custom_geometry_marker_ok,custom_geometry_clip_ok,custom_waveform_ok,material_gradient_left_ok,material_gradient_right_ok,material_raised_interior_ok,material_raised_top_ok,material_recessed_interior_ok,material_recessed_top_ok,state.material_accessibility_variant_passed,material_accessibility_bevel_ok,material_accessibility_corner_ok,material_accessibility_shadow_suppressed)
+		core_readback_ok := clear_ok && solid_ok && checker_ok && patch_ok && partial_buffer_ok && uniform_ok && blend_ok &&
+			glyph_ok && clip_ok && outside_clip_ok && rounded_ok && rounded_corner_ok && last_row_ok
+		compositor_readback_ok := display_blend_ok && display_clip_x_ok && display_clip_y_ok && text_visible &&
+			composite_overlay_ok && composite_text_visible && composite_icon_visible && composite_icon_clip &&
+			composite_second_icon_visible && image_red_ok && image_blend_ok && image_blue_ok && image_clip_ok &&
+			cropped_capture_matches && second_cropped_capture_matches
+		effects_readback_ok := backdrop_blur_mixed_ok && backdrop_clip_ok && backdrop_prefix_change_ok &&
+			backdrop_changed_clip_ok && backdrop_resized_pixel_ok && backdrop_fallback_matches_normal &&
+			state.multiple_backdrop_pixel_passed && custom_geometry_rectangle_ok && custom_geometry_segment_ok &&
+			custom_geometry_circle_ok && custom_geometry_marker_ok && custom_geometry_clip_ok && custom_waveform_ok &&
+			motion_geometry_ok && material_ok
+		ok=core_readback_ok && compositor_readback_ok && effects_readback_ok
+		fmt.printf("[webgpu-feasibility] async RGBA8 readback core %s texture=%dx%d row_pitch=%d padding_per_row=%d bytes=%d clear=%v solid=%v checker=%v partial_texture=%v partial_buffer=%v uniform=%v blend=%v glyph=%v clip=%v outside_clip=%v rounded=%v rounded_corner=%v last_row=%v\n",
+			"PASS" if core_readback_ok else "FAIL", READBACK_WIDTH, READBACK_HEIGHT, READBACK_BYTES_PER_ROW,
+			READBACK_BYTES_PER_ROW-READBACK_WIDTH*READBACK_BYTES_PER_PIXEL, len(pixels),
+			clear_ok, solid_ok, checker_ok, patch_ok, partial_buffer_ok, uniform_ok, blend_ok, glyph_ok,
+			clip_ok, outside_clip_ok, rounded_ok, rounded_corner_ok, last_row_ok)
+		fmt.printf("[webgpu-feasibility] async RGBA8 readback compositor %s display_blend=%v clip_x=%v clip_y=%v text=%v overlay_order=%v offset_text=%v icon=%v icon_clip=%v atlas_switch=%v image_red=%v image_alpha=%v image_blue=%v image_clip=%v crop_a=%v crop_b=%v\n",
+			"PASS" if compositor_readback_ok else "FAIL", display_blend_ok, display_clip_x_ok, display_clip_y_ok, text_visible, composite_overlay_ok,
+			composite_text_visible, composite_icon_visible, composite_icon_clip, composite_second_icon_visible,
+			image_red_ok, image_blend_ok, image_blue_ok, image_clip_ok, cropped_capture_matches,
+			second_cropped_capture_matches)
+		fmt.printf("[webgpu-feasibility] async RGBA8 readback effects %s backdrop=%v backdrop_clip=%v prefix_reuse=%v prefix_invalidation=%v resized=%v fallback=%v geometry_rect=%v segment=%v circle=%v marker=%v geometry_clip=%v waveform=%v gradient=%v raised=%v raised_bevel=%v recessed=%v recessed_bevel=%v\n",
+			"PASS" if effects_readback_ok else "FAIL", backdrop_blur_mixed_ok, backdrop_clip_ok, backdrop_prefix_change_ok, backdrop_changed_clip_ok,
+			backdrop_resized_pixel_ok, backdrop_fallback_matches_normal, custom_geometry_rectangle_ok,
+			custom_geometry_segment_ok, custom_geometry_circle_ok, custom_geometry_marker_ok,
+			custom_geometry_clip_ok, custom_waveform_ok, material_gradient_left_ok && material_gradient_right_ok,
+			material_raised_interior_ok, material_raised_top_ok, material_recessed_interior_ok,
+			material_recessed_top_ok)
+		fmt.printf("[webgpu-feasibility] rounded accessibility-material readback %s variant=%v face=%v bevel=%v corner=%v reduced_transparency_shadow=%v\n",
+			"PASS" if material_accessibility_ok else "FAIL", state.material_accessibility_variant_passed,
+			material_accessibility_interior_ok, material_accessibility_bevel_ok,
+			material_accessibility_corner_ok, material_accessibility_shadow_suppressed)
 		fmt.printf("[webgpu-feasibility] custom geometry translation/opacity pixel %s moved_pixel=%v original_pixel=%v\n",
 			"PASS" if motion_geometry_ok else "FAIL", motion_geometry_moved_pixel, motion_geometry_origin_pixel)
 	} else {

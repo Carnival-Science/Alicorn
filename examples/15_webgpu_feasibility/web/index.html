@@ -19,23 +19,39 @@ canvas{width:min(100vw,calc((100vh - 40px)*16/9));height:auto;aspect-ratio:16/9;
 (async()=>{
  const status=document.querySelector("#status");
  const diagnostics=document.querySelector("#diagnostics");
+ const recentDiagnostics=[];
+ const pinnedDiagnostics={adapter:"",readbackCore:"",readbackCompositor:"",readbackEffects:"",material:""};
  for(const level of ["log","info","warn","error"]){
   const original=console[level].bind(console);
   console[level]=(...args)=>{
    const line=args.map(value=>String(value)).join(" ");
    if(line.startsWith("[webgpu-feasibility]")||level==="error"){
-    const recent=diagnostics.textContent.split("\n").filter(item=>item.startsWith("[webgpu-feasibility]"));
-    recent.push(line.startsWith("[webgpu-feasibility]")?line:"[browser console.error] "+line);
-    diagnostics.textContent=recent.slice(-4).join("\n");
+    const diagnostic=line.startsWith("[webgpu-feasibility]")?line:"[browser console.error] "+line;
+    if(line.startsWith("[webgpu-feasibility] browser adapter classification ")) pinnedDiagnostics.adapter=line;
+    if(line.startsWith("[webgpu-feasibility] async RGBA8 readback core ")) pinnedDiagnostics.readbackCore=line;
+    if(line.startsWith("[webgpu-feasibility] async RGBA8 readback compositor ")) pinnedDiagnostics.readbackCompositor=line;
+    if(line.startsWith("[webgpu-feasibility] async RGBA8 readback effects ")) pinnedDiagnostics.readbackEffects=line;
+    if(line.startsWith("[webgpu-feasibility] rounded accessibility-material readback ")) pinnedDiagnostics.material=line;
+    recentDiagnostics.push(diagnostic);
+    if(recentDiagnostics.length>64) recentDiagnostics.shift();
+    const pinned=[pinnedDiagnostics.adapter,pinnedDiagnostics.readbackCore,pinnedDiagnostics.readbackCompositor,pinnedDiagnostics.readbackEffects,pinnedDiagnostics.material].filter(Boolean);
+    const visible=[...pinned,...recentDiagnostics.slice(-4)].filter((item,index,all)=>all.indexOf(item)===index);
+    diagnostics.textContent=visible.join("\n");
    }
    original(...args);
   };
  }
  window.addEventListener("error",event=>{
-  status.textContent="Browser runtime error: "+(event.message||event.error||"unknown error");
+  const message=event.message||String(event.error||"unknown error");
+  const location=event.filename?" at "+event.filename+":"+event.lineno+":"+event.colno:"";
+  const stack=event.error&&event.error.stack?String(event.error.stack):"";
+  status.textContent="Browser runtime error: "+message+location;
+  console.error("[browser uncaught error] "+message+location+(stack?"\n"+stack:""));
  });
  window.addEventListener("unhandledrejection",event=>{
-  status.textContent="Browser async error: "+String(event.reason||"unknown rejection");
+  const reason=event.reason&&event.reason.stack?String(event.reason.stack):String(event.reason||"unknown rejection");
+  status.textContent="Browser async error: "+String(event.reason&&event.reason.message||event.reason||"unknown rejection");
+  console.error("[browser unhandled rejection] "+reason);
  });
  const memoryInterface=new odin.WasmMemoryInterface();
  memoryInterface.setIntSize(4);

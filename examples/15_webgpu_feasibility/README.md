@@ -21,8 +21,12 @@ performs a nonzero-offset partial vertex-buffer update and a WGSL uniform
 buffer layout/binding probe, checking both rendered colors. It requests
 `QueueOnSubmittedWorkDone`; the bounded native smoke waits for both async
 callbacks before teardown. Browser probe results appear in the page's live
-validation status as well as its developer console. A second 63×64 target
-checks three samples from the real retained paint list: ordered source-over
+validation status as well as its developer console. The page preserves the
+selected adapter's fallback metadata, complete asynchronous pixel-readback
+summary (split into bounded core, compositor, and effects lines), and rounded
+accessibility-material result alongside a bounded rolling log, so later
+presentation messages do not evict browser validation results. A second 63×64 target checks three samples
+from the real retained paint list: ordered source-over
 blend at the overlap and untouched root color beyond the clipped parent on
 both axes. The same display list is encoded twice; counters require one mesh
 build and one vertex/viewport upload total, proving unchanged retained paint
