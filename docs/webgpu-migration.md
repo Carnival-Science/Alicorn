@@ -740,8 +740,8 @@ completed serial 1 with zero frames in flight, after which presenter destruction
 succeeded. Both local runs used Odin at `C:\odin\odin.exe` and an NVIDIA
 GeForce RTX 2080 SUPER; requested and reported backends agreed in each run.
 `examples/15_webgpu_feasibility/build.ps1` also built the
-interactive, readback, compositor-recreation, resize, presenter-smoke, and
-`js_wasm32` fixture targets. `odin check renderer/webgpu -no-entry-point` and
+interactive, readback, compositor-recreation, resize, offscreen presenter,
+SDL surface presenter, and `js_wasm32` fixture targets. `odin check renderer/webgpu -no-entry-point` and
 `odin check renderer/webgpu -target:js_wasm32 -no-entry-point` passed. All five
 WebGPU package tests passed, including a two-output acknowledgement regression;
 all 352 Runtime tests passed after merging current `master`.
@@ -758,6 +758,28 @@ not a production SDL3 window presenter, externally managed native surface,
 browser canvas presenter, or real device-loss recovery. No adapter, SDL, or
 browser responsibilities have moved into the renderer. Phase 1 and Phase 6
 remain open.
+
+## SDL-created native surface presenter smoke (Windows, 2026-11-16)
+
+The new opt-in `FEASIBILITY_TEST_SURFACE_PRESENTER` target draws a separate
+retained Alicorn Runtime through `WebGPU_Presenter_Encode` into the actual
+swapchain texture acquired by the SDL3 host. SDL remains responsible for the
+window, surface, acquisition, queue submission, `SurfacePresent`, event
+processing, and teardown. The presenter receives the exact registered output
+ID and revision; after `QueueSubmit`, the fixture verifies only that output's
+revision was acknowledged, then waits for its queue-completion token before
+destroying the presenter and unregistering the output.
+
+`examples/15_webgpu_feasibility/build.ps1 -Odin C:\odin\odin.exe` passed and
+built this target plus all existing native fixtures and the browser
+`js_wasm32` artifact. The bounded surface smoke passed on Windows D3D12 and
+Vulkan using an NVIDIA GeForce RTX 2080 SUPER; both requested/reported backend
+pairs agreed. Each run presented one frame at 960×540, acknowledged output
+revision 1, completed submission serial 1 with zero frames in flight, and
+unregistered the output before Runtime teardown. The surface target does not
+read back swapchain pixels or claim scanout. This is evidence for an
+SDL-created native surface, not an externally managed surface or browser
+canvas. Those remain open host integrations.
 
 ## Phase 2 image renderer slice (2026-11-15)
 

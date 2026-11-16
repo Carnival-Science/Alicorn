@@ -207,32 +207,90 @@ render_surface_frame :: proc() {
 	defer wgpu.TextureRelease(surface_texture.texture)
 	view:=wgpu.TextureCreateView(surface_texture.texture)
 	defer wgpu.TextureViewRelease(view)
-	build_scene()
-	if len(state.vertices)==0 { return }
-	upload_size:=u64(len(state.vertices)*size_of(Vertex))
-	if upload_size>state.vertex_capacity { fmt.panicf("vertex capacity exceeded: %d",upload_size) }
-	wgpu.QueueWriteBuffer(state.queue,state.vertex_buffer,0,raw_data(state.vertices),uint(upload_size))
-	encoder:=wgpu.DeviceCreateCommandEncoder(state.device)
-	defer wgpu.CommandEncoderRelease(encoder)
-	attachment:=wgpu.RenderPassColorAttachment{
-		view=view,depthSlice=wgpu.DEPTH_SLICE_UNDEFINED,loadOp=.Clear,storeOp=.Store,
-		clearValue={0.055,0.065,0.08,1},
+	when FEASIBILITY_TEST_SURFACE_PRESENTER {
+		if state.surface_present_count != 0 { return }
+		display, display_ok := alicorn.paint_display_list(&state.surface_runtime)
+		if !display_ok { fmt.panicf("Alicorn SDL surface display list unavailable") }
+		snapshot, snapshot_status := alicorn.presentation_output_snapshot(&state.surface_runtime, state.surface_output)
+		if snapshot_status != .Ok || !snapshot.pending || snapshot.root != state.surface_runtime_root {
+			fmt.panicf("Alicorn SDL surface output is not bound and pending: %v", snapshot_status)
+		}
+		if display.revision != snapshot.revision {
+			fmt.panicf("Alicorn SDL surface display revision %d does not match output revision %d",
+				display.revision, snapshot.revision)
+		}
+		encoder := wgpu.DeviceCreateCommandEncoder(state.device)
+		if encoder == nil { fmt.panicf("SDL surface command encoder creation failed") }
+		defer wgpu.CommandEncoderRelease(encoder)
+		scale := min(
+			f32(state.config.width)/f32(SURFACE_PRESENTER_LOGICAL_WIDTH),
+			f32(state.config.height)/f32(SURFACE_PRESENTER_LOGICAL_HEIGHT),
+		)
+		if result := webgpu_renderer.WebGPU_Presenter_Encode(
+			&state.surface_presenter, display, encoder, view,
+			state.config.width, state.config.height, scale, scale,
+			true, wgpu.Color{0.04, 0.06, 0.08, 1}, state.surface_output,
+		); result != .Ok {
+			fmt.panicf("Alicorn SDL surface WebGPU encode failed: %v", result)
+		}
+		command := wgpu.CommandEncoderFinish(encoder)
+		if command == nil {
+			_ = webgpu_renderer.WebGPU_Presenter_Cancel_Frame(&state.surface_presenter)
+			fmt.panicf("SDL surface command buffer finish failed")
+		}
+		defer wgpu.CommandBufferRelease(command)
+		wgpu.QueueSubmit(state.queue, {command})
+		submission, submitted := webgpu_renderer.WebGPU_Presenter_Submission_Succeeded(&state.surface_presenter)
+		if !submitted { fmt.panicf("Alicorn SDL surface submission commit failed") }
+		state.surface_presenter_submission = submission
+		acknowledged, ack_status := alicorn.presentation_output_snapshot(&state.surface_runtime, state.surface_output)
+		state.surface_output_acknowledged = ack_status == .Ok && submission.output_bound &&
+			submission.output_id.runtime_identity == state.surface_output.runtime_identity &&
+			submission.output_id.sequence == state.surface_output.sequence &&
+			acknowledged.acknowledged_revision == submission.display_revision && !acknowledged.pending
+		if !state.surface_output_acknowledged {
+			fmt.panicf("Alicorn SDL surface output acknowledgement mismatch: status=%v snapshot=%d acknowledged=%d pending=%v token_revision=%d token_output=%d/%d expected_output=%d/%d bound=%v",
+				ack_status, acknowledged.revision, acknowledged.acknowledged_revision, acknowledged.pending, submission.display_revision,
+				submission.output_id.runtime_identity, submission.output_id.sequence,
+				state.surface_output.runtime_identity, state.surface_output.sequence, submission.output_bound)
+		}
+		state.surface_presenter_completion_pending = true
+		wgpu.QueueOnSubmittedWorkDone(state.queue, {mode=.AllowProcessEvents, callback=on_surface_presenter_queue_done})
+		wgpu.SurfacePresent(state.surface)
+		state.surface_present_count += 1
+		state.animation_seconds = ANIMATION_SECONDS
+		fmt.printf("[webgpu-feasibility] Alicorn retained display presented to SDL WebGPU surface output_revision=%d size=%dx%d scale=%.3f\n",
+			submission.display_revision, state.config.width, state.config.height, scale)
+		fmt.printf("[webgpu-feasibility] Runtime output acknowledgement PASS sequence=%d revision=%d; output unregisters before Runtime teardown\n",
+			submission.output_id.sequence, acknowledged.acknowledged_revision)
+	} else {
+		build_scene()
+		if len(state.vertices)==0 { return }
+		upload_size:=u64(len(state.vertices)*size_of(Vertex))
+		if upload_size>state.vertex_capacity { fmt.panicf("vertex capacity exceeded: %d",upload_size) }
+		wgpu.QueueWriteBuffer(state.queue,state.vertex_buffer,0,raw_data(state.vertices),uint(upload_size))
+		encoder:=wgpu.DeviceCreateCommandEncoder(state.device)
+		defer wgpu.CommandEncoderRelease(encoder)
+		attachment:=wgpu.RenderPassColorAttachment{
+			view=view,depthSlice=wgpu.DEPTH_SLICE_UNDEFINED,loadOp=.Clear,storeOp=.Store,
+			clearValue={0.055,0.065,0.08,1},
+		}
+		pass:=wgpu.CommandEncoderBeginRenderPass(encoder,&wgpu.RenderPassDescriptor{colorAttachmentCount=1,colorAttachments=&attachment})
+		wgpu.RenderPassEncoderSetPipeline(pass,state.pipeline)
+		wgpu.RenderPassEncoderSetBindGroup(pass,0,state.bind_group)
+		wgpu.RenderPassEncoderSetVertexBuffer(pass,0,state.vertex_buffer,0,state.vertex_capacity)
+		for draw in state.draws {
+			wgpu.RenderPassEncoderSetScissorRect(pass,draw.scissor[0],draw.scissor[1],draw.scissor[2],draw.scissor[3])
+			wgpu.RenderPassEncoderDraw(pass,draw.count,1,draw.first,0)
+		}
+		wgpu.RenderPassEncoderEnd(pass)
+		wgpu.RenderPassEncoderRelease(pass)
+		command:=wgpu.CommandEncoderFinish(encoder)
+		defer wgpu.CommandBufferRelease(command)
+		wgpu.QueueSubmit(state.queue,{command})
+		wgpu.SurfacePresent(state.surface)
+		state.surface_present_count+=1
 	}
-	pass:=wgpu.CommandEncoderBeginRenderPass(encoder,&wgpu.RenderPassDescriptor{colorAttachmentCount=1,colorAttachments=&attachment})
-	wgpu.RenderPassEncoderSetPipeline(pass,state.pipeline)
-	wgpu.RenderPassEncoderSetBindGroup(pass,0,state.bind_group)
-	wgpu.RenderPassEncoderSetVertexBuffer(pass,0,state.vertex_buffer,0,state.vertex_capacity)
-	for draw in state.draws {
-		wgpu.RenderPassEncoderSetScissorRect(pass,draw.scissor[0],draw.scissor[1],draw.scissor[2],draw.scissor[3])
-		wgpu.RenderPassEncoderDraw(pass,draw.count,1,draw.first,0)
-	}
-	wgpu.RenderPassEncoderEnd(pass)
-	wgpu.RenderPassEncoderRelease(pass)
-	command:=wgpu.CommandEncoderFinish(encoder)
-	defer wgpu.CommandBufferRelease(command)
-	wgpu.QueueSubmit(state.queue,{command})
-	wgpu.SurfacePresent(state.surface)
-	state.surface_present_count+=1
 }
 
 build_scene :: proc() {
@@ -1312,6 +1370,64 @@ build_text_runtime :: proc() {
 	display, display_ok := alicorn.paint_display_list(&state.text_runtime)
 	if !display_ok || len(display.commands) == 0 {
 		fmt.panicf("Alicorn text fixture expected retained text paint commands")
+	}
+}
+
+build_surface_runtime :: proc() {
+	state.surface_runtime = alicorn.new_runtime(alicorn.Rect{
+		0, 0, f32(SURFACE_PRESENTER_LOGICAL_WIDTH), f32(SURFACE_PRESENTER_LOGICAL_HEIGHT),
+	})
+	state.surface_runtime_ready = true
+	if !alicorn.text_engine_load_font_role(&state.surface_runtime.text_engine, .UI, FONT_DATA) {
+		fmt.panicf("Alicorn SDL surface fixture could not load the bundled UI font")
+	}
+	alicorn.invalidate_root(&state.surface_runtime, "SDL WebGPU surface presenter smoke")
+	output, output_status := alicorn.presentation_output_register(&state.surface_runtime)
+	if output_status != .Ok { fmt.panicf("SDL WebGPU surface output registration failed: %v", output_status) }
+	state.surface_output = output
+	state.surface_output_registered = true
+	ui, should_build := alicorn.begin_frame(&state.surface_runtime)
+	if !should_build { fmt.panicf("SDL WebGPU surface Runtime rejected its initial description") }
+	state.surface_runtime_root = alicorn.container_begin(
+		&ui, .Root, label="webgpu-surface-root",
+		style=alicorn.layout_style(.Column,
+			width=f32(SURFACE_PRESENTER_LOGICAL_WIDTH),
+			height=f32(SURFACE_PRESENTER_LOGICAL_HEIGHT),
+			padding=32, gap=12, clip=true),
+	)
+	if status := alicorn.presentation_output_bind_root(
+		&state.surface_runtime, state.surface_output, state.surface_runtime_root,
+	); status != .Ok {
+		fmt.panicf("SDL WebGPU surface output root binding failed: %v", status)
+	}
+	alicorn.surface_begin(
+		&ui, alicorn.surface_core_color_role(.Surface),
+		key=alicorn.key_string("webgpu-surface-panel"),
+		style=alicorn.layout_style(width=896, height=132),
+		fill=alicorn.Color{0.10, 0.14, 0.19, 1},
+	)
+	alicorn.text(
+		&ui, "Alicorn retained display on an SDL WebGPU surface",
+		key=alicorn.key_string("webgpu-surface-title"),
+		style=alicorn.layout_style(width=860, height=42, padding=12),
+		text_style=alicorn.Text_Style{font_size=28, overflow=.Clip},
+		color=alicorn.Color{0.94, 0.91, 0.82, 1},
+	)
+	alicorn.surface_end(&ui)
+	alicorn.text(
+		&ui, "SDL owns the window and swapchain. Alicorn owns the retained paint stream and its renderer resources.",
+		key=alicorn.key_string("webgpu-surface-description"),
+		style=alicorn.layout_style(width=896, height=36),
+		text_style=alicorn.Text_Style{font_size=18, overflow=.Clip},
+		color=alicorn.Color{0.78, 0.83, 0.88, 1},
+	)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	display, display_ok := alicorn.paint_display_list(&state.surface_runtime)
+	snapshot, snapshot_status := alicorn.presentation_output_snapshot(&state.surface_runtime, state.surface_output)
+	if !display_ok || len(display.commands) == 0 || snapshot_status != .Ok || !snapshot.pending ||
+	   snapshot.root != state.surface_runtime_root || snapshot.revision != display.revision {
+		fmt.panicf("SDL WebGPU surface Runtime output was not published with its first display revision")
 	}
 }
 

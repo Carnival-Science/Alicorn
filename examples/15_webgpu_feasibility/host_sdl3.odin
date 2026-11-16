@@ -119,6 +119,10 @@ os_run :: proc() {
 		}
 		if state.quit { break }
 		needs_wakeup := state.dirty || state.readback_pending || state.queue_work_done_pending || state.animation_seconds < ANIMATION_SECONDS
+		needs_wakeup = needs_wakeup || state.surface_presenter_completion_pending
+		when FEASIBILITY_TEST_SURFACE_PRESENTER {
+			needs_wakeup = needs_wakeup || (state.ready && state.surface_present_count == 0)
+		}
 		when FEASIBILITY_TEST_RESIZE {
 			needs_wakeup = needs_wakeup || (state.ready && (!state.test_resize_pre_frame || !state.test_resize_post_frame))
 		}

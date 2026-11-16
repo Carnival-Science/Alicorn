@@ -29,10 +29,13 @@ FEASIBILITY_TEST_QUIT_AFTER_READBACK :: #config(FEASIBILITY_TEST_QUIT_AFTER_READ
 FEASIBILITY_TEST_RESIZE :: #config(FEASIBILITY_TEST_RESIZE, false)
 FEASIBILITY_TEST_COMPOSITOR_RECREATION :: #config(FEASIBILITY_TEST_COMPOSITOR_RECREATION, false)
 FEASIBILITY_TEST_WEBGPU_PRESENTER :: #config(FEASIBILITY_TEST_WEBGPU_PRESENTER, false)
+FEASIBILITY_TEST_SURFACE_PRESENTER :: #config(FEASIBILITY_TEST_SURFACE_PRESENTER, false)
 SURFACE_CACHE_PRESSURE_BATCH_COUNT :: 120
 SURFACE_CACHE_PRESSURE_FIRST_WIDTH :: 100
 SURFACE_CACHE_PRESSURE_SECOND_WIDTH :: SURFACE_CACHE_PRESSURE_FIRST_WIDTH + SURFACE_CACHE_PRESSURE_BATCH_COUNT
 SURFACE_CACHE_PRESSURE_HEIGHT :: 18
+SURFACE_PRESENTER_LOGICAL_WIDTH :: 960
+SURFACE_PRESENTER_LOGICAL_HEIGHT :: 540
 
 Vertex :: struct {
 	position: [2]f32,
@@ -62,6 +65,15 @@ state: struct {
 	presenter: webgpu_renderer.WebGPU_Presenter,
 	presenter_created, presenter_destroyed, presenter_completion_passed, presenter_pixel_parity_passed: bool,
 	presenter_submission: webgpu_renderer.WebGPU_Submission,
+	surface_presenter: webgpu_renderer.WebGPU_Presenter,
+	surface_presenter_created, surface_presenter_destroyed: bool,
+	surface_presenter_completion_passed, surface_presenter_completion_pending: bool,
+	surface_presenter_submission: webgpu_renderer.WebGPU_Submission,
+	surface_output: alicorn.Presentation_Output_ID,
+	surface_output_registered, surface_output_acknowledged: bool,
+	surface_runtime: alicorn.Runtime,
+	surface_runtime_ready: bool,
+	surface_runtime_root: alicorn.Node_ID,
 	compositor_image_a, compositor_image_b: alicorn.Image_Handle,
 	compositor_material_surface_ids: [4]alicorn.Node_ID,
 	compositor_material_surface_bounds: [4]alicorn.Rect,
@@ -178,6 +190,14 @@ main :: proc() {
 				os_exit_failure()
 			}
 		}
+		when FEASIBILITY_TEST_SURFACE_PRESENTER {
+			if !state.surface_presenter_created || !state.surface_presenter_destroyed ||
+			   !state.surface_presenter_completion_passed || !state.surface_output_acknowledged ||
+			   state.surface_output.runtime_identity == 0 || state.surface_output.sequence == 0 ||
+			   state.surface_present_count != 1 {
+				os_exit_failure()
+			}
+		}
 		when FEASIBILITY_TEST_RESIZE {
 			if !state.test_resize_pre_applied || !state.test_resize_pre_frame ||
 				!state.test_resize_post_applied || !state.test_resize_post_frame {
@@ -198,6 +218,10 @@ smoke_complete :: proc() -> bool {
 	}
 	when FEASIBILITY_TEST_WEBGPU_PRESENTER {
 		if !state.presenter_created || !state.presenter_completion_passed || !state.presenter_pixel_parity_passed { return false }
+	}
+	when FEASIBILITY_TEST_SURFACE_PRESENTER {
+		if !state.surface_presenter_created || !state.surface_presenter_completion_passed ||
+		   state.surface_present_count != 1 { return false }
 	}
 	when FEASIBILITY_TEST_RESIZE {
 		if !state.test_resize_pre_applied || !state.test_resize_pre_frame ||
@@ -343,6 +367,30 @@ on_queue_work_done :: proc "c" (status:wgpu.QueueWorkDoneStatus, message:wgpu.St
 	}
 }
 
+on_surface_presenter_queue_done :: proc "c" (
+	status: wgpu.QueueWorkDoneStatus,
+	message: wgpu.StringView,
+	userdata1, userdata2: rawptr,
+) {
+	context = state.ctx
+	state.surface_presenter_completion_pending = false
+	state.surface_presenter_completion_passed = status == .Success &&
+		state.surface_presenter_submission.serial > 0 &&
+		webgpu_renderer.WebGPU_Presenter_Complete_Submission(
+			&state.surface_presenter, state.surface_presenter_submission,
+		)
+	fmt.printf("[webgpu-feasibility] SDL surface presenter queue completion %s serial=%d in_flight=%d status=%v message=%s\n",
+		"PASS" if state.surface_presenter_completion_passed else "FAIL",
+		state.surface_presenter_submission.serial,
+		webgpu_renderer.WebGPU_Presenter_In_Flight(&state.surface_presenter),
+		status, message,
+	)
+	if !state.surface_presenter_completion_passed { state.quit = true }
+	when FEASIBILITY_TEST_QUIT_AFTER_READBACK {
+		if smoke_complete() { state.quit = true }
+	}
+}
+
 on_surface_cache_pressure_batch_a :: proc "c" (status: wgpu.QueueWorkDoneStatus, message: wgpu.StringView, userdata1, userdata2: rawptr) {
 	context = state.ctx
 	state.queue_work_done_pending = false
@@ -443,6 +491,15 @@ on_device :: proc "c" (status: wgpu.RequestDeviceStatus, device: wgpu.Device, me
 		state.presenter = presenter
 		state.presenter_created = true
 	}
+	when FEASIBILITY_TEST_SURFACE_PRESENTER {
+		build_surface_runtime()
+		surface_presenter, surface_presenter_ok := webgpu_renderer.WebGPU_Presenter_Create(
+			state.device, state.queue, state.config.format, &state.surface_runtime,
+		)
+		if !surface_presenter_ok { fmt.panicf("host-owned SDL surface presenter creation failed") }
+		state.surface_presenter = surface_presenter
+		state.surface_presenter_created = true
+	}
 	fmt.println("[webgpu-feasibility] text runtime built")
 	state.width, state.height = os_get_framebuffer_size()
 	os_set_surface_size(state.width, state.height)
@@ -520,8 +577,25 @@ finish :: proc() {
 			state.presenter_destroyed = true
 		}
 	}
+	if state.surface_presenter_created {
+		if !webgpu_renderer.WebGPU_Presenter_Destroy(&state.surface_presenter) {
+			fmt.println("[webgpu-feasibility] SDL surface presenter still has pending frames at shutdown")
+		} else {
+			state.surface_presenter_destroyed = true
+		}
+	}
 	webgpu_renderer.Text_Destroy(&state.text_renderer)
 	webgpu_renderer.Solid_Destroy(&state.solid_renderer)
+	if state.surface_runtime_ready {
+		if state.surface_output_registered {
+			if status := alicorn.presentation_output_unregister(&state.surface_runtime, state.surface_output); status != .Ok {
+				fmt.printf("[webgpu-feasibility] SDL surface output unregister failed: %v\n", status)
+			}
+			state.surface_output_registered = false
+		}
+		alicorn.destroy_runtime(&state.surface_runtime)
+		state.surface_runtime_ready = false
+	}
 	if state.text_runtime_ready {
 		alicorn.destroy_runtime(&state.text_runtime)
 		state.text_runtime_ready = false

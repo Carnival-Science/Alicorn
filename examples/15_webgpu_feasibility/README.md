@@ -143,6 +143,22 @@ The smoke exits nonzero if any pixel probe or the queue-completion callback
 fails or either asynchronous completion callback does not arrive within 15
 seconds. A timeout prints the readback and queue-callback state before exiting.
 
+To encode a real Alicorn display list into the SDL-created window's WebGPU
+surface, then acknowledge its Runtime output after queue submission and wait
+for its completion callback before teardown, run:
+
+~~~powershell
+.\out\webgpu_feasibility_surface_presenter.exe --backend=d3d12
+.\out\webgpu_feasibility_surface_presenter.exe --backend=vulkan
+~~~
+
+This bounded check verifies one surface acquisition, one presenter submission,
+one `SurfacePresent`, an exact output-revision acknowledgement, and completion
+before presenter destruction. It validates the SDL-created native surface
+path; it does not compare swapchain pixels or claim display scanout. The
+existing interactive fixture still draws its own scene unless this explicit
+smoke target is selected.
+
 For native surface reconfiguration during motion and after it settles, run:
 
 ~~~powershell
