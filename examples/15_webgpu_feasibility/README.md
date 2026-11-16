@@ -115,13 +115,24 @@ For a bounded native adapter/render/readback smoke that exits on completion:
 .\out\webgpu_feasibility_smoke.exe
 ~~~
 
-Both smoke executables accept an explicit native backend when collecting
+Native smoke executables accept an explicit backend when collecting
 backend-specific evidence:
 
 ~~~powershell
 .\out\webgpu_feasibility_smoke.exe --backend=vulkan
 .\out\webgpu_feasibility_smoke.exe --backend=d3d12
 .\out\webgpu_feasibility_resize_smoke.exe --backend=d3d12
+~~~
+
+The host-owned WebGPU presenter boundary has a focused smoke that renders the
+same retained mixed paint list through both the direct compositor and the
+host-facing presenter, compares every offscreen pixel, waits for the
+asynchronous queue-completion token, and verifies bounded retirement before
+teardown:
+
+~~~powershell
+.\out\webgpu_feasibility_presenter_smoke.exe --backend=d3d12
+.\out\webgpu_feasibility_presenter_smoke.exe --backend=vulkan
 ~~~
 
 The fixture logs both the requested backend and the adapter's reported backend;

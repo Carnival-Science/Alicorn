@@ -27,6 +27,8 @@ echo 'Building interactive native fixture'
 "$ODIN" build . -out:out/webgpu_feasibility
 echo 'Building native asynchronous-readback smoke fixture'
 "$ODIN" build . -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -out:out/webgpu_feasibility_smoke
+echo 'Building native host-owned presenter smoke fixture'
+"$ODIN" build . -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -define:FEASIBILITY_TEST_WEBGPU_PRESENTER=true -out:out/webgpu_feasibility_presenter_smoke
 echo 'Building native surface-resize smoke fixture'
 "$ODIN" build . -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -define:FEASIBILITY_TEST_RESIZE=true -out:out/webgpu_feasibility_resize_smoke
 if ! command -v wasm-ld >/dev/null 2>&1; then
@@ -40,5 +42,6 @@ cp "$ODIN_ROOT/core/sys/wasm/js/odin.js" web/odin.js
 cp "$ODIN_ROOT/vendor/wgpu/wgpu.js" web/wgpu.js
 printf 'Native interactive: %s/out/webgpu_feasibility\n' "$SCRIPT_DIR"
 printf 'Native readback smoke: %s/out/webgpu_feasibility_smoke\n' "$SCRIPT_DIR"
+printf 'Native host-owned presenter smoke: %s/out/webgpu_feasibility_presenter_smoke\n' "$SCRIPT_DIR"
 printf 'Native resize smoke: %s/out/webgpu_feasibility_resize_smoke\n' "$SCRIPT_DIR"
 printf 'Browser: serve %s/web on localhost and open /index.html\n' "$SCRIPT_DIR"

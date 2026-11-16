@@ -349,6 +349,16 @@ start_offscreen_readback :: proc() {
 		size={width=READBACK_WIDTH,height=READBACK_HEIGHT,depthOrArrayLayers=1},format=.RGBA8Unorm,mipLevelCount=1,sampleCount=1,
 	})
 	state.composite_offscreen_view=wgpu.TextureCreateView(state.composite_offscreen_texture)
+	when FEASIBILITY_TEST_WEBGPU_PRESENTER {
+		state.presenter_offscreen_texture=wgpu.DeviceCreateTexture(state.device,&wgpu.TextureDescriptor{
+			label="host-owned WebGPU presenter parity target",usage={.RenderAttachment,.CopySrc},dimension=._2D,
+			size={width=READBACK_WIDTH,height=READBACK_HEIGHT,depthOrArrayLayers=1},format=.RGBA8Unorm,mipLevelCount=1,sampleCount=1,
+		})
+		state.presenter_offscreen_view=wgpu.TextureCreateView(state.presenter_offscreen_texture)
+		if state.presenter_offscreen_texture == nil || state.presenter_offscreen_view == nil {
+			fmt.panicf("host-owned WebGPU presenter parity target creation failed")
+		}
+	}
 	state.backdrop_offscreen_texture=wgpu.DeviceCreateTexture(state.device,&wgpu.TextureDescriptor{
 		label="Alicorn backdrop effect paint-order readback target",usage={.RenderAttachment,.CopySrc},dimension=._2D,
 		size={width=READBACK_WIDTH,height=READBACK_HEIGHT,depthOrArrayLayers=1},format=.RGBA8Unorm,mipLevelCount=1,sampleCount=1,
@@ -538,6 +548,22 @@ start_offscreen_readback :: proc() {
 	); result != .Ok {
 		fmt.panicf("Alicorn mixed WebGPU compositor encoding failed: %v", result)
 	}
+	when FEASIBILITY_TEST_WEBGPU_PRESENTER {
+		if result := webgpu_renderer.WebGPU_Presenter_Encode(
+			&state.presenter, mixed_display, encoder, state.presenter_offscreen_view,
+			READBACK_WIDTH, READBACK_HEIGHT, 1, 1, true, wgpu.Color{0.04, 0.08, 0.12, 1},
+		); result != .Ok {
+			fmt.panicf("host-owned WebGPU presenter encoding failed: %v", result)
+		}
+		presenter_layout := wgpu.TexelCopyBufferLayout{
+			bytesPerRow=READBACK_BYTES_PER_ROW, rowsPerImage=READBACK_HEIGHT,
+			offset=14*READBACK_BUFFER_BYTES,
+		}
+		presenter_source := wgpu.TexelCopyTextureInfo{texture=state.presenter_offscreen_texture,aspect=.All}
+		presenter_destination := wgpu.TexelCopyBufferInfo{layout=presenter_layout,buffer=state.readback_buffer}
+		wgpu.CommandEncoderCopyTextureToBuffer(encoder,&presenter_source,&presenter_destination,
+			&wgpu.Extent3D{width=READBACK_WIDTH,height=READBACK_HEIGHT,depthOrArrayLayers=1})
+	}
 	if result := webgpu_renderer.Compositor_Encode(
 		&state.compositor, &state.text_runtime, mixed_display, state.capture_offscreen_view,
 		CAPTURE_WIDTH, CAPTURE_HEIGHT, 1, 1, encoder, true, wgpu.Color{0.04, 0.08, 0.12, 1},
@@ -622,6 +648,13 @@ start_offscreen_readback :: proc() {
 	wgpu.CommandEncoderCopyTextureToBuffer(encoder,&composite_source,&composite_destination,&wgpu.Extent3D{width=READBACK_WIDTH,height=READBACK_HEIGHT,depthOrArrayLayers=1})
 	command:=wgpu.CommandEncoderFinish(encoder); wgpu.CommandEncoderRelease(encoder)
 	wgpu.QueueSubmit(state.queue,{command}); wgpu.CommandBufferRelease(command)
+	when FEASIBILITY_TEST_WEBGPU_PRESENTER {
+		presenter_submission, presenter_submitted := webgpu_renderer.WebGPU_Presenter_Submission_Succeeded(&state.presenter)
+		if !presenter_submitted { fmt.panicf("host-owned WebGPU presenter submission commit failed") }
+		state.presenter_submission = presenter_submission
+		fmt.printf("[webgpu-feasibility] host-owned presenter frame submitted serial=%d revision=%d readback_slot=14\n",
+			state.presenter_submission.serial, state.presenter_submission.display_revision)
+	}
 	webgpu_renderer.Text_Commit_Submission(&state.text_renderer, &state.text_runtime)
 	state.compositor_completion_serial = webgpu_renderer.Compositor_Commit_Submission(&state.compositor, &state.text_runtime)
 	if state.compositor_completion_serial == 0 { fmt.panicf("mixed compositor submission did not receive a completion serial") }
@@ -1630,6 +1663,28 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 			}
 		}
 		state.multiple_backdrop_pixel_passed = multi_backdrop_diff_pixels > 0
+		when FEASIBILITY_TEST_WEBGPU_PRESENTER {
+			state.presenter_pixel_parity_passed = true
+			presenter_mismatch_x, presenter_mismatch_y := -1, -1
+			compositor_pixel, presenter_pixel: [4]u8
+			for y in 0..<READBACK_HEIGHT {
+				for x in 0..<READBACK_WIDTH {
+					expected := offscreen_pixel(pixels, x, y, 3*READBACK_BUFFER_BYTES)
+					actual := offscreen_pixel(pixels, x, y, 14*READBACK_BUFFER_BYTES)
+					if expected != actual {
+						state.presenter_pixel_parity_passed = false
+						presenter_mismatch_x, presenter_mismatch_y = x, y
+						compositor_pixel, presenter_pixel = expected, actual
+						break
+					}
+				}
+				if !state.presenter_pixel_parity_passed { break }
+			}
+			fmt.printf("[webgpu-feasibility] host-owned presenter pixel parity %s size=%dx%d mismatch=(%d,%d) compositor=%v presenter=%v\n",
+				"PASS" if state.presenter_pixel_parity_passed else "FAIL", READBACK_WIDTH, READBACK_HEIGHT,
+				presenter_mismatch_x, presenter_mismatch_y, compositor_pixel, presenter_pixel)
+			if !state.presenter_pixel_parity_passed { ok = false }
+		}
 		cropped_capture_matches := true
 		second_cropped_capture_matches := true
 		for y in 0..<CAPTURE_HEIGHT {

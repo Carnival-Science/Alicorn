@@ -16,6 +16,8 @@ try {
 	if ($LASTEXITCODE -ne 0) { throw "Native smoke fixture build failed: $LASTEXITCODE" }
 	& $Odin build . -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -define:FEASIBILITY_TEST_COMPOSITOR_RECREATION=true -out:out\webgpu_feasibility_recreate_smoke.exe
 	if ($LASTEXITCODE -ne 0) { throw "Native compositor-recreation smoke fixture build failed: $LASTEXITCODE" }
+	& $Odin build . -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -define:FEASIBILITY_TEST_WEBGPU_PRESENTER=true -out:out\webgpu_feasibility_presenter_smoke.exe
+	if ($LASTEXITCODE -ne 0) { throw "Native host-owned presenter smoke fixture build failed: $LASTEXITCODE" }
 	& $Odin build . -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -define:FEASIBILITY_TEST_RESIZE=true -out:out\webgpu_feasibility_resize_smoke.exe
 	if ($LASTEXITCODE -ne 0) { throw "Native resize smoke fixture build failed: $LASTEXITCODE" }
 	Copy-Item (Join-Path $odinRoot 'vendor\sdl3\SDL3.dll') (Join-Path $root 'out\SDL3.dll') -Force
@@ -29,6 +31,7 @@ try {
 	Write-Host "Native interactive: $root\out\webgpu_feasibility.exe"
 	Write-Host "Native readback smoke: $root\out\webgpu_feasibility_smoke.exe"
 	Write-Host "Native compositor recreation smoke: $root\out\webgpu_feasibility_recreate_smoke.exe"
+	Write-Host "Native host-owned presenter smoke: $root\out\webgpu_feasibility_presenter_smoke.exe"
 	Write-Host "Native resize smoke: $root\out\webgpu_feasibility_resize_smoke.exe"
 	Write-Host "Browser: serve $root\web on localhost and open /index.html"
 } finally { Pop-Location }
