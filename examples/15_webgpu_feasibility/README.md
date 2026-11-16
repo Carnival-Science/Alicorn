@@ -85,6 +85,20 @@ fallback parity probe. The browser adapter's hardware/software class was not
 reported. This single-marker probe does not establish full effect parity or
 application host integration.
 
+An opt-in bounded native smoke also renders the mixed retained display list,
+waits for its queue serial and mapped readback, destroys the completed
+`WebGPU_Compositor`, then creates a fresh compositor on the same device and
+queue. It prepares the same Runtime-backed source products again and requires
+every RGBA pixel to match. The smoke checks that solid, text, icon, image, and
+custom-geometry products were rebuilt. This validates renderer-cache
+reconstruction after compositor teardown; it is not a device-loss or
+device-recreation test. Run it on Windows with either native backend:
+
+~~~powershell
+.\out\webgpu_feasibility_recreate_smoke.exe --backend=d3d12
+.\out\webgpu_feasibility_recreate_smoke.exe --backend=vulkan
+~~~
+
 ## Windows native
 
 ~~~powershell

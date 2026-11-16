@@ -27,6 +27,7 @@ FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_SPONTANEOUS_CALLBACK :: #config(FEASIBI
 FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_RELEASE_BEFORE_POLL :: #config(FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_RELEASE_BEFORE_POLL, false)
 FEASIBILITY_TEST_QUIT_AFTER_READBACK :: #config(FEASIBILITY_TEST_QUIT_AFTER_READBACK, false)
 FEASIBILITY_TEST_RESIZE :: #config(FEASIBILITY_TEST_RESIZE, false)
+FEASIBILITY_TEST_COMPOSITOR_RECREATION :: #config(FEASIBILITY_TEST_COMPOSITOR_RECREATION, false)
 SURFACE_CACHE_PRESSURE_BATCH_COUNT :: 120
 SURFACE_CACHE_PRESSURE_FIRST_WIDTH :: 100
 SURFACE_CACHE_PRESSURE_SECOND_WIDTH :: SURFACE_CACHE_PRESSURE_FIRST_WIDTH + SURFACE_CACHE_PRESSURE_BATCH_COUNT
@@ -105,6 +106,17 @@ state: struct {
 	text_offscreen_view: wgpu.TextureView,
 	readback_buffer: wgpu.Buffer,
 	readback_pending, readback_done, readback_callback_received: bool,
+	compositor_recreation_started, compositor_recreation_passed: bool,
+	compositor_recreation_after_rebuild: bool,
+	compositor_recreation_queue_done, compositor_recreation_queue_ok: bool,
+	compositor_recreation_readback_pending, compositor_recreation_readback_done: bool,
+	compositor_recreation_readback_ok: bool,
+	compositor_recreation_pixels_match, compositor_recreation_products_rebuilt: bool,
+	compositor_recreation_serial: u64,
+	compositor_recreation_readback_buffer: wgpu.Buffer,
+	compositor_recreation_reference: []u8,
+	compositor_recreation_commands: []alicorn.Paint_Command,
+	compositor_recreation_revision: u64,
 	queue_work_done_pending, queue_work_done, queue_work_done_ok: bool,
 	test_resize_pre_requested, test_resize_pre_applied, test_resize_pre_frame: bool,
 	test_resize_post_requested, test_resize_post_applied, test_resize_post_frame: bool,
@@ -151,6 +163,9 @@ main :: proc() {
 		   !state.surface_cache_pressure_inflight_passed || !state.surface_cache_pressure_passed ||
 		   !state.backdrop_fallback_pixel_passed || !state.backdrop_resize_retirement_passed ||
 		   !state.multiple_backdrop_pixel_passed { os_exit_failure() }
+		when FEASIBILITY_TEST_COMPOSITOR_RECREATION {
+			if !state.compositor_recreation_passed { os_exit_failure() }
+		}
 		when FEASIBILITY_TEST_RESIZE {
 			if !state.test_resize_pre_applied || !state.test_resize_pre_frame ||
 				!state.test_resize_post_applied || !state.test_resize_post_frame {
@@ -166,6 +181,9 @@ smoke_complete :: proc() -> bool {
 	if !state.surface_cache_pressure_inflight_passed || !state.surface_cache_pressure_passed { return false }
 	if !state.backdrop_fallback_pixel_passed || !state.backdrop_resize_retirement_passed ||
 	   !state.multiple_backdrop_pixel_passed { return false }
+	when FEASIBILITY_TEST_COMPOSITOR_RECREATION {
+		if !state.compositor_recreation_passed { return false }
+	}
 	when FEASIBILITY_TEST_RESIZE {
 		if !state.test_resize_pre_applied || !state.test_resize_pre_frame ||
 			!state.test_resize_post_applied || !state.test_resize_post_frame { return false }
@@ -293,6 +311,7 @@ on_queue_work_done :: proc "c" (status:wgpu.QueueWorkDoneStatus, message:wgpu.St
 	}
 	fmt.printf("[webgpu-feasibility] queue work done status=%v message=%s\n", status, message)
 	when FEASIBILITY_TEST_QUIT_AFTER_READBACK {
+		compositor_recreation_maybe_start()
 		if smoke_complete() { state.quit = true }
 	}
 }
@@ -351,7 +370,15 @@ on_surface_cache_pressure_batch_b :: proc "c" (status: wgpu.QueueWorkDoneStatus,
 		renderer.submitted_serial, renderer.completed_serial, resource_count, renderer.resident_bytes,
 		webgpu_renderer.SURFACE_GPU_CACHE_BUDGET_BYTES, active_bytes, renderer.resource_eviction_count,
 		!oldest_first_resource_present, newest_first_resource_present, len(renderer.retired))
-	if smoke_complete() || (state.readback_callback_received && smoke_resize_complete()) { state.quit = true }
+	when FEASIBILITY_TEST_COMPOSITOR_RECREATION {
+		compositor_recreation_maybe_start()
+	}
+	when !FEASIBILITY_TEST_COMPOSITOR_RECREATION {
+		if smoke_complete() || (state.readback_callback_received && smoke_resize_complete()) { state.quit = true }
+	}
+	when FEASIBILITY_TEST_COMPOSITOR_RECREATION {
+		if smoke_complete() { state.quit = true }
+	}
 }
 
 on_device :: proc "c" (status: wgpu.RequestDeviceStatus, device: wgpu.Device, message: string, userdata1, userdata2: rawptr) {
@@ -462,6 +489,10 @@ finish :: proc() {
 		state.solid_runtime_ready = false
 	}
 	if state.readback_buffer != nil { wgpu.BufferDestroy(state.readback_buffer); wgpu.BufferRelease(state.readback_buffer) }
+	if state.compositor_recreation_readback_buffer != nil {
+		wgpu.BufferDestroy(state.compositor_recreation_readback_buffer)
+		wgpu.BufferRelease(state.compositor_recreation_readback_buffer)
+	}
 	if state.solid_offscreen_view != nil { wgpu.TextureViewRelease(state.solid_offscreen_view) }
 	if state.solid_offscreen_texture != nil { wgpu.TextureDestroy(state.solid_offscreen_texture); wgpu.TextureRelease(state.solid_offscreen_texture) }
 	if state.text_offscreen_view != nil { wgpu.TextureViewRelease(state.text_offscreen_view) }
@@ -497,4 +528,6 @@ finish :: proc() {
 	delete(state.vertices)
 	delete(state.draws)
 	delete(state.glyph_quads)
+	delete(state.compositor_recreation_reference)
+	delete(state.compositor_recreation_commands)
 }

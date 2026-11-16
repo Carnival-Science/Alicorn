@@ -521,6 +521,11 @@ start_offscreen_readback :: proc() {
 		0, {6, 48, 12, 12}, {6, 48, 10, 12}, state.compositor_image_b,
 	))
 	mixed_display := alicorn.Paint_Display_List_View{commands=mixed_commands[:], revision=text_display.revision}
+	when FEASIBILITY_TEST_COMPOSITOR_RECREATION {
+		state.compositor_recreation_commands = make([]alicorn.Paint_Command, len(mixed_commands), allocator=context.allocator)
+		copy(state.compositor_recreation_commands, mixed_commands[:])
+		state.compositor_recreation_revision = mixed_display.revision
+	}
 	if result := webgpu_renderer.Compositor_Prepare(
 		&state.compositor, &state.text_runtime, mixed_display,
 		READBACK_WIDTH, READBACK_HEIGHT, 1, 1,
@@ -1822,6 +1827,9 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		fmt.printf("[webgpu-feasibility] async RGBA8 readback FAIL bytes=%d expected=%d\n",len(pixels),READBACK_TOTAL_BYTES)
 	}
 	wgpu.BufferUnmap(state.readback_buffer); state.readback_done=ok
+	when FEASIBILITY_TEST_COMPOSITOR_RECREATION {
+		compositor_recreation_maybe_start()
+	}
 	when FEASIBILITY_TEST_QUIT_AFTER_READBACK {
 		if state.queue_work_done && state.surface_cache_pressure_serial >= 4 && smoke_resize_complete() {
 			state.quit=true
@@ -1835,6 +1843,229 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 			state.test_explicit_destroy_pending=true
 		}
 	}
+}
+
+compositor_recreation_maybe_start :: proc() {
+	when !FEASIBILITY_TEST_COMPOSITOR_RECREATION { return }
+	if state.compositor_recreation_started || !state.readback_done ||
+	   !state.queue_work_done || !state.queue_work_done_ok ||
+	   !state.image_retirement_passed || !state.surface_resource_retirement_passed ||
+	   !state.surface_cache_pressure_passed || !state.surface_cache_pressure_inflight_passed ||
+	   !state.backdrop_fallback_pixel_passed || !state.backdrop_resize_retirement_passed ||
+	   !state.multiple_backdrop_pixel_passed ||
+	   len(state.compositor_recreation_commands) == 0 {
+		return
+	}
+	state.compositor_recreation_started = true
+	if state.compositor.encode_pending ||
+	   state.compositor.images.submitted_serial != state.compositor.images.completed_serial ||
+	   state.compositor.surfaces.submitted_serial != state.compositor.surfaces.completed_serial ||
+	   len(state.compositor.images.retired) != 0 || len(state.compositor.surfaces.retired) != 0 {
+		fmt.println("[webgpu-feasibility] compositor reconstruction precondition FAIL: old compositor still has in-flight work")
+		state.compositor_recreation_queue_done = true
+		state.compositor_recreation_queue_ok = false
+		state.compositor_recreation_readback_done = true
+		state.compositor_recreation_readback_ok = false
+		state.quit = true
+		return
+	}
+	if !compositor_recreation_submit_render(false) { compositor_recreation_abort("baseline render submission") }
+}
+
+compositor_recreation_submit_render :: proc(after_rebuild: bool) -> bool {
+	if after_rebuild {
+		fmt.println("[webgpu-feasibility] compositor reconstruction: rebuilding GPU renderer resources from retained CPU display products")
+		webgpu_renderer.Compositor_Destroy(&state.compositor)
+		compositor, create_ok := webgpu_renderer.Compositor_Create(state.device, state.queue, .RGBA8Unorm)
+		if !create_ok { return false }
+		state.compositor = compositor
+	}
+	display := alicorn.Paint_Display_List_View{
+		commands=state.compositor_recreation_commands,
+		revision=state.compositor_recreation_revision,
+	}
+	if result := webgpu_renderer.Compositor_Prepare(
+		&state.compositor, &state.text_runtime, display,
+		READBACK_WIDTH, READBACK_HEIGHT, 1, 1,
+	); result != .Ok {
+		fmt.printf("[webgpu-feasibility] compositor reconstruction prepare FAIL after_rebuild=%v result=%v\n", after_rebuild, result)
+		return false
+	}
+	if after_rebuild {
+		state.compositor_recreation_products_rebuilt =
+			state.compositor.solid.mesh_rebuild_count > 0 &&
+			state.compositor.text.mesh_rebuild_count > 0 &&
+			state.compositor.icons.mesh_rebuild_count > 0 &&
+			state.compositor.images.mesh_rebuild_count > 0 &&
+			state.compositor.images.texture_upload_count > 0 &&
+			state.compositor.surfaces.mesh_rebuild_count > 0
+		if !state.compositor_recreation_products_rebuilt {
+			fmt.println("[webgpu-feasibility] compositor reconstruction CPU-product rebuild FAIL")
+			webgpu_renderer.Compositor_Abort_Submission(&state.compositor)
+			return false
+		}
+	}
+	if state.compositor_recreation_readback_buffer == nil {
+		state.compositor_recreation_readback_buffer = wgpu.DeviceCreateBuffer(state.device, &wgpu.BufferDescriptor{
+			label="compositor reconstruction readback staging",
+			usage={.CopyDst, .MapRead},
+			size=READBACK_BUFFER_BYTES,
+		})
+		if state.compositor_recreation_readback_buffer == nil {
+			fmt.println("[webgpu-feasibility] compositor reconstruction staging allocation FAIL")
+			webgpu_renderer.Compositor_Abort_Submission(&state.compositor)
+			return false
+		}
+	}
+	encoder := wgpu.DeviceCreateCommandEncoder(state.device)
+	if encoder == nil {
+		webgpu_renderer.Compositor_Abort_Submission(&state.compositor)
+		return false
+	}
+	if result := webgpu_renderer.Compositor_Encode(
+		&state.compositor, &state.text_runtime, display, state.composite_offscreen_view,
+		READBACK_WIDTH, READBACK_HEIGHT, 1, 1, encoder, true, wgpu.Color{0.04, 0.08, 0.12, 1},
+	); result != .Ok {
+		wgpu.CommandEncoderRelease(encoder)
+		fmt.printf("[webgpu-feasibility] compositor reconstruction encode FAIL after_rebuild=%v result=%v\n", after_rebuild, result)
+		webgpu_renderer.Compositor_Abort_Submission(&state.compositor)
+		return false
+	}
+	layout := wgpu.TexelCopyBufferLayout{
+		bytesPerRow=READBACK_BYTES_PER_ROW,
+		rowsPerImage=READBACK_HEIGHT,
+	}
+	source := wgpu.TexelCopyTextureInfo{texture=state.composite_offscreen_texture, aspect=.All}
+	destination := wgpu.TexelCopyBufferInfo{layout=layout, buffer=state.compositor_recreation_readback_buffer}
+	wgpu.CommandEncoderCopyTextureToBuffer(encoder, &source, &destination,
+		&wgpu.Extent3D{width=READBACK_WIDTH, height=READBACK_HEIGHT, depthOrArrayLayers=1})
+	command := wgpu.CommandEncoderFinish(encoder)
+	wgpu.CommandEncoderRelease(encoder)
+	if command == nil {
+		webgpu_renderer.Compositor_Abort_Submission(&state.compositor)
+		return false
+	}
+	wgpu.QueueSubmit(state.queue, {command})
+	wgpu.CommandBufferRelease(command)
+	state.compositor_recreation_serial = webgpu_renderer.Compositor_Commit_Submission(
+		&state.compositor, &state.text_runtime,
+	)
+	if state.compositor_recreation_serial == 0 {
+		fmt.println("[webgpu-feasibility] compositor reconstruction submission commit FAIL")
+		return false
+	}
+	state.compositor_recreation_after_rebuild = after_rebuild
+	state.compositor_recreation_queue_done = false
+	state.compositor_recreation_queue_ok = false
+	state.compositor_recreation_readback_done = false
+	state.compositor_recreation_readback_ok = false
+	state.compositor_recreation_pixels_match = false
+	state.queue_work_done_pending = true
+	state.compositor_recreation_readback_pending = true
+	wgpu.QueueOnSubmittedWorkDone(state.queue, {mode=.AllowProcessEvents, callback=on_compositor_recreation_queue_done})
+	wgpu.BufferMapAsync(
+		state.compositor_recreation_readback_buffer, {.Read}, 0, READBACK_BUFFER_BYTES,
+		{mode=.AllowProcessEvents, callback=on_compositor_recreation_readback},
+	)
+	return true
+}
+
+compositor_recreation_abort :: proc(reason: string) {
+	fmt.printf("[webgpu-feasibility] compositor reconstruction FAIL: %s\n", reason)
+	state.compositor_recreation_queue_done = true
+	state.compositor_recreation_queue_ok = false
+	state.compositor_recreation_readback_done = true
+	state.compositor_recreation_readback_ok = false
+	state.quit = true
+}
+
+compositor_recreation_finish_if_ready :: proc() {
+	when !FEASIBILITY_TEST_COMPOSITOR_RECREATION { return }
+	if !state.compositor_recreation_started || !state.compositor_recreation_queue_done ||
+	   !state.compositor_recreation_readback_done { return }
+	if !state.compositor_recreation_queue_ok || !state.compositor_recreation_readback_ok {
+		compositor_recreation_abort("queue completion or mapped readback failed")
+		return
+	}
+	if !state.compositor_recreation_after_rebuild {
+		if !compositor_recreation_submit_render(true) {
+			compositor_recreation_abort("recreated compositor render submission")
+		}
+		return
+	}
+	state.compositor_recreation_passed = state.compositor_recreation_queue_ok &&
+		state.compositor_recreation_pixels_match && state.compositor_recreation_products_rebuilt
+	fmt.printf("[webgpu-feasibility] compositor reconstruction %s queue_completed=%v pixel_identical=%v cpu_products_rebuilt=%v\n",
+		"PASS" if state.compositor_recreation_passed else "FAIL",
+		state.compositor_recreation_queue_ok,
+		state.compositor_recreation_pixels_match,
+		state.compositor_recreation_products_rebuilt)
+	if !state.compositor_recreation_passed || smoke_complete() { state.quit = true }
+}
+
+on_compositor_recreation_queue_done :: proc "c" (
+	status: wgpu.QueueWorkDoneStatus,
+	message: wgpu.StringView,
+	userdata1, userdata2: rawptr,
+) {
+	context = state.ctx
+	state.queue_work_done_pending = false
+	state.compositor_recreation_queue_done = true
+	state.compositor_recreation_queue_ok = status == .Success &&
+		webgpu_renderer.Compositor_Complete_Submission(&state.compositor, state.compositor_recreation_serial)
+	if !state.compositor_recreation_queue_ok {
+		fmt.printf("[webgpu-feasibility] compositor reconstruction queue completion FAIL status=%v message=%s serial=%d\n",
+			status, message, state.compositor_recreation_serial)
+	}
+	compositor_recreation_finish_if_ready()
+}
+
+on_compositor_recreation_readback :: proc "c" (
+	status: wgpu.MapAsyncStatus,
+	message: wgpu.StringView,
+	userdata1, userdata2: rawptr,
+) {
+	context = state.ctx
+	state.compositor_recreation_readback_pending = false
+	state.compositor_recreation_readback_done = true
+	if status != .Success {
+		fmt.printf("[webgpu-feasibility] compositor reconstruction map FAIL status=%v message=%s\n", status, message)
+		state.compositor_recreation_readback_ok = false
+		compositor_recreation_finish_if_ready()
+		return
+	}
+	pixels := wgpu.BufferGetMappedRangeSlice(state.compositor_recreation_readback_buffer, 0, u8, READBACK_BUFFER_BYTES)
+	row_bytes := READBACK_WIDTH * READBACK_BYTES_PER_PIXEL
+	state.compositor_recreation_readback_ok = len(pixels) == READBACK_BUFFER_BYTES
+	if !state.compositor_recreation_after_rebuild && state.compositor_recreation_readback_ok {
+		state.compositor_recreation_reference = make([]u8, row_bytes*READBACK_HEIGHT, allocator=context.allocator)
+		for y in 0..<READBACK_HEIGHT {
+			copy(
+				state.compositor_recreation_reference[y*row_bytes:(y+1)*row_bytes],
+				pixels[y*READBACK_BYTES_PER_ROW:y*READBACK_BYTES_PER_ROW+row_bytes],
+			)
+		}
+	} else {
+		state.compositor_recreation_pixels_match = state.compositor_recreation_readback_ok &&
+			len(state.compositor_recreation_reference) == row_bytes*READBACK_HEIGHT
+	}
+	if state.compositor_recreation_after_rebuild && state.compositor_recreation_pixels_match {
+		for y in 0..<READBACK_HEIGHT {
+			for x in 0..<row_bytes {
+				actual := pixels[y*READBACK_BYTES_PER_ROW+x]
+				expected := state.compositor_recreation_reference[y*row_bytes+x]
+				if actual != expected {
+					state.compositor_recreation_pixels_match = false
+					fmt.printf("[webgpu-feasibility] compositor reconstruction pixel mismatch at (%d,%d) channel=%d expected=%d actual=%d\n",
+						x/READBACK_BYTES_PER_PIXEL, y, x%READBACK_BYTES_PER_PIXEL, expected, actual)
+					break
+				}
+			}
+			if !state.compositor_recreation_pixels_match { break }
+		}
+	}
+	wgpu.BufferUnmap(state.compositor_recreation_readback_buffer)
+	compositor_recreation_finish_if_ready()
 }
 
 offscreen_pixel :: proc(pixels:[]u8,x,y:int,base_offset:int=0) -> [4]u8 {
