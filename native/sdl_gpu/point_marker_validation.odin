@@ -330,6 +330,9 @@ point_marker_validation_run_case :: proc(
 	// The viewport's edge scissor must clip the auxiliary circles whose centers
 	// are outside the retained geometry surface.
 	background := point_marker_validation_pixel_rgb_mean(pixels, pixel_width, pixel_width/2, pixel_height-1)
+	if point_marker_validation_pixel_rgb_mean(pixels, pixel_width, 0, 0) <= background+2 {
+		point_marker_validation_fail("left-edge sample marker was not clipped/rendered at the surface boundary")
+	}
 	if point_marker_validation_pixel_rgb_mean(pixels, pixel_width, pixel_width-1, 0) <= background+2 {
 		point_marker_validation_fail("right-edge sample marker was not clipped/rendered at the surface boundary")
 	}
