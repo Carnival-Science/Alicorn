@@ -190,16 +190,21 @@ Compositor_Encode :: proc(
 // frame is abandoned, leaving atlas generations dirty makes them retryable.
 Compositor_Commit_Submission :: proc(compositor: ^WebGPU_Compositor, rt: ^alicorn.Runtime) -> u64 {
 	if compositor == nil || rt == nil || compositor.prepared_runtime != rt || !compositor.prepared_valid { return 0 }
+	if compositor.images.submitted_serial != compositor.surfaces.submitted_serial { return 0 }
 	Text_Commit_Submission(&compositor.text, rt)
-	return Image_Commit_Submission(&compositor.images, rt)
+	serial := Image_Commit_Submission(&compositor.images, rt)
+	if serial == 0 || !Surface_Commit_Submission(&compositor.surfaces, serial) { return 0 }
+	return serial
 }
 
 // Call from a queue-work-done callback using the serial returned by the
 // matching Compositor_Commit_Submission. Images retired by release or cache
 // pressure remain resident until their final submitted use has completed.
 Compositor_Complete_Submission :: proc(compositor: ^WebGPU_Compositor, serial: u64) -> bool {
-	if compositor == nil { return false }
-	return Image_Complete_Submission(&compositor.images, serial)
+	if compositor == nil || serial > compositor.images.submitted_serial || serial > compositor.surfaces.submitted_serial { return false }
+	image_ok := Image_Complete_Submission(&compositor.images, serial)
+	surface_ok := Surface_Complete_Submission(&compositor.surfaces, serial)
+	return image_ok && surface_ok
 }
 
 Compositor_Destroy :: proc(compositor: ^WebGPU_Compositor) {

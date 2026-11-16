@@ -537,20 +537,25 @@ start_offscreen_readback :: proc() {
 	composite_image_texture_bytes := state.compositor.images.texture_upload_bytes
 	composite_surface_meshes := state.compositor.surfaces.mesh_rebuild_count
 	composite_surface_uploads := state.compositor.surfaces.vertex_upload_count
+	composite_surface_cache_hits := state.compositor.surfaces.mesh_cache_hits
+	composite_surface_instance_uploads := state.compositor.surfaces.instance_upload_count
+	surface_vertices := 0
+	for draw in state.compositor.surfaces.draws { surface_vertices += int(draw.vertex_count) }
 	if composite_solid_meshes != 1 || composite_solid_uploads != 1 ||
 	   composite_text_meshes != 1 || composite_text_uploads != 1 || composite_atlas_uploads == 0 ||
 	   composite_icon_meshes != 1 || composite_icon_uploads != 1 || composite_icon_atlas_uploads != 2 ||
 	   state.compositor.icons.atlas_upload_bytes != 1536*1024 ||
 	   composite_image_meshes != 1 || composite_image_uploads != 1 || composite_image_texture_uploads != 2 ||
 	   composite_image_texture_bytes != 2*4*4*4 || state.compositor.images.resident_bytes != 2*4*4*4 ||
-	   composite_surface_meshes != 1 || composite_surface_uploads != 1 || len(state.compositor.surfaces.draws) != 2 {
+	   composite_surface_meshes != 2 || composite_surface_uploads != 2 || surface_vertices != 72 ||
+	   composite_surface_instance_uploads != 1 || len(state.compositor.surfaces.draws) != 2 {
 		fmt.panicf("initial mixed composition expected retained solid/text/icon/image/custom-surface meshes and uploads")
 	}
-	fmt.printf("[webgpu-feasibility] mixed paint-order compositor PASS commands=%d solid_meshes=%d text_meshes=%d icon_meshes=%d icon_vertex_uploads=%d icon_atlas_pages=%d icon_atlas_bytes=%d image_meshes=%d image_vertex_uploads=%d image_texture_uploads=%d image_texture_bytes=%d custom_surface_meshes=%d custom_surface_vertex_uploads=%d custom_surface_vertices=%d\n",
+	fmt.printf("[webgpu-feasibility] mixed paint-order compositor PASS commands=%d solid_meshes=%d text_meshes=%d icon_meshes=%d icon_vertex_uploads=%d icon_atlas_pages=%d icon_atlas_bytes=%d image_meshes=%d image_vertex_uploads=%d image_texture_uploads=%d image_texture_bytes=%d custom_surface_meshes=%d custom_surface_vertex_uploads=%d custom_surface_vertices=%d instance_uploads=%d\n",
 		len(mixed_display.commands), composite_solid_meshes, composite_text_meshes, composite_icon_meshes,
 		composite_icon_uploads, composite_icon_atlas_uploads, state.compositor.icons.atlas_upload_bytes,
 		composite_image_meshes, composite_image_uploads, composite_image_texture_uploads, composite_image_texture_bytes,
-		composite_surface_meshes, composite_surface_uploads, len(state.compositor.surfaces.vertices))
+		composite_surface_meshes, composite_surface_uploads, surface_vertices, composite_surface_instance_uploads)
 	// 63 RGBA8 texels use 252 bytes; the 256-byte row pitch exercises the
 	// required four-byte per-row padding in both native and browser readback.
 	layout:=wgpu.TexelCopyBufferLayout{bytesPerRow=READBACK_BYTES_PER_ROW,rowsPerImage=READBACK_HEIGHT}
@@ -642,9 +647,98 @@ start_offscreen_readback :: proc() {
 	   state.compositor.images.mesh_cache_hits != 1 ||
 	   state.compositor.surfaces.mesh_rebuild_count != composite_surface_meshes ||
 	   state.compositor.surfaces.vertex_upload_count != composite_surface_uploads ||
-	   state.compositor.surfaces.mesh_cache_hits != 1 {
+	   state.compositor.surfaces.mesh_cache_hits != composite_surface_cache_hits+2 ||
+	   state.compositor.surfaces.instance_upload_count != composite_surface_instance_uploads ||
+	   state.compositor.surfaces.instance_cache_hits != 1 {
 		fmt.panicf("unchanged mixed paint rebuilt or uploaded retained renderer products")
 	}
+	geometry_motion_commands := make([dynamic]alicorn.Paint_Command, len(mixed_display.commands), allocator=context.temp_allocator)
+	copy(geometry_motion_commands[:], mixed_display.commands)
+	geometry_motion_found := false
+	for &command in geometry_motion_commands {
+		if !alicorn.paint_command_is_geometry(command) { continue }
+		command.translation[0] += 3
+		command.opacity = 0.5
+		geometry_motion_found = true
+		break
+	}
+	if !geometry_motion_found { fmt.panicf("custom geometry motion fixture did not contain a geometry command") }
+	geometry_motion_display := mixed_display
+	geometry_motion_display.commands = geometry_motion_commands[:]
+	if result := webgpu_renderer.Compositor_Prepare(
+		&state.compositor, &state.text_runtime, geometry_motion_display,
+		READBACK_WIDTH, READBACK_HEIGHT, 1, 1,
+	); result != .Ok {
+		fmt.panicf("moved custom geometry preparation failed: %v", result)
+	}
+	if state.compositor.surfaces.mesh_rebuild_count != composite_surface_meshes ||
+		state.compositor.surfaces.vertex_upload_count != composite_surface_uploads ||
+		state.compositor.surfaces.mesh_cache_hits != composite_surface_cache_hits+4 ||
+		state.compositor.surfaces.instance_upload_count != composite_surface_instance_uploads+1 {
+		fmt.panicf("geometry movement and opacity changes should update instances without rebuilding meshes")
+	}
+	motion_encoder := wgpu.DeviceCreateCommandEncoder(state.device)
+	if motion_encoder == nil { fmt.panicf("custom geometry motion encoder creation failed") }
+	if result := webgpu_renderer.Compositor_Encode(
+		&state.compositor, &state.text_runtime, geometry_motion_display, state.composite_offscreen_view,
+		READBACK_WIDTH, READBACK_HEIGHT, 1, 1, motion_encoder, true, wgpu.Color{0.04, 0.08, 0.12, 1},
+	); result != .Ok {
+		fmt.panicf("moved custom geometry encoding failed: %v", result)
+	}
+	motion_layout := wgpu.TexelCopyBufferLayout{bytesPerRow=READBACK_BYTES_PER_ROW, rowsPerImage=READBACK_HEIGHT, offset=4*READBACK_BUFFER_BYTES}
+	motion_source := wgpu.TexelCopyTextureInfo{texture=state.composite_offscreen_texture, aspect=.All}
+	motion_destination := wgpu.TexelCopyBufferInfo{layout=motion_layout, buffer=state.readback_buffer}
+	wgpu.CommandEncoderCopyTextureToBuffer(motion_encoder, &motion_source, &motion_destination,
+		&wgpu.Extent3D{width=READBACK_WIDTH, height=READBACK_HEIGHT, depthOrArrayLayers=1})
+	motion_command := wgpu.CommandEncoderFinish(motion_encoder)
+	wgpu.CommandEncoderRelease(motion_encoder)
+	wgpu.QueueSubmit(state.queue, {motion_command})
+	wgpu.CommandBufferRelease(motion_command)
+	state.compositor_completion_serial = webgpu_renderer.Compositor_Commit_Submission(&state.compositor, &state.text_runtime)
+	if state.compositor_completion_serial != 2 { fmt.panicf("custom geometry motion frame did not receive shared submission serial 2") }
+	fmt.println("[webgpu-feasibility] custom geometry motion readback submitted instance_translation=true opacity=0.5 readback_slot=4")
+	if result := webgpu_renderer.Compositor_Prepare(
+		&state.compositor, &state.text_runtime, mixed_display,
+		READBACK_WIDTH, READBACK_HEIGHT, 1, 1,
+	); result != .Ok {
+		fmt.panicf("restored custom geometry preparation failed: %v", result)
+	}
+	if state.compositor.surfaces.mesh_rebuild_count != composite_surface_meshes ||
+		state.compositor.surfaces.vertex_upload_count != composite_surface_uploads ||
+		state.compositor.surfaces.instance_upload_count != composite_surface_instance_uploads+2 {
+		fmt.panicf("restoring custom geometry placement should reuse meshes and restore only instance data")
+	}
+	fmt.println("[webgpu-feasibility] custom geometry instance cache PASS translation_and_opacity_changes=1 mesh_rebuilds=0 vertex_uploads=0")
+	surface_meshes_before_growth := state.compositor.surfaces.mesh_rebuild_count
+	surface_uploads_before_growth := state.compositor.surfaces.vertex_upload_count
+	surface_cache_hits_before_growth := state.compositor.surfaces.mesh_cache_hits
+	surface_instance_uploads_before_growth := state.compositor.surfaces.instance_upload_count
+
+	// Grow the live waveform payload after serial 1 was submitted. The retained
+	// geometry cache replaces only that resource's buffer and holds its old
+	// buffer until the submitted frame's queue-completion notification arrives.
+	waveform_growth := [20]f32{0, 0.2, 0.4, 0.6, 0.8, 1, 0.8, 0.6, 0.4, 0.2,
+		0, 0.2, 0.4, 0.6, 0.8, 1, 0.8, 0.6, 0.4, 0.2}
+	if !alicorn.gpu_surface_update(&state.text_runtime, state.compositor_custom_surface_ids[1], waveform_growth[:]) {
+		fmt.panicf("Alicorn waveform growth update was rejected")
+	}
+	if result := webgpu_renderer.Compositor_Prepare(
+		&state.compositor, &state.text_runtime, mixed_display,
+		READBACK_WIDTH, READBACK_HEIGHT, 1, 1,
+	); result != .Ok {
+		fmt.panicf("grown waveform compositor preparation failed: %v", result)
+	}
+	if state.compositor.surfaces.mesh_rebuild_count != surface_meshes_before_growth+1 ||
+		state.compositor.surfaces.vertex_upload_count != surface_uploads_before_growth+1 ||
+		state.compositor.surfaces.mesh_cache_hits != surface_cache_hits_before_growth+1 ||
+		state.compositor.surfaces.instance_upload_count != surface_instance_uploads_before_growth ||
+		len(state.compositor.surfaces.retired) != 1 ||
+		state.compositor.surfaces.retired[0].retire_after_serial != state.compositor_completion_serial ||
+		state.compositor.surfaces.resource_retirement_count != 1 {
+		fmt.panicf("waveform update should rebuild only its resource and retire the in-flight buffer by serial")
+	}
+	fmt.printf("[webgpu-feasibility] per-resource geometry cache PASS static_mesh_reused=true waveform_rebuilt=true instance_uploads_unchanged=true old_buffer_retired_after=%d\n",
+		state.compositor.surfaces.retired[0].retire_after_serial)
 	moved_image_commands := make([dynamic]alicorn.Paint_Command, len(mixed_display.commands), allocator=context.temp_allocator)
 	copy(moved_image_commands[:], mixed_display.commands)
 	for &command in moved_image_commands {
@@ -689,8 +783,9 @@ fmt.printf("[webgpu-feasibility] retained text cache PASS mesh_rebuilds=%d verte
 	}
 	if webgpu_renderer.Compositor_Complete_Submission(
 		&state.compositor, state.compositor_completion_serial+1,
-	) || state.compositor.images.completed_serial != 0 || len(state.compositor.images.retired) != 1 {
-		fmt.panicf("completion beyond the last submitted serial must not retire image resources")
+	) || state.compositor.images.completed_serial != 0 || len(state.compositor.images.retired) != 1 ||
+		state.compositor.surfaces.completed_serial != 0 || len(state.compositor.surfaces.retired) != 1 {
+		fmt.panicf("completion beyond the last submitted serial must not retire GPU resources")
 	}
 	fmt.println("[webgpu-feasibility] image retained cache PASS unchanged_texture_uploads=0 geometry_edit_reuses_pixels=true released_inflight=true stale_draw_removed=true retirement_waits_for_queue=true")
 	state.queue_work_done_pending = true
@@ -982,6 +1077,8 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		custom_geometry_marker_pixel := offscreen_pixel(pixels, 40, 57, 3*READBACK_BUFFER_BYTES)
 		custom_geometry_clip_pixel := offscreen_pixel(pixels, 43, 57, 3*READBACK_BUFFER_BYTES)
 		custom_waveform_pixel := offscreen_pixel(pixels, 60, 46, 3*READBACK_BUFFER_BYTES)
+		motion_geometry_moved_pixel := offscreen_pixel(pixels, 36, 56, 4*READBACK_BUFFER_BYTES)
+		motion_geometry_origin_pixel := offscreen_pixel(pixels, 33, 56, 4*READBACK_BUFFER_BYTES)
 		gradient_bounds := state.compositor_material_surface_bounds[0]
 		raised_bounds := state.compositor_material_surface_bounds[1]
 		recessed_bounds := state.compositor_material_surface_bounds[2]
@@ -1080,6 +1177,8 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		custom_geometry_marker_ok := offscreen_pixel_near(custom_geometry_marker_pixel, [4]u8{242, 166, 26, 255}, 4)
 		custom_geometry_clip_ok := offscreen_pixel_near(custom_geometry_clip_pixel, [4]u8{20, 31, 46, 255}, 3)
 		custom_waveform_ok := offscreen_pixel_near(custom_waveform_pixel, [4]u8{77, 224, 245, 255}, 3)
+		motion_geometry_ok := offscreen_pixel_near(motion_geometry_moved_pixel, [4]u8{137, 28, 30, 255}, 3) &&
+			offscreen_pixel_near(motion_geometry_origin_pixel, [4]u8{20, 31, 46, 255}, 2)
 		material_gradient_left_ok := offscreen_pixel_near(material_gradient_left_pixel, [4]u8{193, 47, 60, 255}, 5)
 		material_gradient_right_ok := offscreen_pixel_near(material_gradient_right_pixel, [4]u8{97, 105, 152, 255}, 5)
 		material_raised_interior_ok := offscreen_pixel_near(material_raised_interior_pixel, [4]u8{102, 102, 102, 255}, 2)
@@ -1088,9 +1187,11 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		material_recessed_top_ok := offscreen_pixel_near(material_recessed_top_pixel, [4]u8{96, 96, 96, 255}, 4)
 		material_ok := material_gradient_left_ok && material_gradient_right_ok && material_raised_interior_ok &&
 			material_raised_top_ok && material_recessed_interior_ok && material_recessed_top_ok
-		ok=clear_ok && solid_ok && checker_ok && patch_ok && blend_ok && glyph_ok && clip_ok && outside_clip_ok && rounded_ok && rounded_corner_ok && last_row_ok && partial_buffer_ok && uniform_ok && display_blend_ok && display_clip_x_ok && display_clip_y_ok && text_visible && composite_overlay_ok && composite_text_visible && composite_icon_visible && composite_icon_clip && composite_second_icon_visible && image_red_ok && image_blend_ok && image_blue_ok && image_clip_ok && custom_geometry_rectangle_ok && custom_geometry_segment_ok && custom_geometry_circle_ok && custom_geometry_marker_ok && custom_geometry_clip_ok && custom_waveform_ok && material_ok
+		ok=clear_ok && solid_ok && checker_ok && patch_ok && blend_ok && glyph_ok && clip_ok && outside_clip_ok && rounded_ok && rounded_corner_ok && last_row_ok && partial_buffer_ok && uniform_ok && display_blend_ok && display_clip_x_ok && display_clip_y_ok && text_visible && composite_overlay_ok && composite_text_visible && composite_icon_visible && composite_icon_clip && composite_second_icon_visible && image_red_ok && image_blend_ok && image_blue_ok && image_clip_ok && custom_geometry_rectangle_ok && custom_geometry_segment_ok && custom_geometry_circle_ok && custom_geometry_marker_ok && custom_geometry_clip_ok && custom_waveform_ok && motion_geometry_ok && material_ok
 		fmt.printf("[webgpu-feasibility] async RGBA8 readback %s texture=%dx%d row_pitch=%d padding_per_row=%d bytes=%d clear=%v solid=%v checker=%v partial_texture=%v partial_buffer=%v uniform=%v blend=%v glyph=%v clip=%v outside_clip=%v rounded=%v rounded_corner=%v last_row=%v runtime_display_blend=%v runtime_clip_x=%v runtime_clip_y=%v runtime_text_visible=%v composite_overlay_order=%v composite_offset_text=%v composite_icon_visible=%v composite_icon_clip=%v composite_second_icon_page_switch=%v composite_image_red=%v composite_image_alpha_blend=%v composite_image_blue=%v composite_image_clip=%v custom_geometry_rectangle=%v custom_geometry_segment=%v custom_geometry_circle=%v custom_geometry_marker=%v custom_geometry_clip=%v custom_waveform=%v material_gradient_left=%v material_gradient_right=%v material_raised_face=%v material_raised_bevel=%v material_recessed_face=%v material_recessed_bevel=%v\n",
 			"PASS" if ok else "FAIL",READBACK_WIDTH,READBACK_HEIGHT,READBACK_BYTES_PER_ROW,READBACK_BYTES_PER_ROW-READBACK_WIDTH*READBACK_BYTES_PER_PIXEL,len(pixels),clear_ok,solid_ok,checker_ok,patch_ok,partial_buffer_ok,uniform_ok,blend_ok,glyph_ok,clip_ok,outside_clip_ok,rounded_ok,rounded_corner_ok,last_row_ok,display_blend_ok,display_clip_x_ok,display_clip_y_ok,text_visible,composite_overlay_ok,composite_text_visible,composite_icon_visible,composite_icon_clip,composite_second_icon_visible,image_red_ok,image_blend_ok,image_blue_ok,image_clip_ok,custom_geometry_rectangle_ok,custom_geometry_segment_ok,custom_geometry_circle_ok,custom_geometry_marker_ok,custom_geometry_clip_ok,custom_waveform_ok,material_gradient_left_ok,material_gradient_right_ok,material_raised_interior_ok,material_raised_top_ok,material_recessed_interior_ok,material_recessed_top_ok)
+		fmt.printf("[webgpu-feasibility] custom geometry translation/opacity pixel %s moved_pixel=%v original_pixel=%v\n",
+			"PASS" if motion_geometry_ok else "FAIL", motion_geometry_moved_pixel, motion_geometry_origin_pixel)
 	} else {
 		fmt.printf("[webgpu-feasibility] async RGBA8 readback FAIL bytes=%d expected=%d\n",len(pixels),READBACK_TOTAL_BYTES)
 	}

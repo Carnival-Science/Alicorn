@@ -2,8 +2,8 @@
 
 Status: Phase 0 remains open for lifecycle, baseline, and performance evidence;
 Phase 2 has bounded solid-surface, text-sampling, icon, image, material,
-custom-surface, and mixed compositor slices. SDL_GPU remains the only complete application
-renderer and the visual reference.
+custom-surface caching, and mixed compositor slices. SDL_GPU remains the only
+complete application renderer and the visual reference.
 
 ## Architecture inventory
 
@@ -57,7 +57,7 @@ uploads remain renderer-specific.
 | --- | --- | --- |
 | 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes on an NVIDIA Turing adapter; physical Linux GPU/Wayland, genuine driver/OS loss and recovery, comparative baselines, and production parity remain open |
 | 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring, CPU solid/custom-surface mesh assembly, and text/image/icon preparation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
-| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and browser WebGPU fixtures exercise solid/text/icon/image/material/custom-surface pixels; one shared compositor preserves interleaved paint order. Text, icon, image and custom-surface mesh reuse are asserted. Semantic gradients, relief, rectangles, segments, circles, masked markers, clipping, and waveform samples pass representative pixel probes. Rounded/accessibility material parity, effects, and application host presentation remain outstanding |
+| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan fixture exercises per-resource custom-surface caching and instance transforms; prior browser WebGPU fixture passes custom-surface pixels and the current WASM build compiles, but this cache follow-up has not had a live browser replay. One shared compositor preserves interleaved paint order. Text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, rectangles, segments, circles, masked markers, clipping, and waveform samples pass representative native pixel probes. Rounded/accessibility material parity, effects, and application host presentation remain outstanding |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | Not started |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
@@ -86,13 +86,14 @@ are brought up.
   callbacks, scheduling, and input/accessibility integration.
 - **Renderer-local retained geometry:** do not add an application-facing raw
   GPU canvas callback for the waveform workload. Keep the existing retained
-  geometry API and, when profiling justifies it, cache GPU meshes inside the
-  backend renderer using resource generation, payload revision, resolved
-  bounds/clip, and scale. Let static peaks and dynamic overlays invalidate
+  geometry API and cache local meshes inside the backend renderer by Runtime,
+  handle generation, payload revision, and tessellation extents. Keep placement,
+  DPI scale, and opacity in per-instance data; apply clip through each paint
+  command's scissor. Let static peaks and dynamic overlays invalidate
   independently; batch only compatible adjacent paint work without changing
-  retained order. Bound cache residency, retire replaced resources after their
-  last-use submission completes, and rebuild GPU state from retained CPU
-  geometry after device recreation.
+  retained order. Bound active and retiring bytes together, retire replaced
+  resources after their last-use submission completes, and rebuild GPU state
+  from retained CPU geometry after device/compositor recreation.
 - **Loss evidence:** a test that calls `DeviceDestroy` and receives
   `reason=Destroyed` verifies intentional-destruction callback delivery. It is
   not driver/OS-initiated device loss, and neither result proves resource
@@ -542,16 +543,13 @@ Submit-to-fence samples were noisy across runs and report queue/driver wall
 time, not GPU execution timestamps. The fixture reproduced Punks' composition;
 it did not instrument the Punks application.
 
-Carry this as a measured optimization direction, not a parity prerequisite:
-after shared renderer correctness and resource-retirement work, profile the
-WebGPU renderer with stable geometry plus a changing overlay. If that workload
-still rebuilds/uploads static peaks, add a renderer-private cache keyed by
-retained resource identity/revision and resolved presentation inputs. Keep
-static and dynamic mesh invalidation separate, preserve paint ordering, bound
-resident bytes, defer release until submission completion, and reconstruct
-resources from retained CPU payloads after device loss. Validate against the
-same output, scale, idle, and memory checks before claiming a benefit. The
-prototype's single-machine performance result does not predict WebGPU latency.
+Carry this as a measured optimization direction, not a parity prerequisite.
+The WebGPU renderer now has an initial per-resource cache slice, described
+below, to validate independent invalidation and safe retirement. It has not yet
+been benchmarked against the aggregate path or a Punks application workload;
+the prototype's single-machine performance result does not predict WebGPU
+latency. Preserve the same output, scale, idle, ordering, and memory checks
+before claiming a performance benefit.
 
 ## Hosted Linux x64 validation (2026-11-15)
 
@@ -731,8 +729,10 @@ invalidation remain to be measured before claiming material parity.
 
 ## Phase 2 shared custom-surface rendering (2026-11-15)
 
-`renderer/cpu/gpu_surface.odin` now owns the physical-pixel tessellation for
-Alicorn's existing `Geometry_Paint` payloads and waveform samples. Both
+`renderer/cpu/gpu_surface.odin` owns the shared tessellation for Alicorn's
+existing `Geometry_Paint` payloads and waveform samples. The native path bakes
+physical scale into vertices; WebGPU keeps those vertices local and applies
+placement and scale through instances. Both
 `native/sdl_gpu/surface.odin` and `renderer/webgpu/surfaces.odin` consume that
 same builder. Rectangles, thick segments, 16-triangle circles, and six-vertex
 masked point markers preserve payload ordering, clipping bounds, command
@@ -741,14 +741,10 @@ WebGPU compositor dispatches those commands at their original paint-list
 indices, alongside solid surfaces, text, icons, and images. No public drawing
 API was added.
 
-The WebGPU renderer caches its prepared custom-surface mesh against the display
-revision, target scale/size, command placement and each retained geometry
-resource's generation/payload revision. An unchanged repeated preparation
-causes no geometry rebuild or vertex upload. This is an aggregate renderer
-mesh cache; it does not yet keep each independent geometry resource in its own
-GPU allocation. The #164 comparison's larger upload reduction remains a
-renderer-local optimization opportunity to measure separately, especially
-for static waveform peaks with independently changing overlays.
+The initial WebGPU slice cached its prepared custom-surface mesh against the
+display revision, scale/size, command placement, and resource revisions. That
+aggregate cache has now been replaced by resource-local GPU geometry buffers
+and a separate instance stream; the follow-up evidence is recorded below.
 
 The feasibility mixed-compositor readback now checks explicit rectangle,
 segment, circle, point-marker, marker clipping, and waveform pixels. The native
@@ -779,3 +775,54 @@ SDL_GPU pixel-differential comparison, Punks app instrumentation, production
 host presentation, cache-performance benchmarking, or genuine driver/OS device
 loss and recovery. Intentional device destruction remains a separate probe and
 must not be counted as genuine device loss.
+
+## Phase 2 renderer-local custom geometry cache (2026-11-15)
+
+The WebGPU custom-surface renderer now stores a GPU vertex buffer per Runtime,
+`Geometry_Handle` generation, and tessellation extent. Payload revision updates
+that retained local mesh. Translation, origin, DPI scale, and opacity travel in
+a separate instanced vertex stream; clip remains a per-command scissor. This
+keeps geometry reuse independent from presentation changes while retaining the
+existing CPU tessellator and the original paint-command order. No new public
+canvas API or platform-specific rendering path was introduced.
+
+The cache accounts for active geometry, the instance buffer, and fence-retired
+buffers against a 64 MiB logical GPU-buffer budget. It evicts least-recently
+used resources only when they are absent from the prepared frame and their last
+submission has completed. Buffer growth retains the old allocation until its
+shared compositor queue serial completes. Recreating the compositor starts
+with an empty GPU cache and rebuilds meshes from Runtime-owned CPU payloads.
+This establishes reconstructibility by design; driver-loss recovery is not
+validated by this fixture.
+
+The feasibility fixture now verifies that repeated preparation reuses two
+independent geometry resources; changing translation and opacity uploads only
+instance data and changes readback pixels at the moved location; and growing a
+waveform payload rebuilds/uploads only that resource while preserving the
+static mesh. Its old buffer remains resident until serial 2 completes, and an
+invalid future completion serial releases nothing. Existing rectangle,
+segment, circle, masked-marker, waveform, clipping, material, text, icon, image,
+and paint-order pixels continue to pass.
+
+Validation on the local Windows candidate:
+
+- `C:\odin\odin.exe check renderer/webgpu -no-entry-point` and the same check
+  for `examples/15_webgpu_feasibility` passed.
+- `C:\odin\odin.exe test renderer/cpu` passed all 8 tests. The full
+  `tools/test.ps1 -Odin C:\odin\odin.exe` regression, host, and recovery suite
+  also passed (352 Runtime tests; existing large-stack-local warnings remain).
+- `examples/15_webgpu_feasibility/build.ps1 -Odin C:\odin\odin.exe` built
+  native interactive/readback/resize executables and `js_wasm32`.
+- Native readback and resize smokes passed on Windows Vulkan / NVIDIA GeForce
+  RTX 2080 SUPER. The motion readback measured the moved half-opacity pixel as
+  `[137,28,30,255]`; both resize presentations passed.
+- The live browser window capture helper timed out twice after refreshing its
+  window selection. The current WASM candidate builds, but this cache slice has
+  no live browser replay result recorded.
+- `git diff --check` passed.
+
+This is cache-correctness and native pixel evidence, not a WebGPU performance
+claim. Windows D3D12, macOS Metal, live browser replay for this candidate,
+cache-pressure stress, Punks instrumentation, and genuine driver/OS loss and
+recovery remain open. Intentional `DeviceDestroy` and a driver-initiated lost
+device are separate evidence categories.

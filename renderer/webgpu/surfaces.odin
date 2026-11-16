@@ -5,7 +5,9 @@ import alicorn "../../runtime"
 import cpu_renderer "../cpu"
 import "vendor:wgpu"
 
-SURFACE_INITIAL_VERTEX_CAPACITY :: 1024
+SURFACE_INITIAL_VERTEX_CAPACITY :: 32
+SURFACE_INITIAL_INSTANCE_CAPACITY :: 64
+SURFACE_GPU_CACHE_BUDGET_BYTES :: 64 * 1024 * 1024
 
 SURFACE_WGSL :: `
 struct View_Uniform {
@@ -20,6 +22,8 @@ struct Vertex_Input {
 	@location(0) position: vec3<f32>,
 	@location(1) color: vec4<f32>,
 	@location(2) uv: vec2<f32>,
+	@location(3) scale_origin: vec4<f32>,
+	@location(4) opacity: f32,
 };
 struct Vertex_Output {
 	@builtin(position) position: vec4<f32>,
@@ -29,9 +33,11 @@ struct Vertex_Output {
 
 @vertex fn vs_main(input: Vertex_Input) -> Vertex_Output {
 	var output: Vertex_Output;
-	let top_left_ndc = input.position.xy / view.physical_size * 2.0 - vec2<f32>(1.0, 1.0);
+	let physical = input.position.xy * input.scale_origin.xy + input.scale_origin.zw;
+	let top_left_ndc = physical / view.physical_size * 2.0 - vec2<f32>(1.0, 1.0);
 	output.position = vec4<f32>(top_left_ndc.x, -top_left_ndc.y, input.position.z, 1.0);
 	output.color = input.color;
+	output.color.a *= input.opacity;
 	output.uv = input.uv;
 	return output;
 }
@@ -49,9 +55,36 @@ Surface_Result :: enum {
 }
 
 Surface_Draw :: struct {
-	first_vertex, vertex_count: u32,
+	resource_index: int,
+	vertex_count: u32,
 	command_index: int,
+	instance_index: u32,
 	scissor: cpu_renderer.Pixel_Rect,
+}
+
+Surface_Instance :: struct {
+	scale_origin: [4]f32,
+	opacity: f32,
+	_padding: f32,
+}
+
+Surface_GPU_Resource :: struct {
+	runtime: ^alicorn.Runtime,
+	handle: alicorn.Geometry_Handle,
+	payload_revision: u64,
+	mesh_width, mesh_height: f32,
+	vertex_buffer: wgpu.Buffer,
+	vertex_count: int,
+	byte_size: u64,
+	last_use_serial: u64,
+	lru_stamp: u64,
+	live_in_frame: bool,
+}
+
+Surface_Retired_Buffer :: struct {
+	buffer: wgpu.Buffer,
+	byte_size: u64,
+	retire_after_serial: u64,
 }
 
 // Surface_Renderer handles Alicorn's existing Geometry_Paint contract. The
@@ -72,26 +105,38 @@ Surface_Renderer :: struct {
 	marker_view: wgpu.TextureView,
 	marker_sampler: wgpu.Sampler,
 	marker_bind_group: wgpu.BindGroup,
-	vertex_buffer: wgpu.Buffer,
-	vertex_capacity: int,
-	vertices: [dynamic]cpu_renderer.Vertex,
+	instance_buffer: wgpu.Buffer,
+	instance_capacity: int,
+	instance_buffer_bytes: u64,
+	instance_last_use_serial: u64,
+	instances: [dynamic]Surface_Instance,
+	uploaded_instances: [dynamic]Surface_Instance,
+	resources: [dynamic]Surface_GPU_Resource,
+	retired: [dynamic]Surface_Retired_Buffer,
 	draws: [dynamic]Surface_Draw,
-	mesh_valid: bool,
-	mesh_runtime: ^alicorn.Runtime,
-	mesh_fingerprint: u64,
+	command_draw_indices: [dynamic]int,
+	instance_valid: bool,
+	resident_bytes: u64,
+	submitted_serial, completed_serial: u64,
+	lru_clock: u64,
 	viewport_valid: bool,
 	viewport_width, viewport_height: u32,
 	mesh_rebuild_count, mesh_cache_hits: u64,
 	vertex_upload_count, vertex_upload_bytes: u64,
+	instance_upload_count, instance_cache_hits: u64,
+	resource_eviction_count, resource_retirement_count, resource_release_count: u64,
 	viewport_upload_count: u64,
 }
 
 Surface_Create :: proc(device: wgpu.Device, queue: wgpu.Queue, format: wgpu.TextureFormat) -> (renderer: Surface_Renderer, ok: bool) {
 	if device == nil || queue == nil { return }
 	renderer.device, renderer.queue, renderer.format = device, queue, format
-	renderer.vertex_capacity = SURFACE_INITIAL_VERTEX_CAPACITY
-	renderer.vertices = make([dynamic]cpu_renderer.Vertex, 0, SURFACE_INITIAL_VERTEX_CAPACITY)
 	renderer.draws = make([dynamic]Surface_Draw, 0, 32)
+	renderer.instances = make([dynamic]Surface_Instance, 0, SURFACE_INITIAL_INSTANCE_CAPACITY)
+	renderer.uploaded_instances = make([dynamic]Surface_Instance, 0, SURFACE_INITIAL_INSTANCE_CAPACITY)
+	renderer.resources = make([dynamic]Surface_GPU_Resource, 0, 16)
+	renderer.retired = make([dynamic]Surface_Retired_Buffer, 0, 8)
+	renderer.command_draw_indices = make([dynamic]int, 0, 32)
 	defer if !ok { Surface_Destroy(&renderer) }
 
 	renderer.view_buffer = wgpu.DeviceCreateBuffer(device, &wgpu.BufferDescriptor{
@@ -184,16 +229,28 @@ Surface_Create :: proc(device: wgpu.Device, queue: wgpu.Queue, format: wgpu.Text
 		nextInChain=&wgpu.ShaderSourceWGSL{sType=.ShaderSourceWGSL, code=SURFACE_WGSL},
 	})
 	if renderer.shader == nil { return }
-	attrs := [3]wgpu.VertexAttribute{
+	vertex_attrs := [3]wgpu.VertexAttribute{
 		{format=.Float32x3, offset=u64(offset_of(cpu_renderer.Vertex, position)), shaderLocation=0},
 		{format=.Float32x4, offset=u64(offset_of(cpu_renderer.Vertex, color)), shaderLocation=1},
 		{format=.Float32x2, offset=u64(offset_of(cpu_renderer.Vertex, uv)), shaderLocation=2},
 	}
-	vertex_layout := wgpu.VertexBufferLayout{
+	instance_attrs := [2]wgpu.VertexAttribute{
+		{format=.Float32x4, offset=u64(offset_of(Surface_Instance, scale_origin)), shaderLocation=3},
+		{format=.Float32, offset=u64(offset_of(Surface_Instance, opacity)), shaderLocation=4},
+	}
+	vertex_layouts := [2]wgpu.VertexBufferLayout{
+		{
 		stepMode=.Vertex,
 		arrayStride=u64(size_of(cpu_renderer.Vertex)),
-		attributeCount=uint(len(attrs)),
-		attributes=&attrs[0],
+		attributeCount=uint(len(vertex_attrs)),
+		attributes=&vertex_attrs[0],
+		},
+		{
+		stepMode=.Instance,
+		arrayStride=u64(size_of(Surface_Instance)),
+		attributeCount=uint(len(instance_attrs)),
+		attributes=&instance_attrs[0],
+		},
 	}
 	blend := wgpu.BlendState{
 		color={operation=.Add, srcFactor=.SrcAlpha, dstFactor=.OneMinusSrcAlpha},
@@ -204,13 +261,12 @@ Surface_Create :: proc(device: wgpu.Device, queue: wgpu.Queue, format: wgpu.Text
 	renderer.pipeline = wgpu.DeviceCreateRenderPipeline(device, &wgpu.RenderPipelineDescriptor{
 		label="Alicorn WebGPU custom surface pipeline",
 		layout=renderer.pipeline_layout,
-		vertex={module=renderer.shader, entryPoint="vs_main", bufferCount=1, buffers=&vertex_layout},
+		vertex={module=renderer.shader, entryPoint="vs_main", bufferCount=uint(len(vertex_layouts)), buffers=&vertex_layouts[0]},
 		primitive={topology=.TriangleList, frontFace=.CCW, cullMode=.None},
 		multisample={count=1, mask=0xFFFFFFFF},
 		fragment=&fragment,
 	})
 	if renderer.pipeline == nil { return }
-	if !surface_vertex_buffer_ensure(&renderer, renderer.vertex_capacity) { return }
 	ok = true
 	return
 }
@@ -223,65 +279,90 @@ Surface_Prepare :: proc(
 	scale_x, scale_y: f32,
 ) -> Surface_Result {
 	if renderer == nil || rt == nil || renderer.device == nil || renderer.queue == nil || renderer.pipeline == nil ||
-	   renderer.vertex_buffer == nil || target_width == 0 || target_height == 0 ||
+	   target_width == 0 || target_height == 0 ||
 	   u64(target_width) > u64(bits.INT_MAX) || u64(target_height) > u64(bits.INT_MAX) ||
 	   !alicorn.number_is_finite(scale_x) || !alicorn.number_is_finite(scale_y) || scale_x <= 0 || scale_y <= 0 {
 		return .Invalid_Input
 	}
-	fingerprint := surface_mesh_fingerprint(rt, display, target_width, target_height, scale_x, scale_y)
-	if renderer.mesh_valid && renderer.mesh_runtime == rt && renderer.mesh_fingerprint == fingerprint {
-		renderer.mesh_cache_hits += 1
-		surface_viewport_upload_if_needed(renderer, target_width, target_height)
-		return .Ok
-	}
-	renderer.mesh_valid = false
-	clear(&renderer.vertices)
 	clear(&renderer.draws)
-	required_vertices := 0
-	for command in display.commands {
-		if !alicorn.paint_command_is_geometry(command) { continue }
-		geometry, _ := command.payload.(alicorn.Geometry_Paint)
-		payload, valid := alicorn.gpu_surface_payload_resolve(rt, geometry.geometry)
-		if !valid { continue }
-		count := cpu_renderer.GPU_Surface_Vertex_Count(payload)
-		if count < 0 || count > alicorn.GPU_SURFACE_MAX_VERTICES || required_vertices > bits.INT_MAX-count {
-			return .Resource_Failure
-		}
-		required_vertices += count
-	}
-	if required_vertices > 0 {
-		if !surface_vertex_buffer_ensure(renderer, required_vertices) { return .Resource_Failure }
-		reserve(&renderer.vertices, required_vertices)
-	}
+	clear(&renderer.instances)
+	clear(&renderer.command_draw_indices)
+	reserve(&renderer.command_draw_indices, len(display.commands))
+	for _ in display.commands { append(&renderer.command_draw_indices, -1) }
+	for &resource in renderer.resources { resource.live_in_frame = false }
+	surface_prune_stale_resources(renderer, rt)
+	vertices: [dynamic]cpu_renderer.Vertex
+	vertices_allocated := false
+	defer if vertices_allocated { delete(vertices) }
+	instance_changed := false
 	for command, command_index in display.commands {
 		if !alicorn.paint_command_is_geometry(command) { continue }
 		geometry, _ := command.payload.(alicorn.Geometry_Paint)
 		payload, valid := alicorn.gpu_surface_payload_resolve(rt, geometry.geometry)
 		if !valid { continue }
-		first_vertex := len(renderer.vertices)
-		if !cpu_renderer.GPU_Surface_Append_Payload(&renderer.vertices, command, payload, scale_x, scale_y) {
-			return .Resource_Failure
-		}
-		vertex_count := len(renderer.vertices)-first_vertex
+		vertex_count := cpu_renderer.GPU_Surface_Vertex_Count(payload)
+		if vertex_count < 0 || vertex_count > alicorn.GPU_SURFACE_MAX_VERTICES { return .Resource_Failure }
 		if vertex_count == 0 { continue }
-		if first_vertex < 0 || vertex_count > bits.INT_MAX-first_vertex || u64(first_vertex+vertex_count) > 0xFFFFFFFF {
-			return .Resource_Failure
+		resource_index := surface_resource_index(renderer, rt, geometry.geometry, command.bounds.w, command.bounds.h)
+		needs_rebuild := resource_index < 0
+		if resource_index >= 0 {
+			resource := &renderer.resources[resource_index]
+			resource.live_in_frame = true
+			needs_rebuild = resource.payload_revision != u64(payload.revision) || resource.vertex_count != vertex_count
 		}
+		if needs_rebuild {
+			if !vertices_allocated {
+				vertices = make([dynamic]cpu_renderer.Vertex, 0, max(SURFACE_INITIAL_VERTEX_CAPACITY, vertex_count), allocator=context.temp_allocator)
+				vertices_allocated = true
+			} else {
+				clear(&vertices)
+			}
+			local_command := command
+			local_command.bounds = alicorn.Rect{0, 0, command.bounds.w, command.bounds.h}
+			local_command.translation = {}
+			local_command.opacity = 1
+			if !cpu_renderer.GPU_Surface_Append_Payload(&vertices, local_command, payload, 1, 1) || len(vertices) != vertex_count {
+				return .Resource_Failure
+			}
+			resource_index = surface_resource_prepare(renderer, rt, geometry.geometry, payload.revision,
+				command.bounds.w, command.bounds.h, vertices[:], resource_index)
+			if resource_index < 0 { return .Resource_Failure }
+			renderer.mesh_rebuild_count += 1
+		} else {
+			renderer.mesh_cache_hits += 1
+			renderer.resources[resource_index].live_in_frame = true
+		}
+		renderer.lru_clock += 1
+		renderer.resources[resource_index].lru_stamp = renderer.lru_clock
+		instance := Surface_Instance{
+			scale_origin={scale_x, scale_y,
+				(command.bounds.x+command.translation[0])*scale_x,
+				(command.bounds.y+command.translation[1])*scale_y},
+			opacity=command.opacity,
+		}
+		instance_index := len(renderer.instances)
+		if instance_index < 0 || instance_index > bits.INT_MAX { return .Resource_Failure }
+		append(&renderer.instances, instance)
 		scissor := surface_geometry_scissor(command, scale_x, scale_y, int(target_width), int(target_height))
-		append(&renderer.draws, Surface_Draw{u32(first_vertex), u32(vertex_count), command_index, scissor})
+		draw_index := len(renderer.draws)
+		append(&renderer.draws, Surface_Draw{resource_index, u32(vertex_count), command_index, u32(instance_index), scissor})
+		renderer.command_draw_indices[command_index] = draw_index
+		instance_changed = true
 	}
-	if len(renderer.vertices) != required_vertices { return .Resource_Failure }
-	if len(renderer.vertices) > 0 {
-		if !surface_vertex_buffer_ensure(renderer, len(renderer.vertices)) { return .Resource_Failure }
-		upload_bytes := len(renderer.vertices)*size_of(cpu_renderer.Vertex)
-		wgpu.QueueWriteBuffer(renderer.queue, renderer.vertex_buffer, 0, raw_data(renderer.vertices[:]), uint(upload_bytes))
-		renderer.vertex_upload_count += 1
-		renderer.vertex_upload_bytes += u64(upload_bytes)
+	if instance_changed {
+		instances_unchanged := renderer.instance_valid && surface_instances_equal(renderer.instances[:], renderer.uploaded_instances[:])
+		if !surface_instance_buffer_ensure(renderer, len(renderer.instances)) { return .Resource_Failure }
+		if !instances_unchanged || !renderer.instance_valid {
+			upload_bytes := len(renderer.instances)*size_of(Surface_Instance)
+			wgpu.QueueWriteBuffer(renderer.queue, renderer.instance_buffer, 0, raw_data(renderer.instances[:]), uint(upload_bytes))
+			clear(&renderer.uploaded_instances)
+			for instance in renderer.instances { append(&renderer.uploaded_instances, instance) }
+			renderer.instance_valid = true
+			renderer.instance_upload_count += 1
+		} else {
+			renderer.instance_cache_hits += 1
+		}
 	}
-	renderer.mesh_runtime = rt
-	renderer.mesh_fingerprint = fingerprint
-	renderer.mesh_valid = true
-	renderer.mesh_rebuild_count += 1
 	surface_viewport_upload_if_needed(renderer, target_width, target_height)
 	return .Ok
 }
@@ -294,28 +375,68 @@ Surface_Draw_Command :: proc(
 	target_width, target_height: u32,
 ) -> Surface_Result {
 	if renderer == nil || pass == nil || command_index < 0 || target_width == 0 || target_height == 0 ||
-	   renderer.pipeline == nil || renderer.vertex_buffer == nil || renderer.view_bind_group == nil || renderer.marker_bind_group == nil {
+	   command_index >= len(renderer.command_draw_indices) || renderer.pipeline == nil ||
+	   renderer.view_bind_group == nil || renderer.marker_bind_group == nil {
 		return .Invalid_Input
 	}
-	if !alicorn.paint_command_is_geometry(command) || !renderer.mesh_valid { return .Ok }
-	if len(renderer.vertices) == 0 { return .Ok }
+	if !alicorn.paint_command_is_geometry(command) { return .Ok }
+	draw_index := renderer.command_draw_indices[command_index]
+	if draw_index < 0 { return .Ok }
+	if renderer.instance_buffer == nil { return .Resource_Failure }
+	if draw_index >= len(renderer.draws) { return .Invalid_Input }
+	draw := renderer.draws[draw_index]
+	if draw.resource_index < 0 || draw.resource_index >= len(renderer.resources) { return .Invalid_Input }
+	if draw.scissor.w <= 0 || draw.scissor.h <= 0 { return .Ok }
+	resource := renderer.resources[draw.resource_index]
+	if resource.vertex_buffer == nil || resource.vertex_count <= 0 { return .Resource_Failure }
 	wgpu.RenderPassEncoderSetPipeline(pass, renderer.pipeline)
 	wgpu.RenderPassEncoderSetBindGroup(pass, 0, renderer.view_bind_group)
 	wgpu.RenderPassEncoderSetBindGroup(pass, 1, renderer.marker_bind_group)
-	wgpu.RenderPassEncoderSetVertexBuffer(pass, 0, renderer.vertex_buffer, 0,
-		u64(len(renderer.vertices)*size_of(cpu_renderer.Vertex)))
-	for draw in renderer.draws {
-		if draw.command_index != command_index { continue }
-		if draw.scissor.w <= 0 || draw.scissor.h <= 0 { continue }
-		wgpu.RenderPassEncoderSetScissorRect(pass, u32(draw.scissor.x), u32(draw.scissor.y), u32(draw.scissor.w), u32(draw.scissor.h))
-		wgpu.RenderPassEncoderDraw(pass, draw.vertex_count, 1, draw.first_vertex, 0)
-	}
+	wgpu.RenderPassEncoderSetVertexBuffer(pass, 0, resource.vertex_buffer, 0, resource.byte_size)
+	wgpu.RenderPassEncoderSetVertexBuffer(pass, 1, renderer.instance_buffer, 0, renderer.instance_buffer_bytes)
+	wgpu.RenderPassEncoderSetScissorRect(pass, u32(draw.scissor.x), u32(draw.scissor.y), u32(draw.scissor.w), u32(draw.scissor.h))
+	wgpu.RenderPassEncoderDraw(pass, draw.vertex_count, 1, 0, draw.instance_index)
 	return .Ok
+}
+
+// Surface_Commit_Submission associates the shared queue serial with every
+// custom geometry and instance buffer used by the prepared frame. Hosts call
+// it only after QueueSubmit succeeds, through Compositor_Commit_Submission.
+Surface_Commit_Submission :: proc(renderer: ^Surface_Renderer, serial: u64) -> bool {
+	if renderer == nil || serial == 0 || serial != renderer.submitted_serial+1 { return false }
+	renderer.submitted_serial = serial
+	for draw in renderer.draws {
+		if draw.resource_index < 0 || draw.resource_index >= len(renderer.resources) { continue }
+		renderer.resources[draw.resource_index].last_use_serial = serial
+	}
+	if len(renderer.draws) > 0 { renderer.instance_last_use_serial = serial }
+	return true
+}
+
+Surface_Complete_Submission :: proc(renderer: ^Surface_Renderer, completed_serial: u64) -> bool {
+	if renderer == nil || completed_serial > renderer.submitted_serial { return false }
+	if completed_serial <= renderer.completed_serial { return true }
+	renderer.completed_serial = completed_serial
+	for index := len(renderer.retired)-1; index >= 0; index -= 1 {
+		retired := renderer.retired[index]
+		if retired.retire_after_serial > completed_serial { continue }
+		if retired.buffer != nil { wgpu.BufferRelease(retired.buffer) }
+		renderer.resident_bytes -= retired.byte_size
+		renderer.resource_release_count += 1
+		surface_retired_remove(renderer, index)
+	}
+	return true
 }
 
 Surface_Destroy :: proc(renderer: ^Surface_Renderer) {
 	if renderer == nil { return }
-	if renderer.vertex_buffer != nil { wgpu.BufferRelease(renderer.vertex_buffer) }
+	for &resource in renderer.resources {
+		if resource.vertex_buffer != nil { wgpu.BufferRelease(resource.vertex_buffer) }
+	}
+	for &retired in renderer.retired {
+		if retired.buffer != nil { wgpu.BufferRelease(retired.buffer) }
+	}
+	if renderer.instance_buffer != nil { wgpu.BufferRelease(renderer.instance_buffer) }
 	if renderer.marker_bind_group != nil { wgpu.BindGroupRelease(renderer.marker_bind_group) }
 	if renderer.marker_view != nil { wgpu.TextureViewRelease(renderer.marker_view) }
 	if renderer.marker_texture != nil { wgpu.TextureRelease(renderer.marker_texture) }
@@ -327,8 +448,12 @@ Surface_Destroy :: proc(renderer: ^Surface_Renderer) {
 	if renderer.marker_layout != nil { wgpu.BindGroupLayoutRelease(renderer.marker_layout) }
 	if renderer.view_layout != nil { wgpu.BindGroupLayoutRelease(renderer.view_layout) }
 	if renderer.view_buffer != nil { wgpu.BufferRelease(renderer.view_buffer) }
-	delete(renderer.vertices)
+	delete(renderer.instances)
+	delete(renderer.uploaded_instances)
+	delete(renderer.resources)
+	delete(renderer.retired)
 	delete(renderer.draws)
+	delete(renderer.command_draw_indices)
 	renderer^ = {}
 }
 
@@ -349,36 +474,6 @@ surface_geometry_scissor :: proc(command: alicorn.Paint_Command, scale_x, scale_
 	return cpu_renderer.Pixel_Rect{x0, y0, x1-x0, y1-y0}
 }
 
-surface_mesh_fingerprint :: proc(
-	rt: ^alicorn.Runtime,
-	display: alicorn.Paint_Display_List_View,
-	target_width, target_height: u32,
-	scale_x, scale_y: f32,
-) -> u64 {
-	h := alicorn.hash_mix(1469598103934665603, display.revision)
-	h = alicorn.hash_mix(h, u64(target_width))
-	h = alicorn.hash_mix(h, u64(target_height))
-	h = alicorn.hash_mix(h, u64(transmute(u32)scale_x))
-	h = alicorn.hash_mix(h, u64(transmute(u32)scale_y))
-	for command, command_index in display.commands {
-		if !alicorn.paint_command_is_geometry(command) { continue }
-		h = alicorn.hash_mix(h, u64(command_index))
-		geometry, _ := command.payload.(alicorn.Geometry_Paint)
-		h = alicorn.hash_mix(h, u64(geometry.geometry.resource))
-		h = alicorn.hash_mix(h, geometry.geometry.generation)
-		payload, valid := alicorn.gpu_surface_payload_resolve(rt, geometry.geometry)
-		h = alicorn.hash_mix(h, 1 if valid else 0)
-		if valid { h = alicorn.hash_mix(h, u64(payload.revision)) }
-		values := [11]f32{command.bounds.x, command.bounds.y, command.bounds.w, command.bounds.h,
-			command.clip.x, command.clip.y, command.clip.w, command.clip.h,
-			command.opacity, command.translation[0], command.translation[1]}
-		for value in values {
-			h = alicorn.hash_mix(h, u64(transmute(u32)value))
-		}
-	}
-	return h
-}
-
 surface_viewport_upload_if_needed :: proc(renderer: ^Surface_Renderer, width, height: u32) {
 	if renderer.viewport_valid && renderer.viewport_width == width && renderer.viewport_height == height { return }
 	viewport := [4]f32{f32(width), f32(height), 0, 0}
@@ -388,24 +483,216 @@ surface_viewport_upload_if_needed :: proc(renderer: ^Surface_Renderer, width, he
 	renderer.viewport_upload_count += 1
 }
 
-surface_vertex_buffer_ensure :: proc(renderer: ^Surface_Renderer, required: int) -> bool {
-	if renderer == nil || required < 0 || required > bits.INT_MAX/size_of(cpu_renderer.Vertex) { return false }
-	if required <= renderer.vertex_capacity && renderer.vertex_buffer != nil { return true }
-	capacity := renderer.vertex_capacity
-	if capacity < SURFACE_INITIAL_VERTEX_CAPACITY { capacity = SURFACE_INITIAL_VERTEX_CAPACITY }
+surface_resource_index :: proc(
+	renderer: ^Surface_Renderer,
+	rt: ^alicorn.Runtime,
+	handle: alicorn.Geometry_Handle,
+	width, height: f32,
+) -> int {
+	if renderer == nil || rt == nil { return -1 }
+	for resource, index in renderer.resources {
+		if resource.runtime == rt && resource.handle.resource == handle.resource &&
+		   resource.handle.generation == handle.generation && resource.mesh_width == width && resource.mesh_height == height {
+			return index
+		}
+	}
+	return -1
+}
+
+surface_resource_prepare :: proc(
+	renderer: ^Surface_Renderer,
+	rt: ^alicorn.Runtime,
+	handle: alicorn.Geometry_Handle,
+	revision: alicorn.GPU_Surface_Update_Revision,
+	width, height: f32,
+	vertices: []cpu_renderer.Vertex,
+	resource_index: int,
+) -> int {
+	if renderer == nil || rt == nil || len(vertices) <= 0 || len(vertices) > alicorn.GPU_SURFACE_MAX_VERTICES { return -1 }
+	if len(vertices) > bits.INT_MAX/size_of(cpu_renderer.Vertex) { return -1 }
+	result_index := resource_index
+	if result_index < 0 {
+		capacity := surface_vertex_capacity(len(vertices))
+		if capacity <= 0 { return -1 }
+		byte_size := u64(capacity)*u64(size_of(cpu_renderer.Vertex))
+		if !surface_cache_make_room(renderer, byte_size) { return -1 }
+		buffer := wgpu.DeviceCreateBuffer(renderer.device, &wgpu.BufferDescriptor{
+			label="Alicorn WebGPU retained custom geometry",
+			usage={.Vertex, .CopyDst},
+			size=byte_size,
+		})
+		if buffer == nil { return -1 }
+		resource := Surface_GPU_Resource{
+			runtime=rt,
+			handle=handle,
+			payload_revision=u64(revision),
+			mesh_width=width,
+			mesh_height=height,
+			vertex_buffer=buffer,
+			vertex_count=len(vertices),
+			byte_size=byte_size,
+			live_in_frame=true,
+		}
+		append(&renderer.resources, resource)
+		result_index = len(renderer.resources)-1
+		renderer.resident_bytes += byte_size
+	} else {
+		if result_index >= len(renderer.resources) { return -1 }
+		renderer.resources[result_index].live_in_frame = true
+		required_bytes := u64(len(vertices))*u64(size_of(cpu_renderer.Vertex))
+		if required_bytes > renderer.resources[result_index].byte_size {
+			capacity := surface_vertex_capacity(len(vertices))
+			if capacity <= 0 { return -1 }
+			new_byte_size := u64(capacity)*u64(size_of(cpu_renderer.Vertex))
+			if !surface_cache_make_room(renderer, new_byte_size) { return -1 }
+			buffer := wgpu.DeviceCreateBuffer(renderer.device, &wgpu.BufferDescriptor{
+				label="Alicorn WebGPU retained custom geometry",
+				usage={.Vertex, .CopyDst},
+				size=new_byte_size,
+			})
+			if buffer == nil { return -1 }
+			result_index = surface_resource_index(renderer, rt, handle, width, height)
+			if result_index < 0 { wgpu.BufferRelease(buffer); return -1 }
+			resource := &renderer.resources[result_index]
+			old_buffer := resource.vertex_buffer
+			old_byte_size := resource.byte_size
+			old_last_use := resource.last_use_serial
+			resource.vertex_buffer = buffer
+			resource.byte_size = new_byte_size
+			renderer.resident_bytes += new_byte_size
+			surface_buffer_retire(renderer, old_buffer, old_byte_size, old_last_use)
+		}
+		renderer.resources[result_index].payload_revision = u64(revision)
+		renderer.resources[result_index].vertex_count = len(vertices)
+	}
+	resource := &renderer.resources[result_index]
+	upload_bytes := len(vertices)*size_of(cpu_renderer.Vertex)
+	wgpu.QueueWriteBuffer(renderer.queue, resource.vertex_buffer, 0, raw_data(vertices), uint(upload_bytes))
+	renderer.vertex_upload_count += 1
+	renderer.vertex_upload_bytes += u64(upload_bytes)
+	return result_index
+}
+
+surface_vertex_capacity :: proc(required: int) -> int {
+	if required <= 0 || required > bits.INT_MAX/size_of(cpu_renderer.Vertex) { return 0 }
+	capacity := SURFACE_INITIAL_VERTEX_CAPACITY
+	for capacity < required {
+		if capacity > bits.INT_MAX/2 { return required }
+		capacity *= 2
+	}
+	if capacity > bits.INT_MAX/size_of(cpu_renderer.Vertex) { return required }
+	return capacity
+}
+
+surface_instance_buffer_ensure :: proc(renderer: ^Surface_Renderer, required: int) -> bool {
+	if renderer == nil || required <= 0 || required > bits.INT_MAX/size_of(Surface_Instance) { return false }
+	if renderer.instance_buffer != nil && required <= renderer.instance_capacity { return true }
+	capacity := renderer.instance_capacity
+	if capacity < SURFACE_INITIAL_INSTANCE_CAPACITY { capacity = SURFACE_INITIAL_INSTANCE_CAPACITY }
 	for capacity < required {
 		if capacity > bits.INT_MAX/2 { capacity = required; break }
 		capacity *= 2
 	}
-	if capacity > bits.INT_MAX/size_of(cpu_renderer.Vertex) { return false }
+	if capacity > bits.INT_MAX/size_of(Surface_Instance) { return false }
+	byte_size := u64(capacity)*u64(size_of(Surface_Instance))
+	if !surface_cache_make_room(renderer, byte_size) { return false }
 	buffer := wgpu.DeviceCreateBuffer(renderer.device, &wgpu.BufferDescriptor{
-		label="Alicorn WebGPU custom surface vertices",
+		label="Alicorn WebGPU custom surface instances",
 		usage={.Vertex, .CopyDst},
-		size=u64(capacity*size_of(cpu_renderer.Vertex)),
+		size=byte_size,
 	})
 	if buffer == nil { return false }
-	if renderer.vertex_buffer != nil { wgpu.BufferRelease(renderer.vertex_buffer) }
-	renderer.vertex_buffer = buffer
-	renderer.vertex_capacity = capacity
+	old_buffer := renderer.instance_buffer
+	old_byte_size := renderer.instance_buffer_bytes
+	old_last_use := renderer.instance_last_use_serial
+	renderer.instance_buffer = buffer
+	renderer.instance_capacity = capacity
+	renderer.instance_buffer_bytes = byte_size
+	renderer.instance_valid = false
+	renderer.resident_bytes += byte_size
+	if old_buffer != nil { surface_buffer_retire(renderer, old_buffer, old_byte_size, old_last_use) }
+	return true
+}
+
+surface_cache_make_room :: proc(renderer: ^Surface_Renderer, incoming_bytes: u64) -> bool {
+	if renderer == nil || incoming_bytes > SURFACE_GPU_CACHE_BUDGET_BYTES { return false }
+	budget := u64(SURFACE_GPU_CACHE_BUDGET_BYTES)
+	if renderer.resident_bytes <= budget-incoming_bytes { return true }
+	bytes_to_free := renderer.resident_bytes-(budget-incoming_bytes)
+	evictable_bytes: u64 = 0
+	for resource in renderer.resources {
+		if resource.live_in_frame || resource.last_use_serial > renderer.completed_serial { continue }
+		evictable_bytes += resource.byte_size
+	}
+	if evictable_bytes < bytes_to_free { return false }
+	for renderer.resident_bytes > budget-incoming_bytes {
+		candidate := surface_lru_evictable_index(renderer)
+		if candidate < 0 { return false }
+		surface_resource_retire_index(renderer, candidate)
+	}
+	return true
+}
+
+surface_lru_evictable_index :: proc(renderer: ^Surface_Renderer) -> int {
+	if renderer == nil { return -1 }
+	best := -1
+	for resource, index in renderer.resources {
+		if resource.live_in_frame || resource.last_use_serial > renderer.completed_serial { continue }
+		if best < 0 || resource.lru_stamp < renderer.resources[best].lru_stamp { best = index }
+	}
+	return best
+}
+
+surface_resource_retire_index :: proc(renderer: ^Surface_Renderer, index: int) {
+	if renderer == nil || index < 0 || index >= len(renderer.resources) { return }
+	resource := renderer.resources[index]
+	surface_buffer_retire(renderer, resource.vertex_buffer, resource.byte_size, resource.last_use_serial)
+	renderer.resource_eviction_count += 1
+	surface_resource_remove(renderer, index)
+}
+
+surface_buffer_retire :: proc(renderer: ^Surface_Renderer, buffer: wgpu.Buffer, byte_size, last_use_serial: u64) {
+	if renderer == nil || buffer == nil { return }
+	if last_use_serial > renderer.completed_serial {
+		append(&renderer.retired, Surface_Retired_Buffer{buffer, byte_size, last_use_serial})
+		renderer.resource_retirement_count += 1
+	} else {
+		wgpu.BufferRelease(buffer)
+		renderer.resident_bytes -= byte_size
+		renderer.resource_release_count += 1
+	}
+}
+
+surface_resource_remove :: proc(renderer: ^Surface_Renderer, index: int) {
+	for &draw in renderer.draws {
+		if draw.resource_index > index { draw.resource_index -= 1 }
+	}
+	for i in index+1..<len(renderer.resources) { renderer.resources[i-1] = renderer.resources[i] }
+	pop(&renderer.resources)
+}
+
+surface_retired_remove :: proc(renderer: ^Surface_Renderer, index: int) {
+	for i in index+1..<len(renderer.retired) { renderer.retired[i-1] = renderer.retired[i] }
+	pop(&renderer.retired)
+}
+
+surface_prune_stale_resources :: proc(renderer: ^Surface_Renderer, rt: ^alicorn.Runtime) {
+	if renderer == nil || rt == nil { return }
+	for index := len(renderer.resources)-1; index >= 0; index -= 1 {
+		resource := renderer.resources[index]
+		if resource.runtime != rt { continue }
+		_, valid := alicorn.gpu_surface_payload_resolve(rt, resource.handle)
+		if !valid { surface_resource_retire_index(renderer, index) }
+	}
+}
+
+surface_instances_equal :: proc(a, b: []Surface_Instance) -> bool {
+	if len(a) != len(b) { return false }
+	for index in 0..<len(a) {
+		for component in 0..<4 {
+			if a[index].scale_origin[component] != b[index].scale_origin[component] { return false }
+		}
+		if a[index].opacity != b[index].opacity { return false }
+	}
 	return true
 }

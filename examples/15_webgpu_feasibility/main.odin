@@ -15,7 +15,7 @@ READBACK_HEIGHT :: 64
 READBACK_BYTES_PER_PIXEL :: 4
 READBACK_BYTES_PER_ROW :: 256
 READBACK_BUFFER_BYTES :: READBACK_BYTES_PER_ROW * READBACK_HEIGHT
-READBACK_TARGET_COUNT :: 4
+READBACK_TARGET_COUNT :: 5
 READBACK_TOTAL_BYTES :: READBACK_BUFFER_BYTES * READBACK_TARGET_COUNT
 FEASIBILITY_TEST_DEVICE_LOSS :: #config(FEASIBILITY_TEST_DEVICE_LOSS, false)
 FEASIBILITY_TEST_DEVICE_LOSS_EARLY :: #config(FEASIBILITY_TEST_DEVICE_LOSS_EARLY, false)
@@ -54,6 +54,7 @@ state: struct {
 	compositor_custom_surface_ids: [2]alicorn.Node_ID,
 	compositor_completion_serial: u64,
 	image_retirement_passed: bool,
+	surface_resource_retirement_passed: bool,
 	composite_offscreen_texture: wgpu.Texture,
 	composite_offscreen_view: wgpu.TextureView,
 	config: wgpu.SurfaceConfiguration,
@@ -116,7 +117,7 @@ main :: proc() {
 		if !state.readback_done || !state.queue_work_done || !state.queue_work_done_ok {
 			os_exit_failure()
 		}
-		if !state.image_retirement_passed { os_exit_failure() }
+		if !state.image_retirement_passed || !state.surface_resource_retirement_passed { os_exit_failure() }
 		when FEASIBILITY_TEST_RESIZE {
 			if !state.test_resize_pre_applied || !state.test_resize_pre_frame ||
 				!state.test_resize_post_applied || !state.test_resize_post_frame {
@@ -128,7 +129,7 @@ main :: proc() {
 
 smoke_complete :: proc() -> bool {
 	if !state.readback_done || !state.queue_work_done || !state.queue_work_done_ok { return false }
-	if !state.image_retirement_passed { return false }
+	if !state.image_retirement_passed || !state.surface_resource_retirement_passed { return false }
 	when FEASIBILITY_TEST_RESIZE {
 		if !state.test_resize_pre_applied || !state.test_resize_pre_frame ||
 			!state.test_resize_post_applied || !state.test_resize_post_frame { return false }
@@ -208,6 +209,17 @@ on_queue_work_done :: proc "c" (status:wgpu.QueueWorkDoneStatus, message:wgpu.St
 			"PASS" if state.image_retirement_passed else "FAIL", state.compositor.images.submitted_serial,
 			state.compositor.images.completed_serial, len(state.compositor.images.retired),
 			state.compositor.images.resident_bytes, state.compositor.images.resource_release_count)
+		surface_active_bytes := state.compositor.surfaces.instance_buffer_bytes
+		for resource in state.compositor.surfaces.resources { surface_active_bytes += resource.byte_size }
+		state.surface_resource_retirement_passed = completion_ok && len(state.compositor.surfaces.retired) == 0 &&
+			state.compositor.surfaces.resident_bytes == surface_active_bytes &&
+			state.compositor.surfaces.resource_retirement_count == 1 &&
+			state.compositor.surfaces.resource_release_count == 1
+		fmt.printf("[webgpu-feasibility] custom geometry buffer retirement %s submitted_serial=%d completed_serial=%d retired=%d active_bytes=%d resident_bytes=%d retirements=%d releases=%d\n",
+			"PASS" if state.surface_resource_retirement_passed else "FAIL", state.compositor.surfaces.submitted_serial,
+			state.compositor.surfaces.completed_serial, len(state.compositor.surfaces.retired), surface_active_bytes,
+			state.compositor.surfaces.resident_bytes, state.compositor.surfaces.resource_retirement_count,
+			state.compositor.surfaces.resource_release_count)
 	}
 	fmt.printf("[webgpu-feasibility] queue work done status=%v message=%s\n", status, message)
 	when FEASIBILITY_TEST_QUIT_AFTER_READBACK {
