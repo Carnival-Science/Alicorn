@@ -37,8 +37,8 @@ OUT_ROOT="$REPO_ROOT/out/native-package"
 SDL_ROOT="$OUT_ROOT/sdl-3.4.18"
 ARCHIVE="$SDL_ROOT/SDL3-3.4.18.tar.gz"
 SOURCE="$SDL_ROOT/source"
-BUILD="$SDL_ROOT/build"
-PREFIX="$SDL_ROOT/prefix"
+BUILD="$SDL_ROOT/build-$SDL_LINKAGE"
+PREFIX="$SDL_ROOT/prefix-$SDL_LINKAGE"
 SDL_URL='https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz'
 SDL_SHA='9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3'
 SDL_REQUIRED_VERSION=3.4.18
@@ -78,21 +78,25 @@ if [ "$SDL_LINKAGE" = static ]; then
 	command -v pkg-config >/dev/null 2>&1 || { echo 'Static SDL link flags require pkg-config (install pkgconf).'; exit 127; }
 	SDL_LINK_FLAGS="-L$PREFIX/lib"
 	SDL_LINK_FLAGS="$SDL_LINK_FLAGS $(PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig" pkg-config --static --libs-only-other sdl3)"
-	# Odin's built-in system:SDL3 import resolves the Homebrew dylib before
-	# extra linker search paths are considered. Force the verified archive into
-	# the executable, then remove the now-unneeded dylib load command.
+	# Odin's system:SDL3 import can retain a dylib load command even when the
+	# pinned archive is on the search path. Force that archive into the
+	# executable, then remove the now-unneeded dylib load command.
 	SDL_LINK_FLAGS="$SDL_LINK_FLAGS -Wl,-force_load,$PREFIX/lib/libSDL3.a -Wl,-dead_strip_dylibs"
 else
-	command -v brew >/dev/null 2>&1 || { echo 'Shared SDL packaging requires Homebrew SDL3.' >&2; exit 1; }
-	SDL_PREFIX=$(brew --prefix sdl3)
-	SDL_VERSION=$(PKG_CONFIG_PATH="$SDL_PREFIX/lib/pkgconfig" pkg-config --modversion sdl3)
-	[ "$SDL_VERSION" = "$SDL_REQUIRED_VERSION" ] || {
-		echo "macOS Alicorn requires SDL $SDL_REQUIRED_VERSION; Homebrew reports $SDL_VERSION." >&2
-		exit 1
-	}
-	SDL_RUNTIME=$(find "$SDL_PREFIX/lib" -maxdepth 1 -type f -name 'libSDL3*.dylib' | sort | head -n 1)
-	[ -n "$SDL_RUNTIME" ] || { echo "No SDL3 dylib found under $SDL_PREFIX/lib." >&2; exit 1; }
-	SDL_LINK_FLAGS="-L$SDL_PREFIX/lib"
+	if [ ! -f "$BUILD/CMakeCache.txt" ]; then
+		cmake -S "$SOURCE" -B "$BUILD" \
+			-DCMAKE_BUILD_TYPE=Release \
+			-DCMAKE_INSTALL_PREFIX="$PREFIX" \
+			-DSDL_SHARED=ON -DSDL_STATIC=OFF \
+			-DSDL_TEST_LIBRARY=OFF -DSDL_TESTS=OFF \
+			-DSDL_INSTALL_TESTS=OFF -DSDL_DISABLE_INSTALL_DOCS=ON \
+			-DSDL_FRAMEWORK=OFF -DSDL_RPATH=OFF
+	fi
+	cmake --build "$BUILD" --config Release --target SDL3-shared
+	cmake --install "$BUILD" --config Release
+	SDL_RUNTIME=$(find "$PREFIX/lib" -maxdepth 1 -type f -name 'libSDL3*.dylib' | sort | head -n 1)
+	[ -n "$SDL_RUNTIME" ] || { echo "No SDL3 dylib found under pinned prefix $PREFIX/lib." >&2; exit 1; }
+	SDL_LINK_FLAGS="-L$PREFIX/lib"
 fi
 
 BUILT="$OUT_ROOT/$APP_NAME"
@@ -123,6 +127,6 @@ case "$OUTPUT" in
 	*) PACKAGE_ARGS+=(--output "$REPO_ROOT/$OUTPUT") ;;
 esac
 if [ -n "$SDL_RUNTIME" ]; then PACKAGE_ARGS+=(--sdl-runtime "$SDL_RUNTIME"); fi
-if [ -n "$SDL_RUNTIME" ]; then PACKAGE_ARGS+=(--sdl-runtime-provider homebrew); fi
+if [ -n "$SDL_RUNTIME" ]; then PACKAGE_ARGS+=(--sdl-runtime-provider pinned-source); fi
 if [ "$SMOKE" -eq 1 ]; then PACKAGE_ARGS+=(--smoke-test); fi
 python3 "${PACKAGE_ARGS[@]}"

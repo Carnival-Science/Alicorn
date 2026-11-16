@@ -36,8 +36,7 @@ def sha256(path: pathlib.Path) -> str:
 
 
 def sdl_source_provenance() -> dict[str, str]:
-    # This provenance applies only to the static build, which links the pinned
-    # SDL source archive. Shared packages record their actual dylib input.
+    # Release builds use the same pinned SDL archive for either linkage mode.
     return {
         "sdlSource": SDL_SOURCE,
         "sdlSourceSha256": SDL_SOURCE_SHA256,
@@ -393,7 +392,12 @@ def package(args: argparse.Namespace) -> None:
             "alicornRevision": git_revision,
             "sdlVersion": sdl_version,
             "sdlLinkage": args.linkage,
-            **(sdl_source_provenance() if args.linkage == "static" else sdl_runtime_manifest),
+            **(
+                sdl_source_provenance()
+                if args.linkage == "static" or args.sdl_runtime_provider == "pinned-source"
+                else {}
+            ),
+            **sdl_runtime_manifest,
             "license": {
                 "path": "Contents/Resources/SDL-LICENSE.txt",
                 "sha256": sha256(resources / "SDL-LICENSE.txt"),
@@ -476,9 +480,9 @@ def main() -> None:
     parser.add_argument("--sdl-runtime", type=pathlib.Path)
     parser.add_argument(
         "--sdl-runtime-provider",
-        choices=("unknown", "homebrew"),
+        choices=("unknown", "homebrew", "pinned-source"),
         default="unknown",
-        help="Declared origin of the shared SDL input; the input hash and runtime version are verified.",
+        help="Declared origin of the shared SDL input; pinned-source also records the verified source archive.",
     )
     parser.add_argument("--output", type=pathlib.Path, required=True)
     parser.add_argument("--smoke-test", action="store_true")
