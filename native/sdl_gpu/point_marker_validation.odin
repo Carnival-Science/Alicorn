@@ -27,6 +27,10 @@ point_marker_validation_fail :: proc(message: string) -> ! {
 	os.exit(1)
 }
 
+point_marker_validation_trace :: proc(enabled: bool, stage: string) {
+	if enabled { fmt.println("issue_201_trace", "stage", stage) }
+}
+
 point_marker_validation_percentile :: proc(values: []i64, percentile: f32) -> i64 {
 	if len(values) == 0 { return 0 }
 	sorted := make([]i64, len(values), allocator=context.temp_allocator)
@@ -260,36 +264,48 @@ point_marker_validation_run_case :: proc(
 	benchmark: bool,
 ) {
 	marker_name := "3x3" if marker_size == .Three else "4x4"
+	trace := logical_width == 1280 && scale == 1 && marker_size == .Three
+	point_marker_validation_trace(trace, "case-start")
 	pixel_width := int(f32(logical_width)*scale)
 	pixel_height := int(f32(POINT_MARKER_VALIDATION_HEIGHT)*scale)
 	marker_count := (logical_width-1)/3+1
 	allocations := alicorn.Runtime_Allocation_Stats{}
+	point_marker_validation_trace(trace, "runtime-create")
 	rt, surface, runtime_ok := point_marker_validation_create_runtime(logical_width, &allocations, marker_size)
+	point_marker_validation_trace(trace, "runtime-ready")
 	if !runtime_ok { point_marker_validation_fail("runtime fixture could not retain dense markers and lines") }
 	defer if rt.persistent_allocator_state != nil { alicorn.destroy_runtime(&rt) }
+	point_marker_validation_trace(trace, "renderer-create")
 	renderers, renderer_ok := point_marker_validation_renderers_make(device, format, &rt)
+	point_marker_validation_trace(trace, "renderer-ready")
 	if !renderer_ok { point_marker_validation_fail("production surface renderer initialization failed") }
 	defer if renderers.text.device != nil { point_marker_validation_renderers_destroy(&renderers) }
+	point_marker_validation_trace(trace, "target-create")
 	target := sdl3.CreateGPUTexture(device, sdl3.GPUTextureCreateInfo{
 		type=.D2, format=format, usage={.COLOR_TARGET}, width=sdl3.Uint32(pixel_width),
 		height=sdl3.Uint32(pixel_height), layer_count_or_depth=1, num_levels=1, sample_count=._1,
 	})
+	point_marker_validation_trace(trace, "target-ready")
 	if target == nil { point_marker_validation_fail("offscreen marker target creation failed") }
 	defer sdl3.ReleaseGPUTexture(device, target)
 	download := sdl3.CreateGPUTransferBuffer(device, sdl3.GPUTransferBufferCreateInfo{
 		usage=.DOWNLOAD, size=sdl3.Uint32(pixel_width*pixel_height*4),
 	})
+	point_marker_validation_trace(trace, "readback-ready")
 	if download == nil { point_marker_validation_fail("GPU readback buffer creation failed") }
 	defer sdl3.ReleaseGPUTransferBuffer(device, download)
 	pixels := make([]u8, pixel_width*pixel_height*4)
 	defer delete(pixels)
+	point_marker_validation_trace(trace, "first-frame-submit")
 	_, _, initial_ok := point_marker_validation_frame(&rt, &renderers, device, target,
 		sdl3.Uint32(pixel_width), sdl3.Uint32(pixel_height), scale, download, pixels)
+	point_marker_validation_trace(trace, "first-frame-ready")
 	if !initial_ok { point_marker_validation_fail("first marker readback frame failed") }
 	command, found := native_surface_test_geometry_command(&rt, surface)
 	if !found || !native_surface_rebuild_mesh(&renderers.geometry, command, scale, scale) {
 		point_marker_validation_fail("retained mesh rebuild failed after readback")
 	}
+	point_marker_validation_trace(trace, "mesh-ready")
 	expected_vertices := (marker_count+2 + marker_count-1)*6
 	if len(renderers.geometry.vertices) != expected_vertices || expected_vertices > alicorn.GPU_SURFACE_MAX_VERTICES {
 		point_marker_validation_fail("native dense marker and line mesh exceeded the bounded vertex expectation")
@@ -303,10 +319,12 @@ point_marker_validation_run_case :: proc(
 	markers[marker_count+1] = {center={f32(logical_width+1), 1}, diameter=4, color={1, 1, 1, 1}}
 	defer delete(markers)
 	info, info_ok := alicorn.node_info(&rt, surface)
+	point_marker_validation_trace(trace, "readback-compare")
 	if !info_ok || !point_marker_validation_compare_readback(
 		fmt.tprintf("%dpx-%s", logical_width, marker_name), markers,
 		info.bounds, logical_width, pixel_width, pixel_height, scale, pixels,
 	) { point_marker_validation_fail("native readback did not match the analytic wx-ellipse coverage reference") }
+	point_marker_validation_trace(trace, "readback-passed")
 	// The viewport's edge scissor must clip the auxiliary circles whose centers
 	// are outside the retained geometry surface.
 	if point_marker_validation_pixel_alpha(pixels, pixel_width, pixel_width-1, 0) == 0 {
