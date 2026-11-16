@@ -116,13 +116,9 @@ point_marker_validation_create_runtime :: proc(
 	markers[count+0] = {center={-1, 1}, diameter=4, color={1, 1, 1, 1}}
 	markers[count+1] = {center={f32(logical_width+1), 1}, diameter=4, color={1, 1, 1, 1}}
 	if !alicorn.gpu_surface_update_geometry_with_markers(rt, surface, segments, nil, markers) {
-		delete(segments)
-		delete(markers)
 		return surface, false
 	}
 	point_marker_validation_trace(trace, "payload-retained")
-	delete(segments)
-	delete(markers)
 	return surface, true
 }
 
@@ -325,7 +321,6 @@ point_marker_validation_run_case :: proc(
 	}
 	markers[marker_count+0] = {center={-1, 1}, diameter=4, color={1, 1, 1, 1}}
 	markers[marker_count+1] = {center={f32(logical_width+1), 1}, diameter=4, color={1, 1, 1, 1}}
-	defer delete(markers)
 	info, info_ok := alicorn.node_info(&rt, surface)
 	point_marker_validation_trace(trace, "readback-compare")
 	if !info_ok || !point_marker_validation_compare_readback(
@@ -347,13 +342,8 @@ point_marker_validation_run_case :: proc(
 	update_ns := make([]i64, POINT_MARKER_VALIDATION_SAMPLES, allocator=context.temp_allocator)
 	encode_ns := make([]i64, POINT_MARKER_VALIDATION_SAMPLES, allocator=context.temp_allocator)
 	submit_wait_ns := make([]i64, POINT_MARKER_VALIDATION_SAMPLES, allocator=context.temp_allocator)
-	defer delete(update_ns)
-	defer delete(encode_ns)
-	defer delete(submit_wait_ns)
 	bench_segments := make_dense_marker_segments(marker_count)
-	defer delete(bench_segments)
 	bench_markers := make([]alicorn.GPU_Surface_Point_Marker, marker_count, allocator=context.temp_allocator)
-	defer delete(bench_markers)
 	for i in 0..<marker_count {
 		bench_markers[i] = {
 			center={f32(i*3), 16}, diameter=f32(3) if marker_size == .Three else f32(4),
