@@ -11,9 +11,20 @@ Audacity's `WaveformView::Draw` sample editor draws one 3×3 or 4×4 logical-pix
 ellipse per visible sample, with connected waveform segments. The audited
 read-only checkout was at `449db4f977`; `src/tracks/playabletrack/wavetrack/ui/WaveformView.cpp`
 sets `tickSize = bigPoints ? 4 : 3`, then passes the square rect to
-`wxDC::DrawEllipse`. At 3 logical pixels per sample, a
+`wxDC::DrawEllipse` after positioning its top-left at `sample - tickSize/2`
+using integer division. The equivalent ellipse center is therefore the sample
+coordinate plus 0.5 logical pixels for 3×3 markers and unchanged for 4×4
+markers; the GPU fixture preserves this offset at fractional DPI. At 3 logical
+pixels per sample, a
 1,280px view needs 427 markers and 426 segments; a 1,920px view needs 640
 markers and 639 segments.
+
+wxWidgets does not specify one raster mask for small ellipses across native
+backends. Audacity also explicitly disables graphics-context antialiasing for
+waveform drawing on macOS in `WaveformView.cpp` (`__WXMAC__`). Therefore, the
+analytic ellipse comparison is an Alicorn coverage/geometry check, not a claim
+of exact wx pixel parity. A true parity check needs separate captures from the
+same Audacity wx build and platform drawing context at each target scale.
 
 Alicorn already has a presentation-only `GPU_Surface_Point_Marker`. Each marker
 and each line segment expands to six vertices, so the batches cost 5,118 and

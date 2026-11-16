@@ -22,6 +22,14 @@ Point_Marker_Validation_Renderers :: struct {
 	solid: Native_Solid_Renderer,
 }
 
+point_marker_validation_sample_center :: proc(index: int, marker_size: Point_Marker_Validation_Size) -> alicorn.GPU_Surface_Point {
+	// Audacity's WaveformView draws a `tickSize` rect from sample minus
+	// integer(tickSize/2). Odd 3px markers therefore center half a logical pixel
+	// after the sample coordinate; 4px markers center on it.
+	offset := f32(0.5) if marker_size == .Three else f32(0)
+	return {f32(index*3)+offset, 16+offset}
+}
+
 point_marker_validation_fail :: proc(message: string) -> ! {
 	fmt.eprintln("issue_201_point_marker_validation", "FAIL", message, "SDL", sdl3.GetError())
 	os.exit(1)
@@ -99,7 +107,8 @@ point_marker_validation_create_runtime :: proc(
 	for i in 0..<count {
 		diameter := f32(3) if marker_size == .Three else f32(4)
 		markers[i] = alicorn.GPU_Surface_Point_Marker{
-			center={f32(i*3), 16}, diameter=diameter, color={1, 1, 1, 1},
+			center=point_marker_validation_sample_center(i, marker_size),
+			diameter=diameter, color={1, 1, 1, 1},
 		}
 	}
 	// Two extra samples exercise surface clipping at both horizontal edges.
@@ -302,7 +311,10 @@ point_marker_validation_run_case :: proc(
 	markers := make([]alicorn.GPU_Surface_Point_Marker, marker_count+2, allocator=context.temp_allocator)
 	for i in 0..<marker_count {
 		diameter := f32(3) if marker_size == .Three else f32(4)
-		markers[i] = {center={f32(i*3), 16}, diameter=diameter, color={1, 1, 1, 1}}
+		markers[i] = {
+			center=point_marker_validation_sample_center(i, marker_size),
+			diameter=diameter, color={1, 1, 1, 1},
+		}
 	}
 	markers[marker_count+0] = {center={-1, 1}, diameter=4, color={1, 1, 1, 1}}
 	markers[marker_count+1] = {center={f32(logical_width+1), 1}, diameter=4, color={1, 1, 1, 1}}
@@ -330,7 +342,8 @@ point_marker_validation_run_case :: proc(
 	bench_markers := make([]alicorn.GPU_Surface_Point_Marker, marker_count, allocator=context.temp_allocator)
 	for i in 0..<marker_count {
 		bench_markers[i] = {
-			center={f32(i*3), 16}, diameter=f32(3) if marker_size == .Three else f32(4),
+			center=point_marker_validation_sample_center(i, marker_size),
+			diameter=f32(3) if marker_size == .Three else f32(4),
 			color={1, 1, 1, 1},
 		}
 	}
