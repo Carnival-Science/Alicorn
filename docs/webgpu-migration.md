@@ -1768,12 +1768,14 @@ future SDL3/WebGPU native host can preserve the same Alicorn event semantics.
 The mapping tests cover logical pointer coordinates, modifier snapshots,
 Control-primary mapping policy (including macOS control-click), click counts,
 stable down/up button mapping, focus-loss cleanup, wheel direction/metadata,
-focused-control/context-menu key actions, and platform-specific text editing
-navigation including word, line, and document movement/deletion.
+focused-control/context-menu key actions, platform-specific text editing
+navigation including word, line, and document movement/deletion, and event-to-
+window ownership for window, keyboard, pointer, text/IME, drop, and process-level
+events.
 
 Validation with `C:\odin\odin.exe` (`dev-2026-11-nightly:08539cd`) on Windows:
 
-- `odin test host/sdl3 -collection:alicorn=...` passed all 5 tests.
+- `odin test host/sdl3 -collection:alicorn=...` passed all 6 tests.
 - The full `tools/test.ps1 -Odin C:\odin\odin.exe` suite passed, including
   the new SDL3 host tests, 356 Runtime tests, 40 UI tests, 197 native SDL_GPU
   tests, and the existing AccessKit, restoration, and native text-input checks.
