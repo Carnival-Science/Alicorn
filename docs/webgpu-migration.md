@@ -857,6 +857,49 @@ does not simulate driver/OS-initiated device loss. Intentional `DeviceDestroy`
 callback delivery remains a separate test result; genuine loss and recovery
 remain open Phase 0/3 gates.
 
+## Output-scoped display routing on native and browser surfaces (Windows, 2026-11-16)
+
+`paint_display_list_for_output` now produces a borrowed command view for one
+registered retained root. It filters out unrelated output subtrees while
+preserving paint order, carries the output identity and its published revision,
+and retains Runtime-wide owner-zero transient overlays. The WebGPU presenter
+rejects a tagged view paired with a different output ID, including when both
+outputs happen to share the same revision. The view is allocated from Runtime
+scratch storage and must be consumed synchronously on the Runtime owner thread.
+
+The native SDL surface fixture and browser canvas fixture both use this query
+and the same `WebGPU_Presenter_Encode` compositor. The native host still owns
+surface acquisition, command submission, completion polling, and presentation;
+the browser host still owns canvas sizing, callbacks, and event scheduling.
+
+Validation on Windows x64 with `C:\odin\odin.exe` and the NVIDIA RTX 2080 SUPER:
+
+- `odin test runtime`: 354 tests passed, including output-subtree filtering,
+  shared overlay routing, output identity/revision tags, and an older but still
+  current untouched-output revision.
+- `odin test renderer/webgpu`: 6 presenter tests passed, including rejection
+  of a view tagged for a sibling output.
+- `tools/test.ps1 -Odin C:\odin\odin.exe`: passed the full Windows regression
+  script, including 354 Runtime tests, 197 SDL_GPU tests, AccessKit ABI/UIA,
+  restoration, and native host contracts.
+- `examples/15_webgpu_feasibility/build.ps1 -Odin C:\odin\odin.exe`: built
+  the native fixtures and `js_wasm32` browser target.
+- The native SDL surface smoke completed output-scoped submissions through
+  queue serial 17 with zero work in flight and exited successfully on Vulkan.
+- The live browser canvas reported output `1` acknowledged at revision `20`,
+  queue serial `10` completed, and no animation-frame requests during the next
+  500 ms (22 requests total, including two initialization wake frames).
+- `git diff --check` passed.
+
+The browser run's adapter acceleration class remains unrecorded, and the
+automation screenshot capture timed out; the browser's live accessibility
+status exposed the successful output acknowledgement and completion instead.
+This is fixture-level native/browser host evidence, not a production `ui.run`
+integration or a pixel capture. Externally managed third-party native surfaces,
+physical browser acceleration classification, and device-loss recovery remain
+open. Intentional `DeviceDestroy` callback evidence is still tracked separately
+from driver/OS-initiated loss.
+
 ## Phase 2 image renderer slice (2026-11-15)
 
 `renderer/webgpu/images.odin` now renders Runtime-owned images through the same
