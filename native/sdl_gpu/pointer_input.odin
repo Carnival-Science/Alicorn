@@ -7,22 +7,9 @@ import sdl_host "alicorn:host/sdl3"
 // native_route_focused_control_key is kept separate from the event loop so the
 // platform key convention for retained controls can be verified headlessly.
 native_route_focused_control_key :: proc(rt: ^alicorn.Runtime, key: sdl3.Keycode) -> bool {
-	switch key {
-	case sdl3.K_SPACE:
-		return alicorn.application_route_focused_control_key(rt, .Toggle)
-	case sdl3.K_RETURN, sdl3.K_KP_ENTER:
-		return alicorn.application_route_focused_control_key(rt, .Return)
-	case sdl3.K_LEFT, sdl3.K_DOWN:
-		return alicorn.application_route_focused_control_key(rt, .Left)
-	case sdl3.K_RIGHT, sdl3.K_UP:
-		return alicorn.application_route_focused_control_key(rt, .Right)
-	case sdl3.K_HOME:
-		return alicorn.application_route_focused_control_key(rt, .Home)
-	case sdl3.K_END:
-		return alicorn.application_route_focused_control_key(rt, .End)
-	case:
-		return false
-	}
+	key_action, mapped := sdl_host.focused_control_key_from_sdl(key)
+	if !mapped { return false }
+	return alicorn.application_route_focused_control_key(rt, key_action)
 }
 
 pointer_modifiers_from_sdl :: proc(mod: sdl3.Keymod) -> alicorn.Input_Modifiers {

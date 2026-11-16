@@ -77,3 +77,36 @@ test_sdl_pointer_modifier_cache_clears_on_focus_loss :: proc(t: ^testing.T) {
 	pointer_modifier_state_update(&modifiers, event)
 	testing.expect(t, modifiers == sdl3.Keymod{}, "focus loss clears modifiers when key-up may be missing")
 }
+
+@(test)
+test_sdl_control_key_mappings_are_backend_independent :: proc(t: ^testing.T) {
+	focused_cases := [6]struct { key: sdl3.Keycode, action: alicorn.Application_Key }{
+		{sdl3.K_SPACE, .Toggle},
+		{sdl3.K_RETURN, .Return},
+		{sdl3.K_LEFT, .Left},
+		{sdl3.K_UP, .Right},
+		{sdl3.K_HOME, .Home},
+		{sdl3.K_END, .End},
+	}
+	for c in focused_cases {
+		action, ok := focused_control_key_from_sdl(c.key)
+		testing.expect(t, ok && action == c.action, "focused-control key maps to the expected Runtime action")
+	}
+	_, ok := focused_control_key_from_sdl(sdl3.K_ESCAPE)
+	testing.expect(t, !ok, "unhandled focused-control keys stay available to later host routing")
+
+	context_cases := [7]struct { key: sdl3.Keycode, action: alicorn.Context_Menu_Key }{
+		{sdl3.K_UP, .Up},
+		{sdl3.K_DOWN, .Down},
+		{sdl3.K_HOME, .Home},
+		{sdl3.K_END, .End},
+		{sdl3.K_RETURN, .Activate},
+		{sdl3.K_SPACE, .Activate},
+		{sdl3.K_ESCAPE, .Cancel},
+	}
+	for c in context_cases {
+		testing.expect(t, context_menu_key_from_sdl(c.key) == c.action, "context-menu key maps to the expected Runtime action")
+	}
+	testing.expect(t, context_menu_key_from_sdl(sdl3.K_TAB) == .Other,
+		"unhandled context-menu keys remain available to Tab traversal and app shortcuts")
+}

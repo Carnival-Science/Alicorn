@@ -107,6 +107,30 @@ pointer_modifier_state_update :: proc(modifiers: ^sdl3.Keymod, event: sdl3.Event
 	}
 }
 
+focused_control_key_from_sdl :: proc(key: sdl3.Keycode) -> (mapped: alicorn.Application_Key, ok: bool) {
+	switch key {
+	case sdl3.K_SPACE: return .Toggle, true
+	case sdl3.K_RETURN, sdl3.K_KP_ENTER: return .Return, true
+	case sdl3.K_LEFT, sdl3.K_DOWN: return .Left, true
+	case sdl3.K_RIGHT, sdl3.K_UP: return .Right, true
+	case sdl3.K_HOME: return .Home, true
+	case sdl3.K_END: return .End, true
+	case: return {}, false
+	}
+}
+
+context_menu_key_from_sdl :: proc(key: sdl3.Keycode) -> alicorn.Context_Menu_Key {
+	switch key {
+	case sdl3.K_UP: return .Up
+	case sdl3.K_DOWN: return .Down
+	case sdl3.K_HOME: return .Home
+	case sdl3.K_END: return .End
+	case sdl3.K_RETURN, sdl3.K_KP_ENTER, sdl3.K_SPACE: return .Activate
+	case sdl3.K_ESCAPE: return .Cancel
+	case: return .Other
+	}
+}
+
 scroll_event_from_sdl :: proc(wheel: sdl3.MouseWheelEvent, modifiers: alicorn.Input_Modifiers) -> alicorn.Scroll_Event {
 	// SDL X is positive toward the right of the document; Alicorn's deltas
 	// describe content motion (positive right/down), so only X needs negating.
