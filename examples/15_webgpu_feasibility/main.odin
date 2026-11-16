@@ -7,7 +7,6 @@ import alicorn "../../runtime"
 import "vendor:wgpu"
 import runa "../../third_party/Runa"
 import webgpu_renderer "../../renderer/webgpu"
-import presentation_host "../../host/presentation"
 
 ANIMATION_SECONDS :: 1.8
 VERTEX_CAPACITY :: 256 * 1024
@@ -59,8 +58,6 @@ state: struct {
 	adapter: wgpu.Adapter,
 	device: wgpu.Device,
 	queue: wgpu.Queue,
-	native_hosted: alicorn.Hosted_Runtime,
-	native_hosted_presenter: presentation_host.Hosted_Surface_Presenter,
 	native_hosted_ready: bool,
 	native_hosted_presented: bool,
 	native_hosted_smoke_click_sent: bool,

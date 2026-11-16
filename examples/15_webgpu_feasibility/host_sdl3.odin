@@ -9,12 +9,13 @@ import "vendor:wgpu"
 import SDL "vendor:sdl3"
 import "vendor:wgpu/sdl3glue"
 import alicorn "../../runtime"
-import presentation_host "../../host/presentation"
+import native_sdl3_host "../../host/sdl3"
 
 OS :: struct {
 	window: ^SDL.Window,
-	hosted_wake_event_type: SDL.EventType,
 }
+
+native_hosted_application: native_sdl3_host.SDL3_WebGPU_Application
 
 SMOKE_TIMEOUT_SECONDS :: 15.0
 
@@ -33,8 +34,6 @@ os_init :: proc() {
 	if !SDL.Init({.VIDEO}) { fmt.panicf("SDL init failed: %s",SDL.GetError()) }
 	state.os.window=SDL.CreateWindow("Alicorn WebGPU feasibility",960,540,{.RESIZABLE,.HIGH_PIXEL_DENSITY})
 	if state.os.window==nil { fmt.panicf("SDL window creation failed: %s",SDL.GetError()) }
-	state.os.hosted_wake_event_type = SDL.EventType(SDL.RegisterEvents(1))
-	if state.os.hosted_wake_event_type == SDL.EventType(0) { fmt.panicf("SDL hosted WebGPU wake event registration failed") }
 }
 
 os_run :: proc() {
@@ -52,9 +51,10 @@ os_run :: proc() {
 		}
 		when FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER {
 			if state.ready && state.native_hosted_ready {
-				step, presentation := presentation_host.hosted_surface_presenter_step(
-					&state.native_hosted_presenter, u64(SDL.GetTicksNS()),
+				hosted_step := native_sdl3_host.sdl3_webgpu_application_step(
+					&native_hosted_application, u64(SDL.GetTicksNS()),
 				)
+				step, presentation := hosted_step, hosted_step.presentation
 				if step.status != .Ok {
 					fmt.panicf("native Hosted_Runtime step failed: %v", step.status)
 				}
@@ -144,7 +144,7 @@ os_run :: proc() {
 		when FEASIBILITY_TEST_NATIVE_HOSTED_SMOKE {
 			if state.native_hosted_presented &&
 			   state.native_hosted_app.click_count > 0 && state.native_hosted_resize_presented &&
-			   !presentation_host.hosted_surface_presenter_has_in_flight(&state.native_hosted_presenter) &&
+			   !native_sdl3_host.sdl3_webgpu_application_has_in_flight(&native_hosted_application) &&
 			   !state.readback_pending && !state.queue_work_done_pending {
 				state.quit = true
 			}
@@ -190,7 +190,7 @@ os_run :: proc() {
 		needs_wakeup := state.dirty || state.readback_pending || state.queue_work_done_pending || state.animation_seconds < ANIMATION_SECONDS
 		needs_wakeup = needs_wakeup || state.surface_presenter_completion_pending
 		when FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER {
-			needs_wakeup = needs_wakeup || presentation_host.hosted_surface_presenter_has_in_flight(&state.native_hosted_presenter)
+			needs_wakeup = needs_wakeup || native_sdl3_host.sdl3_webgpu_application_has_in_flight(&native_hosted_application)
 			needs_wakeup = needs_wakeup || state.native_hosted_has_more_work
 		}
 		when FEASIBILITY_TEST_SURFACE_PRESENTER {
@@ -257,28 +257,17 @@ handle_event :: proc(event:SDL.Event) {
 	case .WINDOW_RESIZED,.WINDOW_PIXEL_SIZE_CHANGED: resize()
 	case .WINDOW_HIDDEN,.WINDOW_MINIMIZED:
 		when FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER {
-			_ = presentation_host.hosted_surface_presenter_set_visible(&state.native_hosted_presenter, false)
+				_ = native_sdl3_host.sdl3_webgpu_application_set_visible(&native_hosted_application, false)
 		}
 	case .WINDOW_SHOWN,.WINDOW_RESTORED:
 		when FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER {
-			_ = presentation_host.hosted_surface_presenter_set_visible(&state.native_hosted_presenter, true)
+				_ = native_sdl3_host.sdl3_webgpu_application_set_visible(&native_hosted_application, true)
 		}
-	case .MOUSE_MOTION:
+	case .WINDOW_FOCUS_GAINED, .WINDOW_FOCUS_LOST, .KEY_DOWN, .KEY_UP,
+	     .MOUSE_MOTION, .MOUSE_BUTTON_DOWN, .MOUSE_BUTTON_UP, .MOUSE_WHEEL:
 		when FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER {
-			_, status := alicorn.hosted_runtime_pointer(&state.native_hosted, alicorn.Pointer_Event{
-				kind=.Move, x=event.motion.x, y=event.motion.y, timestamp_ns=u64(SDL.GetTicksNS()),
-			})
-			if status != .Ok { fmt.panicf("native Hosted_Runtime pointer move failed: %v", status) }
-		}
-	case .MOUSE_BUTTON_DOWN,.MOUSE_BUTTON_UP:
-		when FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER {
-			kind := alicorn.Pointer_Kind.Down if event.type == .MOUSE_BUTTON_DOWN else .Up
-			_, status := alicorn.hosted_runtime_pointer(&state.native_hosted, alicorn.Pointer_Event{
-				kind=kind, x=event.button.x, y=event.button.y,
-				button=int(event.button.button), click_count=event.button.clicks,
-				timestamp_ns=u64(SDL.GetTicksNS()),
-			})
-			if status != .Ok { fmt.panicf("native Hosted_Runtime pointer button failed: %v", status) }
+			result := native_sdl3_host.sdl3_webgpu_application_handle_event(&native_hosted_application, event)
+			if result == .Failure { fmt.panicf("native SDL3/WebGPU event routing failed for %v", event.type) }
 		}
 	}
 }
@@ -295,7 +284,7 @@ os_get_surface :: proc(instance:wgpu.Instance)->wgpu.Surface {
 os_process_gpu_events :: proc() {
 	needs_poll := state.readback_pending || state.queue_work_done_pending || state.surface_presenter_completion_pending
 	when FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER {
-		needs_poll = needs_poll || presentation_host.hosted_surface_presenter_has_in_flight(&state.native_hosted_presenter)
+		needs_poll = needs_poll || native_sdl3_host.sdl3_webgpu_application_has_in_flight(&native_hosted_application)
 	}
 	when FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY {
 		needs_poll = needs_poll || (!state.ready && !state.device_lost)
@@ -322,43 +311,22 @@ os_process_gpu_events :: proc() {
 }
 
 native_hosted_init :: proc() {
-	logical_width, logical_height: i32
-	pixel_width, pixel_height: i32
-	if !SDL.GetWindowSize(state.os.window, &logical_width, &logical_height) ||
-	   !SDL.GetWindowSizeInPixels(state.os.window, &pixel_width, &pixel_height) ||
-	   logical_width <= 0 || logical_height <= 0 || pixel_width <= 0 || pixel_height <= 0 {
-		fmt.panicf("native Hosted_Runtime could not query initial window metrics")
-	}
-	dpi := f32(pixel_width) / f32(logical_width)
 	state.native_hosted_app = {}
 	host_config := alicorn.Hosted_Runtime_Config{
 		state=rawptr(&state.native_hosted_app),
-		logical_width=int(logical_width),
-		logical_height=int(logical_height),
-		pixel_width=int(pixel_width),
-		pixel_height=int(pixel_height),
-		dpi_scale=dpi,
-		post_wake_data=rawptr(&state.os),
-		post_wake=native_hosted_post_wake,
 		render=native_hosted_render,
 		on_initialize=native_hosted_initialize_runtime,
 	}
-	if status := alicorn.hosted_runtime_init(&state.native_hosted, host_config); status != .Ok {
-		fmt.panicf("native Hosted_Runtime initialization failed: %v", status)
-	}
-	if result := presentation_host.hosted_surface_presenter_init(
-		&state.native_hosted_presenter,
-		&state.native_hosted,
+	if result := native_sdl3_host.sdl3_webgpu_application_init(
+		&native_hosted_application,
+		host_config,
+		state.os.window,
 		state.surface,
 		state.device,
 		state.queue,
 		state.config,
-		int(logical_width), int(logical_height), dpi,
-		rawptr(&state.os), native_hosted_surface_wake,
-		wgpu.Color{0.04, 0.06, 0.08, 1},
 	); result != .Ok {
-		_ = alicorn.hosted_runtime_destroy(&state.native_hosted)
-		fmt.panicf("native Hosted_Surface_Presenter initialization failed: %v", result)
+		fmt.panicf("native SDL3/WebGPU application initialization failed: %v", result)
 	}
 	state.native_hosted_ready = true
 	state.animation_seconds = ANIMATION_SECONDS
@@ -381,12 +349,7 @@ native_hosted_resize :: proc() {
 		fmt.printf("[webgpu-feasibility] native hosted SDL resize applied PASS logical=%dx%d pixel=%dx%d\n",
 			logical_width, logical_height, pixel_width, pixel_height)
 	}
-	dpi := f32(pixel_width) / f32(logical_width) if logical_width > 0 else 1
-	result := presentation_host.hosted_surface_presenter_resize(
-		&state.native_hosted_presenter,
-		int(logical_width), int(logical_height),
-		int(pixel_width), int(pixel_height), dpi,
-	)
+	result := native_sdl3_host.sdl3_webgpu_application_resize(&native_hosted_application)
 	if result != .Ok && result != .Suspended {
 		fmt.panicf("native Hosted_Runtime resize failed: %v", result)
 	}
@@ -429,7 +392,7 @@ native_hosted_render :: proc(data: rawptr, ui: ^alicorn.UI, _width, _height: int
 }
 
 native_hosted_smoke_click_button :: proc() {
-	rt, borrow_status := alicorn.hosted_runtime_borrow(&state.native_hosted)
+	rt, borrow_status := alicorn.hosted_runtime_borrow(&native_hosted_application.hosted)
 	if borrow_status != .Ok || rt == nil { fmt.panicf("native hosted smoke could not borrow its Runtime") }
 	id, found := alicorn.node_by_key(rt, alicorn.key_string("native-hosted-button"), .Button)
 	if !found { fmt.panicf("native hosted smoke button is absent after its first frame") }
@@ -437,11 +400,11 @@ native_hosted_smoke_click_button :: proc() {
 	if !info_found { fmt.panicf("native hosted smoke button geometry is unavailable") }
 	x := info.bounds.x + info.bounds.w * 0.5
 	y := info.bounds.y + info.bounds.h * 0.5
-	_, down_status := alicorn.hosted_runtime_pointer(&state.native_hosted, alicorn.Pointer_Event{
+	down_status := native_sdl3_host.sdl3_webgpu_application_pointer(&native_hosted_application, alicorn.Pointer_Event{
 		kind=.Down, x=x, y=y, button=alicorn.POINTER_BUTTON_PRIMARY,
 		click_count=1, timestamp_ns=u64(SDL.GetTicksNS()),
 	})
-	_, up_status := alicorn.hosted_runtime_pointer(&state.native_hosted, alicorn.Pointer_Event{
+	up_status := native_sdl3_host.sdl3_webgpu_application_pointer(&native_hosted_application, alicorn.Pointer_Event{
 		kind=.Up, x=x, y=y, button=alicorn.POINTER_BUTTON_PRIMARY,
 		click_count=1, timestamp_ns=u64(SDL.GetTicksNS()),
 	})
@@ -451,31 +414,18 @@ native_hosted_smoke_click_button :: proc() {
 	fmt.printf("[webgpu-feasibility] native hosted pointer routed through Hosted_Runtime PASS target=%d\n", id)
 }
 
-native_hosted_post_wake :: proc(data: rawptr) -> bool {
-	os := cast(^OS)data
-	if os == nil || os.hosted_wake_event_type == SDL.EventType(0) { return false }
-	event := SDL.Event{type=os.hosted_wake_event_type}
-	return SDL.PushEvent(&event)
-}
-
-native_hosted_surface_wake :: proc(data: rawptr) {
-	_ = native_hosted_post_wake(data)
-}
-
 native_hosted_shutdown :: proc() {
 	if !state.native_hosted_ready { return }
-	if presentation_host.hosted_surface_presenter_has_in_flight(&state.native_hosted_presenter) {
+	if native_sdl3_host.sdl3_webgpu_application_has_in_flight(&native_hosted_application) {
 		// Keep callback-owned Runtime and presenter state alive until the final
 		// native queue serial retires. This wait occurs only during fixture shutdown.
 		_ = wgpu.DevicePoll(state.device, true)
 		if state.instance != nil { wgpu.InstanceProcessEvents(state.instance) }
 	}
-	if !presentation_host.hosted_surface_presenter_destroy(&state.native_hosted_presenter) {
-		fmt.println("[webgpu-feasibility] native hosted presenter is still in flight at shutdown")
+	if !native_sdl3_host.sdl3_webgpu_application_destroy(&native_hosted_application) {
+		fmt.println("[webgpu-feasibility] native SDL3/WebGPU application is still in flight at shutdown")
 		return
 	}
-	status := alicorn.hosted_runtime_destroy(&state.native_hosted)
-	if status != .Ok { fmt.printf("[webgpu-feasibility] native Hosted_Runtime destroy failed: %v\n", status) }
 	state.native_hosted_ready = false
 }
 
