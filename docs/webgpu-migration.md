@@ -56,7 +56,7 @@ uploads remain renderer-specific.
 
 | Phase | Exit evidence | Status |
 | --- | --- | --- |
-| 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: the pre-change Windows SDL_GPU reference and a supplemental D3D12 effects profile are recorded in `docs/validation/sdl-gpu-reference-windows-2026-11-15.md`; Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes, but the browser adapter acceleration class is not surfaced. Physical Linux GPU/Wayland, genuine driver/OS loss and recovery, same-workload production comparison, and application-level stage/working-set measurements remain open |
+| 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: the pre-change Windows SDL_GPU reference and a supplemental D3D12 effects profile are recorded in `docs/validation/sdl-gpu-reference-windows-2026-11-15.md`; Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes. Windows browser canvas resize now verifies retained-only redraw with a fresh output revision and no UI re-description. The browser adapter acceleration class is not surfaced. Physical Linux GPU/Wayland, genuine driver/OS loss and recovery, same-workload production comparison, and application-level stage/working-set measurements remain open |
 | 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring and CPU preparation are SDL-independent; `renderer/webgpu/presenter.odin` consumes a borrowed finalized display list and encodes into caller-owned WebGPU frame objects, with queue submission and async completion owned by the host. `paint_display_list_for_output` now routes commands by disjoint retained root, preserves paint order and shared owner-zero overlays, and tags the view with that output's identity and revision. Native D3D12/Vulkan fixture parity passes and the package builds for `js_wasm32`. Production SDL3/window and browser host integration, native `ui.run` target selection, and full downstream app import migration remain outstanding |
 | 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and D3D12 fixtures exercise per-resource custom-surface caching, budget pressure, in-flight protection, instance transforms, readback, and resize. One shared compositor preserves interleaved paint order; text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, clipping, waveform samples, and cropped mixed-renderer readback pass Windows D3D12 and the current browser WebGPU readback. Shared CPU backdrop planning/meshes feed renderer-owned WebGPU prefix capture, filtering, and in-order composition for up to four markers within one aggregate 48 MiB tracked mesh+texture allocation budget. Two overlapping markers pass pixel readback on Windows D3D12/Vulkan and browser WebGPU; the later marker's capture includes the earlier marker's composed result. D3D12 also verifies unchanged-prefix reuse, changed-prefix invalidation, resized-target retirement behind the prior queue serial, and exact ordinary-paint parity when a valid effect exceeds budget. Six shared WGSL sources are compile-time loaded for native and `js_wasm32` builds. A Windows-only fixture slice verifies one per-corner rounded relief surface under increased contrast and reduced transparency on D3D12/Vulkan; its WASM build passes, but those new material pixels have not yet been replayed in a browser. Full theme/accessibility combinations, application host presentation, and broader cross-platform GPU validation remain open |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | In progress: image, custom-geometry, and backdrop resources have bounded asynchronous retirement and completion-driven release tests; async readback is exercised. Same-device compositor teardown/rebuild now reproduces every RGBA pixel on Windows D3D12 and Vulkan from retained Runtime products. Genuine driver/OS device loss and device recovery, plus primary/secondary window teardown/recreation, remain unvalidated. Intentional `DeviceDestroy` callbacks are tracked separately and do not count as driver-loss evidence |
@@ -1432,3 +1432,29 @@ This is exact pixel evidence for rebuilding renderer-owned cache state after
 intentional compositor teardown while the WebGPU device remains alive. It does
 not simulate spontaneous driver/OS device loss, recreate a WebGPU device, or
 validate production window teardown. Those remain separate Phase 3 gates.
+
+## Browser canvas resize recovery regression (Windows browser, 2026-11-16)
+
+The feasibility page's **Resize surface** control changes the canvas backing
+size, which clears its presented contents. The Web host now requests a
+presentation-only Runtime frame and flushes the retained display list after
+surface configuration. It checks that a fresh output revision is published;
+the application description and layout are not rerun. The page fetches the
+WASM artifact without HTTP cache reuse so a browser reload cannot silently test
+an older build.
+
+Validation on the local Windows browser with the rebuilt `js_wasm32` artifact:
+
+- After an uncached page reload, resizing in both directions kept the retained
+  scene visible. The output revision advanced `76 -> 77` at `870x489`, then
+  `77 -> 78` at `1208x679`.
+- Each resize logged `surface resize retained redraw PASS`; the browser
+  presenter acknowledged and completed the new output. The page returned to
+  its settled state without a continuous animation-frame loop.
+- `odin test runtime` passed all 354 Runtime tests. The feasibility build
+  completed for native fixtures and `js_wasm32`.
+
+This is live browser surface-reconfiguration correctness evidence. It does not
+identify whether the browser adapter is hardware accelerated, measure visible
+frame latency, or establish native resize behavior for this exact retained-only
+redraw path. Those platform and performance checks remain open.
