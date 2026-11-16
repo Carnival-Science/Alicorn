@@ -37,6 +37,8 @@ over that text, another copy of the text below, a one-pixel scissor sentinel,
 clipped tinted icons sampled from both immutable atlas pages, and two Runtime
 images. The images check straight-alpha source-over blending, retained paint
 order, clipped UV/geometry correspondence, and image texture switching.
+Three semantic surfaces also check a horizontal theme-resolved gradient and
+raised/recessed analytic relief using the shared CPU material tessellator.
 Pixel checks assert the opaque overlay remains above earlier text, later text
 remains visible, icon tint appears only inside its clip, and image colors,
 alpha blending, and clipping are correct. One icon requires
@@ -48,7 +50,9 @@ mesh without resending unchanged pixels. Releasing an image while a submitted
 frame uses its texture queues it for retirement; a queue-completion serial
 releases it only after the host reports completion. GPU image residency is
 bounded to 128 MiB, so a host must deliver completion serials to reclaim retired
-bytes under cache pressure. Production application hosts are not integrated yet.
+bytes under cache pressure. Native Vulkan and browser readbacks pass the
+gradient endpoint and raised/recessed face and bevel probes. Production
+application hosts are not integrated yet.
 
 ## Windows native
 

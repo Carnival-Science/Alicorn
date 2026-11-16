@@ -49,6 +49,8 @@ state: struct {
 	text_runtime_ready: bool,
 	compositor: webgpu_renderer.WebGPU_Compositor,
 	compositor_image_a, compositor_image_b: alicorn.Image_Handle,
+	compositor_material_surface_ids: [3]alicorn.Node_ID,
+	compositor_material_surface_bounds: [3]alicorn.Rect,
 	compositor_completion_serial: u64,
 	image_retirement_passed: bool,
 	composite_offscreen_texture: wgpu.Texture,

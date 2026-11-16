@@ -444,11 +444,12 @@ start_offscreen_readback :: proc() {
 	}
 	wgpu.RenderPassEncoderEnd(text_pass)
 	wgpu.RenderPassEncoderRelease(text_pass)
-	// The seven-command synthetic list exercises renderer interleaving: an
+	// The synthetic list exercises renderer interleaving: an
 	// underlay, retained text, an opaque surface over that text, and a second
 	// text copy offset below, a one-pixel scissor sentinel, and a clipped tinted
-	// icon from each immutable atlas page. The first icon must restore the
-	// target scissor after the sentinel, and encoding switches atlas bindings.
+	// icon from each immutable atlas page, analytic material surfaces, and two
+	// Runtime images. The first icon must restore the target scissor after the
+	// sentinel, and encoding switches atlas bindings.
 	mixed_text_command: alicorn.Paint_Command
 	mixed_text_found := false
 	for command in text_display.commands {
@@ -460,7 +461,7 @@ start_offscreen_readback :: proc() {
 	}
 	if !mixed_text_found { fmt.panicf("Alicorn mixed compositor fixture did not find retained text") }
 	composite_clip := alicorn.Rect{0, 0, f32(READBACK_WIDTH), f32(READBACK_HEIGHT)}
-	mixed_commands := make([dynamic]alicorn.Paint_Command, 0, 9, allocator=context.temp_allocator)
+	mixed_commands := make([dynamic]alicorn.Paint_Command, 0, 12, allocator=context.temp_allocator)
 	append(&mixed_commands, alicorn.paint_surface_command(
 		0, composite_clip, composite_clip, alicorn.Color{0.08, 0.12, 0.18, 1},
 	))
@@ -472,6 +473,15 @@ start_offscreen_readback :: proc() {
 	offset_mixed_text.bounds.y += 28
 	offset_mixed_text.clip.y += 28
 	append(&mixed_commands, offset_mixed_text)
+	for command in text_display.commands {
+		if !alicorn.paint_command_is_surface(command) { continue }
+		for surface_id in state.compositor_material_surface_ids {
+			if command.owner == surface_id {
+				append(&mixed_commands, command)
+				break
+			}
+		}
+	}
 	append(&mixed_commands, alicorn.paint_surface_command(
 		0, {0, 0, f32(READBACK_WIDTH), f32(READBACK_HEIGHT)}, {62, 63, 1, 1}, alicorn.Color{0.08, 0.12, 0.18, 1},
 	))
@@ -727,8 +737,54 @@ build_text_runtime :: proc() {
 		text_style=alicorn.Text_Style{font_size=18, overflow=.Clip},
 		color=alicorn.Color{0.95, 0.88, 0.70, 1},
 	)
+	// These surfaces exercise the existing CPU material tessellator through
+	// the shared solid WGSL path, including semantic gradient resolution.
+	probe_material := alicorn.style_material_register(&state.text_runtime, alicorn.Style_Material{
+		kind=.Analytic_Relief,
+		bevel_width=2,
+		bevel_strength=0.8,
+		inner_shadow_strength=0.5,
+	})
+	if probe_material == alicorn.MATERIAL_FLAT { fmt.panicf("Alicorn material fixture could not register analytic relief") }
+	alicorn.container_begin(
+		&ui, .Container, label="webgpu-material-probes",
+		style=alicorn.layout_style(.Row, width=f32(READBACK_WIDTH), height=18, gap=1),
+	)
+	state.compositor_material_surface_ids[0] = alicorn.surface_begin(
+		&ui, alicorn.surface_core_color_role(.Surface),
+		key=alicorn.key_string("webgpu-material-gradient"), label="webgpu-material-gradient",
+		style=alicorn.layout_style(width=20, height=18),
+		fill=alicorn.Color{0.9, 0.1, 0.1, 1},
+		gradient=alicorn.surface_gradient_to(alicorn.surface_core_color_role(.Accent), .Horizontal),
+	)
+	alicorn.surface_end(&ui)
+	state.compositor_material_surface_ids[1] = alicorn.surface_begin(
+		&ui, alicorn.surface_core_color_role(.Surface),
+		key=alicorn.key_string("webgpu-material-raised"), label="webgpu-material-raised",
+		style=alicorn.layout_style(width=20, height=18),
+		material=probe_material, physical_height=1,
+		fill=alicorn.Color{0.4, 0.4, 0.4, 1},
+	)
+	alicorn.surface_end(&ui)
+	state.compositor_material_surface_ids[2] = alicorn.surface_begin(
+		&ui, alicorn.surface_core_color_role(.Surface),
+		key=alicorn.key_string("webgpu-material-recessed"), label="webgpu-material-recessed",
+		style=alicorn.layout_style(width=20, height=18),
+		material=probe_material, physical_height=-1,
+		fill=alicorn.Color{0.4, 0.4, 0.4, 1},
+	)
+	alicorn.surface_end(&ui)
+	alicorn.container_end(&ui)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
+	for index in 0..<len(state.compositor_material_surface_ids) {
+		surface_id := state.compositor_material_surface_ids[index]
+		node, found := state.text_runtime.nodes[surface_id]
+		if !found || node == nil || surface_id == 0 {
+			fmt.panicf("Alicorn material fixture surface %d was not retained", index)
+		}
+		state.compositor_material_surface_bounds[index] = node.bounds
+	}
 	display, display_ok := alicorn.paint_display_list(&state.text_runtime)
 	if !display_ok || len(display.commands) == 0 {
 		fmt.panicf("Alicorn text fixture expected retained text paint commands")
@@ -856,6 +912,24 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		composite_image_blend_pixel := offscreen_pixel(pixels, 8, 52, 3*READBACK_BUFFER_BYTES)
 		composite_image_blue_pixel := offscreen_pixel(pixels, 13, 52, 3*READBACK_BUFFER_BYTES)
 		composite_image_clip_pixel := offscreen_pixel(pixels, 17, 52, 3*READBACK_BUFFER_BYTES)
+		gradient_bounds := state.compositor_material_surface_bounds[0]
+		raised_bounds := state.compositor_material_surface_bounds[1]
+		recessed_bounds := state.compositor_material_surface_bounds[2]
+		gradient_y := clamp(int(gradient_bounds.y+gradient_bounds.h*0.5), 0, READBACK_HEIGHT-1)
+		gradient_left_x := clamp(int(gradient_bounds.x)+4, 0, READBACK_WIDTH-1)
+		gradient_right_x := clamp(int(gradient_bounds.x)+16, 0, READBACK_WIDTH-1)
+		raised_center_x := clamp(int(raised_bounds.x+raised_bounds.w*0.5), 0, READBACK_WIDTH-1)
+		raised_center_y := clamp(int(raised_bounds.y+raised_bounds.h*0.5), 0, READBACK_HEIGHT-1)
+		raised_top_y := clamp(int(raised_bounds.y)+1, 0, READBACK_HEIGHT-1)
+		recessed_center_x := clamp(int(recessed_bounds.x+recessed_bounds.w*0.5), 0, READBACK_WIDTH-1)
+		recessed_center_y := clamp(int(recessed_bounds.y+recessed_bounds.h*0.5), 0, READBACK_HEIGHT-1)
+		recessed_top_y := clamp(int(recessed_bounds.y)+1, 0, READBACK_HEIGHT-1)
+		material_gradient_left_pixel := offscreen_pixel(pixels, gradient_left_x, gradient_y, 3*READBACK_BUFFER_BYTES)
+		material_gradient_right_pixel := offscreen_pixel(pixels, gradient_right_x, gradient_y, 3*READBACK_BUFFER_BYTES)
+		material_raised_interior_pixel := offscreen_pixel(pixels, raised_center_x, raised_center_y, 3*READBACK_BUFFER_BYTES)
+		material_raised_top_pixel := offscreen_pixel(pixels, raised_center_x, raised_top_y, 3*READBACK_BUFFER_BYTES)
+		material_recessed_interior_pixel := offscreen_pixel(pixels, recessed_center_x, recessed_center_y, 3*READBACK_BUFFER_BYTES)
+		material_recessed_top_pixel := offscreen_pixel(pixels, recessed_center_x, recessed_top_y, 3*READBACK_BUFFER_BYTES)
 		composite_overlay_uniform := true
 		for y in 0..<24 {
 			for x in 0..<READBACK_WIDTH {
@@ -930,9 +1004,17 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		image_blend_ok := offscreen_pixel_near(composite_image_blend_pixel, [4]u8{127, 0, 128, 255}, 3)
 		image_blue_ok := offscreen_pixel_near(composite_image_blue_pixel, [4]u8{10, 15, 151, 255}, 3)
 		image_clip_ok := offscreen_pixel_near(composite_image_clip_pixel, [4]u8{20, 31, 46, 255}, 3)
-		ok=clear_ok && solid_ok && checker_ok && patch_ok && blend_ok && glyph_ok && clip_ok && outside_clip_ok && rounded_ok && rounded_corner_ok && last_row_ok && partial_buffer_ok && uniform_ok && display_blend_ok && display_clip_x_ok && display_clip_y_ok && text_visible && composite_overlay_ok && composite_text_visible && composite_icon_visible && composite_icon_clip && composite_second_icon_visible && image_red_ok && image_blend_ok && image_blue_ok && image_clip_ok
-		fmt.printf("[webgpu-feasibility] async RGBA8 readback %s texture=%dx%d row_pitch=%d padding_per_row=%d bytes=%d clear=%v solid=%v checker=%v partial_texture=%v partial_buffer=%v uniform=%v blend=%v glyph=%v clip=%v outside_clip=%v rounded=%v rounded_corner=%v last_row=%v runtime_display_blend=%v runtime_clip_x=%v runtime_clip_y=%v runtime_text_visible=%v composite_overlay_order=%v composite_offset_text=%v composite_icon_visible=%v composite_icon_clip=%v composite_second_icon_page_switch=%v composite_image_red=%v composite_image_alpha_blend=%v composite_image_blue=%v composite_image_clip=%v\n",
-			"PASS" if ok else "FAIL",READBACK_WIDTH,READBACK_HEIGHT,READBACK_BYTES_PER_ROW,READBACK_BYTES_PER_ROW-READBACK_WIDTH*READBACK_BYTES_PER_PIXEL,len(pixels),clear_ok,solid_ok,checker_ok,patch_ok,partial_buffer_ok,uniform_ok,blend_ok,glyph_ok,clip_ok,outside_clip_ok,rounded_ok,rounded_corner_ok,last_row_ok,display_blend_ok,display_clip_x_ok,display_clip_y_ok,text_visible,composite_overlay_ok,composite_text_visible,composite_icon_visible,composite_icon_clip,composite_second_icon_visible,image_red_ok,image_blend_ok,image_blue_ok,image_clip_ok)
+		material_gradient_left_ok := offscreen_pixel_near(material_gradient_left_pixel, [4]u8{193, 47, 60, 255}, 5)
+		material_gradient_right_ok := offscreen_pixel_near(material_gradient_right_pixel, [4]u8{97, 105, 152, 255}, 5)
+		material_raised_interior_ok := offscreen_pixel_near(material_raised_interior_pixel, [4]u8{102, 102, 102, 255}, 2)
+		material_raised_top_ok := offscreen_pixel_near(material_raised_top_pixel, [4]u8{112, 112, 112, 255}, 4)
+		material_recessed_interior_ok := offscreen_pixel_near(material_recessed_interior_pixel, [4]u8{102, 102, 102, 255}, 2)
+		material_recessed_top_ok := offscreen_pixel_near(material_recessed_top_pixel, [4]u8{96, 96, 96, 255}, 4)
+		material_ok := material_gradient_left_ok && material_gradient_right_ok && material_raised_interior_ok &&
+			material_raised_top_ok && material_recessed_interior_ok && material_recessed_top_ok
+		ok=clear_ok && solid_ok && checker_ok && patch_ok && blend_ok && glyph_ok && clip_ok && outside_clip_ok && rounded_ok && rounded_corner_ok && last_row_ok && partial_buffer_ok && uniform_ok && display_blend_ok && display_clip_x_ok && display_clip_y_ok && text_visible && composite_overlay_ok && composite_text_visible && composite_icon_visible && composite_icon_clip && composite_second_icon_visible && image_red_ok && image_blend_ok && image_blue_ok && image_clip_ok && material_ok
+		fmt.printf("[webgpu-feasibility] async RGBA8 readback %s texture=%dx%d row_pitch=%d padding_per_row=%d bytes=%d clear=%v solid=%v checker=%v partial_texture=%v partial_buffer=%v uniform=%v blend=%v glyph=%v clip=%v outside_clip=%v rounded=%v rounded_corner=%v last_row=%v runtime_display_blend=%v runtime_clip_x=%v runtime_clip_y=%v runtime_text_visible=%v composite_overlay_order=%v composite_offset_text=%v composite_icon_visible=%v composite_icon_clip=%v composite_second_icon_page_switch=%v composite_image_red=%v composite_image_alpha_blend=%v composite_image_blue=%v composite_image_clip=%v material_gradient_left=%v material_gradient_right=%v material_raised_face=%v material_raised_bevel=%v material_recessed_face=%v material_recessed_bevel=%v\n",
+			"PASS" if ok else "FAIL",READBACK_WIDTH,READBACK_HEIGHT,READBACK_BYTES_PER_ROW,READBACK_BYTES_PER_ROW-READBACK_WIDTH*READBACK_BYTES_PER_PIXEL,len(pixels),clear_ok,solid_ok,checker_ok,patch_ok,partial_buffer_ok,uniform_ok,blend_ok,glyph_ok,clip_ok,outside_clip_ok,rounded_ok,rounded_corner_ok,last_row_ok,display_blend_ok,display_clip_x_ok,display_clip_y_ok,text_visible,composite_overlay_ok,composite_text_visible,composite_icon_visible,composite_icon_clip,composite_second_icon_visible,image_red_ok,image_blend_ok,image_blue_ok,image_clip_ok,material_gradient_left_ok,material_gradient_right_ok,material_raised_interior_ok,material_raised_top_ok,material_recessed_interior_ok,material_recessed_top_ok)
 	} else {
 		fmt.printf("[webgpu-feasibility] async RGBA8 readback FAIL bytes=%d expected=%d\n",len(pixels),READBACK_TOTAL_BYTES)
 	}

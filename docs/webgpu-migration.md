@@ -1,9 +1,9 @@
 # SDL_GPU to WebGPU migration
 
 Status: Phase 0 remains open for lifecycle, baseline, and performance evidence;
-Phase 2 has bounded solid-surface, text-sampling, icon, image, and mixed
-surface/text/icon/image compositor slices. SDL_GPU remains the only complete
-application renderer and the visual reference.
+Phase 2 has bounded solid-surface, text-sampling, icon, image, material, and
+mixed compositor slices. SDL_GPU remains the only complete application
+renderer and the visual reference.
 
 ## Architecture inventory
 
@@ -56,7 +56,7 @@ backend-neutral; their current native payload renderer is not.
 | --- | --- | --- |
 | 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes on an NVIDIA Turing adapter; physical Linux GPU/Wayland, genuine driver/OS loss and recovery, comparative baselines, and production parity remain open |
 | 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring and CPU surface mesh assembly plus text/image/icon preparation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
-| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and browser WebGPU fixtures exercise solid/text/icon/image pixels; one shared compositor preserves interleaved surface/text/icon/image paint order. Text, icon, and image mesh/texture reuse are asserted. Materials, effects and application host presentation remain outstanding |
+| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and browser WebGPU fixtures exercise solid/text/icon/image/material pixels; one shared compositor preserves interleaved paint order. Text, icon, and image mesh/texture reuse are asserted. Semantic gradients and raised/recessed analytic relief pass representative pixel probes. Rounded/accessibility material parity, custom GPU surfaces, effects, and application host presentation remain outstanding |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | Not started |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
@@ -707,3 +707,24 @@ device-loss/recreation test. The production hosts do not yet call
 `Compositor_Complete_Submission` from their queue-work-done callbacks. Until
 that host bridge exists, the cache's in-flight retirement mechanism is proven
 only by the feasibility fixture; Phase 2 and Phase 3 remain open.
+
+## Phase 2 shared material geometry checks (2026-11-15)
+
+The feasibility runtime now emits three semantic surfaces into the same mixed
+paint list as text, icons, and images: a horizontal theme-resolved gradient,
+an elevated analytic-relief rectangle, and its recessed counterpart. The
+WebGPU solid path uses `renderer/cpu`'s existing material tessellator and
+vertex-color shader; the migration adds no material-specific GPU API or
+duplicate geometry implementation.
+
+The local Windows Vulkan readback and rebuilt browser WebGPU fixture both
+passed the six material pixel probes: two gradient endpoints, raised and
+recessed face colors, and their top bevel colors.
+
+Those expected colors distinguish the gradient direction and confirm the
+relief sign changes the edge tint while leaving the face color unchanged. These
+checks validate representative rectangular materials and semantic gradient
+resolution. Rounded material parity, full theme/accessibility combinations,
+reference pixel comparison against SDL_GPU, custom GPU surfaces, and retained
+material mesh invalidation remain to be measured before claiming material
+parity.
