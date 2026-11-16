@@ -260,6 +260,11 @@ how many one-shot frames occurred while waiting for adapter/device callbacks;
 the browser host must not poll with a continuous animation-frame loop during
 initialization.
 
+The hosted UI includes a retained button and text field. Clicking either
+control should update the retained button state or insert text into the field;
+these interactions wake the same demand-driven browser host and do not switch
+to a separate application-side rendering loop.
+
 Browser WebGPU presents the canvas as part of queue submission. Odin's current
 `vendor:wgpu` binding still types `SurfacePresent` as returning `Status`, while
 its JavaScript bridge implements it as a void no-op. The shared presenter

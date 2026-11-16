@@ -1745,11 +1745,14 @@ Validation with `C:\odin\odin.exe` (`dev-2026-11-nightly:08539cd`) on Windows:
 - The live browser fixture reported WebGPU hardware acceleration
   (`fallback=false`, NVIDIA Turing) and all core, compositor, effects, and
   material readbacks passed.
+- Clicking the retained button updated its visible state; typed text appeared
+  in the retained text field. Both interactions returned to demand-driven idle.
 - Repeatedly toggling **Resize surface** resized the canvas in both directions;
-  retained UI remained visible, no browser runtime error appeared, and the
-  host returned to demand-driven idle after each change.
+  retained UI and the edited field value remained visible, no browser runtime
+  error appeared, and the host returned to demand-driven idle after each change.
 - Native Hosted_Runtime presenter smoke passed on both D3D12 and Vulkan,
   including pointer activation and an 800×450 resize.
+- The full Windows `tools/test.ps1 -Odin C:\odin\odin.exe` suite passed.
 - `git diff --check` passed.
 
 This validates the hosted feasibility path and the browser/native presenter
