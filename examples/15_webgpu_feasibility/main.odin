@@ -19,7 +19,7 @@ CAPTURE_HEIGHT :: READBACK_HEIGHT - CAPTURE_ORIGIN_Y
 READBACK_BYTES_PER_PIXEL :: 4
 READBACK_BYTES_PER_ROW :: 256
 READBACK_BUFFER_BYTES :: READBACK_BYTES_PER_ROW * READBACK_HEIGHT
-READBACK_TARGET_COUNT :: 12
+READBACK_TARGET_COUNT :: 14
 READBACK_TOTAL_BYTES :: READBACK_BUFFER_BYTES * READBACK_TARGET_COUNT
 FEASIBILITY_TEST_DEVICE_LOSS :: #config(FEASIBILITY_TEST_DEVICE_LOSS, false)
 FEASIBILITY_TEST_DEVICE_LOSS_EARLY :: #config(FEASIBILITY_TEST_DEVICE_LOSS_EARLY, false)
@@ -66,6 +66,7 @@ state: struct {
 	backdrop_effect_pixel_passed: bool,
 	backdrop_fallback_pixel_passed: bool,
 	backdrop_resize_retirement_passed: bool,
+	multiple_backdrop_pixel_passed: bool,
 	image_retirement_passed: bool,
 	surface_resource_retirement_passed: bool,
 	surface_cache_pressure_inflight_passed, surface_cache_pressure_passed: bool,
@@ -146,7 +147,8 @@ main :: proc() {
 		}
 		if !state.image_retirement_passed || !state.surface_resource_retirement_passed ||
 		   !state.surface_cache_pressure_inflight_passed || !state.surface_cache_pressure_passed ||
-		   !state.backdrop_fallback_pixel_passed || !state.backdrop_resize_retirement_passed { os_exit_failure() }
+		   !state.backdrop_fallback_pixel_passed || !state.backdrop_resize_retirement_passed ||
+		   !state.multiple_backdrop_pixel_passed { os_exit_failure() }
 		when FEASIBILITY_TEST_RESIZE {
 			if !state.test_resize_pre_applied || !state.test_resize_pre_frame ||
 				!state.test_resize_post_applied || !state.test_resize_post_frame {
@@ -160,7 +162,8 @@ smoke_complete :: proc() -> bool {
 	if !state.readback_done || !state.queue_work_done || !state.queue_work_done_ok { return false }
 	if !state.image_retirement_passed || !state.surface_resource_retirement_passed { return false }
 	if !state.surface_cache_pressure_inflight_passed || !state.surface_cache_pressure_passed { return false }
-	if !state.backdrop_fallback_pixel_passed || !state.backdrop_resize_retirement_passed { return false }
+	if !state.backdrop_fallback_pixel_passed || !state.backdrop_resize_retirement_passed ||
+	   !state.multiple_backdrop_pixel_passed { return false }
 	when FEASIBILITY_TEST_RESIZE {
 		if !state.test_resize_pre_applied || !state.test_resize_pre_frame ||
 			!state.test_resize_post_applied || !state.test_resize_post_frame { return false }
@@ -245,7 +248,9 @@ on_queue_work_done :: proc "c" (status:wgpu.QueueWorkDoneStatus, message:wgpu.St
 		if !webgpu_renderer.Compositor_Complete_Submission(&state.backdrop_compositor, state.backdrop_completion_serial) {
 			state.queue_work_done_ok = false
 		} else {
-			backdrop := &state.backdrop_compositor.backdrop
+			entry := backdrop_probe_entry(alicorn.Node_ID(2))
+			if entry == nil { state.queue_work_done_ok = false; return }
+			backdrop := &entry.renderer
 			state.backdrop_resize_retirement_passed = len(backdrop.retired) == 0 &&
 				backdrop.resident_bytes == backdrop.set.bytes+webgpu_renderer.WEBGPU_BACKDROP_EFFECT_VERTEX_BYTES &&
 				backdrop.completed_serial >= state.backdrop_completion_serial

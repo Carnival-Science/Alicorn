@@ -118,6 +118,8 @@ backdrop_effect_hash_command :: proc(hash: u64, draw: alicorn.Paint_Command, rt:
 		result = backdrop_effect_hash_f32(result, payload.top_edge_gap[1])
 	case alicorn.Backdrop_Effect_Paint:
 		result = alicorn.hash_mix(result, 2)
+		result = backdrop_effect_hash_f32(result, payload.sigma)
+		result = alicorn.hash_mix(result, u64(payload.fallback))
 	case alicorn.Icon_Paint:
 		result = alicorn.hash_mix(result, 3)
 		result = alicorn.hash_mix(result, u64(payload.id))

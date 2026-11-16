@@ -57,8 +57,8 @@ uploads remain renderer-specific.
 | --- | --- | --- |
 | 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: the pre-change Windows SDL_GPU reference and a supplemental D3D12 effects profile are recorded in `docs/validation/sdl-gpu-reference-windows-2026-11-15.md`; Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes, but the browser adapter acceleration class is not surfaced. Physical Linux GPU/Wayland, genuine driver/OS loss and recovery, same-workload production comparison, and application-level stage/working-set measurements remain open |
 | 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring, CPU solid/custom-surface mesh assembly, and text/image/icon preparation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
-| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and D3D12 fixtures exercise per-resource custom-surface caching, budget pressure, in-flight protection, instance transforms, readback, and resize. One shared compositor preserves interleaved paint order; text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, clipping, waveform samples, and cropped mixed-renderer readback pass Windows D3D12 and the current browser WebGPU readback. Shared CPU backdrop planning/meshes feed renderer-owned WebGPU prefix capture, two WGSL filter passes, and in-order composite; D3D12 and browser readbacks cover unchanged-prefix reuse and changed-prefix invalidation. D3D12 additionally verifies resized texture retirement behind the prior queue serial and exact ordinary-paint parity when a valid effect exceeds the cache budget; browser readback verifies the over-budget fallback pixels. Browser adapter acceleration class is not reported. Multiple markers, rounded/accessibility material parity, application host presentation, and broader cross-platform GPU validation remain open |
-| 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | Not started |
+| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and D3D12 fixtures exercise per-resource custom-surface caching, budget pressure, in-flight protection, instance transforms, readback, and resize. One shared compositor preserves interleaved paint order; text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, clipping, waveform samples, and cropped mixed-renderer readback pass Windows D3D12 and the current browser WebGPU readback. Shared CPU backdrop planning/meshes feed renderer-owned WebGPU prefix capture, filtering, and in-order composition for up to four markers within one aggregate 48 MiB tracked mesh+texture allocation budget. Two overlapping markers pass pixel readback on Windows D3D12/Vulkan and browser WebGPU; the later marker's capture includes the earlier marker's composed result. D3D12 also verifies unchanged-prefix reuse, changed-prefix invalidation, resized-target retirement behind the prior queue serial, and exact ordinary-paint parity when a valid effect exceeds budget. Browser adapter acceleration class is not reported. Rounded/accessibility material parity, application host presentation, and broader cross-platform GPU validation remain open |
+| 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | In progress: image, custom-geometry, and backdrop resources have bounded asynchronous retirement and completion-driven release tests; async readback is exercised. Genuine device loss/recreation and primary/secondary window teardown/recreation remain unvalidated. Intentional `DeviceDestroy` callbacks are tracked separately and do not count as driver-loss evidence |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
 | 6. Browser host | interaction, accessibility, text/IME, lifecycle and demand-driven scheduling complete | Not started |
@@ -1024,11 +1024,12 @@ surface. If the effect is unsupported or its bounded texture budget is
 exceeded, the marker is skipped and ordinary paint remains available.
 
 Effect GPU objects and pipeline creation are lazy: a compositor with no active
-effect marker does not initialize the backdrop renderer. The current cache is
-limited to one effect output per compositor. It keys the cached pixels from
-the shared prefix identity and effect plan, skips capture/filter work on an
-unchanged prefix, and retires resized texture sets only after the host-reported
-completion serial. A renderer-local 48 MiB texture budget bounds this slice.
+effect marker does not initialize the backdrop renderer. The initial slice
+supported one effect output per compositor; the multi-marker follow-up below
+extends the cache to four bounded entries under one aggregate 48 MiB tracked
+mesh+texture allocation budget. Each entry keys cached pixels from its shared
+paint-prefix identity and effect plan, skips capture/filter work on an unchanged prefix, and retires
+resized texture sets only after the host-reported completion serial.
 This follows Alicorn #164: applications continue to express retained geometry
 through existing APIs; optimization stays renderer-local rather than adding a
 public GPU canvas API.
@@ -1066,8 +1067,51 @@ the `js_wasm32` artifact:
   this is correctness evidence, not GPU-performance evidence.
 
 This is the first GPU effect execution slice, not complete effect parity. The
-single-marker limit, SDR output-format constraints, genuine device-loss/
-recreation, application-host integration, and macOS/Linux GPU validation
-remain open.
+SDR output-format constraints, genuine device-loss/recreation,
+application-host integration, and broader macOS/Linux GPU validation remain
+open.
 Explicit device destruction is still distinct from genuine driver/OS-initiated
 device loss and recovery.
+
+### Phase 2 bounded multiple backdrop markers (Windows and browser, 2026-11-15)
+
+The shared compositor now keeps up to four effect entries per Runtime and
+composes each marker in retained paint order. When a later marker needs a new
+prefix capture, the recursive prefix pass composes all earlier ready markers
+into that capture before filtering it. A single aggregate 48 MiB tracked
+mesh+texture allocation budget includes every entry's vertex and texture
+allocations. Markers that do not fit remain a direct-paint fallback; the compositor does not discard
+ordinary paint or grow the cache without bound. Earlier effect parameters are
+included in later prefix hashes, so changing an earlier blur invalidates later
+cached output.
+
+The feasibility fixture renders two overlapping effects and compares the
+second effect's clipped pixels against the same paint list with the first
+marker removed. A difference inside the later clip proves that the second
+capture observed the first effect's composition, rather than independently
+capturing the original source prefix. A CPU regression verifies that changing
+an earlier marker's sigma invalidates a later marker's prefix generation.
+
+Validation on Windows x64 with Odin
+`dev-2026-09-nightly:a2fb372`, NVIDIA GeForce RTX 2080 SUPER:
+
+- `odin check renderer/webgpu -no-entry-point` and the feasibility native and
+  `js_wasm32` builds passed.
+- The complete Windows `tools/test.ps1` run passed, including 352 Runtime
+  tests, 197 SDL_GPU integration tests, AccessKit ABI/UIA, foundation,
+  restoration, and native host-contract checks. The focused CPU renderer suite
+  passed all 20 tests.
+- The full async readback smoke passed with both Windows D3D12 and Vulkan
+  backends. The later marker produced 288 pixels different inside its clip
+  when the earlier marker was present. Budget fallback still matched ordinary
+  paint at every RGBA pixel.
+- A live browser WebGPU replay passed the same two-marker pixel assertion and
+  reached settled idle with no additional animation-frame requests for
+  500 ms. Its adapter acceleration class was not surfaced, so this is
+  correctness evidence only.
+
+The new path is still fixture-level renderer coverage, not production
+application presentation. It does not establish SDR parity for all output
+formats, genuine device loss/recreation, secondary-window lifecycle, or
+production performance. Intentional `DeviceDestroy` callbacks remain separate
+from driver/OS-initiated loss evidence.

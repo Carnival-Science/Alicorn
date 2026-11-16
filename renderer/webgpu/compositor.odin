@@ -11,6 +11,17 @@ Compositor_Result :: enum {
 	Resource_Failure,
 }
 
+WEBGPU_COMPOSITOR_MAX_BACKDROP_EFFECTS :: 4
+
+Backdrop_Effect_Entry :: struct {
+	runtime: ^alicorn.Runtime,
+	owner: alicorn.Node_ID,
+	marker_index: int,
+	plan: cpu_renderer.Backdrop_Effect_Plan,
+	renderer: Backdrop_Effect_Renderer,
+	live, ready: bool,
+}
+
 // WebGPU_Compositor owns the shared renderer resources for one Runtime and
 // one WebGPU device. It does not acquire surfaces, create encoders, submit
 // queues, or depend on SDL/browser APIs. Hosts prepare retained products, ask
@@ -24,10 +35,7 @@ WebGPU_Compositor :: struct {
 	icons: Icon_Renderer,
 	images: Image_Renderer,
 	surfaces: Surface_Renderer,
-	backdrop: Backdrop_Effect_Renderer,
-	backdrop_plan: cpu_renderer.Backdrop_Effect_Plan,
-	backdrop_marker_index: int,
-	backdrop_ready: bool,
+	backdrops: [dynamic]Backdrop_Effect_Entry,
 	prepared_runtime: ^alicorn.Runtime,
 	prepared_revision: u64,
 	prepared_commands: rawptr,
@@ -47,6 +55,7 @@ Compositor_Create :: proc(
 	if device == nil || queue == nil { return }
 	compositor.device, compositor.queue, compositor.format = device, queue, format
 	defer if !ok { Compositor_Destroy(&compositor) }
+	compositor.backdrops = make([dynamic]Backdrop_Effect_Entry, 0, WEBGPU_COMPOSITOR_MAX_BACKDROP_EFFECTS)
 	compositor.solid, ok = Solid_Create(device, queue, format)
 	if !ok { return }
 	compositor.text, ok = Text_Create(device, queue, format)
@@ -57,9 +66,56 @@ Compositor_Create :: proc(
 	if !ok { return }
 	compositor.surfaces, ok = Surface_Create(device, queue, format)
 	if !ok { return }
-	compositor.backdrop_marker_index = -1
 	ok = true
 	return
+}
+
+compositor_backdrop_entry_find :: proc(
+	compositor: ^WebGPU_Compositor,
+	rt: ^alicorn.Runtime,
+	owner: alicorn.Node_ID,
+) -> int {
+	if compositor == nil || rt == nil || owner == 0 { return -1 }
+	for entry, index in compositor.backdrops {
+		if entry.runtime == rt && entry.owner == owner { return index }
+	}
+	return -1
+}
+
+compositor_backdrop_resident_bytes_except :: proc(compositor: ^WebGPU_Compositor, except_index: int) -> u64 {
+	if compositor == nil { return 0 }
+	bytes := u64(0)
+	for entry, index in compositor.backdrops {
+		if index != except_index { bytes += entry.renderer.resident_bytes }
+	}
+	return bytes
+}
+
+compositor_backdrop_renderer_quiescent :: proc(renderer: ^Backdrop_Effect_Renderer) -> bool {
+	if renderer == nil || renderer.pending_encoded || renderer.pending_used { return false }
+	if renderer.set.last_use_serial > renderer.completed_serial { return false }
+	for retired in renderer.retired {
+		if retired.retire_after_serial > renderer.completed_serial { return false }
+	}
+	return true
+}
+
+compositor_backdrop_prune_inactive :: proc(compositor: ^WebGPU_Compositor) {
+	if compositor == nil { return }
+	for index := len(compositor.backdrops)-1; index >= 0; index -= 1 {
+		entry := &compositor.backdrops[index]
+		if entry.live || !compositor_backdrop_renderer_quiescent(&entry.renderer) { continue }
+		Backdrop_Effect_Destroy(&entry.renderer)
+		ordered_remove(&compositor.backdrops, index)
+	}
+}
+
+compositor_backdrop_entry_for_marker :: proc(compositor: ^WebGPU_Compositor, marker_index: int) -> ^Backdrop_Effect_Entry {
+	if compositor == nil { return nil }
+	for &entry in compositor.backdrops {
+		if entry.ready && entry.marker_index == marker_index { return &entry }
+	}
+	return nil
 }
 
 // Compositor_Prepare validates command families before any GPU writes, then
@@ -81,16 +137,16 @@ Compositor_Prepare :: proc(
 	// A new prepare without a matching submit means the previous encoded frame
 	// was abandoned. Its retained effect output is not a completed cache entry.
 	if compositor.encode_pending {
-		Backdrop_Effect_Abort(&compositor.backdrop)
+		for &entry in compositor.backdrops { Backdrop_Effect_Abort(&entry.renderer) }
 		compositor.capture_view_slots_used = 0
 		compositor.encode_pending = false
 	}
-	compositor.backdrop_ready = false
-	compositor.backdrop_marker_index = -1
-	compositor.backdrop_plan = {}
-	effect_count := 0
-	effect_marker: alicorn.Paint_Command
-	effect_index := -1
+	for &entry in compositor.backdrops {
+		entry.live = false
+		entry.ready = false
+		entry.marker_index = -1
+	}
+	compositor.prepared_valid = false
 	for command in display.commands {
 		if !alicorn.paint_command_is_surface(command) && !alicorn.paint_command_is_geometry(command) && !alicorn.paint_command_is_text(command) &&
 		   !alicorn.paint_command_is_icon(command) && !alicorn.paint_command_is_image(command) &&
@@ -98,12 +154,60 @@ Compositor_Prepare :: proc(
 			return .Unsupported_Command
 		}
 	}
+	// Preserve entries for markers still present in this frame before pruning
+	// caches whose last submitted use has completed.
+	for command in display.commands {
+		if !alicorn.paint_command_is_backdrop_effect(command) { continue }
+		if index := compositor_backdrop_entry_find(compositor, rt, command.owner); index >= 0 {
+			compositor.backdrops[index].live = true
+		}
+	}
+	compositor_backdrop_prune_inactive(compositor)
 	for command, index in display.commands {
 		if !alicorn.paint_command_is_backdrop_effect(command) { continue }
-		effect_count += 1
-		effect_marker, effect_index = command, index
+		if abs(scale_x-scale_y) > 0.001 { continue }
+		payload, payload_ok := command.payload.(alicorn.Backdrop_Effect_Paint)
+		if !payload_ok || command.owner == 0 { continue }
+		entry_index := compositor_backdrop_entry_find(compositor, rt, command.owner)
+		if entry_index < 0 {
+			if len(compositor.backdrops) >= WEBGPU_COMPOSITOR_MAX_BACKDROP_EFFECTS { continue }
+			append(&compositor.backdrops, Backdrop_Effect_Entry{
+				runtime=rt, owner=command.owner, marker_index=index,
+			})
+			entry_index = len(compositor.backdrops)-1
+		}
+		entry := &compositor.backdrops[entry_index]
+		entry.live = true
+		entry.marker_index = index
+		generation := cpu_renderer.Backdrop_Effect_Prefix_Generation_For_Runtime(
+			rt, display.commands[:index], command.bounds, command.clip, scale_x, scale_y, payload.sigma,
+		)
+		plan, valid := cpu_renderer.Backdrop_Effect_Plan_Make(cpu_renderer.Backdrop_Effect_Request{
+			enabled=true,
+			key=u64(command.owner),
+			source_generation=generation,
+			region=command.bounds,
+			clip=command.clip,
+			scale=scale_x,
+			sigma=payload.sigma,
+			depth=1,
+		})
+		if !valid || !plan.active { continue }
+		other_bytes := compositor_backdrop_resident_bytes_except(compositor, entry_index)
+		if other_bytes >= WEBGPU_BACKDROP_EFFECT_RESIDENT_BUDGET_BYTES { continue }
+		available_bytes := WEBGPU_BACKDROP_EFFECT_RESIDENT_BUDGET_BYTES-other_bytes
+		if entry.renderer.device == nil {
+			minimum_bytes := u64(plan.width)*u64(plan.height)*20 + WEBGPU_BACKDROP_EFFECT_VERTEX_BYTES
+			if minimum_bytes > available_bytes { continue }
+			renderer, created := Backdrop_Effect_Create(compositor.device, compositor.queue, compositor.format)
+			if !created { continue }
+			entry.renderer = renderer
+		}
+		if Backdrop_Effect_Prepare(&entry.renderer, plan, available_bytes) {
+			entry.plan = plan
+			entry.ready = true
+		}
 	}
-	compositor.prepared_valid = false
 	if result := Solid_Prepare(&compositor.solid, rt, display, target_width, target_height, scale_x, scale_y); result != .Ok {
 		return compositor_result_from_solid(result)
 	}
@@ -120,36 +224,6 @@ Compositor_Prepare :: proc(
 	}
 	if result := Surface_Prepare(&compositor.surfaces, rt, display, target_width, target_height, scale_x, scale_y); result != .Ok {
 		return compositor_result_from_surface(result)
-	}
-	if effect_count == 1 && abs(scale_x-scale_y) <= 0.001 {
-		payload, payload_ok := effect_marker.payload.(alicorn.Backdrop_Effect_Paint)
-		if payload_ok && effect_marker.owner != 0 {
-			prefix := display.commands[:effect_index]
-			generation := cpu_renderer.Backdrop_Effect_Prefix_Generation_For_Runtime(
-				rt, prefix, effect_marker.bounds, effect_marker.clip, scale_x, scale_y, payload.sigma,
-			)
-			plan, valid := cpu_renderer.Backdrop_Effect_Plan_Make(cpu_renderer.Backdrop_Effect_Request{
-				enabled=true,
-				key=u64(effect_marker.owner),
-				source_generation=generation,
-				region=effect_marker.bounds,
-				clip=effect_marker.clip,
-				scale=scale_x,
-				sigma=payload.sigma,
-				depth=1,
-			})
-			if valid && plan.active {
-				if compositor.backdrop.device == nil {
-					backdrop_renderer, backdrop_ok := Backdrop_Effect_Create(compositor.device, compositor.queue, compositor.format)
-					if backdrop_ok { compositor.backdrop = backdrop_renderer }
-				}
-				if compositor.backdrop.device != nil && Backdrop_Effect_Prepare(&compositor.backdrop, plan) {
-					compositor.backdrop_ready = true
-					compositor.backdrop_marker_index = effect_index
-					compositor.backdrop_plan = plan
-				}
-			}
-		}
 	}
 	compositor.prepared_runtime = rt
 	compositor.prepared_revision = display.revision
@@ -250,22 +324,24 @@ compositor_encode :: proc(
 	   compositor.prepared_width != target_width || compositor.prepared_height != target_height {
 		return .Invalid_Input
 	}
-	backdrop_in_range := compositor.backdrop_ready && compositor.backdrop_marker_index >= command_start &&
-	                     compositor.backdrop_marker_index < draw_command_end
-	if backdrop_in_range {
-		if Backdrop_Effect_Needs_Capture(&compositor.backdrop) {
-			origin := Backdrop_Effect_Source_Origin(compositor.backdrop_plan)
+	// Prepare effect outputs in paint order. A later marker's capture recursively
+	// encodes the earlier marker composites into its prefix, preserving stacking.
+	for marker_index in command_start..<draw_command_end {
+		entry := compositor_backdrop_entry_for_marker(compositor, marker_index)
+		if entry == nil { continue }
+		if Backdrop_Effect_Needs_Capture(&entry.renderer) {
+			origin := Backdrop_Effect_Source_Origin(entry.plan)
 			if result := compositor_encode(
-				compositor, rt, display, Backdrop_Effect_Source_View(&compositor.backdrop),
-				compositor.backdrop_plan.width, compositor.backdrop_plan.height, scale_x, scale_y, encoder,
+				compositor, rt, display, Backdrop_Effect_Source_View(&entry.renderer),
+				entry.plan.width, entry.plan.height, scale_x, scale_y, encoder,
 				true, WEBGPU_BACKDROP_PREFIX_CLEAR,
 				true, origin, VIEW_UNIFORM_EFFECT_CAPTURE_SLOT,
-				0, compositor.backdrop_marker_index, true,
+				0, marker_index, true,
 			); result != .Ok {
 				return result
 			}
 		}
-		if !Backdrop_Effect_Encode_Filter(&compositor.backdrop, encoder) { return .Resource_Failure }
+		if !Backdrop_Effect_Encode_Filter(&entry.renderer, encoder) { return .Resource_Failure }
 	}
 	attachment := wgpu.RenderPassColorAttachment{
 		view=target,
@@ -320,11 +396,11 @@ compositor_encode :: proc(
 				return compositor_result_from_image(result)
 			}
 		} else if alicorn.paint_command_is_backdrop_effect(command) {
-			if backdrop_in_range && command_index == compositor.backdrop_marker_index {
+			if entry := compositor_backdrop_entry_for_marker(compositor, command_index); entry != nil {
 				origin := [2]int{}
 				if capture_view { origin = capture_origin_px }
 				if !Backdrop_Effect_Draw_Composite(
-					&compositor.backdrop, pass, compositor.backdrop_plan, target_width, target_height, origin,
+					&entry.renderer, pass, entry.plan, target_width, target_height, origin,
 					capture_view_slot if capture_view else 0,
 				) {
 					return .Resource_Failure
@@ -365,7 +441,7 @@ Compositor_Commit_Submission :: proc(compositor: ^WebGPU_Compositor, rt: ^alicor
 	Text_Commit_Submission(&compositor.text, rt)
 	serial := Image_Commit_Submission(&compositor.images, rt)
 	if serial == 0 || !Surface_Commit_Submission(&compositor.surfaces, serial) { return 0 }
-	Backdrop_Effect_Commit_Submission(&compositor.backdrop, serial)
+	for &entry in compositor.backdrops { Backdrop_Effect_Commit_Submission(&entry.renderer, serial) }
 	compositor.capture_view_slots_used = 0
 	compositor.encode_pending = false
 	return serial
@@ -378,14 +454,14 @@ Compositor_Complete_Submission :: proc(compositor: ^WebGPU_Compositor, serial: u
 	if compositor == nil || serial > compositor.images.submitted_serial || serial > compositor.surfaces.submitted_serial { return false }
 	image_ok := Image_Complete_Submission(&compositor.images, serial)
 	surface_ok := Surface_Complete_Submission(&compositor.surfaces, serial)
-	Backdrop_Effect_Complete_Submission(&compositor.backdrop, serial)
+	for &entry in compositor.backdrops { Backdrop_Effect_Complete_Submission(&entry.renderer, serial) }
 	return image_ok && surface_ok
 }
 
 // Call when a prepared command encoder is abandoned before QueueSubmit.
 Compositor_Abort_Submission :: proc(compositor: ^WebGPU_Compositor) {
 	if compositor == nil { return }
-	Backdrop_Effect_Abort(&compositor.backdrop)
+	for &entry in compositor.backdrops { Backdrop_Effect_Abort(&entry.renderer) }
 	compositor.capture_view_slots_used = 0
 	compositor.encode_pending = false
 }
@@ -394,7 +470,8 @@ Compositor_Destroy :: proc(compositor: ^WebGPU_Compositor) {
 	if compositor == nil { return }
 	Image_Destroy(&compositor.images)
 	Surface_Destroy(&compositor.surfaces)
-	Backdrop_Effect_Destroy(&compositor.backdrop)
+	for &entry in compositor.backdrops { Backdrop_Effect_Destroy(&entry.renderer) }
+	delete(compositor.backdrops)
 	Text_Destroy(&compositor.text)
 	Icon_Destroy(&compositor.icons)
 	Solid_Destroy(&compositor.solid)

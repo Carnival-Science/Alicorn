@@ -181,15 +181,16 @@ a continuous animation-frame loop during initialization.
 The fixture uses default device limits because of Odin binding issue #8174. It
 has passed an actual browser WebGPU runtime/readback session and native Windows
 Vulkan on an NVIDIA Turing adapter; a successful browser build alone does not
-count as runtime evidence. The backdrop-effect readback also passed in both a
-Windows D3D12 run and a live browser replay, including
-unchanged-prefix reuse and changed-prefix invalidation. The browser status did
-not identify the adapter's hardware/software acceleration class, so that run
-is correctness evidence rather than a performance measurement. The fixture
-does not validate fallback-font chains, effect-texture resize retirement and
-budget fallback, device recreation, secondary windows, application-window
-presentation, or production performance. The mixed paint list is fixture-only;
-it covers solid surfaces, text, icons, images, materials, and custom geometry.
+count as runtime evidence. The backdrop-effect readback passed in Windows
+D3D12 and Vulkan runs and a live browser replay. It covers two overlapping
+markers in paint order, unchanged-prefix reuse, changed-prefix invalidation,
+in-flight resize retirement, and pixel-exact over-budget direct fallback. The
+browser status did not identify the adapter's hardware/software acceleration
+class, so that run is correctness evidence rather than a performance
+measurement. The fixture does not validate fallback-font chains, device
+recreation, secondary windows, application-window presentation, or production
+performance. The mixed paint list is fixture-only; it covers solid surfaces,
+text, icons, images, materials, and custom geometry.
 
 ## Opt-in device-destruction callback probe
 

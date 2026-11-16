@@ -38,6 +38,32 @@ test_backdrop_effect_prefix_ends_at_first_marker_and_hashes_only_prefix :: proc(
 }
 
 @(test)
+test_later_backdrop_prefix_hash_includes_earlier_effect_parameters :: proc(t: ^testing.T) {
+	clip := alicorn.Rect{0, 0, 400, 240}
+	background := alicorn.paint_surface_command(
+		alicorn.Node_ID(1), clip, clip, alicorn.Color{0.1, 0.12, 0.16, 1},
+	)
+	first := alicorn.paint_backdrop_effect_command(
+		alicorn.Node_ID(2), alicorn.Rect{20, 24, 80, 60}, clip, alicorn.backdrop_blur(3),
+	)
+	first_surface := alicorn.paint_surface_command(
+		alicorn.Node_ID(3), alicorn.Rect{20, 24, 80, 60}, clip, alicorn.Color{0.8, 0.7, 0.2, 0.3},
+	)
+	second := alicorn.paint_backdrop_effect_command(
+		alicorn.Node_ID(4), alicorn.Rect{40, 36, 90, 64}, clip, alicorn.backdrop_blur(5),
+	)
+	display := [4]alicorn.Paint_Command{background, first, first_surface, second}
+	second_payload, ok := second.payload.(alicorn.Backdrop_Effect_Paint)
+	if !ok { testing.expect(t, false, "the second effect fixture should contain a valid marker"); return }
+	before := Backdrop_Effect_Prefix_Generation(display[:3], second.bounds, second.clip, 1, 1, second_payload.sigma)
+	first.payload = alicorn.Backdrop_Effect_Paint{sigma=7, fallback=.Direct}
+	display[1] = first
+	after := Backdrop_Effect_Prefix_Generation(display[:3], second.bounds, second.clip, 1, 1, second_payload.sigma)
+	testing.expect(t, before != after,
+		"a later backdrop cache key must change when an earlier marker changes its filtering parameters")
+}
+
+@(test)
 test_backdrop_effect_local_prefix_moves_only_bounds_and_clip :: proc(t: ^testing.T) {
 	clip := alicorn.Rect{1, 2, 90, 80}
 	draw := alicorn.paint_text_command(

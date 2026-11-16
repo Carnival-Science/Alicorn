@@ -238,16 +238,17 @@ backdrop_effect_pipeline_create :: proc(
 Backdrop_Effect_Prepare :: proc(
 	renderer: ^Backdrop_Effect_Renderer,
 	plan: cpu_renderer.Backdrop_Effect_Plan,
+	resident_budget_bytes: u64 = WEBGPU_BACKDROP_EFFECT_RESIDENT_BUDGET_BYTES,
 ) -> bool {
 	if renderer == nil || renderer.device == nil { return false }
 	backdrop_effect_retire_completed(renderer)
 	if !plan.active || !cpu_renderer.Backdrop_Effect_Plan_Valid(plan) { return false }
 	texture_bytes := u64(plan.width)*u64(plan.height)*20
-	if texture_bytes+WEBGPU_BACKDROP_EFFECT_VERTEX_BYTES > WEBGPU_BACKDROP_EFFECT_RESIDENT_BUDGET_BYTES { return false }
+	if texture_bytes+WEBGPU_BACKDROP_EFFECT_VERTEX_BYTES > resident_budget_bytes { return false }
 	if renderer.set.textures[0] == nil || renderer.set.width != plan.width || renderer.set.height != plan.height {
 		if renderer.set.textures[0] != nil {
 			if renderer.set.last_use_serial > renderer.completed_serial {
-				if renderer.resident_bytes+texture_bytes > WEBGPU_BACKDROP_EFFECT_RESIDENT_BUDGET_BYTES { return false }
+				if renderer.resident_bytes+texture_bytes > resident_budget_bytes { return false }
 				append(&renderer.retired, Backdrop_Effect_Retired_Set{renderer.set, renderer.set.last_use_serial})
 				renderer.set = {}
 			} else {
@@ -257,7 +258,7 @@ Backdrop_Effect_Prepare :: proc(
 				renderer.set = {}
 			}
 		}
-		if renderer.resident_bytes+texture_bytes > WEBGPU_BACKDROP_EFFECT_RESIDENT_BUDGET_BYTES { return false }
+		if renderer.resident_bytes+texture_bytes > resident_budget_bytes { return false }
 		set, ok := backdrop_effect_set_create(renderer, plan.width, plan.height, texture_bytes)
 		if !ok { return false }
 		renderer.set = set
