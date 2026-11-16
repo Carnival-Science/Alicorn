@@ -70,6 +70,15 @@ tolerances rather than require bit-identical results across platform math
 libraries. [Odin basic types and floating-point operators](https://odin-lang.org/docs/overview/#basic-types)
 · [IEEE 754-2019 standard listing](https://standards.ieee.org/ieee/754/6210/)
 
+### Renderer-independence invariant
+
+Keep response math in the runtime kernel during the WebGPU migration. Native
+and browser hosts may supply monotonic timestamps and submit the resulting
+presentation, but `Motion_Time`, response evaluation, retargeting, and
+settlement must not depend on SDL, WebGPU, a GPU device, a shader, or renderer
+callbacks. This lets each host share the same deterministic behavior while
+keeping presentation mechanics behind its own backend boundary.
+
 ## Acceptance coverage added
 
 The pre-existing math tests already covered the closed-form position and
