@@ -784,6 +784,25 @@ odin check ui -target:js_wasm32 -collection:alicorn=. -no-entry-point
 Browser host selection, event delivery, accessibility, and WebGPU presentation
 through `ui.run` remain open Phase 1/6 work.
 
+### Shared `ui.run` adapter for host-driven Runtime (Windows and `js_wasm32`, 2026-11-16)
+
+`ui/run_common.odin` now adapts the same generic `Run_State` callbacks to
+`Hosted_Runtime_Config`: root content and overlays, initialization, lifecycle,
+application wake, application key, text-change, and pointer callbacks. The
+adapter borrows its state through `hosted_runtime_destroy`, and translates the
+hosted waker back to the existing `Application_Waker` contract. The native
+`ui.run` path continues to use the SDL host; its application-key callback now
+uses the same shared dispatch helper.
+
+The new UI regression initializes a real `Hosted_Runtime` through this adapter,
+checks root/overlay description, waker delivery, explicit invalidation, key and
+pointer callbacks, and stop ordering. All 40 UI tests passed on Windows; the
+`js_wasm32` UI package check passed. This is a usable host boundary, not yet a
+browser event loop or WebGPU surface host. Browser key-to-`Application_Key`
+translation, DOM text/IME and accessibility routing, one-shot animation-frame
+scheduling, and WGPU surface/device/presenter ownership remain open Phase 1/6
+work.
+
 ## SDL-created native surface presenter smoke (Windows, 2026-11-16)
 
 The new opt-in `FEASIBILITY_TEST_SURFACE_PRESENTER` target draws a separate

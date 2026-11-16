@@ -36,7 +36,7 @@ run_application :: proc(run_state: ^Run_State($T), title: string, width, height:
 	}
 	on_key :: proc(data: rawptr, rt: ^alicorn.Runtime, key: alicorn.Application_Key) -> bool {
 		state := cast(^Run_State(T))data
-		return state.on_key != nil && state.on_key(state.app, rt, key)
+		return run_application_key(state, rt, key)
 	}
 	on_text_change :: proc(data: rawptr, rt: ^alicorn.Runtime, change: alicorn.Text_Change) {
 		state := cast(^Run_State(T))data
