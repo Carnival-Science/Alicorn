@@ -75,9 +75,15 @@ to renderer-owned sampleable textures, runs both shared-mesh Gaussian passes,
 and composites at the marker in paint order. Readback checks blurred pixels
 contain contributions from both sides of the source boundary and that pixels
 outside the effect clip remain unchanged. The Windows D3D12 probe passed on
-2026-11-15, and the same fixture passed live browser readback. The browser
-adapter's hardware/software class was not reported. This single-marker probe
-does not establish full effect parity or application host integration.
+2026-11-15, and the same fixture passed live browser readback. The fixture also
+resizes the cached crop while its earlier submission is still in flight, then
+checks that the old textures retire only after the reported completion serial.
+An over-budget but valid effect plan skips only its marker; its full RGBA
+readback matches plain paint with the marker removed. D3D12 passes the resize,
+retirement, and fallback probes; browser readback passes the over-budget
+fallback parity probe. The browser adapter's hardware/software class was not
+reported. This single-marker probe does not establish full effect parity or
+application host integration.
 
 ## Windows native
 

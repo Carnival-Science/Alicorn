@@ -19,7 +19,7 @@ CAPTURE_HEIGHT :: READBACK_HEIGHT - CAPTURE_ORIGIN_Y
 READBACK_BYTES_PER_PIXEL :: 4
 READBACK_BYTES_PER_ROW :: 256
 READBACK_BUFFER_BYTES :: READBACK_BYTES_PER_ROW * READBACK_HEIGHT
-READBACK_TARGET_COUNT :: 9
+READBACK_TARGET_COUNT :: 12
 READBACK_TOTAL_BYTES :: READBACK_BUFFER_BYTES * READBACK_TARGET_COUNT
 FEASIBILITY_TEST_DEVICE_LOSS :: #config(FEASIBILITY_TEST_DEVICE_LOSS, false)
 FEASIBILITY_TEST_DEVICE_LOSS_EARLY :: #config(FEASIBILITY_TEST_DEVICE_LOSS_EARLY, false)
@@ -64,6 +64,8 @@ state: struct {
 	compositor_completion_serial: u64,
 	backdrop_completion_serial: u64,
 	backdrop_effect_pixel_passed: bool,
+	backdrop_fallback_pixel_passed: bool,
+	backdrop_resize_retirement_passed: bool,
 	image_retirement_passed: bool,
 	surface_resource_retirement_passed: bool,
 	surface_cache_pressure_inflight_passed, surface_cache_pressure_passed: bool,
@@ -100,7 +102,7 @@ state: struct {
 	text_offscreen_texture: wgpu.Texture,
 	text_offscreen_view: wgpu.TextureView,
 	readback_buffer: wgpu.Buffer,
-	readback_pending, readback_done: bool,
+	readback_pending, readback_done, readback_callback_received: bool,
 	queue_work_done_pending, queue_work_done, queue_work_done_ok: bool,
 	test_resize_pre_requested, test_resize_pre_applied, test_resize_pre_frame: bool,
 	test_resize_post_requested, test_resize_post_applied, test_resize_post_frame: bool,
@@ -143,7 +145,8 @@ main :: proc() {
 			os_exit_failure()
 		}
 		if !state.image_retirement_passed || !state.surface_resource_retirement_passed ||
-		   !state.surface_cache_pressure_inflight_passed || !state.surface_cache_pressure_passed { os_exit_failure() }
+		   !state.surface_cache_pressure_inflight_passed || !state.surface_cache_pressure_passed ||
+		   !state.backdrop_fallback_pixel_passed || !state.backdrop_resize_retirement_passed { os_exit_failure() }
 		when FEASIBILITY_TEST_RESIZE {
 			if !state.test_resize_pre_applied || !state.test_resize_pre_frame ||
 				!state.test_resize_post_applied || !state.test_resize_post_frame {
@@ -157,11 +160,21 @@ smoke_complete :: proc() -> bool {
 	if !state.readback_done || !state.queue_work_done || !state.queue_work_done_ok { return false }
 	if !state.image_retirement_passed || !state.surface_resource_retirement_passed { return false }
 	if !state.surface_cache_pressure_inflight_passed || !state.surface_cache_pressure_passed { return false }
+	if !state.backdrop_fallback_pixel_passed || !state.backdrop_resize_retirement_passed { return false }
 	when FEASIBILITY_TEST_RESIZE {
 		if !state.test_resize_pre_applied || !state.test_resize_pre_frame ||
 			!state.test_resize_post_applied || !state.test_resize_post_frame { return false }
 	}
 	return true
+}
+
+smoke_resize_complete :: proc() -> bool {
+	when FEASIBILITY_TEST_RESIZE {
+		return state.test_resize_pre_applied && state.test_resize_pre_frame &&
+			state.test_resize_post_applied && state.test_resize_post_frame
+	} else {
+		return true
+	}
 }
 
 on_adapter :: proc "c" (status: wgpu.RequestAdapterStatus, adapter: wgpu.Adapter, message: string, userdata1, userdata2: rawptr) {
@@ -231,6 +244,16 @@ on_queue_work_done :: proc "c" (status:wgpu.QueueWorkDoneStatus, message:wgpu.St
 	if state.backdrop_completion_serial > 0 && status == .Success {
 		if !webgpu_renderer.Compositor_Complete_Submission(&state.backdrop_compositor, state.backdrop_completion_serial) {
 			state.queue_work_done_ok = false
+		} else {
+			backdrop := &state.backdrop_compositor.backdrop
+			state.backdrop_resize_retirement_passed = len(backdrop.retired) == 0 &&
+				backdrop.resident_bytes == backdrop.set.bytes+webgpu_renderer.WEBGPU_BACKDROP_EFFECT_VERTEX_BYTES &&
+				backdrop.completed_serial >= state.backdrop_completion_serial
+			fmt.printf("[webgpu-feasibility] backdrop resized texture retirement %s submitted=%d completed=%d retired=%d resident=%d active=%d\n",
+				"PASS" if state.backdrop_resize_retirement_passed else "FAIL", backdrop.set.last_use_serial,
+				backdrop.completed_serial, len(backdrop.retired), backdrop.resident_bytes,
+				backdrop.set.bytes+webgpu_renderer.WEBGPU_BACKDROP_EFFECT_VERTEX_BYTES)
+			if !state.backdrop_resize_retirement_passed { state.queue_work_done_ok = false }
 		}
 	}
 	if state.compositor_completion_serial > 0 && status == .Success {
@@ -320,7 +343,7 @@ on_surface_cache_pressure_batch_b :: proc "c" (status: wgpu.QueueWorkDoneStatus,
 		renderer.submitted_serial, renderer.completed_serial, resource_count, renderer.resident_bytes,
 		webgpu_renderer.SURFACE_GPU_CACHE_BUDGET_BYTES, active_bytes, renderer.resource_eviction_count,
 		!oldest_first_resource_present, newest_first_resource_present, len(renderer.retired))
-	if smoke_complete() { state.quit = true } else if status != .Success { state.quit = true }
+	if smoke_complete() || (state.readback_callback_received && smoke_resize_complete()) { state.quit = true }
 }
 
 on_device :: proc "c" (status: wgpu.RequestDeviceStatus, device: wgpu.Device, message: string, userdata1, userdata2: rawptr) {

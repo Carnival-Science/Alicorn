@@ -55,9 +55,9 @@ uploads remain renderer-specific.
 
 | Phase | Exit evidence | Status |
 | --- | --- | --- |
-| 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: the pre-change Windows SDL_GPU reference and a supplemental D3D12 effects profile are recorded in `docs/validation/sdl-gpu-reference-windows-2026-11-15.md`; Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes on an NVIDIA Turing adapter. Physical Linux GPU/Wayland, genuine driver/OS loss and recovery, same-workload production comparison, and application-level stage/working-set measurements remain open |
+| 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: the pre-change Windows SDL_GPU reference and a supplemental D3D12 effects profile are recorded in `docs/validation/sdl-gpu-reference-windows-2026-11-15.md`; Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes, but the browser adapter acceleration class is not surfaced. Physical Linux GPU/Wayland, genuine driver/OS loss and recovery, same-workload production comparison, and application-level stage/working-set measurements remain open |
 | 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring, CPU solid/custom-surface mesh assembly, and text/image/icon preparation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
-| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and D3D12 fixtures exercise per-resource custom-surface caching, budget pressure, in-flight protection, instance transforms, readback, and resize. One shared compositor preserves interleaved paint order; text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, clipping, waveform samples, and cropped mixed-renderer readback pass Windows D3D12 and the current browser WebGPU readback. Shared CPU backdrop planning/meshes feed renderer-owned WebGPU prefix capture, two WGSL filter passes, and in-order composite; D3D12 and browser readbacks now cover unchanged-prefix cache reuse and changed-prefix invalidation. Browser adapter acceleration class is not reported. Resized-effect cache retirement/budget fallback, rounded/accessibility material parity, application host presentation, and broader cross-platform GPU validation remain open |
+| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and D3D12 fixtures exercise per-resource custom-surface caching, budget pressure, in-flight protection, instance transforms, readback, and resize. One shared compositor preserves interleaved paint order; text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, clipping, waveform samples, and cropped mixed-renderer readback pass Windows D3D12 and the current browser WebGPU readback. Shared CPU backdrop planning/meshes feed renderer-owned WebGPU prefix capture, two WGSL filter passes, and in-order composite; D3D12 and browser readbacks cover unchanged-prefix reuse and changed-prefix invalidation. D3D12 additionally verifies resized texture retirement behind the prior queue serial and exact ordinary-paint parity when a valid effect exceeds the cache budget; browser readback verifies the over-budget fallback pixels. Browser adapter acceleration class is not reported. Multiple markers, rounded/accessibility material parity, application host presentation, and broader cross-platform GPU validation remain open |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | Not started |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
@@ -1042,22 +1042,32 @@ the `js_wasm32` artifact:
 - `examples/15_webgpu_feasibility/build.ps1` rebuilt native interactive,
   readback, and resize fixtures plus the `js_wasm32` WASM fixture.
 - `webgpu_feasibility_smoke.exe --backend=d3d12` passed. Across three ordered
-  submissions it reported two captures, two horizontal and two vertical filter
-  passes, three composites, one unchanged-prefix cache hit, one mesh build, and
-  68,040 bytes of backdrop texture residency against the 50,331,648-byte
-  budget. Pixel checks passed for both red/blue and changed red/green blurred
-  content and for pixels beyond the effect clip.
+  effect submissions it reported three captures, three horizontal and three
+  vertical filter passes, four composites, one unchanged-prefix cache hit, and
+  two shared mesh builds. The 40×40 active set plus its retained mesh used
+  74,120 bytes; total residency was 100,040 bytes while the retired set was
+  still in flight, both below the 50,331,648-byte budget. Pixel checks passed for the
+  initial red/blue and changed red/green blur, the resized effect, and pixels
+  beyond the effect clip.
+- While the 36×36 set remained in flight at serial 3, resize prepared a 40×40
+  set and kept the old 25,920-byte texture set retired. Completion at serial 6
+  released it, leaving exactly 74,120 active bytes and no retired sets.
+- A valid 1,612×1,612 effect plan requested 52,013,000 bytes including the
+  retained mesh, above budget. The renderer skipped its effect marker without
+  changing residency; every RGBA pixel matched the same paint list with that
+  marker removed.
 - Existing text, image, icon, material, custom geometry, crop, retained cache,
   cache-pressure, and queue-retirement checks in the same smoke also passed.
 - The local browser replay reached the idle-settled state and reported the
   offscreen readback PASS, including both crop comparisons and backdrop
-  mixed-color, clip, cache-hit, and prefix-invalidation probes. Its exposed
+  mixed-color, clip, cache-hit, prefix-invalidation, resize pixel, and exact
+  over-budget fallback parity probes. Its exposed
   status did not identify whether the adapter was hardware or software-backed;
   this is correctness evidence, not GPU-performance evidence.
 
 This is the first GPU effect execution slice, not complete effect parity. The
-single-marker limit, resized-effect texture retirement and budget-fallback
-pixels, SDR output-format constraints, genuine device-loss/recreation,
-application-host integration, and macOS/Linux GPU validation remain open.
+single-marker limit, SDR output-format constraints, genuine device-loss/
+recreation, application-host integration, and macOS/Linux GPU validation
+remain open.
 Explicit device destruction is still distinct from genuine driver/OS-initiated
 device loss and recovery.

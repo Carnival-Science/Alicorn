@@ -23,7 +23,7 @@ capture and both filters, and reuse the existing shared mesh.
 - Odin `dev-2026-09-nightly:a2fb372` from
   `C:\Users\saman\Documents\odin\dist\odin.exe`
 - Native adapter: NVIDIA GeForce RTX 2080 SUPER, D3D12
-- Browser: local in-app browser, `http://127.0.0.1:8080/`; the fixture reported
+- Browser: local in-app browser, `http://127.0.0.1:8766/`; the fixture reported
   the requested native backend as `Undefined` as expected for browser WebGPU.
   The exposed status did not classify the browser adapter as hardware or
   software-backed.
@@ -37,10 +37,11 @@ From the repository root:
 & 'C:\Users\saman\Documents\odin\dist\odin.exe' check examples/15_webgpu_feasibility
 & '.\examples\15_webgpu_feasibility\build.ps1' -Odin 'C:\Users\saman\Documents\odin\dist\odin.exe'
 .\examples\15_webgpu_feasibility\out\webgpu_feasibility_smoke.exe --backend=d3d12
-python -m http.server 8080 --directory examples/15_webgpu_feasibility/web
+.\examples\15_webgpu_feasibility\out\webgpu_feasibility_resize_smoke.exe --backend=d3d12
+python -m http.server 8766 --directory examples/15_webgpu_feasibility/web
 ~~~
 
-Open `http://127.0.0.1:8080/` for the browser replay. The server is only needed
+Open `http://127.0.0.1:8766/` for the browser replay. The server is only needed
 while the page is open.
 
 ## Results
@@ -48,17 +49,30 @@ while the page is open.
 - Both Odin package checks passed.
 - The build script produced native interactive, readback, and resize
   executables and the `js_wasm32` fixture.
-- Windows D3D12 readback passed all fixture pixels. The effect sequence reported
-  `capture=2`, `filters=2/2`, `composite=3`, `cache_hits=1`, `mesh_rebuilds=1`,
-  and `texture_bytes=68040` under the 50,331,648-byte effect budget.
-- Pixel probes passed for the original red/blue mixed blur, a changed red/green
-  prefix after cache invalidation, and unchanged red pixels outside the effect
+- Windows D3D12 readback passed all fixture pixels. Across the effect sequence
+  it reported `capture=3`, `filters=3/3`, `composite=4`, `cache_hits=1`, and
+  `mesh_rebuilds=2`. The active 40×40 set plus its retained mesh used 74,120
+  bytes. Total residency was 100,040 bytes while the retired set remained in
+  flight, below the 50,331,648-byte effect budget.
+- Pixel probes passed for the original red/blue mixed blur, changed red/green
+  prefix invalidation, resized output, and unchanged pixels outside the effect
   clip.
+- Resize was prepared before the prior effect submission completed. The old
+  36×36 set (25,920 bytes) remained retired behind serial 3 while the 40×40 set
+  was created. Completion at serial 6 released the retired set; residency
+  returned to 74,120 bytes with no retired entries.
+- The D3D12 resize smoke also presented during animation at 800×450 and after
+  settling at 720×405.
+- A valid 1,612×1,612 effect plan required 52,013,000 bytes including the mesh,
+  exceeding the 50,331,648-byte budget. The renderer skipped only the effect
+  marker, preserved resources, and produced a readback identical at every RGBA
+  pixel to ordinary paint with the marker removed.
 - The same WebGPU fixture readback passed in the browser, including both crop
-  comparisons and backdrop mixed-color, clip, unchanged-prefix cache-hit, and
-  changed-prefix invalidation checks. The page reported no new animation-frame
-  requests for 500 ms after settling. Browser adapter acceleration class was
-  not surfaced, so no browser hardware or performance claim is made.
+  comparisons and backdrop mixed-color, clip, unchanged-prefix cache-hit,
+  changed-prefix invalidation, resized-output, and over-budget fallback parity
+  checks. The page reported no new animation-frame requests for 500 ms after
+  settling. Browser adapter acceleration class was not surfaced, so no browser
+  hardware or performance claim is made.
 - `odin test renderer/webgpu` passed its capture-slot regression; `odin test
   renderer/cpu` passed all 19 tests.
 - `tools/test.ps1 -Odin C:\Users\saman\Documents\odin\dist\odin.exe` passed,
@@ -69,11 +83,11 @@ while the page is open.
 
 ## Limits and follow-up
 
-This validates a single effect marker and one same-size cache entry on one
-Windows D3D12 adapter plus browser WebGPU readback. It does not validate
-resized-effect texture retirement or budget-fallback pixels, SDR parity across
-all output formats, macOS/Linux GPU behavior, application-host presentation,
-or production performance. Browser adapter acceleration was not classified.
+This validates a single effect marker and resized texture retirement on one
+Windows D3D12 adapter, plus browser WebGPU readback including over-budget
+fallback parity. It does not validate SDR parity across all output formats,
+macOS/Linux GPU behavior, application-host presentation, or production
+performance. Browser adapter acceleration was not classified.
 
 The validation does not simulate driver/OS-initiated device loss or recovery.
 Intentional `DeviceDestroy` callback tests remain distinct from genuine device

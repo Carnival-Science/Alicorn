@@ -3,6 +3,7 @@ package webgpu_feasibility
 import "core:fmt"
 import "core:math"
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 import "vendor:wgpu"
 import runa "../../third_party/Runa"
 import webgpu_renderer "../../renderer/webgpu"
@@ -919,8 +920,75 @@ run_backdrop_effect_probe :: proc() {
 	   state.backdrop_compositor.backdrop.composite_count != 3 {
 		fmt.panicf("changed backdrop prefix did not encode a new capture/filter result")
 	}
-	state.backdrop_effect_pixel_passed = true
-	fmt.printf("[webgpu-feasibility] backdrop WebGPU prefix cache PASS capture=%d filters=%d/%d composite=%d cache_hits=%d mesh_rebuilds=%d texture_bytes=%d cache_budget=%d\n",
+	retirement_serial := state.backdrop_completion_serial
+	old_width, old_height := state.backdrop_compositor.backdrop.set.width, state.backdrop_compositor.backdrop.set.height
+	if state.backdrop_compositor.backdrop.completed_serial >= retirement_serial {
+		fmt.panicf("backdrop resize fixture must keep the prior texture set in flight")
+	}
+	resized_region := alicorn.Rect{18, 18, 28, 28}
+	commands[3] = alicorn.paint_backdrop_effect_command(alicorn.Node_ID(2), resized_region, clip, alicorn.backdrop_blur(2))
+	commands[4] = alicorn.paint_surface_command(2, resized_region, clip, alicorn.Color{1, 1, 1, 0.12})
+	display.revision += 1
+	if result := webgpu_renderer.Compositor_Prepare(
+		&state.backdrop_compositor, &state.text_runtime, display, READBACK_WIDTH, READBACK_HEIGHT, 1, 1,
+	); result != .Ok {
+		fmt.panicf("resized backdrop preparation failed: %v", result)
+	}
+	backdrop := &state.backdrop_compositor.backdrop
+	if !state.backdrop_compositor.backdrop_ready || backdrop.set.width == old_width && backdrop.set.height == old_height ||
+	   len(backdrop.retired) != 1 || backdrop.retired[0].retire_after_serial != retirement_serial ||
+	   backdrop.resident_bytes <= backdrop.set.bytes {
+		fmt.panicf("resized backdrop textures were not retained behind the prior completion serial")
+	}
+	retired_bytes := backdrop.retired[0].set.bytes
+	backdrop_probe_submit(display, 9)
+	fmt.printf("[webgpu-feasibility] backdrop resize retirement queued old=%dx%d old_bytes=%d new=%dx%d retired=%d retire_after=%d\n",
+		old_width, old_height, retired_bytes, backdrop.set.width, backdrop.set.height,
+		len(backdrop.retired), backdrop.retired[0].retire_after_serial)
+
+	// A valid plan whose three textures exceed the renderer budget must skip
+	// only the effect marker; ordinary paint after it must match paint with no
+	// marker exactly. The source and target here remain within GPU dimensions.
+	huge_region := alicorn.Rect{0, 0, 1600, 1600}
+	fallback_generation := cpu_renderer.Backdrop_Effect_Prefix_Generation_For_Runtime(
+		&state.text_runtime, commands[:3], huge_region, viewport, 1, 1, 2,
+	)
+	fallback_plan, fallback_plan_ok := cpu_renderer.Backdrop_Effect_Plan_Make(cpu_renderer.Backdrop_Effect_Request{
+		enabled=true, key=u64(alicorn.Node_ID(2)), source_generation=fallback_generation,
+		region=huge_region, clip=viewport, scale=1, sigma=2, depth=1,
+	})
+	fallback_bytes := u64(fallback_plan.width)*u64(fallback_plan.height)*20 + webgpu_renderer.WEBGPU_BACKDROP_EFFECT_VERTEX_BYTES
+	if !fallback_plan_ok || !fallback_plan.active || fallback_bytes <= webgpu_renderer.WEBGPU_BACKDROP_EFFECT_RESIDENT_BUDGET_BYTES {
+		fmt.panicf("budget fallback fixture must produce a valid plan above the renderer's bounded texture budget")
+	}
+	commands[3] = alicorn.paint_backdrop_effect_command(alicorn.Node_ID(2), huge_region, viewport, alicorn.backdrop_blur(2))
+	commands[4] = alicorn.paint_surface_command(2, huge_region, viewport, alicorn.Color{1, 1, 1, 0.12})
+	display.revision += 1
+	resident_before_fallback := backdrop.resident_bytes
+	if result := webgpu_renderer.Compositor_Prepare(
+		&state.backdrop_compositor, &state.text_runtime, display, READBACK_WIDTH, READBACK_HEIGHT, 1, 1,
+	); result != .Ok {
+		fmt.panicf("over-budget backdrop fallback preparation failed: %v", result)
+	}
+	if state.backdrop_compositor.backdrop_ready || backdrop.resident_bytes != resident_before_fallback ||
+	   len(backdrop.retired) != 1 {
+		fmt.panicf("over-budget backdrop should preserve existing resources and skip only the effect marker")
+	}
+	backdrop_probe_submit(display, 10)
+	fallback_commands := make([dynamic]alicorn.Paint_Command, 0, 4, allocator=context.temp_allocator)
+	for command, index in commands {
+		if index != 3 { append(&fallback_commands, command) }
+	}
+	// The display sequence changed when the marker was omitted, so give the
+	// renderer a distinct revision and rebuild command-indexed draw records.
+	fallback_display := alicorn.Paint_Display_List_View{commands=fallback_commands[:], revision=display.revision+1}
+	if result := webgpu_renderer.Compositor_Prepare(
+		&state.backdrop_compositor, &state.text_runtime, fallback_display, READBACK_WIDTH, READBACK_HEIGHT, 1, 1,
+	); result != .Ok {
+		fmt.panicf("ordinary backdrop fallback comparison preparation failed: %v", result)
+	}
+	backdrop_probe_submit(fallback_display, 11)
+	fmt.printf("[webgpu-feasibility] backdrop WebGPU prefix cache PASS capture=%d filters=%d/%d composite=%d cache_hits=%d mesh_rebuilds=%d texture_bytes=%d cache_budget=%d resize_retired=%d budget_fallback_bytes=%d\n",
 		state.backdrop_compositor.backdrop.capture_count,
 		state.backdrop_compositor.backdrop.horizontal_pass_count,
 		state.backdrop_compositor.backdrop.vertical_pass_count,
@@ -928,7 +996,8 @@ run_backdrop_effect_probe :: proc() {
 		state.backdrop_compositor.backdrop.cache_hits,
 		state.backdrop_compositor.backdrop.mesh_rebuild_count,
 		state.backdrop_compositor.backdrop.resident_bytes,
-		webgpu_renderer.WEBGPU_BACKDROP_EFFECT_RESIDENT_BUDGET_BYTES)
+		webgpu_renderer.WEBGPU_BACKDROP_EFFECT_RESIDENT_BUDGET_BYTES,
+		len(state.backdrop_compositor.backdrop.retired), fallback_bytes)
 }
 
 backdrop_probe_submit :: proc(display: alicorn.Paint_Display_List_View, readback_slot: int) {
@@ -1383,7 +1452,7 @@ offscreen_glyph_probe_uv :: proc() -> (uv:[4]f32,ok:bool) {
 }
 
 on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,userdata2:rawptr) {
-	context=state.ctx; state.readback_pending=false
+	context=state.ctx; state.readback_pending=false; state.readback_callback_received=true
 	if status!=.Success {
 		fmt.printf("[webgpu-feasibility] readback failed: %v %s\n",status,message)
 		when FEASIBILITY_TEST_QUIT_AFTER_READBACK {
@@ -1428,6 +1497,24 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		backdrop_outside_clip_pixel := offscreen_pixel(pixels, 22, 32, 7*READBACK_BUFFER_BYTES)
 		backdrop_changed_center_pixel := offscreen_pixel(pixels, 30, 32, 8*READBACK_BUFFER_BYTES)
 		backdrop_changed_outside_clip_pixel := offscreen_pixel(pixels, 22, 32, 8*READBACK_BUFFER_BYTES)
+		backdrop_resized_center_pixel := offscreen_pixel(pixels, 30, 32, 9*READBACK_BUFFER_BYTES)
+		backdrop_resized_outside_clip_pixel := offscreen_pixel(pixels, 22, 32, 9*READBACK_BUFFER_BYTES)
+		backdrop_fallback_matches_normal := true
+		backdrop_fallback_mismatch_x, backdrop_fallback_mismatch_y := -1, -1
+		backdrop_fallback_pixel, backdrop_normal_pixel: [4]u8
+		for y in 0..<READBACK_HEIGHT {
+			for x in 0..<READBACK_WIDTH {
+				fallback_pixel := offscreen_pixel(pixels, x, y, 10*READBACK_BUFFER_BYTES)
+				normal_pixel := offscreen_pixel(pixels, x, y, 11*READBACK_BUFFER_BYTES)
+				if fallback_pixel != normal_pixel {
+					backdrop_fallback_matches_normal = false
+					backdrop_fallback_mismatch_x, backdrop_fallback_mismatch_y = x, y
+					backdrop_fallback_pixel, backdrop_normal_pixel = fallback_pixel, normal_pixel
+					break
+				}
+			}
+			if !backdrop_fallback_matches_normal { break }
+		}
 		cropped_capture_matches := true
 		second_cropped_capture_matches := true
 		for y in 0..<CAPTURE_HEIGHT {
@@ -1556,7 +1643,17 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		backdrop_clip_ok := offscreen_pixel_near(backdrop_outside_clip_pixel, [4]u8{255, 0, 0, 255}, 2)
 		backdrop_prefix_change_ok := backdrop_changed_center_pixel[0] > 20 && backdrop_changed_center_pixel[1] > 20 && backdrop_changed_center_pixel[3] == 255
 		backdrop_changed_clip_ok := offscreen_pixel_near(backdrop_changed_outside_clip_pixel, [4]u8{255, 0, 0, 255}, 2)
-		state.backdrop_effect_pixel_passed = backdrop_blur_mixed_ok && backdrop_clip_ok && backdrop_prefix_change_ok && backdrop_changed_clip_ok
+		backdrop_resized_pixel_ok := backdrop_resized_center_pixel[0] > 20 && backdrop_resized_center_pixel[1] > 20 &&
+			offscreen_pixel_near(backdrop_resized_outside_clip_pixel, [4]u8{255, 0, 0, 255}, 2)
+		state.backdrop_effect_pixel_passed = backdrop_blur_mixed_ok && backdrop_clip_ok && backdrop_prefix_change_ok &&
+			backdrop_changed_clip_ok && backdrop_resized_pixel_ok
+		state.backdrop_fallback_pixel_passed = backdrop_fallback_matches_normal
+		if backdrop_fallback_matches_normal {
+			fmt.println("[webgpu-feasibility] backdrop over-budget fallback PASS every RGBA pixel matches plain paint")
+		} else {
+			fmt.printf("[webgpu-feasibility] backdrop over-budget fallback FAIL mismatch=(%d,%d) fallback=%v plain=%v\n",
+				backdrop_fallback_mismatch_x, backdrop_fallback_mismatch_y, backdrop_fallback_pixel, backdrop_normal_pixel)
+		}
 		custom_geometry_rectangle_ok := offscreen_pixel_near(custom_geometry_rectangle_pixel, [4]u8{255, 26, 13, 255}, 2)
 		custom_geometry_segment_ok := offscreen_pixel_near(custom_geometry_segment_pixel, [4]u8{26, 230, 51, 255}, 2)
 		custom_geometry_circle_ok := offscreen_pixel_near(custom_geometry_circle_pixel, [4]u8{26, 51, 242, 255}, 2)
@@ -1573,9 +1670,9 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		material_recessed_top_ok := offscreen_pixel_near(material_recessed_top_pixel, [4]u8{96, 96, 96, 255}, 4)
 		material_ok := material_gradient_left_ok && material_gradient_right_ok && material_raised_interior_ok &&
 			material_raised_top_ok && material_recessed_interior_ok && material_recessed_top_ok
-		ok=clear_ok && solid_ok && checker_ok && patch_ok && blend_ok && glyph_ok && clip_ok && outside_clip_ok && rounded_ok && rounded_corner_ok && last_row_ok && partial_buffer_ok && uniform_ok && display_blend_ok && display_clip_x_ok && display_clip_y_ok && text_visible && composite_overlay_ok && composite_text_visible && composite_icon_visible && composite_icon_clip && composite_second_icon_visible && image_red_ok && image_blend_ok && image_blue_ok && image_clip_ok && cropped_capture_matches && second_cropped_capture_matches && backdrop_blur_mixed_ok && backdrop_clip_ok && backdrop_prefix_change_ok && backdrop_changed_clip_ok && custom_geometry_rectangle_ok && custom_geometry_segment_ok && custom_geometry_circle_ok && custom_geometry_marker_ok && custom_geometry_clip_ok && custom_waveform_ok && motion_geometry_ok && material_ok
-		fmt.printf("[webgpu-feasibility] async RGBA8 readback %s texture=%dx%d row_pitch=%d padding_per_row=%d bytes=%d clear=%v solid=%v checker=%v partial_texture=%v partial_buffer=%v uniform=%v blend=%v glyph=%v clip=%v outside_clip=%v rounded=%v rounded_corner=%v last_row=%v runtime_display_blend=%v runtime_clip_x=%v runtime_clip_y=%v runtime_text_visible=%v composite_overlay_order=%v composite_offset_text=%v composite_icon_visible=%v composite_icon_clip=%v composite_second_icon_page_switch=%v composite_image_red=%v composite_image_alpha_blend=%v composite_image_blue=%v composite_image_clip=%v crop_capture_a=%v crop_capture_b=%v backdrop_blur_mixed=%v backdrop_clip=%v backdrop_prefix_change=%v backdrop_changed_clip=%v custom_geometry_rectangle=%v custom_geometry_segment=%v custom_geometry_circle=%v custom_geometry_marker=%v custom_geometry_clip=%v custom_waveform=%v material_gradient_left=%v material_gradient_right=%v material_raised_face=%v material_raised_bevel=%v material_recessed_face=%v material_recessed_bevel=%v\n",
-			"PASS" if ok else "FAIL",READBACK_WIDTH,READBACK_HEIGHT,READBACK_BYTES_PER_ROW,READBACK_BYTES_PER_ROW-READBACK_WIDTH*READBACK_BYTES_PER_PIXEL,len(pixels),clear_ok,solid_ok,checker_ok,patch_ok,partial_buffer_ok,uniform_ok,blend_ok,glyph_ok,clip_ok,outside_clip_ok,rounded_ok,rounded_corner_ok,last_row_ok,display_blend_ok,display_clip_x_ok,display_clip_y_ok,text_visible,composite_overlay_ok,composite_text_visible,composite_icon_visible,composite_icon_clip,composite_second_icon_visible,image_red_ok,image_blend_ok,image_blue_ok,image_clip_ok,cropped_capture_matches,second_cropped_capture_matches,backdrop_blur_mixed_ok,backdrop_clip_ok,backdrop_prefix_change_ok,backdrop_changed_clip_ok,custom_geometry_rectangle_ok,custom_geometry_segment_ok,custom_geometry_circle_ok,custom_geometry_marker_ok,custom_geometry_clip_ok,custom_waveform_ok,material_gradient_left_ok,material_gradient_right_ok,material_raised_interior_ok,material_raised_top_ok,material_recessed_interior_ok,material_recessed_top_ok)
+		ok=clear_ok && solid_ok && checker_ok && patch_ok && blend_ok && glyph_ok && clip_ok && outside_clip_ok && rounded_ok && rounded_corner_ok && last_row_ok && partial_buffer_ok && uniform_ok && display_blend_ok && display_clip_x_ok && display_clip_y_ok && text_visible && composite_overlay_ok && composite_text_visible && composite_icon_visible && composite_icon_clip && composite_second_icon_visible && image_red_ok && image_blend_ok && image_blue_ok && image_clip_ok && cropped_capture_matches && second_cropped_capture_matches && backdrop_blur_mixed_ok && backdrop_clip_ok && backdrop_prefix_change_ok && backdrop_changed_clip_ok && backdrop_resized_pixel_ok && backdrop_fallback_matches_normal && custom_geometry_rectangle_ok && custom_geometry_segment_ok && custom_geometry_circle_ok && custom_geometry_marker_ok && custom_geometry_clip_ok && custom_waveform_ok && motion_geometry_ok && material_ok
+		fmt.printf("[webgpu-feasibility] async RGBA8 readback %s texture=%dx%d row_pitch=%d padding_per_row=%d bytes=%d clear=%v solid=%v checker=%v partial_texture=%v partial_buffer=%v uniform=%v blend=%v glyph=%v clip=%v outside_clip=%v rounded=%v rounded_corner=%v last_row=%v runtime_display_blend=%v runtime_clip_x=%v runtime_clip_y=%v runtime_text_visible=%v composite_overlay_order=%v composite_offset_text=%v composite_icon_visible=%v composite_icon_clip=%v composite_second_icon_page_switch=%v composite_image_red=%v composite_image_alpha_blend=%v composite_image_blue=%v composite_image_clip=%v crop_capture_a=%v crop_capture_b=%v backdrop_blur_mixed=%v backdrop_clip=%v backdrop_prefix_change=%v backdrop_changed_clip=%v backdrop_resized=%v backdrop_over_budget_fallback_matches_plain_paint=%v custom_geometry_rectangle=%v custom_geometry_segment=%v custom_geometry_circle=%v custom_geometry_marker=%v custom_geometry_clip=%v custom_waveform=%v material_gradient_left=%v material_gradient_right=%v material_raised_face=%v material_raised_bevel=%v material_recessed_face=%v material_recessed_bevel=%v\n",
+			"PASS" if ok else "FAIL",READBACK_WIDTH,READBACK_HEIGHT,READBACK_BYTES_PER_ROW,READBACK_BYTES_PER_ROW-READBACK_WIDTH*READBACK_BYTES_PER_PIXEL,len(pixels),clear_ok,solid_ok,checker_ok,patch_ok,partial_buffer_ok,uniform_ok,blend_ok,glyph_ok,clip_ok,outside_clip_ok,rounded_ok,rounded_corner_ok,last_row_ok,display_blend_ok,display_clip_x_ok,display_clip_y_ok,text_visible,composite_overlay_ok,composite_text_visible,composite_icon_visible,composite_icon_clip,composite_second_icon_visible,image_red_ok,image_blend_ok,image_blue_ok,image_clip_ok,cropped_capture_matches,second_cropped_capture_matches,backdrop_blur_mixed_ok,backdrop_clip_ok,backdrop_prefix_change_ok,backdrop_changed_clip_ok,backdrop_resized_pixel_ok,backdrop_fallback_matches_normal,custom_geometry_rectangle_ok,custom_geometry_segment_ok,custom_geometry_circle_ok,custom_geometry_marker_ok,custom_geometry_clip_ok,custom_waveform_ok,material_gradient_left_ok,material_gradient_right_ok,material_raised_interior_ok,material_raised_top_ok,material_recessed_interior_ok,material_recessed_top_ok)
 		fmt.printf("[webgpu-feasibility] custom geometry translation/opacity pixel %s moved_pixel=%v original_pixel=%v\n",
 			"PASS" if motion_geometry_ok else "FAIL", motion_geometry_moved_pixel, motion_geometry_origin_pixel)
 	} else {
@@ -1583,7 +1680,7 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 	}
 	wgpu.BufferUnmap(state.readback_buffer); state.readback_done=ok
 	when FEASIBILITY_TEST_QUIT_AFTER_READBACK {
-		if state.queue_work_done && (!FEASIBILITY_TEST_RESIZE || state.test_resize_post_frame) {
+		if state.queue_work_done && state.surface_cache_pressure_serial >= 4 && smoke_resize_complete() {
 			state.quit=true
 		}
 	}

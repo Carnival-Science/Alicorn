@@ -52,7 +52,10 @@ os_run :: proc() {
 					state.surface_present_count>state.test_resize_post_present_before {
 					state.test_resize_post_frame=true
 					fmt.printf("[webgpu-feasibility] post-animation SurfacePresent submitted at %dx%d\n",state.config.width,state.config.height)
-					if smoke_complete() { state.quit=true }
+					if smoke_complete() ||
+					   (state.readback_callback_received && state.queue_work_done && state.surface_cache_pressure_serial >= 4) {
+						state.quit=true
+					}
 				}
 			}
 		}
