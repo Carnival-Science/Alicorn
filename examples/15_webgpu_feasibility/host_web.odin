@@ -195,7 +195,8 @@ browser_host_step :: proc(now_ns: u64) -> bool {
 		}
 	}
 	if presentation == .Invalid_Input || presentation == .Resource_Failure ||
-	   presentation == .Render_Failure || presentation == .Present_Failure {
+	   presentation == .Render_Failure || presentation == .Surface_Acquire_Failure ||
+	   presentation == .Present_Failure {
 		fmt.eprintln("[webgpu-feasibility] browser canvas presentation failed:", presentation)
 		return false
 	}

@@ -24,15 +24,17 @@ ODIN=$(alicorn_resolve_odin "$ODIN_ARG")
 cd "$SCRIPT_DIR"
 mkdir -p out web
 echo 'Building interactive native fixture'
-"$ODIN" build . -out:out/webgpu_feasibility
+"$ODIN" build . -collection:alicorn=../.. -out:out/webgpu_feasibility
 echo 'Building native asynchronous-readback smoke fixture'
-"$ODIN" build . -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -out:out/webgpu_feasibility_smoke
+"$ODIN" build . -collection:alicorn=../.. -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -out:out/webgpu_feasibility_smoke
 echo 'Building native host-owned presenter smoke fixture'
-"$ODIN" build . -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -define:FEASIBILITY_TEST_WEBGPU_PRESENTER=true -out:out/webgpu_feasibility_presenter_smoke
+"$ODIN" build . -collection:alicorn=../.. -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -define:FEASIBILITY_TEST_WEBGPU_PRESENTER=true -out:out/webgpu_feasibility_presenter_smoke
 echo 'Building native SDL surface presenter smoke fixture'
-"$ODIN" build . -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -define:FEASIBILITY_TEST_SURFACE_PRESENTER=true -out:out/webgpu_feasibility_surface_presenter
+"$ODIN" build . -collection:alicorn=../.. -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -define:FEASIBILITY_TEST_SURFACE_PRESENTER=true -out:out/webgpu_feasibility_surface_presenter
 echo 'Building native surface-resize smoke fixture'
-"$ODIN" build . -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -define:FEASIBILITY_TEST_RESIZE=true -out:out/webgpu_feasibility_resize_smoke
+"$ODIN" build . -collection:alicorn=../.. -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -define:FEASIBILITY_TEST_RESIZE=true -out:out/webgpu_feasibility_resize_smoke
+echo 'Building native SDL3 Hosted_Runtime surface smoke fixture'
+"$ODIN" build . -collection:alicorn=../.. -define:FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER=true -define:FEASIBILITY_TEST_NATIVE_HOSTED_SMOKE=true -out:out/native_hosted_feasibility
 if ! command -v wasm-ld >/dev/null 2>&1; then
 	echo 'The js_wasm32 build requires wasm-ld. On macOS install it with `brew install lld` and add `$(brew --prefix lld)/bin` to PATH.' >&2
 	exit 1
@@ -48,4 +50,5 @@ printf 'Native readback smoke: %s/out/webgpu_feasibility_smoke\n' "$SCRIPT_DIR"
 printf 'Native host-owned presenter smoke: %s/out/webgpu_feasibility_presenter_smoke\n' "$SCRIPT_DIR"
 printf 'Native SDL surface presenter smoke: %s/out/webgpu_feasibility_surface_presenter\n' "$SCRIPT_DIR"
 printf 'Native resize smoke: %s/out/webgpu_feasibility_resize_smoke\n' "$SCRIPT_DIR"
+printf 'Native Hosted_Runtime presenter smoke: %s/out/native_hosted_feasibility\n' "$SCRIPT_DIR"
 printf 'Browser shared-renderer fixture: serve %s/web on localhost and open /index.html\n' "$SCRIPT_DIR"

@@ -57,7 +57,7 @@ uploads remain renderer-specific.
 | Phase | Exit evidence | Status |
 | --- | --- | --- |
 | 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: the pre-change Windows SDL_GPU reference and a supplemental D3D12 effects profile are recorded in `docs/validation/sdl-gpu-reference-windows-2026-11-15.md`; Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes. Windows browser canvas resize now verifies retained-only redraw with a fresh output revision and no UI re-description. Browser fallback/vendor metadata is exposed, but does not establish hardware acceleration. Physical Linux GPU/Wayland, genuine driver/OS loss and recovery, same-workload production comparison, and application-level stage/working-set measurements remain open |
-| 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring and CPU preparation are SDL-independent; `renderer/webgpu/presenter.odin` consumes a borrowed finalized display list and encodes into caller-owned WebGPU frame objects, with queue submission and async completion owned by the host. `host/web/surface_presenter.odin` supplies the Hosted_Runtime-to-canvas boundary, now wired into the browser feasibility example with resize, visibility, input, surface recovery, and asynchronous retirement. `paint_display_list_for_output` routes commands by disjoint retained root, preserves paint order and shared owner-zero overlays, and tags views with output identity and revision. Native D3D12/Vulkan fixture parity passes and the package builds for `js_wasm32`. Production `ui.run`, SDL3/window integration, native `ui.run` target selection, and downstream app import migration remain outstanding |
+| 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring and CPU preparation are SDL-independent; `renderer/webgpu/presenter.odin` consumes a borrowed finalized display list and encodes into caller-owned WebGPU frame objects, with queue submission and async completion owned by the host. `host/presentation/surface_presenter.odin` supplies a shared Hosted_Runtime-to-WebGPU-surface boundary; `host/web/surface_presenter.odin` preserves browser-facing aliases. The browser feasibility example exercises resize, visibility, input, recovery, and async retirement; a Windows SDL3 smoke now exercises native retained presentation, pointer activation, resize, and queue completion through the same coordinator. `paint_display_list_for_output` routes commands by disjoint retained root, preserves paint order and shared owner-zero overlays, and tags views with output identity and revision. Native D3D12/Vulkan fixture parity passes and the package builds for `js_wasm32`. Production `ui.run`, SDL3/window integration, native `ui.run` target selection, and downstream app import migration remain outstanding |
 | 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and D3D12 fixtures exercise per-resource custom-surface caching, budget pressure, in-flight protection, instance transforms, readback, and resize. One shared compositor preserves interleaved paint order; text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, clipping, waveform samples, and cropped mixed-renderer readback pass Windows D3D12 and browser WebGPU. Shared CPU backdrop planning/meshes feed renderer-owned WebGPU prefix capture, filtering, and in-order composition for up to four markers within one aggregate 48 MiB tracked mesh+texture allocation budget. Two overlapping markers pass pixel readback on Windows D3D12/Vulkan and browser WebGPU; the later marker's capture includes the earlier marker's composed result. D3D12 also verifies unchanged-prefix reuse, changed-prefix invalidation, resized-target retirement behind the prior queue serial, and exact ordinary-paint parity when a valid effect exceeds budget. Six shared WGSL sources are compile-time loaded for native and `js_wasm32` builds. The rounded raised relief surface under increased contrast/reduced transparency now passes browser pixel readback as well as Windows D3D12/Vulkan; browser run also verified live canvas resize, output acknowledgement, and return to demand-driven idle. Full theme/accessibility combinations, application host presentation, and broader cross-platform GPU validation remain open |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | In progress: image, custom-geometry, and backdrop resources have bounded asynchronous retirement and completion-driven release tests; async readback is exercised. Same-device compositor teardown/rebuild now reproduces every RGBA pixel on Windows D3D12 and Vulkan from retained Runtime products. Genuine driver/OS device loss and device recovery, plus primary/secondary window teardown/recreation, remain unvalidated. Intentional `DeviceDestroy` callbacks are tracked separately and do not count as driver-loss evidence |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
@@ -1657,3 +1657,101 @@ presenter/runtime only when no WebGPU work is in flight. If work remains, it
 keeps those callback-referenced objects alive until the WASM page instance is
 reclaimed. This fixture behavior is not evidence of general browser device-loss
 or application-shutdown recovery.
+
+### Shared Hosted_Runtime WebGPU surface lifecycle (Windows, 2026-11-16)
+
+The surface coordinator has moved from the browser-only package into
+`host/presentation/surface_presenter.odin`. It owns the common bridge from a
+`Hosted_Runtime` to a host-created WebGPU surface and shared renderer: retained
+resize/visibility state, one bounded step per wake, output acquisition and
+presentation, completion-driven resource retirement, and nonblocking teardown.
+The browser module now contains compatibility aliases and forwards to this
+shared implementation. SDL3/native hosts can use the same coordinator without
+importing browser interop.
+
+Validation with `C:\odin\odin.exe` (`dev-2026-11-nightly:08539cd`):
+
+- `odin test host/presentation -collection:alicorn=.` passed (1 guard test).
+- `odin test host/web -collection:alicorn=.` passed (5 tests).
+- `examples/15_webgpu_feasibility` compiled for `js_wasm32` with the hosted
+  canvas presenter enabled.
+- The native feasibility executable built successfully; the common presenter
+  also compiled in the native host test target.
+- `git diff --check` passed.
+
+This is a reusable presentation boundary. The browser feasibility example and
+a native SDL3 feasibility smoke now exercise the shared coordinator. This is
+not production-host integration: SDL3 window/surface/device creation, complete
+native event and IME routing, visibility/minimize scheduling, and `ui.run`
+target selection still need to be wired before native applications can use
+WebGPU by default.
+
+### SDL3 native Hosted_Runtime presenter smoke (Windows, 2026-11-16)
+
+The native feasibility host now runs a retained Alicorn UI through
+`host/presentation/surface_presenter.odin` on an SDL3-created WebGPU surface.
+This is the same coordinator used by the browser wrapper. The bounded smoke
+queries the retained button bounds, injects a primary pointer down/up through
+`hosted_runtime_pointer`, requests an SDL window resize to 800×450, verifies a
+new surface presentation after the resize, waits for asynchronous queue
+completion, and destroys the presenter before the Hosted_Runtime and surface.
+The window/event loop and resize are real; the pointer input is synthesized
+from Runtime geometry, not a physical mouse event.
+
+Validation with `C:\odin\odin.exe` (`dev-2026-11-nightly:08539cd`) on Windows
+with an NVIDIA GeForce RTX 2080 SUPER:
+
+- The native hosted feasibility build succeeded with
+  `FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER` and
+  `FEASIBILITY_TEST_NATIVE_HOSTED_SMOKE` enabled.
+- `native_hosted_feasibility.exe --backend=d3d12` exited 0; device selection
+  reported D3D12 and the hosted render, pointer activation, 800×450 resize,
+  post-resize presentation, queue retirement, and shutdown checks passed.
+- `native_hosted_feasibility.exe --backend=vulkan` exited 0 with the same
+  hosted interaction and resize checks.
+- Browser `js_wasm32` feasibility build succeeded; `odin test host/presentation`
+  passed 1 test and `odin test host/web` passed 5 tests.
+- `git diff --check` passed.
+
+This establishes a native SDL3/WebGPU hosted-surface proof, not production
+`ui.run` integration. Native key mapping, text input and IME, focus policy,
+clipboard, drag/drop, minimize/restore behavior, secondary windows, and
+application dogfooding remain unvalidated on this path. It does not close
+Phase 0's Linux hardware/Wayland and genuine device-loss gaps.
+
+### Browser hosted-surface resize recovery (Windows, 2026-11-16)
+
+The live resize failure was caused by an Odin `vendor:wgpu` binding mismatch:
+the generated binding declares `SurfacePresent` as returning `wgpu.Status`,
+but `vendor/wgpu/wgpu.js` implements browser presentation as a void no-op
+because WebGPU presents the canvas on queue submission. WASM therefore observed
+an invalid zero status. The shared presenter latched that as a permanent
+presentation failure; the next resize could no longer submit a replacement
+frame, leaving the canvas black and eventually reporting `RuntimeError:
+unreachable executed`.
+
+The shared presentation package now selects a platform-specific status adapter:
+native targets still require `.Success`, while `js` treats the browser's
+no-op as success and relies on the existing asynchronous queue completion for
+submission errors. Surface acquisition failures are also reported distinctly
+from presenter failures. Temporary resize diagnostics were removed.
+
+Validation with `C:\odin\odin.exe` (`dev-2026-11-nightly:08539cd`) on Windows:
+
+- The full feasibility build completed, including native binaries and the
+  `js_wasm32` browser fixture.
+- `odin test host/presentation` passed (1 test); `odin test host/web` passed
+  (5 tests).
+- The live browser fixture reported WebGPU hardware acceleration
+  (`fallback=false`, NVIDIA Turing) and all core, compositor, effects, and
+  material readbacks passed.
+- Repeatedly toggling **Resize surface** resized the canvas in both directions;
+  retained UI remained visible, no browser runtime error appeared, and the
+  host returned to demand-driven idle after each change.
+- Native Hosted_Runtime presenter smoke passed on both D3D12 and Vulkan,
+  including pointer activation and an 800×450 resize.
+- `git diff --check` passed.
+
+This validates the hosted feasibility path and the browser/native presenter
+boundary. It does not validate production `ui.run`, browser device-loss
+recovery, or the remaining Phase 0 platform gaps.

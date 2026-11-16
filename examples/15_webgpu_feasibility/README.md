@@ -167,6 +167,23 @@ for its completion callback before teardown, run:
 .\out\webgpu_feasibility_surface_presenter.exe --backend=vulkan
 ~~~
 
+The bounded SDL3/Hosted_Runtime path uses the same shared WebGPU surface
+coordinator as the browser. Its smoke creates a real native window, renders a
+retained button, routes a pointer activation through Hosted_Runtime, resizes the
+SDL window to 800×450, presents again, and waits for queue completion before
+teardown. The click is injected at the retained button's queried bounds; this
+does not claim physical mouse, keyboard, or IME coverage. Build and run on
+Windows with:
+
+~~~powershell
+C:\odin\odin.exe build . -collection:alicorn=../.. `
+    -define:FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER=true `
+    -define:FEASIBILITY_TEST_NATIVE_HOSTED_SMOKE=true `
+    -out:out\native_hosted_feasibility.exe
+.\out\native_hosted_feasibility.exe --backend=d3d12
+.\out\native_hosted_feasibility.exe --backend=vulkan
+~~~
+
 This bounded check verifies one surface acquisition, one presenter submission,
 one `SurfacePresent`, an exact output-revision acknowledgement, and completion
 before presenter destruction. It validates the SDL-created native surface
@@ -242,6 +259,14 @@ browser needs `navigator.gpu` and a functioning adapter. The status also reports
 how many one-shot frames occurred while waiting for adapter/device callbacks;
 the browser host must not poll with a continuous animation-frame loop during
 initialization.
+
+Browser WebGPU presents the canvas as part of queue submission. Odin's current
+`vendor:wgpu` binding still types `SurfacePresent` as returning `Status`, while
+its JavaScript bridge implements it as a void no-op. The shared presenter
+therefore treats that call as successful on `js` targets and continues to
+validate the asynchronous queue-completion callback; native targets continue
+checking the actual `SurfacePresent` status. This avoids interpreting the
+bridge's undefined return as an invalid status after a canvas resize.
 
 The fixture uses default device limits because of Odin binding issue #8174. It
 has passed an actual browser WebGPU runtime/readback session and native Windows

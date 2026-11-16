@@ -7,6 +7,7 @@ import alicorn "../../runtime"
 import "vendor:wgpu"
 import runa "../../third_party/Runa"
 import webgpu_renderer "../../renderer/webgpu"
+import presentation_host "../../host/presentation"
 
 ANIMATION_SECONDS :: 1.8
 VERTEX_CAPACITY :: 256 * 1024
@@ -31,6 +32,8 @@ FEASIBILITY_TEST_COMPOSITOR_RECREATION :: #config(FEASIBILITY_TEST_COMPOSITOR_RE
 FEASIBILITY_TEST_WEBGPU_PRESENTER :: #config(FEASIBILITY_TEST_WEBGPU_PRESENTER, false)
 FEASIBILITY_TEST_SURFACE_PRESENTER :: #config(FEASIBILITY_TEST_SURFACE_PRESENTER, false)
 FEASIBILITY_TEST_WEB_CANVAS_PRESENTER :: #config(FEASIBILITY_TEST_WEB_CANVAS_PRESENTER, false)
+FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER :: #config(FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER, false)
+FEASIBILITY_TEST_NATIVE_HOSTED_SMOKE :: #config(FEASIBILITY_TEST_NATIVE_HOSTED_SMOKE, false)
 SURFACE_CACHE_PRESSURE_BATCH_COUNT :: 120
 SURFACE_CACHE_PRESSURE_FIRST_WIDTH :: 100
 SURFACE_CACHE_PRESSURE_SECOND_WIDTH :: SURFACE_CACHE_PRESSURE_FIRST_WIDTH + SURFACE_CACHE_PRESSURE_BATCH_COUNT
@@ -46,6 +49,7 @@ Vertex :: struct {
 }
 Glyph_Quad :: struct { x0, y0, x1, y1: f32, uv: [4]f32 }
 Draw_Command :: struct { first, count: u32, scissor: [4]u32 }
+Native_Hosted_Feasibility_App :: struct { click_count: int }
 
 state: struct {
 	ctx: runtime.Context,
@@ -55,6 +59,18 @@ state: struct {
 	adapter: wgpu.Adapter,
 	device: wgpu.Device,
 	queue: wgpu.Queue,
+	native_hosted: alicorn.Hosted_Runtime,
+	native_hosted_presenter: presentation_host.Hosted_Surface_Presenter,
+	native_hosted_ready: bool,
+	native_hosted_presented: bool,
+	native_hosted_smoke_click_sent: bool,
+	native_hosted_smoke_resize_requested: bool,
+	native_hosted_resize_applied: bool,
+	native_hosted_resize_presented: bool,
+	native_hosted_present_count: u64,
+	native_hosted_has_more_work: bool,
+	native_hosted_next_wake_ns: u64,
+	native_hosted_app: Native_Hosted_Feasibility_App,
 	solid_runtime: alicorn.Runtime,
 	solid_renderer: webgpu_renderer.Solid_Renderer,
 	solid_runtime_ready: bool,
@@ -178,6 +194,14 @@ main :: proc() {
 		backendType = requested_backend,
 	}, {callback = on_adapter})
 	os_run()
+	when FEASIBILITY_TEST_NATIVE_HOSTED_SMOKE {
+		if !state.native_hosted_presented || state.native_hosted_ready ||
+		   state.native_hosted_app.click_count != 1 || !state.native_hosted_resize_presented {
+			fmt.eprintln("[webgpu-feasibility] native Hosted_Runtime presenter smoke FAIL")
+			os_exit_failure()
+		}
+		fmt.println("[webgpu-feasibility] native Hosted_Runtime presenter smoke PASS")
+	}
 	when FEASIBILITY_TEST_QUIT_AFTER_READBACK {
 		if !state.readback_done || !state.queue_work_done || !state.queue_work_done_ok {
 			os_exit_failure()
@@ -520,6 +544,9 @@ on_device :: proc "c" (status: wgpu.RequestDeviceStatus, device: wgpu.Device, me
 	state.config.presentMode = .Fifo
 	wgpu.SurfaceConfigure(state.surface, &state.config)
 	state.ready, state.dirty = true, true
+	when FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER {
+		native_hosted_init()
+	}
 	when FEASIBILITY_TEST_WEB_CANVAS_PRESENTER {
 		browser_host_init()
 	}
@@ -530,6 +557,10 @@ resize :: proc() {
 	if !state.ready || state.surface == nil || state.device == nil { return }
 	when FEASIBILITY_TEST_WEB_CANVAS_PRESENTER {
 		browser_host_resize()
+		return
+	}
+	when FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER {
+		native_hosted_resize()
 		return
 	}
 	state.width, state.height = os_get_framebuffer_size()
@@ -617,6 +648,9 @@ step :: proc(dt: f32, now_ns: u64) -> bool {
 }
 
 finish :: proc() {
+	when FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER {
+		native_hosted_shutdown()
+	}
 	webgpu_renderer.Compositor_Destroy(&state.compositor)
 	webgpu_renderer.Compositor_Destroy(&state.backdrop_compositor)
 	if state.presenter_created {
