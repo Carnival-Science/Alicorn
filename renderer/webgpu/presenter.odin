@@ -12,6 +12,8 @@ WebGPU_Presenter_Result :: enum {
 	Ok,
 	Invalid_Input,
 	Backpressure,
+	Output_Not_Pending,
+	Stale_Display,
 	Unsupported_Command,
 	Resource_Failure,
 }
@@ -30,6 +32,8 @@ WebGPU_Submission :: struct {
 	presenter_generation: u64,
 	serial: u64,
 	display_revision: u64,
+	output_id: alicorn.Presentation_Output_ID,
+	output_bound: bool,
 }
 
 webgpu_presenter_generation_counter: u64
@@ -46,6 +50,8 @@ webgpu_presenter_internal_state :: struct {
 	last_submitted: u64,
 	completed: u64,
 	pending_revision: u64,
+	pending_output_id: alicorn.Presentation_Output_ID,
+	pending_output_bound: bool,
 	frame_pending: bool,
 	failed: bool,
 }
@@ -65,6 +71,27 @@ webgpu_presenter_token_is_valid :: proc(
 ) -> bool {
 	return generation != 0 && submission.presenter_generation == generation &&
 		submission.serial > 0 && submission.serial <= last_submitted
+}
+
+webgpu_presenter_output_id_is_well_formed :: proc(output: alicorn.Presentation_Output_ID) -> bool {
+	return (output.runtime_identity == 0 && output.sequence == 0) ||
+		(output.runtime_identity != 0 && output.sequence != 0)
+}
+
+webgpu_presenter_ack_submission :: proc(
+	runtime: ^alicorn.Runtime,
+	output: alicorn.Presentation_Output_ID,
+	output_bound: bool,
+	revision: u64,
+) -> bool {
+	if runtime == nil { return false }
+	if output_bound {
+		return alicorn.presentation_output_frame_submission_succeeded(runtime, output, revision) == .Ok
+	}
+	if runtime.presentation_revision != revision { return false }
+	alicorn.gpu_surface_frame_consumed(runtime)
+	alicorn.frame_submission_succeeded(runtime)
+	return true
 }
 
 // Create a host-owned frame presenter for one Runtime. It creates only renderer
@@ -105,6 +132,11 @@ WebGPU_Presenter_Create :: proc(
 // The view and Runtime sidecars are consumed synchronously. This method never
 // submits the queue or retains a pointer into the view.
 //
+// For Runtime multi-output presentation, pass the selected output ID and a
+// host-routed display view stamped with that output snapshot's revision. The
+// submission acknowledges only that output. Omitting output preserves the
+// whole-Runtime compatibility path for hosts that render the complete display.
+//
 // Backpressure is explicit: when the configured number of queue submissions
 // remains incomplete, the host should wait for its asynchronous completion
 // callback and retry instead of forcing a blocking GPU wait.
@@ -117,13 +149,25 @@ WebGPU_Presenter_Encode :: proc(
 	scale_x, scale_y: f32,
 	clear_target := false,
 	clear_color: wgpu.Color = {0.04, 0.06, 0.08, 1},
+	output: alicorn.Presentation_Output_ID = {},
 ) -> WebGPU_Presenter_Result {
 	state := webgpu_presenter_state(presenter)
 	if state == nil || state.failed || state.runtime == nil || encoder == nil || target == nil ||
 	   target_width == 0 || target_height == 0 ||
 	   !alicorn.number_is_finite(scale_x) || !alicorn.number_is_finite(scale_y) ||
-	   scale_x <= 0 || scale_y <= 0 || state.frame_pending {
+	   scale_x <= 0 || scale_y <= 0 || state.frame_pending ||
+	   !webgpu_presenter_output_id_is_well_formed(output) {
 		return .Invalid_Input
+	}
+	output_bound := output.runtime_identity != 0
+	if output_bound {
+		snapshot, snapshot_status := alicorn.presentation_output_snapshot(state.runtime, output)
+		if snapshot_status != .Ok || snapshot.root == 0 || !snapshot.visible { return .Invalid_Input }
+		if !snapshot.pending { return .Output_Not_Pending }
+		// Output snapshots carry their own revision. Hosts that route the
+		// Runtime's combined borrowed stream into an output-specific view must
+		// stamp that view with this exact revision before encoding it.
+		if display.revision != snapshot.revision { return .Stale_Display }
 	}
 	if !webgpu_presenter_capacity_available(state.last_submitted, state.completed, state.max_frames_in_flight) {
 		return .Backpressure
@@ -145,6 +189,8 @@ WebGPU_Presenter_Encode :: proc(
 		return webgpu_presenter_result_from_compositor(result)
 	}
 	state.pending_revision = display.revision
+	state.pending_output_id = output
+	state.pending_output_bound = output_bound
 	state.frame_pending = true
 	return .Ok
 }
@@ -157,6 +203,8 @@ WebGPU_Presenter_Cancel_Frame :: proc(presenter: ^WebGPU_Presenter) -> bool {
 	if state == nil || state.failed || !state.frame_pending { return false }
 	Compositor_Abort_Submission(&state.compositor)
 	state.pending_revision = 0
+	state.pending_output_id = {}
+	state.pending_output_bound = false
 	state.frame_pending = false
 	return true
 }
@@ -177,13 +225,21 @@ WebGPU_Presenter_Submission_Succeeded :: proc(
 		return
 	}
 	state.last_submitted = serial
-	submission = WebGPU_Submission{state.generation, serial, state.pending_revision}
+	submission = WebGPU_Submission{
+		presenter_generation=state.generation,
+		serial=serial,
+		display_revision=state.pending_revision,
+		output_id=state.pending_output_id,
+		output_bound=state.pending_output_bound,
+	}
 	state.pending_revision = 0
+	state.pending_output_id = {}
+	state.pending_output_bound = false
 	state.frame_pending = false
 	// A Runtime mutation between encode and submit belongs to a later frame.
-	if state.runtime.presentation_revision == submission.display_revision {
-		alicorn.gpu_surface_frame_consumed(state.runtime)
-		alicorn.frame_submission_succeeded(state.runtime)
+	if webgpu_presenter_ack_submission(
+		state.runtime, submission.output_id, submission.output_bound, submission.display_revision,
+	) {
 		state.runtime.stats.gpu_submits += 1
 	}
 	return submission, true

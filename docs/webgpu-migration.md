@@ -57,7 +57,7 @@ uploads remain renderer-specific.
 | Phase | Exit evidence | Status |
 | --- | --- | --- |
 | 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: the pre-change Windows SDL_GPU reference and a supplemental D3D12 effects profile are recorded in `docs/validation/sdl-gpu-reference-windows-2026-11-15.md`; Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes, but the browser adapter acceleration class is not surfaced. Physical Linux GPU/Wayland, genuine driver/OS loss and recovery, same-workload production comparison, and application-level stage/working-set measurements remain open |
-| 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring and CPU preparation are SDL-independent; `renderer/webgpu/presenter.odin` now consumes a borrowed finalized display list and encodes into caller-owned WebGPU frame objects, with queue submission and async completion owned by the host. Its fixture parity passes on Windows D3D12 and the package builds for `js_wasm32`. Production SDL3/window and browser host integration, native `ui.run` target selection, and full downstream app import migration remain outstanding |
+| 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring and CPU preparation are SDL-independent; `renderer/webgpu/presenter.odin` consumes a borrowed finalized display list and encodes into caller-owned WebGPU frame objects, with queue submission and async completion owned by the host. A frame may carry a Runtime `Presentation_Output_ID`, so its acknowledgement is scoped to the target submitted. Native D3D12/Vulkan fixture parity passes and the package builds for `js_wasm32`. Production SDL3/window and browser host integration, native `ui.run` target selection, and full downstream app import migration remain outstanding |
 | 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and D3D12 fixtures exercise per-resource custom-surface caching, budget pressure, in-flight protection, instance transforms, readback, and resize. One shared compositor preserves interleaved paint order; text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, clipping, waveform samples, and cropped mixed-renderer readback pass Windows D3D12 and the current browser WebGPU readback. Shared CPU backdrop planning/meshes feed renderer-owned WebGPU prefix capture, filtering, and in-order composition for up to four markers within one aggregate 48 MiB tracked mesh+texture allocation budget. Two overlapping markers pass pixel readback on Windows D3D12/Vulkan and browser WebGPU; the later marker's capture includes the earlier marker's composed result. D3D12 also verifies unchanged-prefix reuse, changed-prefix invalidation, resized-target retirement behind the prior queue serial, and exact ordinary-paint parity when a valid effect exceeds budget. Six shared WGSL sources are compile-time loaded for native and `js_wasm32` builds. A Windows-only fixture slice verifies one per-corner rounded relief surface under increased contrast and reduced transparency on D3D12/Vulkan; its WASM build passes, but those new material pixels have not yet been replayed in a browser. Full theme/accessibility combinations, application host presentation, and broader cross-platform GPU validation remain open |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | In progress: image, custom-geometry, and backdrop resources have bounded asynchronous retirement and completion-driven release tests; async readback is exercised. Same-device compositor teardown/rebuild now reproduces every RGBA pixel on Windows D3D12 and Vulkan from retained Runtime products. Genuine driver/OS device loss and device recovery, plus primary/secondary window teardown/recreation, remain unvalidated. Intentional `DeviceDestroy` callbacks are tracked separately and do not count as driver-loss evidence |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
@@ -720,7 +720,12 @@ device, and queue. It consumes a finalized `Paint_Display_List_View`
 synchronously and encodes into a caller-owned command encoder and target view;
 the host still owns surface acquisition, command submission, callback/event
 processing, and frame scheduling. The renderer does not import SDL3 or browser
-APIs. Submission tokens report display revision and serial, and asynchronous
+APIs. A host can reuse one presenter across targets on the same Runtime. For a
+multi-output frame it passes the selected `Presentation_Output_ID` and a routed
+display view stamped with that output snapshot's revision; successful
+submission acknowledges only that target. Omitting the ID preserves the
+whole-Runtime compatibility path. Submission tokens report display revision
+and serial, and asynchronous
 queue-completion callbacks release retired renderer resources. Outstanding
 frames are bounded (default three, maximum eight); encoding returns explicit
 backpressure instead of waiting on the GPU. A failed encode requires the host
@@ -737,7 +742,9 @@ GeForce RTX 2080 SUPER; requested and reported backends agreed in each run.
 `examples/15_webgpu_feasibility/build.ps1` also built the
 interactive, readback, compositor-recreation, resize, presenter-smoke, and
 `js_wasm32` fixture targets. `odin check renderer/webgpu -no-entry-point` and
-all three `odin test renderer/webgpu` tests passed.
+`odin check renderer/webgpu -target:js_wasm32 -no-entry-point` passed. All five
+WebGPU package tests passed, including a two-output acknowledgement regression;
+all 352 Runtime tests passed after merging current `master`.
 
 Run the native boundary probe with:
 
@@ -894,6 +901,19 @@ static mesh. Its old buffer remains resident until serial 2 completes, and an
 invalid future completion serial releases nothing. Existing rectangle,
 segment, circle, masked-marker, waveform, clipping, material, text, icon, image,
 and paint-order pixels continue to pass.
+
+The merged Windows candidate was rechecked with
+`tools/native_sdl_gpu.ps1 -GpuCanvasValidation -Speed -Odin C:\odin\odin.exe`
+on 2026-11-16. D3D12 readback remained pixel-identical at 100%, 125%, 150%,
+and 200% scale, including resized retained blur; slider semantics and input
+remained intact; 128 rapid updates rebuilt neither Runtime description; hidden
+idle requested no frame or persistent allocation; and static GPU buffers were
+released after their fences. In this run, cached peaks reduced CPU encode p95
+from 68.7 µs to 21.9 µs, uploads from 227,232 B/frame to 5,184 B/frame, and
+geometry passes from four to two, while adding 222,048 B of persistent peak
+buffers. Submit-to-fence p95 was 150.2 µs versus 118.5 µs; as the report notes,
+this host timing is noisy and is not a GPU execution timestamp. The fixture is
+still a composition-level comparison, not instrumentation of the Punks app.
 
 Validation on the local Windows candidate:
 
