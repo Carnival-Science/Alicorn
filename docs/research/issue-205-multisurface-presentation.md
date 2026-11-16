@@ -36,23 +36,38 @@ by the Runtime API.
 
 ## Verification
 
-`odin test runtime` passes all 352 tests on Odin dev-2026-11-nightly. The new
-tests cover independent output updates, shared invalidation, exact and stale
-acknowledgements, visibility, subtree retirement, disjoint-root validation,
-custom geometry payload updates, and the unchanged single-output path.
+`odin test runtime` passes all 353 tests on Odin dev-2026-11-nightly. The
+issue-specific host fixture is
+[`hosted_multisurface_test.odin`](../../runtime/hosted_multisurface_test.odin):
+one `Hosted_Runtime` describes ruler and waveform roots, while two independent
+target records submit snapshots and acknowledge them separately. It verifies
+that failed submissions remain pending; ruler-only and waveform-only
+description changes dirty only their matching target; resize dirties both;
+hidden output work does not keep the host awake; stale acknowledgements are
+rejected after restore; and removed/recreated targets cannot revive old work.
+The runtime tests also cover shared presentation invalidation, retained paint
+and custom-geometry updates, disjoint-root validation, and the unchanged
+single-display acknowledgement path.
 
-Acetate is now wired as the first consumer: its ruler and waveform bind to
-disjoint outputs on one Runtime, and the wx paint adapters capture and
-acknowledge the exact revision after their synchronous paint callback succeeds.
-The C++ adapter passes syntax compilation and the Odin binding builds against
-this implementation. The application-level acceptance still needs a native
-session that records ruler-only and waveform-only updates, confirms only the
-matching output is acknowledged, and checks visible idle behavior. Pixel parity,
-input, and resource-lifetime comparisons remain separate evidence.
+The host fixture models two separate targets without opening native windows;
+it validates revision routing and acknowledgement, not pixels or window-system
+behavior. Acetate's
+[`AudacityTimelineView.odin`](https://github.com/samanshaiza004/acetate/blob/main/src/alicorn/AudacityTimelineView.odin)
+binds ruler, waveform, and waveform-label roots to one Runtime. Its wx paint
+adapters read the per-output revision and acknowledge it after the synchronous
+paint callback succeeds. Native interactive/pixel parity and GPU-resource
+retirement remain platform integration evidence, separate from this Runtime
+contract.
 
-## Next consumer validation
+No new Runtime API was needed for this follow-up: the optional output IDs,
+per-output dirty revisions, visibility, and exact-revision acknowledgement
+were already present on `master`. This pass closes the automated host-contract
+coverage and clarifies output lifecycle and successful-submission semantics in
+[`hosted-runtime.md`](../hosted-runtime.md).
 
-Use Acetate's existing shared timeline Runtime as the native consumer fixture.
-Record which wx callback runs for isolated ruler and waveform updates, then
-confirm output revisions settle independently on supported native platforms.
-Keep the existing wx rendering path while doing that validation.
+## Remaining integration validation
+
+Use Acetate's shared timeline Runtime for a native session that records which
+wx callback runs for isolated ruler and waveform updates, and confirms output
+revisions settle independently on supported native platforms. Keep the
+existing wx rendering path while doing that validation.

@@ -28,6 +28,11 @@ changelogs.
 
 ### Validation
 
+- Added a `Hosted_Runtime` conformance fixture for two independent presentation
+  targets. It covers output-local description changes, shared resize, failed
+  submission, visibility, stale acknowledgements, target removal/recreation,
+  and idle behavior. See
+  [issue #205 research](docs/research/issue-205-multisurface-presentation.md).
 - Added dense point-marker GPU readback and cost fixtures for 1,280px and
   1,920px sample views. The readback uses an analytic ellipse oracle and checks
   overlap, clipping, and fractional DPI on Metal and D3D12. Corrected wxRect
