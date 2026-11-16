@@ -1,12 +1,12 @@
 # Alicorn #201 — Dense retained point markers
 
-**Status:** Hosted Metal and D3D12 readback passes for the dense marker workload. #201 remains open for a native wxWidgets reference comparison and actual GPU execution timings.
+**Status:** Corrected Audacity/wx marker-center mapping is being revalidated on hosted Metal and D3D12. #201 remains open for a native wxWidgets reference comparison and actual GPU execution timings.
 
 Issue: [#201 — Support dense retained point markers within the geometry budget](https://github.com/samanshaiza004/alicorn/issues/201)
 
 ## Scope and architecture
 
-Audacity's [`WaveformView.cpp` at `449db4f`](https://github.com/audacity/audacity/blob/449db4f9772d46ab6e4b791d8d0350434ab74679/src/tracks/playabletrack/wavetrack/ui/WaveformView.cpp#L644-L663) draws a 3×3 or 4×4 logical-pixel ellipse per visible sample, with connected waveform segments. It positions each rectangle at `sample - tickSize/2` using integer division. The corresponding ellipse center is therefore half a logical pixel after the sample coordinate for a 3×3 marker, and unchanged for a 4×4 marker. The GPU fixture uses those centers at every tested scale.
+Audacity's [`WaveformView.cpp` at `449db4f`](https://github.com/audacity/audacity/blob/449db4f9772d46ab6e4b791d8d0350434ab74679/src/tracks/playabletrack/wavetrack/ui/WaveformView.cpp#L644-L663) draws a 3×3 or 4×4 logical-pixel ellipse per visible sample, with connected waveform segments. It positions each `wxRect` at `sample - tickSize/2` using integer division. `wxRect` uses inclusive integer pixel endpoints (`right = x + width - 1`); the corresponding raster-space center is therefore on the sample coordinate for 3×3 and half a logical pixel up and left for 4×4. The GPU fixture uses these centers at every tested scale. wxMSW adjusts the right and bottom extents for GDI, another reason exact pixel parity remains platform-specific; see the [wxRect definition](https://github.com/wxWidgets/wxWidgets/blob/v3.2.6/include/wx/gdicmn.h), [`wxDC::DrawEllipse(wxRect)`](https://github.com/wxWidgets/wxWidgets/blob/v3.2.6/include/wx/dc.h), and [wxMSW ellipse implementation](https://github.com/wxWidgets/wxWidgets/blob/v3.2.6/src/msw/dc.cpp).
 
 At three logical pixels per sample, a 1,280px viewport needs 427 markers and 426 line segments; a 1,920px viewport needs 640 markers and 639 segments. Alicorn's retained `GPU_Surface_Point_Marker` and line segment each expand to six vertices. The production payloads therefore use 5,118 and 7,674 vertices under the existing 8,192-vertex limit. Ordinary `GPU_Surface_Filled_Circle` remains a 16-triangle fan (48 vertices).
 
@@ -19,7 +19,7 @@ The SDL GPU renderer draws markers as UV-mapped quads using a shared 32×32 anti
 - Runtime and mesh tests build the dense 1,280px and 1,920px batches, verify their expanded vertex counts, and check that a rejected replacement preserves the accepted payload.
 - The production-renderer GPU fixture reads back 3×3 and 4×4 markers at 1×, 1.25×, 1.5×, and 2× for both viewport widths. Three-pixel spacing exercises overlap. The fixture checks pixels at both surface edges for the out-of-bounds probes.
 - An independent 8×8 supersampled analytic ellipse oracle compares blended RGB coverage over the sampled opaque root backdrop. Alpha cannot be used because the root surface makes the offscreen target opaque. This is a geometry and coverage check, not a wxWidgets pixel-parity claim.
-- At 3×3 and 1×, the Audacity-aligned half-pixel center places each pixel center inside the small ellipse. The center-sampled mask can therefore produce no partial-color pixels in that exact alignment. The fixture allows that one case; the other sizes and scales must show antialiasing.
+- Every combination must show visible antialiasing and remain within the analytic coverage tolerance. The fixture also verifies overlap, the both-edge marker probes, and fractional-scale geometry.
 - A 64-update 1,920px/4×4 run records CPU update and render-encode p95, submit-to-fence wall time, uploaded bytes, upload count, persistent allocation calls, and idle-work flags. SDL's current Odin binding does not expose GPU timestamp queries, so submit-to-fence is not reported as GPU execution time.
 
 ## Validation evidence
@@ -36,21 +36,18 @@ The SDL GPU renderer draws markers as UV-mapped quads using a shared 32×32 anti
 
 ### Hosted readback and cost
 
-At [`ba371a0`](https://github.com/samanshaiza004/alicorn/commit/ba371a03ccabe52b5d3f2054602f04b5d2fa5dbf), all 16 readback combinations passed on each backend: both viewport widths, both marker sizes, and all four scales. Across both backends, mean RGB error ranged from 1–5 and maximum per-pixel error from 8–22. Both edge probes passed. The only cases with zero partial-color samples were 3×3 markers at 1×, as described above.
+The previous hosted run passed before the Audacity center formula was corrected; its readback and pixel-error figures are superseded. Rerun the 16 combinations on each backend after the corrected center mapping, then replace this note with the new measurements.
 
 | Backend | Update p95 (CPU) | Encode p95 (CPU) | Submit-to-fence p95 (wall) | Bytes/upload | Uploads | Persistent allocation calls | Idle submissions / surface work |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| D3D12 | 29.7 µs | 182.4 µs | 2.866 ms | 276,264 | 64 | 128 | none / none |
-| Metal | 26 µs | 274 µs | 3.053 ms | 276,264 | 64 | 128 | none / none |
+| D3D12 | pending corrected-center rerun | pending | pending | pending | pending | pending | pending |
+| Metal | pending corrected-center rerun | pending | pending | pending | pending | pending | pending |
 
 The workflow printed that GPU timestamps are unavailable in the current SDL3 Odin binding. The submit-to-fence values include CPU-side waiting and are not isolated GPU p95 timings.
 
 Hosted checks passed for the current implementation:
 
-- [Windows/D3D12 foundation](https://github.com/samanshaiza004/alicorn/actions/runs/43820917546)
-- [macOS/Metal foundation](https://github.com/samanshaiza004/alicorn/actions/runs/43820917770)
-- [Windows and macOS native packaging](https://github.com/samanshaiza004/alicorn/actions/runs/43820917553)
-- [Icon asset reproducibility](https://github.com/samanshaiza004/alicorn/actions/runs/43820919025)
+- Corrected-center Windows/D3D12, macOS/Metal, packaging, and asset runs are pending.
 
 ## Remaining acceptance
 

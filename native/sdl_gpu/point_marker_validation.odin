@@ -23,10 +23,11 @@ Point_Marker_Validation_Renderers :: struct {
 }
 
 point_marker_validation_sample_center :: proc(index: int, marker_size: Point_Marker_Validation_Size) -> alicorn.GPU_Surface_Point {
-	// Audacity's WaveformView draws a `tickSize` rect from sample minus
-	// integer(tickSize/2). Odd 3px markers therefore center half a logical pixel
-	// after the sample coordinate; 4px markers center on it.
-	offset := f32(0.5) if marker_size == .Three else f32(0)
+	// Audacity's WaveformView stores the marker as an inclusive wxRect whose
+	// integer pixel coordinates run from x through x+tickSize-1. Its origin is
+	// sample minus integer(tickSize/2), so 3px markers center on the sample and
+	// 4px markers center half a logical pixel up and left of it.
+	offset := f32(0) if marker_size == .Three else f32(-0.5)
 	return {f32(index*3)+offset, 16+offset}
 }
 
@@ -252,16 +253,11 @@ point_marker_validation_compare_readback :: proc(
 	// The analytic area oracle is independent of the 32x32 sampled mask. Compare
 	// blended luminance against the fixture's opaque root backdrop, not target
 	// alpha: the application's root surface intentionally makes alpha opaque.
-	// At 3px and 1x, the Audacity-aligned half-pixel centers put all pixel
-	// centers inside the tiny ellipse; a center-sampled GPU mask can therefore
-	// produce no partial-color pixel at this one exact alignment. Other sizes
-	// and scales must show antialiasing.
-	aa_expected := !(markers[0].diameter == f32(3) && scale == f32(1))
-	ok := compared > 0 && mean_delta <= 28 && (!aa_expected || aa_samples > 0) && covered_samples > 0
+	ok := compared > 0 && mean_delta <= 28 && aa_samples > 0 && covered_samples > 0
 	fmt.println("issue_201_readback", "case", name, "scale", scale, "pixels_compared", compared,
 		"background_rgb_mean", background, "mean_rgb_delta", mean_delta, "max_rgb_delta", max_delta,
-		"antialias_expected", aa_expected, "antialiased_pixels", aa_samples,
-		"marker_pixels", covered_samples, "status", "PASS" if ok else "FAIL")
+		"antialiased_pixels", aa_samples, "marker_pixels", covered_samples,
+		"status", "PASS" if ok else "FAIL")
 	return ok
 }
 
