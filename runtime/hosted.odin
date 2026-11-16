@@ -31,13 +31,16 @@ Hosted_Drag_Proc :: proc(state: rawptr, rt: ^Runtime, event: Drag_Event)
 Hosted_Text_Change_Proc :: proc(state: rawptr, rt: ^Runtime, change: Text_Change)
 
 // Hosted_Key_Event carries one host-normalized key transition. key_code is
-// deliberately opaque to Runtime; the host owns platform mapping and IME
-// precedence, while application callbacks interpret their own shortcuts.
+// deliberately opaque to Runtime; the host owns platform mapping and reports
+// whether text focus or IME composition retains the key. Application dispatch
+// then shares Alicorn's interaction-scope preemption policy.
 Hosted_Key_Event :: struct {
 	key_code: u32,
 	pressed: bool,
 	repeat: bool,
 	modifiers: Input_Modifiers,
+	text_input_focused: bool,
+	composition_active: bool,
 }
 
 Hosted_Key_Proc :: proc(state: rawptr, rt: ^Runtime, focused_owner: Node_ID, event: Hosted_Key_Event) -> bool
@@ -436,6 +439,13 @@ hosted_runtime_pointer :: proc(host: ^Hosted_Runtime, event: Pointer_Event) -> (
 hosted_runtime_key :: proc(host: ^Hosted_Runtime, event: Hosted_Key_Event) -> (handled: bool, status: Hosted_Runtime_Status) {
 	state, access_status := hosted_runtime_get_state(host)
 	if access_status != .Ok { return false, access_status }
+	if event.pressed && event.key_code <= u32(Application_Key.Return) {
+		key := Application_Key(event.key_code)
+		if event.text_input_focused && !application_key_can_preempt_text_field(key, event.composition_active) {
+			return false, .Ok
+		}
+		if interaction_scope_dispatch_key(&state.runtime, key, event.composition_active) { return true, .Ok }
+	}
 	if state.on_key == nil { return false, .Ok }
 	focused_owner := focused_node(&state.runtime)
 	handled = state.on_key(state.app_state, &state.runtime, focused_owner, event)

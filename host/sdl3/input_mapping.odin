@@ -209,6 +209,69 @@ context_menu_key_from_sdl :: proc(key: sdl3.Keycode) -> alicorn.Context_Menu_Key
 	}
 }
 
+// application_key_from_sdl maps the common native shortcuts shared by SDL3
+// hosts. Text-focused callers may still offer only commands that Alicorn
+// explicitly permits to preempt text editing and active IME composition.
+application_key_from_sdl :: proc(
+	key: sdl3.Keycode,
+	modifiers: sdl3.Keymod,
+	text_input_focused := false,
+) -> (mapped: alicorn.Application_Key, ok: bool) {
+	primary := text_primary_modifier_from_sdl(modifiers)
+	control := input_modifier_is_set(modifiers, sdl3.KMOD_CTRL)
+	shift := input_modifier_is_set(modifiers, sdl3.KMOD_SHIFT)
+	if key == sdl3.K_TAB && control {
+		return .Tab_Previous if shift else .Tab_Next, true
+	}
+	switch key {
+	case sdl3.K_ESCAPE: return .Escape, true
+	case sdl3.K_RETURN, sdl3.K_KP_ENTER: return .Return, true
+	case sdl3.K_SPACE:
+		if !text_input_focused { return .Toggle, true }
+	case sdl3.K_F2: return .Workspace_Rename, true
+	case sdl3.K_F3: return .Find_Previous if shift else .Find_Next, true
+	case sdl3.K_F10:
+		if shift { return .Context_Menu, true }
+	case sdl3.K_LEFT:
+		if !text_input_focused { return .Left, true }
+	case sdl3.K_RIGHT:
+		if !text_input_focused { return .Right, true }
+	case sdl3.K_UP:
+		if !text_input_focused { return .Up, true }
+	case sdl3.K_DOWN:
+		if !text_input_focused { return .Down, true }
+	case sdl3.K_PAGEUP:
+		if !text_input_focused { return .Page_Up, true }
+	case sdl3.K_PAGEDOWN:
+		if !text_input_focused { return .Page_Down, true }
+	case sdl3.K_HOME:
+		if !text_input_focused { return .Home, true }
+	case sdl3.K_END:
+		if !text_input_focused { return .End, true }
+	case sdl3.K_1:
+		if !text_input_focused { return .Command_1, true }
+	case sdl3.K_2:
+		if !text_input_focused { return .Command_2, true }
+	case sdl3.K_3:
+		if !text_input_focused { return .Command_3, true }
+	case sdl3.K_O:
+		if primary { return .Open_Repository, true }
+	case sdl3.K_P:
+		if primary && shift { return .Open_Command_Palette, true }
+	case sdl3.K_F:
+		if primary { return .Workspace_Search if shift else .Find, true }
+		if !text_input_focused { return .Fit_Selection, true }
+	case sdl3.K_EQUALS, sdl3.K_PLUS, sdl3.K_KP_PLUS:
+		if primary { return .Zoom_In, true }
+	case sdl3.K_MINUS, sdl3.K_KP_MINUS:
+		if primary { return .Zoom_Out, true }
+	case sdl3.K_0, sdl3.K_KP_0:
+		if primary { return .Zoom_Reset, true }
+	case:
+	}
+	return {}, false
+}
+
 scroll_event_from_sdl :: proc(wheel: sdl3.MouseWheelEvent, modifiers: alicorn.Input_Modifiers) -> alicorn.Scroll_Event {
 	// SDL X is positive toward the right of the document; Alicorn's deltas
 	// describe content motion (positive right/down), so only X needs negating.

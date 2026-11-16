@@ -4,6 +4,7 @@ package sdl3_host
 
 import alicorn "alicorn:runtime"
 import presentation_host "alicorn:host/presentation"
+import "core:c"
 import "vendor:sdl3"
 import "vendor:wgpu"
 
@@ -30,6 +31,15 @@ SDL3_WebGPU_Application_Step :: struct {
 	next_wake_ns: u64,
 }
 
+SDL3_WebGPU_Text_Input_State :: struct {
+	active: bool,
+	owner: alicorn.Node_ID,
+	composition_owner: alicorn.Node_ID,
+	window_focused: bool,
+	last_area: alicorn.Text_Input_Area,
+	last_area_valid: bool,
+}
+
 // SDL3_WebGPU_Application joins an SDL-owned window/event identity, one
 // Hosted_Runtime, and the shared WebGPU surface presenter. Adapter, device,
 // queue, and surface creation remain the embedding host's responsibility.
@@ -43,6 +53,7 @@ SDL3_WebGPU_Application :: struct {
 	wake_event_type: sdl3.EventType,
 	pointer_buttons: Pointer_Button_State,
 	modifiers: sdl3.Keymod,
+	text_input: SDL3_WebGPU_Text_Input_State,
 	dpi_scale: f32,
 	next_wake_ns: u64,
 	initialized: bool,
@@ -105,6 +116,9 @@ sdl3_webgpu_application_init :: proc(
 		window_id=sdl3.GetWindowID(window),
 		wake_event_type=wake_event,
 		modifiers=sdl3.GetModState(),
+		text_input=SDL3_WebGPU_Text_Input_State{
+			window_focused=sdl3.GetKeyboardFocus() == window,
+		},
 		dpi_scale=f32(pixel_width) / f32(logical_width),
 		initialized=true,
 	}
@@ -185,6 +199,9 @@ sdl3_webgpu_application_step :: proc(
 	}
 	step, presentation := presentation_host.hosted_surface_presenter_step(&application.presenter, now_ns)
 	if step.status != .Ok { return {status=step.status, presentation=presentation} }
+	if !sdl3_webgpu_application_sync_text_input(application) {
+		return {status=.Invalid_Argument, presentation=presentation}
+	}
 	application.next_wake_ns = step.next_wake_ns
 	if presentation == .Retry_Later {
 		retry_ns := now_ns + 16_666_667
@@ -205,9 +222,7 @@ sdl3_webgpu_application_has_in_flight :: proc(application: ^SDL3_WebGPU_Applicat
 		presentation_host.hosted_surface_presenter_has_in_flight(&application.presenter)
 }
 
-// Route the window and pointer portions of an SDL event. Keyboard and native
-// text/IME dispatch are intentionally left to the current application host
-// until their ownership and composition policy are migrated from SDL_GPU.
+// Route native input to the retained Runtime without exposing SDL types to it.
 sdl3_webgpu_application_handle_event :: proc(
 	application: ^SDL3_WebGPU_Application,
 	event: sdl3.Event,
@@ -232,22 +247,37 @@ sdl3_webgpu_application_handle_event :: proc(
 		if sdl3_webgpu_application_set_visible(application, true) != .Ok { return .Failure }
 		return .Handled
 	case .WINDOW_FOCUS_GAINED:
+		application.text_input.window_focused = true
 		application.modifiers = sdl3.GetModState()
 		if alicorn.hosted_runtime_focus_changed(&application.hosted, true) != .Ok { return .Failure }
+		if !sdl3_webgpu_application_sync_text_input(application) { return .Failure }
 		return .Handled
 	case .WINDOW_FOCUS_LOST:
+		application.text_input.window_focused = false
+		// hosted_runtime_focus_changed sends the application-side composition
+		// cancellation; clear the SDL tracker first to avoid a duplicate cancel.
+		application.text_input.composition_owner = 0
 		pointer_button_state_clear(&application.pointer_buttons)
 		application.modifiers = {}
 		if alicorn.hosted_runtime_focus_changed(&application.hosted, false) != .Ok { return .Failure }
+		if !sdl3_webgpu_application_sync_text_input(application) { return .Failure }
 		return .Handled
 	case .KEY_DOWN, .KEY_UP:
 		pointer_modifier_state_update(&application.modifiers, event)
-		return .Ignored
+		if event.type == .KEY_UP { return .Ignored }
+		return sdl3_webgpu_application_key_down(application, event.key)
+	case .TEXT_INPUT:
+		return sdl3_webgpu_application_text_input(application, event.text)
+	case .TEXT_EDITING:
+		return sdl3_webgpu_application_text_editing(application, event.edit)
 	case .MOUSE_MOTION, .MOUSE_BUTTON_DOWN, .MOUSE_BUTTON_UP:
 		value, ok := pointer_event_from_sdl(event, application.modifiers, &application.pointer_buttons)
 		if !ok { return .Ignored }
 		value.timestamp_ns = u64(sdl3.GetTicksNS())
 		if status := sdl3_webgpu_application_pointer(application, value); status != .Ok { return .Failure }
+		if event.type == .MOUSE_BUTTON_DOWN && !sdl3_webgpu_application_sync_text_input(application) {
+			return .Failure
+		}
 		return .Handled
 	case .MOUSE_WHEEL:
 		value := scroll_event_from_sdl(event.wheel, pointer_modifiers_from_sdl(application.modifiers))
@@ -265,6 +295,12 @@ sdl3_webgpu_application_destroy :: proc(application: ^SDL3_WebGPU_Application) -
 	if application == nil { return false }
 	if !application.initialized { return true }
 	if !presentation_host.hosted_surface_presenter_destroy(&application.presenter) { return false }
+	application.text_input.window_focused = false
+	application.text_input.composition_owner = 0
+	if alicorn.hosted_runtime_focus_changed(&application.hosted, false) != .Ok ||
+		!sdl3_webgpu_application_sync_text_input(application) {
+		return false
+	}
 	if alicorn.hosted_runtime_destroy(&application.hosted) != .Ok { return false }
 	application^ = {}
 	return true

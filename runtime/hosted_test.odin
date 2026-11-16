@@ -15,6 +15,8 @@ Hosted_Test_App :: struct {
 	post_fails: bool,
 	text_changes: int,
 	committed_text: bool,
+	key_events: int,
+	last_key: Application_Key,
 	host: ^Hosted_Runtime,
 }
 
@@ -81,6 +83,14 @@ hosted_test_text_change :: proc(data: rawptr, rt: ^Runtime, change: Text_Change)
 	}
 }
 
+hosted_test_key :: proc(data: rawptr, _rt: ^Runtime, _owner: Node_ID, event: Hosted_Key_Event) -> bool {
+	app := (^Hosted_Test_App)(data)
+	if !event.pressed || event.key_code > u32(Application_Key.Return) { return false }
+	app.key_events += 1
+	app.last_key = Application_Key(event.key_code)
+	return true
+}
+
 hosted_test_open :: proc(host: ^Hosted_Runtime, app: ^Hosted_Test_App) -> Hosted_Runtime_Status {
 	app.host = host
 	return hosted_runtime_init(host, Hosted_Runtime_Config{
@@ -89,8 +99,37 @@ hosted_test_open :: proc(host: ^Hosted_Runtime, app: ^Hosted_Test_App) -> Hosted
 		post_wake_data=rawptr(app), post_wake=hosted_test_post, render=hosted_test_render,
 		on_initialize=hosted_test_init, on_start=hosted_test_start, on_wake=hosted_test_wake,
 		on_scheduled_wake=hosted_test_scheduled, on_stop=hosted_test_stop, on_pointer=hosted_test_pointer,
-		on_text_change=hosted_test_text_change, on_scroll=hosted_test_scroll,
+		on_text_change=hosted_test_text_change, on_scroll=hosted_test_scroll, on_key=hosted_test_key,
 	})
+}
+
+@(test)
+test_hosted_runtime_key_respects_text_and_composition_precedence :: proc(t: ^testing.T) {
+	host: Hosted_Runtime
+	app: Hosted_Test_App
+	if hosted_test_open(&host, &app) != .Ok { testing.expect(t, false, "open failed"); return }
+	defer hosted_waker_release(&app.waker)
+	defer hosted_runtime_destroy(&host)
+	_ = hosted_runtime_step(&host, 1)
+	rt, _ := hosted_runtime_borrow(&host)
+	_ = focus(rt, app.field)
+
+	handled, status := hosted_runtime_key(&host, Hosted_Key_Event{
+		key_code=u32(Application_Key.Left), pressed=true, text_input_focused=true,
+	})
+	testing.expect(t, status == .Ok && !handled && app.key_events == 0,
+		"ordinary navigation remains with a focused text field")
+	handled, status = hosted_runtime_key(&host, Hosted_Key_Event{
+		key_code=u32(Application_Key.Find), pressed=true, text_input_focused=true,
+	})
+	testing.expect(t, status == .Ok && handled && app.key_events == 1 && app.last_key == .Find,
+		"an explicit application shortcut can preempt text focus")
+	handled, status = hosted_runtime_key(&host, Hosted_Key_Event{
+		key_code=u32(Application_Key.Escape), pressed=true,
+		text_input_focused=true, composition_active=true,
+	})
+	testing.expect(t, status == .Ok && !handled && app.key_events == 1,
+		"Escape stays with IME while composition is active")
 }
 
 @(test)

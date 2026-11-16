@@ -112,6 +112,27 @@ test_sdl_control_key_mappings_are_backend_independent :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_sdl_application_shortcuts_respect_text_focus_and_platform_primary_modifier :: proc(t: ^testing.T) {
+	primary := sdl3.KMOD_CTRL
+	when ODIN_OS == .Darwin { primary = sdl3.KMOD_GUI }
+	find, find_ok := application_key_from_sdl(sdl3.K_F, primary)
+	search, search_ok := application_key_from_sdl(sdl3.K_F, primary|sdl3.KMOD_SHIFT)
+	palette, palette_ok := application_key_from_sdl(sdl3.K_P, primary|sdl3.KMOD_SHIFT)
+	zoom, zoom_ok := application_key_from_sdl(sdl3.K_EQUALS, primary)
+	testing.expect(t, find_ok && find == .Find && search_ok && search == .Workspace_Search &&
+		palette_ok && palette == .Open_Command_Palette && zoom_ok && zoom == .Zoom_In,
+		"platform primary shortcuts map to Alicorn application commands")
+	ordinary_f, ordinary_f_ok := application_key_from_sdl(sdl3.K_F, {}, true)
+	ordinary_left, ordinary_left_ok := application_key_from_sdl(sdl3.K_LEFT, {}, true)
+	text_find, text_find_ok := application_key_from_sdl(sdl3.K_F, primary, true)
+	testing.expect(t, !ordinary_f_ok && !ordinary_left_ok && text_find_ok && text_find == .Find,
+		"ordinary text keys remain with the focused editor while explicit shortcuts may preempt")
+	cycle, cycle_ok := application_key_from_sdl(sdl3.K_TAB, sdl3.KMOD_CTRL|sdl3.KMOD_SHIFT, true)
+	testing.expect(t, cycle_ok && cycle == .Tab_Previous,
+		"Control+Shift+Tab remains document navigation even when text has focus")
+}
+
+@(test)
 test_sdl_text_key_mapping_preserves_platform_editing_conventions :: proc(t: ^testing.T) {
 	word_modifier := sdl3.KMOD_CTRL if ODIN_OS != .Darwin else sdl3.KMOD_ALT
 	word_left, word_ok := text_key_event_from_sdl(sdl3.K_LEFT, word_modifier|sdl3.KMOD_SHIFT)

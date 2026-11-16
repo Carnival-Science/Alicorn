@@ -58,7 +58,7 @@ uploads remain renderer-specific.
 | Phase | Exit evidence | Status |
 | --- | --- | --- |
 | 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: the pre-change Windows SDL_GPU reference and D3D12 effects profile are recorded in `docs/validation/sdl-gpu-reference-windows-2026-11-15.md`; a Runtime-only Windows construction, phase, allocator high-water, and sampled process-working-set comparison is recorded in `docs/validation/runtime-construction-windows-2026-11-16.md`. Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes. Windows browser canvas resize now verifies retained-only redraw with a fresh output revision and no UI re-description. Browser fallback/vendor metadata is exposed, but does not establish hardware acceleration. Physical Linux GPU/Wayland, genuine driver/OS loss and recovery, full application same-workload comparison, and app-level stage/visible-latency measurements remain open |
-| 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring and CPU preparation are SDL-independent; `renderer/webgpu/presenter.odin` consumes a borrowed finalized display list and encodes into caller-owned WebGPU frame objects, with queue submission and async completion owned by the host. `host/presentation/surface_presenter.odin` supplies a shared Hosted_Runtime-to-WebGPU-surface boundary; `host/web/surface_presenter.odin` preserves browser-facing aliases. `host/web/application.odin` composes that presenter with Hosted_Runtime, browser input/textarea, canvas sizing/DPR, visibility, bounded retry deadlines, and nonblocking teardown; the feasibility fixture consumes this coordinator. `host/sdl3/application.odin` now composes the same Hosted_Runtime presenter with an SDL window identity, wake event, resize/DPI and visibility handling, focus changes, pointer and wheel routing, bounded retry deadlines, and nonblocking teardown. SDL3 pointer, modifier, wheel, focused-control, context-menu, and text-editing key translation lives in `host/sdl3`, with the existing SDL_GPU frontend retaining thin wrappers. The browser fixture exercises resize, visibility, input, recovery, and async retirement; a Windows SDL3 smoke exercises native retained presentation, pointer activation, resize, and queue completion. `paint_display_list_for_output` routes commands by disjoint retained root, preserves paint order and shared owner-zero overlays, and tags views with output identity and revision. Native D3D12/Vulkan fixture parity passes and the package builds for `js_wasm32`. Adapter/device bootstrap, native keyboard and text/IME delivery, broader SDL3/window integration, production `ui.run`, native `ui.run` target selection, and downstream app import migration remain outstanding |
+| 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring and CPU preparation are SDL-independent; `renderer/webgpu/presenter.odin` consumes a borrowed finalized display list and encodes into caller-owned WebGPU frame objects, with queue submission and async completion owned by the host. `host/presentation/surface_presenter.odin` supplies a shared Hosted_Runtime-to-WebGPU-surface boundary; `host/web/surface_presenter.odin` preserves browser-facing aliases. `host/web/application.odin` composes that presenter with Hosted_Runtime, browser input/textarea, canvas sizing/DPR, visibility, bounded retry deadlines, and nonblocking teardown; the feasibility fixture consumes this coordinator. `host/sdl3/application.odin` now composes the same Hosted_Runtime presenter with an SDL window identity, wake event, resize/DPI and visibility handling, focus changes, pointer/wheel, keyboard, text/IME routing, bounded retry deadlines, and nonblocking teardown. SDL3 pointer, modifier, wheel, focused-control, context-menu, application-shortcut, text-editing key, and native text/IME routing lives in `host/sdl3`, with the existing SDL_GPU frontend retaining thin wrappers. The browser fixture exercises resize, visibility, input, recovery, and async retirement; Windows SDL3 smoke exercises native retained presentation, pointer activation, synthetic key/text/IME routing, resize, and queue completion. `paint_display_list_for_output` routes commands by disjoint retained root, preserves paint order and shared owner-zero overlays, and tags views with output identity and revision. Native D3D12/Vulkan fixture parity passes and the package builds for `js_wasm32`. Adapter/device bootstrap, physical keyboard/IME verification, clipboard and broader SDL3/window integrations, production `ui.run`, native `ui.run` target selection, and downstream app import migration remain outstanding |
 | 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and D3D12 fixtures exercise per-resource custom-surface caching, budget pressure, in-flight protection, instance transforms, readback, and resize. One shared compositor preserves interleaved paint order; text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, clipping, waveform samples, and cropped mixed-renderer readback pass Windows D3D12 and browser WebGPU. Shared CPU backdrop planning/meshes feed renderer-owned WebGPU prefix capture, filtering, and in-order composition for up to four markers within one aggregate 48 MiB tracked mesh+texture allocation budget. Two overlapping markers pass pixel readback on Windows D3D12/Vulkan and browser WebGPU; the later marker's capture includes the earlier marker's composed result. D3D12 also verifies unchanged-prefix reuse, changed-prefix invalidation, resized-target retirement behind the prior queue serial, and exact ordinary-paint parity when a valid effect exceeds budget. Six shared WGSL sources are compile-time loaded for native and `js_wasm32` builds. The rounded raised relief surface under increased contrast/reduced transparency now passes browser pixel readback as well as Windows D3D12/Vulkan; browser run also verified live canvas resize, output acknowledgement, and return to demand-driven idle. Full theme/accessibility combinations, application host presentation, and broader cross-platform GPU validation remain open |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | In progress: image, custom-geometry, and backdrop resources have bounded asynchronous retirement and completion-driven release tests; async readback is exercised. Same-device compositor teardown/rebuild now reproduces every RGBA pixel on Windows D3D12 and Vulkan from retained Runtime products. Genuine driver/OS device loss and device recovery, plus primary/secondary window teardown/recreation, remain unvalidated. Intentional `DeviceDestroy` callbacks are tracked separately and do not count as driver-loss evidence |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
@@ -1892,8 +1892,55 @@ Validation with `C:\odin\odin.exe` (`dev-2026-11-nightly:08539cd`) on Windows:
   SDL3 host remains excluded from the browser target.
 
 This is a native Hosted_Runtime/presentation boundary, not production `ui.run`
-or full native input acceptance. The current coordinator does not yet route
-keyboard shortcuts, text fields, IME, clipboard, drag/drop, menus, dialogs,
-AccessKit, or secondary windows. The synthetic pointer smoke validates the
-coordinator's pointer entry point, not physical mouse input. Zero-size
-suspension is handled by the coordinator, but was not part of this smoke.
+or full native input acceptance. At this revision the coordinator routes
+pointer/wheel input only; keyboard shortcuts, text fields, IME, clipboard,
+drag/drop, menus, dialogs, AccessKit, and secondary windows are outstanding.
+The synthetic pointer smoke validates the coordinator's pointer entry point,
+not physical mouse input. Zero-size suspension is handled by the coordinator,
+but was not part of this smoke.
+
+### SDL3/WebGPU keyboard, text, and IME routing (Windows, 2026-11-16)
+
+The native coordinator now routes SDL key events through the shared host
+mapping into `Hosted_Runtime`: application shortcuts respect focused text
+owners and IME composition, interaction scopes receive preempting keys, text
+fields get navigation/deletion/selection and submit behavior, Tab traverses
+focus, and Select/context-menu overlays retain first refusal. SDL committed
+UTF-8 text and composition preedit/cancel events use the hosted text-input API;
+character selection offsets are normalized at the runtime boundary. SDL text
+input starts and stops as retained focus changes, and the candidate-window
+anchor follows current text-field geometry. Focus loss and application teardown
+cancel composition and release the SDL text session.
+
+The native feasibility fixture now sends synthetic SDL mouse, text, preedit,
+key, focus, and Escape events through the real `SDL3_WebGPU_Application` event
+router. It checks Left navigation, Control+A selection, committed text,
+UTF-8 preedit, Escape and window-focus cancellation, text-session stop/restart,
+resize presentation, and queue retirement before destruction. This validates
+SDL event mapping and Hosted_Runtime delivery; it does not represent physical
+keyboard input or a real operating-system IME session.
+
+Validation with `C:\odin\odin.exe` (`dev-2026-11-nightly:08539cd`) on Windows:
+
+- `odin check host/sdl3 -collection:alicorn=. -no-entry-point` passed.
+- `odin test host/sdl3 -collection:alicorn=.` passed all 7 tests.
+- `odin test runtime -collection:alicorn=.` passed all 357 tests.
+- `odin test ui` with the repository's pinned AccessKit compiler arguments
+  passed all 40 tests.
+- The native Hosted_Runtime D3D12 smoke passed on an NVIDIA GeForce RTX 2080
+  SUPER, including synthetic text navigation/selection/commit, UTF-8 IME
+  preedit, Escape and focus-loss cancellation, 800×450 resize, asynchronous
+  completion, and teardown.
+- The same native Hosted_Runtime smoke passed on the Vulkan backend using the
+  NVIDIA GeForce RTX 2080 SUPER.
+- The complete feasibility build produced the native variants and the
+  `js_wasm32` browser fixture; the production browser coordinator remains
+  independent of the `!js` SDL3 host.
+- `git diff --check` passed.
+
+This is not yet production `ui.run` on SDL3/WebGPU. Clipboard, application-owned
+text-key callbacks in the run adapter, drag/drop, menus/dialogs, AccessKit,
+secondary windows, physical input/IME, and native macOS/Linux validation remain
+open. A refreshed localhost:8091 browser fixture was separately confirmed by
+the owner to accept clicks without the earlier runtime error; that screenshot
+does not identify its served commit or establish those outstanding gates.
