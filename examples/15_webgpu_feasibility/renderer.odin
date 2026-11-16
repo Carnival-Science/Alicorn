@@ -971,6 +971,188 @@ fixture_custom_geometry_command :: proc(
 	return
 }
 
+surface_cache_pressure_build_commands :: proc(first_width: int) -> (
+	commands: [dynamic]alicorn.Paint_Command,
+	revision: u64,
+	ok: bool,
+) {
+	context = state.ctx
+	base_display, display_ok := alicorn.paint_display_list(&state.text_runtime)
+	if !display_ok { return }
+	base_command, command_found := fixture_custom_geometry_command(
+		base_display, state.compositor_custom_surface_ids[1],
+		{0, 0, f32(first_width), f32(SURFACE_CACHE_PRESSURE_HEIGHT)}, {0, 0, 1, 1},
+	)
+	if !command_found { return }
+	commands = make([dynamic]alicorn.Paint_Command, 0, SURFACE_CACHE_PRESSURE_BATCH_COUNT, allocator=context.allocator)
+	defer if !ok { delete(commands) }
+	for index in 0..<SURFACE_CACHE_PRESSURE_BATCH_COUNT {
+		command := base_command
+		command.bounds = {0, 0, f32(first_width+index), f32(SURFACE_CACHE_PRESSURE_HEIGHT)}
+		command.clip = {0, 0, 1, 1}
+		command.translation = {}
+		command.opacity = 1
+		append(&commands, command)
+	}
+	revision = base_display.revision
+	ok = true
+	return
+}
+
+surface_cache_pressure_submit_batch :: proc(first_width: int, expected_serial: u64) -> bool {
+	commands, revision, commands_ok := surface_cache_pressure_build_commands(first_width)
+	if !commands_ok { return false }
+	defer delete(commands)
+	display := alicorn.Paint_Display_List_View{commands=commands[:], revision=revision}
+	if result := webgpu_renderer.Compositor_Prepare(
+		&state.compositor, &state.text_runtime, display, READBACK_WIDTH, READBACK_HEIGHT, 1, 1,
+	); result != .Ok {
+		fmt.printf("[webgpu-feasibility] cache pressure batch prepare failed first_width=%d result=%v\n", first_width, result)
+		return false
+	}
+	encoder := wgpu.DeviceCreateCommandEncoder(state.device)
+	if encoder == nil { return false }
+	defer wgpu.CommandEncoderRelease(encoder)
+	if result := webgpu_renderer.Compositor_Encode(
+		&state.compositor, &state.text_runtime, display, state.composite_offscreen_view,
+		READBACK_WIDTH, READBACK_HEIGHT, 1, 1, encoder, true, wgpu.Color{0.04, 0.08, 0.12, 1},
+	); result != .Ok {
+		fmt.printf("[webgpu-feasibility] cache pressure batch encode failed first_width=%d result=%v\n", first_width, result)
+		return false
+	}
+	command_buffer := wgpu.CommandEncoderFinish(encoder)
+	if command_buffer == nil { return false }
+	wgpu.QueueSubmit(state.queue, {command_buffer})
+	wgpu.CommandBufferRelease(command_buffer)
+	serial := webgpu_renderer.Compositor_Commit_Submission(&state.compositor, &state.text_runtime)
+	fmt.printf("[webgpu-feasibility] cache pressure batch submitted first_width=%d count=%d serial=%d\n",
+		first_width, SURFACE_CACHE_PRESSURE_BATCH_COUNT, serial)
+	return serial == expected_serial
+}
+
+start_surface_cache_pressure_test :: proc() {
+	context = state.ctx
+	waveform_samples: [alicorn.GPU_SURFACE_MAX_WAVEFORM_SAMPLES]f32
+	for index in 0..<len(waveform_samples) {
+		waveform_samples[index] = 0.15 if index%2 == 0 else 0.95
+	}
+	if !alicorn.gpu_surface_update(
+		&state.text_runtime, state.compositor_custom_surface_ids[1], waveform_samples[:],
+	) {
+		fmt.println("[webgpu-feasibility] cache pressure waveform update FAIL")
+		state.quit = true
+		return
+	}
+	if !surface_cache_pressure_submit_batch(SURFACE_CACHE_PRESSURE_FIRST_WIDTH, 3) {
+		fmt.println("[webgpu-feasibility] cache pressure first batch submit FAIL")
+		state.quit = true
+		return
+	}
+	state.surface_cache_pressure_serial = 3
+	state.compositor_completion_serial = 3
+	state.surface_cache_pressure_evictions_before_probe = state.compositor.surfaces.resource_eviction_count
+	probe_commands, revision, commands_ok := surface_cache_pressure_build_commands(SURFACE_CACHE_PRESSURE_SECOND_WIDTH)
+	probe_result := webgpu_renderer.Compositor_Result.Resource_Failure
+	if commands_ok {
+		probe_display := alicorn.Paint_Display_List_View{commands=probe_commands[:], revision=revision}
+		probe_result = webgpu_renderer.Compositor_Prepare(
+			&state.compositor, &state.text_runtime, probe_display, READBACK_WIDTH, READBACK_HEIGHT, 1, 1,
+		)
+		delete(probe_commands)
+	}
+	first_batch_count := surface_cache_pressure_resource_count(
+		SURFACE_CACHE_PRESSURE_FIRST_WIDTH, SURFACE_CACHE_PRESSURE_BATCH_COUNT,
+	)
+	first_batch_serials_valid := surface_cache_pressure_resources_have_serial(
+		SURFACE_CACHE_PRESSURE_FIRST_WIDTH, SURFACE_CACHE_PRESSURE_BATCH_COUNT, state.surface_cache_pressure_serial,
+	)
+	partial_second_batch_count := surface_cache_pressure_resource_count(
+		SURFACE_CACHE_PRESSURE_SECOND_WIDTH, SURFACE_CACHE_PRESSURE_BATCH_COUNT,
+	)
+	state.surface_cache_pressure_inflight_passed = commands_ok &&
+		probe_result == .Resource_Failure && partial_second_batch_count > 0 &&
+		partial_second_batch_count < SURFACE_CACHE_PRESSURE_BATCH_COUNT &&
+		first_batch_count == SURFACE_CACHE_PRESSURE_BATCH_COUNT && first_batch_serials_valid &&
+		state.compositor.surfaces.resource_eviction_count == state.surface_cache_pressure_evictions_before_probe &&
+		state.compositor.surfaces.resident_bytes <= webgpu_renderer.SURFACE_GPU_CACHE_BUDGET_BYTES
+	fmt.printf("[webgpu-feasibility] cache pressure in-flight protection %s result=%v first_batch_resources=%d first_batch_serials=%v partial_second_resources=%d evictions_before=%d evictions_after=%d resident_bytes=%d budget_bytes=%d\n",
+		"PASS" if state.surface_cache_pressure_inflight_passed else "FAIL", probe_result,
+		first_batch_count, first_batch_serials_valid, partial_second_batch_count,
+		state.surface_cache_pressure_evictions_before_probe, state.compositor.surfaces.resource_eviction_count,
+		state.compositor.surfaces.resident_bytes, webgpu_renderer.SURFACE_GPU_CACHE_BUDGET_BYTES)
+	state.queue_work_done = false
+	state.queue_work_done_ok = false
+	state.queue_work_done_pending = true
+	wgpu.QueueOnSubmittedWorkDone(state.queue, {mode=.AllowProcessEvents, callback=on_surface_cache_pressure_batch_a})
+}
+
+surface_cache_pressure_resource_count :: proc(first_width, count: int) -> int {
+	handle, handle_ok := surface_cache_pressure_geometry_handle()
+	if !handle_ok { return 0 }
+	first := f32(first_width)
+	last := f32(first_width+count)
+	matched := 0
+	for resource in state.compositor.surfaces.resources {
+		if resource.runtime == &state.text_runtime && resource.handle.resource == handle.resource &&
+		   resource.handle.generation == handle.generation && resource.mesh_height == f32(SURFACE_CACHE_PRESSURE_HEIGHT) &&
+		   resource.mesh_width >= first && resource.mesh_width < last {
+			matched += 1
+		}
+	}
+	return matched
+}
+
+surface_cache_pressure_resource_present :: proc(width: int) -> bool {
+	handle, handle_ok := surface_cache_pressure_geometry_handle()
+	if !handle_ok { return false }
+	for resource in state.compositor.surfaces.resources {
+		if resource.runtime == &state.text_runtime && resource.handle.resource == handle.resource &&
+		   resource.handle.generation == handle.generation && resource.mesh_width == f32(width) &&
+		   resource.mesh_height == f32(SURFACE_CACHE_PRESSURE_HEIGHT) {
+			return true
+		}
+	}
+	return false
+}
+
+surface_cache_pressure_resources_have_serial :: proc(first_width, count: int, serial: u64) -> bool {
+	handle, handle_ok := surface_cache_pressure_geometry_handle()
+	if !handle_ok { return false }
+	first := f32(first_width)
+	last := f32(first_width+count)
+	matched := 0
+	for resource in state.compositor.surfaces.resources {
+		if resource.runtime != &state.text_runtime || resource.handle.resource != handle.resource ||
+		   resource.handle.generation != handle.generation || resource.mesh_height != f32(SURFACE_CACHE_PRESSURE_HEIGHT) ||
+		   resource.mesh_width < first || resource.mesh_width >= last {
+			continue
+		}
+		if resource.last_use_serial != serial { return false }
+		matched += 1
+	}
+	return matched == count
+}
+
+surface_cache_pressure_geometry_handle :: proc() -> (handle: alicorn.Geometry_Handle, ok: bool) {
+	context = state.ctx
+	display, display_ok := alicorn.paint_display_list(&state.text_runtime)
+	if !display_ok { return }
+	command, found := fixture_custom_geometry_command(
+		display, state.compositor_custom_surface_ids[1],
+		{0, 0, 1, f32(SURFACE_CACHE_PRESSURE_HEIGHT)}, {0, 0, 1, 1},
+	)
+	if !found { return }
+	geometry, valid := command.payload.(alicorn.Geometry_Paint)
+	if !valid { return }
+	return geometry.geometry, true
+}
+
+surface_cache_pressure_active_bytes :: proc() -> u64 {
+	bytes := state.compositor.surfaces.instance_buffer_bytes
+	for resource in state.compositor.surfaces.resources { bytes += resource.byte_size }
+	return bytes
+}
+
 build_offscreen_probe_scene :: proc() -> int {
 	previous_width,previous_height:=state.width,state.height
 	state.width,state.height=READBACK_WIDTH,READBACK_HEIGHT

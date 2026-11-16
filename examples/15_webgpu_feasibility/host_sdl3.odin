@@ -92,11 +92,13 @@ os_run :: proc() {
 		when FEASIBILITY_TEST_QUIT_AFTER_READBACK {
 			smoke_elapsed += f64(dt)
 			if smoke_elapsed >= SMOKE_TIMEOUT_SECONDS && !smoke_complete() {
-				fmt.printf("[webgpu-feasibility] bounded smoke timed out after %.1f seconds (readback_done=%v queue_done=%v queue_ok=%v)\n",
+				fmt.printf("[webgpu-feasibility] bounded smoke timed out after %.1f seconds (readback_done=%v queue_done=%v queue_ok=%v cache_inflight=%v cache_final=%v)\n",
 					SMOKE_TIMEOUT_SECONDS,
 					state.readback_done,
 					state.queue_work_done,
 					state.queue_work_done_ok,
+					state.surface_cache_pressure_inflight_passed,
+					state.surface_cache_pressure_passed,
 				)
 				state.quit = true
 			}

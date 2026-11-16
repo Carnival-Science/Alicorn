@@ -57,7 +57,7 @@ uploads remain renderer-specific.
 | --- | --- | --- |
 | 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes on an NVIDIA Turing adapter; physical Linux GPU/Wayland, genuine driver/OS loss and recovery, comparative baselines, and production parity remain open |
 | 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring, CPU solid/custom-surface mesh assembly, and text/image/icon preparation are SDL-independent and compile for `js_wasm32`; native `ui.run` remains target-gated. GPU renderer/host extraction and browser `ui.run` remain outstanding |
-| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and explicitly selected D3D12 fixtures exercise per-resource custom-surface caching, instance transforms, readback, and resize; prior browser WebGPU fixture passes custom-surface pixels and the current WASM build compiles, but this cache follow-up has not had a live browser replay. One shared compositor preserves interleaved paint order. Text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, rectangles, segments, circles, masked markers, clipping, and waveform samples pass representative native pixel probes. Rounded/accessibility material parity, effects, and application host presentation remain outstanding |
+| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and explicitly selected D3D12 fixtures exercise per-resource custom-surface caching, cache-budget pressure, in-flight protection, instance transforms, readback, and resize; prior browser WebGPU fixture passes custom-surface pixels and the current WASM build compiles, but the cache follow-up has not had a live browser replay. One shared compositor preserves interleaved paint order. Text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, rectangles, segments, circles, masked markers, clipping, and waveform samples pass representative native pixel probes. Rounded/accessibility material parity, effects, and application host presentation remain outstanding |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | Not started |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
@@ -829,6 +829,49 @@ Validation on the local Windows candidate:
 
 This is cache-correctness and native pixel evidence, not a WebGPU performance
 claim. macOS Metal cache readback/resize, live browser replay for this candidate,
-cache-pressure stress, Punks instrumentation, and genuine driver/OS loss and
-recovery remain open. Intentional `DeviceDestroy` and a driver-initiated lost
-device are separate evidence categories.
+Punks instrumentation, and genuine driver/OS loss and recovery remain open.
+Intentional `DeviceDestroy` and a driver-initiated lost device are separate
+evidence categories.
+
+## Phase 2 cache-pressure and fence-protection follow-up (Windows, 2026-11-15)
+
+The bounded native feasibility smoke now fills the retained waveform payload
+to its supported maximum and prepares two sets of 120 distinct tessellation
+extents. Each set requests about 33.75 MiB of vertex buffers, so the combined
+working set exceeds the renderer's 64 MiB custom-geometry cache budget. The
+fixture clips each draw to one pixel to keep raster work small while still
+encoding every cached mesh in paint order.
+
+The first set is submitted at compositor serial 3. Before that work completes,
+the fixture attempts to prepare the second set. Preparation fails with
+`Resource_Failure` while remaining under budget; all 120 in-flight first-set
+buffers remain present with last-use serial 3, and the eviction count does not
+change. Once serial 3 completes, the second set prepares and submits at serial
+4. Completion confirms all 120 second-set resources remain resident, total
+active/resident geometry bytes stay below 64 MiB, no retired buffers remain,
+and LRU evicts the oldest first-set entries while retaining its newest entry.
+
+Validation on Windows with Odin `dev-2026-11-nightly:08539cd`, NVIDIA GeForce
+RTX 2080 SUPER:
+
+- D3D12 readback smoke passed. In-flight protection observed 120 submitted
+  resources, 107 partial second-set resources, zero evictions, and
+  66,957,312 resident bytes against a 67,108,864-byte budget. After completion,
+  the second set completed at serial 4 with 120 resources, 66,948,096 resident
+  bytes, 15 LRU evictions, the oldest first-set entry evicted, the newest
+  retained, and zero retired buffers.
+- D3D12 resize smoke passed the same pressure checks and presented at 800×450
+  during motion and 720×405 after settlement.
+- Vulkan readback smoke passed the same pressure and cache-bound checks.
+- `examples/15_webgpu_feasibility/build.ps1 -Odin C:\odin\odin.exe` rebuilt
+  native interactive/readback/resize executables and the `js_wasm32` fixture.
+  `odin check examples/15_webgpu_feasibility` passed.
+
+This closes the direct cache-budget and in-flight LRU stress gap for the local
+Windows D3D12/Vulkan fixture. It does not establish browser or macOS cache
+pressure behavior, Punks application instrumentation, or driver-initiated
+device-loss recovery. The compositor remains host-independent: the host owns
+surface acquisition, encoding/submission, and completion delivery; the shared
+renderer owns cache policy and retires resources by the host-reported queue
+serial. Intentional device destruction remains distinct from genuine
+driver/OS-initiated loss.

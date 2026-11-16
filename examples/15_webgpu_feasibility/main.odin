@@ -23,6 +23,10 @@ FEASIBILITY_TEST_DEVICE_LOSS_SPONTANEOUS :: #config(FEASIBILITY_TEST_DEVICE_LOSS
 FEASIBILITY_TEST_DEVICE_LOSS_RELEASE_BEFORE_POLL :: #config(FEASIBILITY_TEST_DEVICE_LOSS_RELEASE_BEFORE_POLL, false)
 FEASIBILITY_TEST_QUIT_AFTER_READBACK :: #config(FEASIBILITY_TEST_QUIT_AFTER_READBACK, false)
 FEASIBILITY_TEST_RESIZE :: #config(FEASIBILITY_TEST_RESIZE, false)
+SURFACE_CACHE_PRESSURE_BATCH_COUNT :: 120
+SURFACE_CACHE_PRESSURE_FIRST_WIDTH :: 100
+SURFACE_CACHE_PRESSURE_SECOND_WIDTH :: SURFACE_CACHE_PRESSURE_FIRST_WIDTH + SURFACE_CACHE_PRESSURE_BATCH_COUNT
+SURFACE_CACHE_PRESSURE_HEIGHT :: 18
 
 Vertex :: struct {
 	position: [2]f32,
@@ -55,6 +59,9 @@ state: struct {
 	compositor_completion_serial: u64,
 	image_retirement_passed: bool,
 	surface_resource_retirement_passed: bool,
+	surface_cache_pressure_inflight_passed, surface_cache_pressure_passed: bool,
+	surface_cache_pressure_serial: u64,
+	surface_cache_pressure_evictions_before_probe: u64,
 	composite_offscreen_texture: wgpu.Texture,
 	composite_offscreen_view: wgpu.TextureView,
 	config: wgpu.SurfaceConfiguration,
@@ -124,7 +131,8 @@ main :: proc() {
 		if !state.readback_done || !state.queue_work_done || !state.queue_work_done_ok {
 			os_exit_failure()
 		}
-		if !state.image_retirement_passed || !state.surface_resource_retirement_passed { os_exit_failure() }
+		if !state.image_retirement_passed || !state.surface_resource_retirement_passed ||
+		   !state.surface_cache_pressure_inflight_passed || !state.surface_cache_pressure_passed { os_exit_failure() }
 		when FEASIBILITY_TEST_RESIZE {
 			if !state.test_resize_pre_applied || !state.test_resize_pre_frame ||
 				!state.test_resize_post_applied || !state.test_resize_post_frame {
@@ -137,6 +145,7 @@ main :: proc() {
 smoke_complete :: proc() -> bool {
 	if !state.readback_done || !state.queue_work_done || !state.queue_work_done_ok { return false }
 	if !state.image_retirement_passed || !state.surface_resource_retirement_passed { return false }
+	if !state.surface_cache_pressure_inflight_passed || !state.surface_cache_pressure_passed { return false }
 	when FEASIBILITY_TEST_RESIZE {
 		if !state.test_resize_pre_applied || !state.test_resize_pre_frame ||
 			!state.test_resize_post_applied || !state.test_resize_post_frame { return false }
@@ -227,13 +236,75 @@ on_queue_work_done :: proc "c" (status:wgpu.QueueWorkDoneStatus, message:wgpu.St
 			state.compositor.surfaces.completed_serial, len(state.compositor.surfaces.retired), surface_active_bytes,
 			state.compositor.surfaces.resident_bytes, state.compositor.surfaces.resource_retirement_count,
 			state.compositor.surfaces.resource_release_count)
+		when FEASIBILITY_TEST_QUIT_AFTER_READBACK {
+			if state.image_retirement_passed && state.surface_resource_retirement_passed {
+				start_surface_cache_pressure_test()
+			} else {
+				state.quit = true
+			}
+		}
 	}
 	fmt.printf("[webgpu-feasibility] queue work done status=%v message=%s\n", status, message)
 	when FEASIBILITY_TEST_QUIT_AFTER_READBACK {
-		if !state.readback_pending && (!FEASIBILITY_TEST_RESIZE || state.test_resize_post_frame) {
-			state.quit = true
-		}
+		if smoke_complete() { state.quit = true }
 	}
+}
+
+on_surface_cache_pressure_batch_a :: proc "c" (status: wgpu.QueueWorkDoneStatus, message: wgpu.StringView, userdata1, userdata2: rawptr) {
+	context = state.ctx
+	state.queue_work_done_pending = false
+	if status != .Success || !webgpu_renderer.Compositor_Complete_Submission(&state.compositor, state.surface_cache_pressure_serial) {
+		fmt.printf("[webgpu-feasibility] cache pressure first batch completion FAIL status=%v message=%s serial=%d\n",
+			status, message, state.surface_cache_pressure_serial)
+		state.queue_work_done = true
+		state.queue_work_done_ok = false
+		state.quit = true
+		return
+	}
+	fmt.printf("[webgpu-feasibility] cache pressure first batch completed serial=%d resident_bytes=%d\n",
+		state.surface_cache_pressure_serial, state.compositor.surfaces.resident_bytes)
+	if !surface_cache_pressure_submit_batch(SURFACE_CACHE_PRESSURE_SECOND_WIDTH, 4) {
+		fmt.println("[webgpu-feasibility] cache pressure second batch after completion FAIL")
+		state.queue_work_done = true
+		state.queue_work_done_ok = false
+		state.quit = true
+		return
+	}
+	state.surface_cache_pressure_serial = 4
+	state.queue_work_done = false
+	state.queue_work_done_ok = false
+	state.queue_work_done_pending = true
+	wgpu.QueueOnSubmittedWorkDone(state.queue, {mode=.AllowProcessEvents, callback=on_surface_cache_pressure_batch_b})
+}
+
+on_surface_cache_pressure_batch_b :: proc "c" (status: wgpu.QueueWorkDoneStatus, message: wgpu.StringView, userdata1, userdata2: rawptr) {
+	context = state.ctx
+	state.queue_work_done_pending = false
+	completion_ok := status == .Success && webgpu_renderer.Compositor_Complete_Submission(
+		&state.compositor, state.surface_cache_pressure_serial,
+	)
+	resource_count := surface_cache_pressure_resource_count(
+		SURFACE_CACHE_PRESSURE_SECOND_WIDTH, SURFACE_CACHE_PRESSURE_BATCH_COUNT,
+	)
+	oldest_first_resource_present := surface_cache_pressure_resource_present(SURFACE_CACHE_PRESSURE_FIRST_WIDTH)
+	newest_first_resource_present := surface_cache_pressure_resource_present(
+		SURFACE_CACHE_PRESSURE_FIRST_WIDTH + SURFACE_CACHE_PRESSURE_BATCH_COUNT - 1,
+	)
+	active_bytes := surface_cache_pressure_active_bytes()
+	renderer := &state.compositor.surfaces
+	state.surface_cache_pressure_passed = completion_ok && resource_count == SURFACE_CACHE_PRESSURE_BATCH_COUNT &&
+		renderer.completed_serial == state.surface_cache_pressure_serial && len(renderer.retired) == 0 &&
+		renderer.resident_bytes <= webgpu_renderer.SURFACE_GPU_CACHE_BUDGET_BYTES &&
+		renderer.resident_bytes == active_bytes && renderer.resource_eviction_count > state.surface_cache_pressure_evictions_before_probe &&
+		!oldest_first_resource_present && newest_first_resource_present
+	state.queue_work_done = true
+	state.queue_work_done_ok = status == .Success
+	fmt.printf("[webgpu-feasibility] cache pressure bound/LRU %s status=%v message=%s submitted=%d completed=%d batch_resources=%d resident_bytes=%d budget_bytes=%d active_bytes=%d evictions=%d oldest_first_batch_evicted=%v newest_first_batch_retained=%v retired=%d\n",
+		"PASS" if state.surface_cache_pressure_passed else "FAIL", status, message,
+		renderer.submitted_serial, renderer.completed_serial, resource_count, renderer.resident_bytes,
+		webgpu_renderer.SURFACE_GPU_CACHE_BUDGET_BYTES, active_bytes, renderer.resource_eviction_count,
+		!oldest_first_resource_present, newest_first_resource_present, len(renderer.retired))
+	if smoke_complete() { state.quit = true } else if status != .Success { state.quit = true }
 }
 
 on_device :: proc "c" (status: wgpu.RequestDeviceStatus, device: wgpu.Device, message: string, userdata1, userdata2: rawptr) {
