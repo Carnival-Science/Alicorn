@@ -166,7 +166,11 @@ sdl3_webgpu_application_key_down :: proc(
 			}
 		}
 		if text_event, mapped := text_key_event_from_sdl(event.key, event.mod); mapped {
-			result, key_status := alicorn.hosted_runtime_text_key(&application.hosted, text_event)
+			result, key_status := alicorn.hosted_runtime_text_key(
+				&application.hosted,
+				text_event,
+				composition_active,
+			)
 			if key_status != .Ok { return .Failure }
 			if result != .Unhandled {
 				if !sdl3_webgpu_application_sync_text_input(application) { return .Failure }

@@ -1938,9 +1938,44 @@ Validation with `C:\odin\odin.exe` (`dev-2026-11-nightly:08539cd`) on Windows:
   independent of the `!js` SDL3 host.
 - `git diff --check` passed.
 
-This is not yet production `ui.run` on SDL3/WebGPU. Clipboard, application-owned
-text-key callbacks in the run adapter, drag/drop, menus/dialogs, AccessKit,
-secondary windows, physical input/IME, and native macOS/Linux validation remain
-open. A refreshed localhost:8091 browser fixture was separately confirmed by
-the owner to accept clicks without the earlier runtime error; that screenshot
-does not identify its served commit or establish those outstanding gates.
+At this revision, this is not yet production `ui.run` on SDL3/WebGPU. Clipboard,
+application-owned text-key callbacks in the run adapter, drag/drop,
+menus/dialogs, AccessKit, secondary windows, physical input/IME, and native
+macOS/Linux validation remain open. A refreshed localhost:8091 browser fixture
+was separately confirmed by the owner to accept clicks without the earlier
+runtime error; that screenshot does not identify its served commit or establish
+those outstanding gates.
+
+### Application-owned editor text-key routing (Windows, 2026-11-16)
+
+The generic editor-key callback now crosses `Hosted_Runtime`, the shared
+`ui.run` adapter, SDL3/WebGPU input, and browser keyboard routing. Focused
+`text_input_target` nodes receive normalized navigation and deletion intents;
+built-in `Text_Field` controls retain Alicorn's existing caret policy. Active
+IME composition keeps these keys, and handled events invalidate the shared
+description. The native `ui.run` callback receives the focused owner and keeps
+editor caret/selection policy in application state.
+
+The bounded native fixture now injects Left into an application-owned editor
+target and asserts its callback is reached, alongside the existing Text_Field
+text/IME and resize checks. The common hosted-adapter test and native
+`run_application` forwarding test cover both callback adapters. The refreshed
+localhost:8091 page was also reloaded by the owner and clicked without the prior
+runtime error; its screenshot does not establish the exact served SHA, browser
+keyboard routing, physical GPU acceleration, or browser IME behavior.
+
+Validation with `C:\odin\odin.exe` on Windows:
+
+- Runtime tests passed (357), SDL3 host tests passed (7), browser-host tests
+  passed (6), and UI tests passed (41), including generic editor-key and
+  composition-gating cases.
+- The native Hosted_Runtime fixture passes on D3D12 and Vulkan, including the
+  application-owned Left-key callback, text/IME routing, resize, and teardown.
+- The complete feasibility build produced all Windows native fixtures and the
+  `js_wasm32` browser fixture.
+
+This closes the optional text-key callback adapter gap for native and hosted
+`ui.run` composition. Production `ui.run` host selection for WebGPU, browser
+DOM/ARIA accessibility, physical IME and keyboard checks, clipboard,
+drag/drop, menus/dialogs, secondary windows, and native macOS/Linux validation
+remain outstanding.

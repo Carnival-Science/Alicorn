@@ -81,6 +81,9 @@ os_run :: proc() {
 						native_hosted_smoke_click_button()
 						state.native_hosted_smoke_click_sent = true
 					}
+					if state.native_hosted_app.click_count > 0 && !state.native_hosted_app.text_key_passed {
+						native_hosted_smoke_generic_text_key()
+					}
 					if state.native_hosted_app.click_count > 0 && !state.native_hosted_app.text_input_passed {
 						native_hosted_smoke_text_and_ime()
 					}
@@ -320,6 +323,7 @@ native_hosted_init :: proc() {
 		render=native_hosted_render,
 		on_initialize=native_hosted_initialize_runtime,
 		on_text_change=native_hosted_text_change,
+		on_text_key=native_hosted_text_key,
 	}
 	if result := native_sdl3_host.sdl3_webgpu_application_init(
 		&native_hosted_application,
@@ -341,6 +345,19 @@ native_hosted_init :: proc() {
 native_hosted_text_change :: proc(data: rawptr, _rt: ^alicorn.Runtime, change: alicorn.Text_Change) {
 	app := cast(^Native_Hosted_Feasibility_App)data
 	if app != nil && change.changed { app.text_change_count += 1 }
+}
+
+native_hosted_text_key :: proc(
+	data: rawptr,
+	_rt: ^alicorn.Runtime,
+	owner: alicorn.Node_ID,
+	event: alicorn.Application_Text_Key_Event,
+) -> bool {
+	app := cast(^Native_Hosted_Feasibility_App)data
+	if app == nil { return false }
+	app.text_key_count += 1
+	app.text_key_passed = owner == app.generic_text_owner && event.key == .Left
+	return app.text_key_passed
 }
 
 native_hosted_resize :: proc() {
@@ -403,6 +420,13 @@ native_hosted_render :: proc(data: rawptr, ui: ^alicorn.UI, _width, _height: int
 		key=alicorn.key_string("native-hosted-text-field"),
 		style=alicorn.layout_style(.Row, width=360, height=40, padding=8),
 	)
+	app.generic_text_owner, _ = alicorn.button_ex(
+		ui, "Application-owned editor surface",
+		key="native-hosted-editor",
+		explicit_key=true,
+		style=alicorn.layout_style(.Row, width=360, height=40, padding=8),
+	)
+	_ = alicorn.text_input_target(ui, app.generic_text_owner)
 }
 
 native_hosted_smoke_click_button :: proc() {
@@ -429,6 +453,48 @@ native_hosted_smoke_click_button :: proc() {
 	wake := SDL.Event{type=native_hosted_application.wake_event_type}
 	if !SDL.PushEvent(&wake) { fmt.panicf("native hosted smoke could not wake after pointer activation") }
 	fmt.printf("[webgpu-feasibility] native hosted pointer routed through Hosted_Runtime PASS target=%d\n", id)
+}
+
+native_hosted_smoke_generic_text_key :: proc() {
+	rt, borrow_status := alicorn.hosted_runtime_borrow(&native_hosted_application.hosted)
+	if borrow_status != .Ok || rt == nil { fmt.panicf("native hosted smoke could not inspect its application editor target") }
+	owner := state.native_hosted_app.generic_text_owner
+	info, info_found := alicorn.node_info(rt, owner)
+	if !info_found || owner == 0 { fmt.panicf("native hosted smoke application text target is missing") }
+	window_id := SDL.GetWindowID(state.os.window)
+	focus_event := SDL.Event{type=.WINDOW_FOCUS_GAINED}
+	focus_event.window.windowID = window_id
+	if native_sdl3_host.sdl3_webgpu_application_handle_event(&native_hosted_application, focus_event) != .Handled {
+		fmt.panicf("native Hosted_Runtime could not focus the synthetic editor surface")
+	}
+	x := info.bounds.x + info.bounds.w * 0.5
+	y := info.bounds.y + info.bounds.h * 0.5
+	down := SDL.Event{type=.MOUSE_BUTTON_DOWN}
+	down.button.windowID = window_id
+	down.button.button = 1
+	down.button.clicks = 1
+	down.button.x, down.button.y = x, y
+	up := SDL.Event{type=.MOUSE_BUTTON_UP}
+	up.button.windowID = window_id
+	up.button.button = 1
+	up.button.clicks = 1
+	up.button.x, up.button.y = x, y
+	if native_sdl3_host.sdl3_webgpu_application_handle_event(&native_hosted_application, down) != .Handled ||
+		native_sdl3_host.sdl3_webgpu_application_handle_event(&native_hosted_application, up) != .Handled {
+		fmt.panicf("native Hosted_Runtime could not focus the synthetic application editor target")
+	}
+	if native_hosted_application.text_input.owner != owner || !native_hosted_application.text_input.active {
+		fmt.panicf("native SDL text-input ownership did not follow the generic editor target")
+	}
+	left := SDL.Event{type=.KEY_DOWN}
+	left.key.windowID = window_id
+	left.key.key = SDL.K_LEFT
+	left.key.down = true
+	if native_sdl3_host.sdl3_webgpu_application_handle_event(&native_hosted_application, left) != .Handled ||
+		!state.native_hosted_app.text_key_passed || state.native_hosted_app.text_key_count != 1 {
+		fmt.panicf("native SDL Left did not route to the application-owned editor callback")
+	}
+	fmt.println("[webgpu-feasibility] native SDL application-owned editor text-key callback PASS")
 }
 
 native_hosted_smoke_text_and_ime :: proc() {

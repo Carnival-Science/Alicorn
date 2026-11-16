@@ -7,11 +7,20 @@ import alicorn "alicorn:runtime"
 Run_Hosted_Config_Test_App :: struct {
 	waker: Application_Waker,
 	renders, initializations, starts, wakes, stops, keys, pointers: int,
+	text_key_events: int,
+	last_text_key: alicorn.Application_Text_Navigation_Key,
+	generic_text_target: Node_ID,
 }
 
 run_hosted_config_test_render :: proc(app: ^Run_Hosted_Config_Test_App, ctx: ^UI) {
 	app.renders += 1
 	_ = text(ctx, "Hosted ui.run")
+	if app.renders % 2 == 1 {
+		app.generic_text_target, _ = alicorn.button_ex(
+			ctx, "Editor", key="run-hosted-editor", explicit_key=true,
+		)
+		_ = alicorn.text_input_target(ctx, app.generic_text_target)
+	}
 }
 
 run_hosted_config_test_initialize :: proc(app: ^Run_Hosted_Config_Test_App, _rt: ^alicorn.Runtime) {
@@ -35,6 +44,17 @@ run_hosted_config_test_stop :: proc(app: ^Run_Hosted_Config_Test_App) {
 run_hosted_config_test_key :: proc(app: ^Run_Hosted_Config_Test_App, _rt: ^alicorn.Runtime, key: alicorn.Application_Key) -> bool {
 	app.keys += 1
 	return key == .Find
+}
+
+run_hosted_config_test_text_key :: proc(
+	app: ^Run_Hosted_Config_Test_App,
+	_rt: ^alicorn.Runtime,
+	_owner: Node_ID,
+	event: alicorn.Application_Text_Key_Event,
+) -> bool {
+	app.text_key_events += 1
+	app.last_text_key = event.key
+	return true
 }
 
 run_hosted_config_test_pointer :: proc(app: ^Run_Hosted_Config_Test_App, _rt: ^alicorn.Runtime, _event: alicorn.Pointer_Event, _target: Node_ID) {
@@ -61,6 +81,7 @@ test_shared_ui_run_adapts_to_hosted_runtime :: proc(t: ^testing.T) {
 		on_wake=run_hosted_config_test_wake,
 		on_stop=run_hosted_config_test_stop,
 		on_key=run_hosted_config_test_key,
+		on_text_key=run_hosted_config_test_text_key,
 		on_pointer=run_hosted_config_test_pointer,
 	}
 	queue := Run_Hosted_Config_Test_Wake_Queue{}
@@ -76,11 +97,22 @@ test_shared_ui_run_adapts_to_hosted_runtime :: proc(t: ^testing.T) {
 	testing.expect(t, first.status == .Ok && first.description_built && first.render_required && app.renders == 2,
 		"the hosted adapter should describe the shared root and overlay callbacks once each")
 	_ = alicorn.hosted_runtime_frame_submission_succeeded(&session)
+	rt, borrow_status := alicorn.hosted_runtime_borrow(&session)
+	testing.expect(t, borrow_status == .Ok && alicorn.focus(rt, app.generic_text_target))
+	text_result, text_status := alicorn.hosted_runtime_text_key(
+		&session,
+		alicorn.Application_Text_Key_Event{key=.Document_End, shift=true},
+	)
+	testing.expect(t, text_status == .Ok && text_result == .Navigation &&
+		app.text_key_events == 1 && app.last_text_key == .Document_End,
+		"the shared ui.run adapter must forward application-owned editor key events")
+	_ = alicorn.hosted_runtime_step(&session, 4)
+	_ = alicorn.hosted_runtime_frame_submission_succeeded(&session)
 
 	wake(app.waker)
 	testing.expect(t, queue.count == 1, "the application waker should post through Hosted_Waker")
 	_ = alicorn.hosted_runtime_deliver_wake(&session)
-	second := alicorn.hosted_runtime_step(&session, 2)
+	second := alicorn.hosted_runtime_step(&session, 5)
 	testing.expect(t, second.status == .Ok && second.description_built && app.wakes == 1,
 		"a delivered wake should reach the application and explicitly invalidate the shared description")
 	_ = alicorn.hosted_runtime_frame_submission_succeeded(&session)
@@ -91,7 +123,7 @@ test_shared_ui_run_adapts_to_hosted_runtime :: proc(t: ^testing.T) {
 	})
 	testing.expect(t, key_status == .Ok && handled && app.keys == 1,
 		"host-mapped Application_Key ordinals should reach the existing ui.run callback")
-	third := alicorn.hosted_runtime_step(&session, 3)
+	third := alicorn.hosted_runtime_step(&session, 6)
 	testing.expect(t, third.status == .Ok && third.description_built)
 	_ = alicorn.hosted_runtime_frame_submission_succeeded(&session)
 

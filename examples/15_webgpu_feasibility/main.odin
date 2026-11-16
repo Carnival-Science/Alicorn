@@ -50,6 +50,9 @@ Glyph_Quad :: struct { x0, y0, x1, y1: f32, uv: [4]f32 }
 Draw_Command :: struct { first, count: u32, scissor: [4]u32 }
 Native_Hosted_Feasibility_App :: struct {
 	click_count: int,
+	text_key_count: int,
+	text_key_passed: bool,
+	generic_text_owner: alicorn.Node_ID,
 	text_change_count: int,
 	text_input_passed: bool,
 }
@@ -198,18 +201,21 @@ main :: proc() {
 	when FEASIBILITY_TEST_NATIVE_HOSTED_SMOKE {
 		if !state.native_hosted_presented || state.native_hosted_ready ||
 		   state.native_hosted_app.click_count != 1 || !state.native_hosted_resize_presented ||
+		   state.native_hosted_app.text_key_count != 1 || !state.native_hosted_app.text_key_passed ||
 		   state.native_hosted_app.text_change_count != 1 || !state.native_hosted_app.text_input_passed {
 			fmt.eprintln("[webgpu-feasibility] native Hosted_Runtime presenter smoke FAIL",
 				"presented", state.native_hosted_presented,
 				"destroyed", !state.native_hosted_ready,
 				"clicks", state.native_hosted_app.click_count,
+				"text_keys", state.native_hosted_app.text_key_count,
+				"text_key_passed", state.native_hosted_app.text_key_passed,
 				"resize", state.native_hosted_resize_presented,
 				"text_changes", state.native_hosted_app.text_change_count,
 				"text_input", state.native_hosted_app.text_input_passed,
 			)
 			os_exit_failure()
 		}
-		fmt.println("[webgpu-feasibility] native Hosted_Runtime pointer, text/IME routing, resize, and lifecycle smoke PASS")
+		fmt.println("[webgpu-feasibility] native Hosted_Runtime pointer, application text-key, text/IME routing, resize, and lifecycle smoke PASS")
 	}
 	when FEASIBILITY_TEST_QUIT_AFTER_READBACK {
 		if !state.readback_done || !state.queue_work_done || !state.queue_work_done_ok {

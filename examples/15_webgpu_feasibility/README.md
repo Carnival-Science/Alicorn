@@ -169,11 +169,12 @@ for its completion callback before teardown, run:
 
 The bounded SDL3/Hosted_Runtime path uses the same shared WebGPU surface
 coordinator as the browser. Its smoke creates a real native window, renders a
-retained button, routes a pointer activation through Hosted_Runtime, resizes the
-SDL window to 800×450, presents again, and waits for queue completion before
-teardown. The click is injected at the retained button's queried bounds; this
-does not claim physical mouse, keyboard, or IME coverage. Build and run on
-Windows with:
+retained button and generic text target, routes pointer activation and a
+synthetic editor Left key through Hosted_Runtime, exercises text-field text and
+IME event routing, resizes the SDL window to 800×450, presents again, and waits
+for queue completion before teardown. Synthetic input is injected at queried
+retained bounds and does not claim physical keyboard or operating-system IME
+coverage. Build and run on Windows with:
 
 ~~~powershell
 C:\odin\odin.exe build . -collection:alicorn=../.. `

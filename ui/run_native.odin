@@ -42,6 +42,15 @@ run_application :: proc(run_state: ^Run_State($T), title: string, width, height:
 		state := cast(^Run_State(T))data
 		if state.on_text_change != nil { state.on_text_change(state.app, rt, change) }
 	}
+	on_text_key :: proc(
+		data: rawptr,
+		rt: ^alicorn.Runtime,
+		owner: Node_ID,
+		event: alicorn.Application_Text_Key_Event,
+	) -> bool {
+		state := cast(^Run_State(T))data
+		return state.on_text_key != nil && state.on_text_key(state.app, rt, owner, event)
+	}
 	on_pointer :: proc(data: rawptr, rt: ^alicorn.Runtime, event: alicorn.Pointer_Event, target: Node_ID) {
 		state := cast(^Run_State(T))data
 		if state.on_pointer != nil { state.on_pointer(state.app, rt, event, target) }
@@ -61,6 +70,7 @@ run_application :: proc(run_state: ^Run_State($T), title: string, width, height:
 	if run_state.on_stop != nil { application.on_stop = stop }
 	if run_state.on_key != nil { application.on_key = on_key }
 	if run_state.on_text_change != nil { application.on_text_change = on_text_change }
+	if run_state.on_text_key != nil { application.on_text_key = on_text_key }
 	if run_state.on_pointer != nil { application.on_pointer = on_pointer }
 	return application
 }
@@ -87,11 +97,13 @@ run :: proc(
 	on_key: proc(^T, ^alicorn.Runtime, alicorn.Application_Key) -> bool = nil,
 	on_text_change: proc(^T, ^alicorn.Runtime, alicorn.Text_Change) = nil,
 	on_pointer: proc(^T, ^alicorn.Runtime, alicorn.Pointer_Event, Node_ID) = nil,
+	on_text_key: proc(^T, ^alicorn.Runtime, Node_ID, alicorn.Application_Text_Key_Event) -> bool = nil,
 ) {
 	run_state := Run_State(T){
 		app=state, render=render, render_overlays=render_overlays,
 		on_initialize=on_initialize, on_start=on_start, on_wake=on_wake, on_stop=on_stop,
 		on_key=on_key, on_text_change=on_text_change, on_pointer=on_pointer,
+		on_text_key=on_text_key,
 	}
 	host.Run(run_application(&run_state, title, width, height), smoke=smoke)
 }

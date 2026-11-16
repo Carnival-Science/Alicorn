@@ -221,6 +221,7 @@ Call these from the host's UI thread, in native event order:
 | Pointer motion/button/cancel | `hosted_runtime_pointer` |
 | Scroll or trackpad delta | `hosted_runtime_scroll` |
 | Key transition for app shortcuts | `hosted_runtime_key` |
+| Text navigation/edit key for an application-owned editor | `hosted_runtime_text_key` |
 | Focus traversal | `hosted_runtime_focus_traverse` |
 | Enter/Space activation | `hosted_runtime_activate` |
 | Slider arrows/Home/End | `hosted_runtime_adjust_focused_slider`, `hosted_runtime_set_focused_slider_bound` |
@@ -242,6 +243,14 @@ it consumes the event; Alicorn then invalidates the application description.
 For Tab and activation keys, route through the focus/activation helpers when
 the host's IME and application shortcut policy allows it. The host remains
 responsible for not stealing keys from an active IME composition.
+
+Map editor navigation and deletion keys to `Application_Text_Key_Event` and
+pass them to `hosted_runtime_text_key`. A focused application-owned
+`text_input_target` receives the configured `on_text_key` callback; built-in
+`Text_Field` controls continue through Alicorn's shared caret and selection
+policy. Pass `composition_active=true` while native or browser IME composition
+is active so those keys remain with the input method. The shared `ui.run`
+adapter exposes the same callback as its optional `on_text_key` argument.
 
 Text-field preedit selection is supplied to `hosted_runtime_text_input` as
 character offsets and converted at the boundary. App-owned text-input targets

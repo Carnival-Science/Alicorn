@@ -29,6 +29,12 @@ Hosted_Scroll_Proc :: proc(state: rawptr, rt: ^Runtime, event: Scroll_Event)
 Hosted_Scroll_Capture_Proc :: proc(state: rawptr, rt: ^Runtime, event: Scroll_Event, target: Node_ID) -> bool
 Hosted_Drag_Proc :: proc(state: rawptr, rt: ^Runtime, event: Drag_Event)
 Hosted_Text_Change_Proc :: proc(state: rawptr, rt: ^Runtime, change: Text_Change)
+Hosted_Text_Key_Proc :: proc(
+	state: rawptr,
+	rt: ^Runtime,
+	owner: Node_ID,
+	event: Application_Text_Key_Event,
+) -> bool
 
 // Hosted_Key_Event carries one host-normalized key transition. key_code is
 // deliberately opaque to Runtime; the host owns platform mapping and reports
@@ -91,6 +97,7 @@ Hosted_Runtime_Config :: struct {
 	on_text_change: Hosted_Text_Change_Proc,
 	on_text_input: Hosted_Text_Input_Proc,
 	on_key: Hosted_Key_Proc,
+	on_text_key: Hosted_Text_Key_Proc,
 }
 
 Hosted_Runtime :: struct {
@@ -145,6 +152,7 @@ Hosted_Runtime_State :: struct {
 	on_scroll_capture: Hosted_Scroll_Capture_Proc,
 	on_scroll: Hosted_Scroll_Proc,
 	on_text_change: Hosted_Text_Change_Proc,
+	on_text_key: Hosted_Text_Key_Proc,
 	on_text_input: Hosted_Text_Input_Proc,
 	on_key: Hosted_Key_Proc,
 	logical_width, logical_height: int,
@@ -205,6 +213,7 @@ hosted_runtime_init :: proc(host: ^Hosted_Runtime, config: Hosted_Runtime_Config
 		on_scroll_capture=config.on_scroll_capture,
 		on_scroll=config.on_scroll,
 		on_text_change=config.on_text_change,
+		on_text_key=config.on_text_key,
 		on_text_input=config.on_text_input,
 		on_key=config.on_key,
 		logical_width=config.logical_width,
@@ -590,15 +599,31 @@ hosted_runtime_text_command :: proc(host: ^Hosted_Runtime, owner: Node_ID, comma
 }
 
 // hosted_runtime_text_key routes a host-normalized navigation or deletion key
-// through Alicorn's shared Text_Field policy. The result reports whether the
-// focused field consumed it; edit callbacks follow the same interaction-scope
-// dispatch and ownership rules as native text input.
+// first to an application-owned text target and then through Alicorn's shared
+// Text_Field policy. Hosts must pass composition_active so active IME input
+// retains its keys. The result reports whether the owner consumed the event.
 hosted_runtime_text_key :: proc(
 	host: ^Hosted_Runtime,
 	event: Application_Text_Key_Event,
+	composition_active := false,
 ) -> (result: Application_Text_Field_Key_Result, status: Hosted_Runtime_Status) {
 	state, access_status := hosted_runtime_get_state(host)
 	if access_status != .Ok { return .Unhandled, access_status }
+	if composition_active { return .Unhandled, .Ok }
+	if application_dispatch_text_key(
+		&state.runtime,
+		state.app_state,
+		state.on_text_key,
+		event,
+	) {
+		#partial switch event.key {
+		case .Backspace, .Delete, .Delete_Word_Backward, .Delete_Word_Forward,
+		     .Delete_Line_Backward, .Delete_Line_Forward:
+			return .Edit, .Ok
+		case:
+			return .Navigation, .Ok
+		}
+	}
 	owner := focused_node(&state.runtime)
 	route_result, change := application_route_text_field_key(&state.runtime, owner, event)
 	result = route_result

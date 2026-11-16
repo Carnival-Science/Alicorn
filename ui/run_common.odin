@@ -16,6 +16,7 @@ Run_State :: struct($T: typeid) {
 	on_stop: proc(^T),
 	on_key: proc(^T, ^alicorn.Runtime, alicorn.Application_Key) -> bool,
 	on_text_change: proc(^T, ^alicorn.Runtime, alicorn.Text_Change),
+	on_text_key: proc(^T, ^alicorn.Runtime, Node_ID, alicorn.Application_Text_Key_Event) -> bool,
 	on_pointer: proc(^T, ^alicorn.Runtime, alicorn.Pointer_Event, Node_ID),
 	hosted_waker: alicorn.Hosted_Waker,
 }
@@ -98,6 +99,15 @@ run_hosted_config :: proc(
 		state := cast(^Run_State(T))data
 		if state.on_text_change != nil { state.on_text_change(state.app, rt, change) }
 	}
+	text_key :: proc(
+		data: rawptr,
+		rt: ^alicorn.Runtime,
+		owner: alicorn.Node_ID,
+		event: alicorn.Application_Text_Key_Event,
+	) -> bool {
+		state := cast(^Run_State(T))data
+		return state.on_text_key != nil && state.on_text_key(state.app, rt, owner, event)
+	}
 	pointer :: proc(data: rawptr, rt: ^alicorn.Runtime, event: alicorn.Pointer_Event, target: Node_ID) {
 		state := cast(^Run_State(T))data
 		if state.on_pointer != nil { state.on_pointer(state.app, rt, event, target) }
@@ -121,6 +131,7 @@ run_hosted_config :: proc(
 	if run_state.on_stop != nil { config.on_stop = stop }
 	if run_state.on_key != nil { config.on_key = key }
 	if run_state.on_text_change != nil { config.on_text_change = text_change }
+	if run_state.on_text_key != nil { config.on_text_key = text_key }
 	if run_state.on_pointer != nil { config.on_pointer = pointer }
 	if run_state.render_overlays != nil { config.render_overlays = describe_overlays }
 	return config

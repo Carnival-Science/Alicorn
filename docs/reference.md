@@ -1355,7 +1355,10 @@ system file drops or arbitrary MIME payloads.
   host applies platform conventions (Ctrl/Option word movement, Command line
   movement, and platform document-edge keys). A focused generic text owner gets
   first refusal on Tab; declining it preserves normal focus traversal. Global
-  menu shortcuts are checked before generic text keys.
+  menu shortcuts are checked before generic text keys. `ui.run` applications
+  can handle these events through its optional `on_text_key` callback; the
+  callback receives the focused owner so editor caret and selection state stay
+  application-owned.
 - `Runtime_Config` optionally configures persistent and scratch backing
   allocators when calling `new_runtime`.
 - The beginner-facing `ui.motion` declaration queues a target and response

@@ -8,7 +8,7 @@ import "core:strings"
 
 Hosted_Test_App :: struct {
 	descriptions, wakes, scheduled, stops, posts, pointer_cancels, scroll_events: int,
-	button, field, scroll: Node_ID,
+	button, field, generic_text_target, scroll: Node_ID,
 	waker: Hosted_Waker,
 	worker_notified, worker_coalesced: bool,
 	worker_status, worker_step_status, worker_destroy_status: Hosted_Runtime_Status,
@@ -17,6 +17,8 @@ Hosted_Test_App :: struct {
 	committed_text: bool,
 	key_events: int,
 	last_key: Application_Key,
+	text_key_events: int,
+	last_text_key: Application_Text_Navigation_Key,
 	host: ^Hosted_Runtime,
 }
 
@@ -26,6 +28,10 @@ hosted_test_render :: proc(data: rawptr, ui: ^UI, width, height: int, dpi: f32) 
 	app.button, _ = button_ex(ui, "Source", key="hosted-source", style=layout_style(width=100, height=36))
 	_ = drag_source(ui, DRAG_TEST_TYPE, DRAG_SCROLL_SOURCE)
 	app.field = text_field(ui, "seed", key="hosted-field", style=layout_style(width=180, height=36))
+	app.generic_text_target, _ = button_ex(
+		ui, "Editor", key="hosted-editor", explicit_key=true, style=layout_style(width=180, height=36),
+	)
+	_ = text_input_target(ui, app.generic_text_target)
 	region := scroll_region_begin(ui, key=key_string("hosted-scroll"), viewport_height=120, content_height=900,
 		style=layout_style(.Column, width=240, height=120), label="hosted-scroll")
 	app.scroll = region.id
@@ -91,6 +97,18 @@ hosted_test_key :: proc(data: rawptr, _rt: ^Runtime, _owner: Node_ID, event: Hos
 	return true
 }
 
+hosted_test_text_key :: proc(
+	data: rawptr,
+	_rt: ^Runtime,
+	_owner: Node_ID,
+	event: Application_Text_Key_Event,
+) -> bool {
+	app := (^Hosted_Test_App)(data)
+	app.text_key_events += 1
+	app.last_text_key = event.key
+	return true
+}
+
 hosted_test_open :: proc(host: ^Hosted_Runtime, app: ^Hosted_Test_App) -> Hosted_Runtime_Status {
 	app.host = host
 	return hosted_runtime_init(host, Hosted_Runtime_Config{
@@ -99,7 +117,8 @@ hosted_test_open :: proc(host: ^Hosted_Runtime, app: ^Hosted_Test_App) -> Hosted
 		post_wake_data=rawptr(app), post_wake=hosted_test_post, render=hosted_test_render,
 		on_initialize=hosted_test_init, on_start=hosted_test_start, on_wake=hosted_test_wake,
 		on_scheduled_wake=hosted_test_scheduled, on_stop=hosted_test_stop, on_pointer=hosted_test_pointer,
-		on_text_change=hosted_test_text_change, on_scroll=hosted_test_scroll, on_key=hosted_test_key,
+		on_text_change=hosted_test_text_change, on_text_key=hosted_test_text_key,
+		on_scroll=hosted_test_scroll, on_key=hosted_test_key,
 	})
 }
 
@@ -225,9 +244,18 @@ test_hosted_runtime_text_key_routes_selection_and_edit_callbacks :: proc(t: ^tes
 	defer hosted_runtime_destroy(&host)
 	_ = hosted_runtime_step(&host, 1)
 	rt, _ := hosted_runtime_borrow(&host)
+	_ = focus(rt, app.generic_text_target)
+	result, status := hosted_runtime_text_key(&host, Application_Text_Key_Event{key=.Word_Left})
+	testing.expect(t, status == .Ok && result == .Navigation && app.text_key_events == 1 &&
+		app.last_text_key == .Word_Left,
+		"hosted text-key routing delivers editor navigation to the active application-owned text target")
+	result, status = hosted_runtime_text_key(&host, Application_Text_Key_Event{key=.Delete}, composition_active=true)
+	testing.expect(t, status == .Ok && result == .Unhandled && app.text_key_events == 1,
+		"active IME composition retains keys instead of dispatching editor navigation")
+
 	if app.field == 0 { testing.expect(t, false, "missing text field"); return }
 	_ = focus(rt, app.field)
-	result, status := hosted_runtime_text_key(&host, Application_Text_Key_Event{key=.Left, shift=true})
+	result, status = hosted_runtime_text_key(&host, Application_Text_Key_Event{key=.Left, shift=true})
 	interaction, interaction_ok := text_field_interaction(rt, app.field)
 	testing.expect(t, status == .Ok && result == .Navigation && interaction_ok && interaction.has_selection)
 	result, status = hosted_runtime_text_key(&host, Application_Text_Key_Event{key=.Backspace})

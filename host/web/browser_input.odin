@@ -500,21 +500,21 @@ browser_input_key_down :: proc(event: js.Event) {
 	owner := alicorn.focused_node(rt)
 	info, has_focus := alicorn.node_info(rt, owner)
 	text_input_focused := has_focus && (info.kind == .Text_Field || info.text_input_target)
-	composition_active := event.is_composing
+	composition_active := event.is_composing || input.composition_active
 	if has_focus && info.kind == .Text_Field {
 		if interaction, ok := alicorn.text_field_interaction(rt, owner); ok {
 			composition_active = composition_active || interaction.composition_active
 		}
-		if !composition_active {
-			text_key, mapped := web_text_navigation_key(key_event, input.platform)
-			if mapped {
-				result, text_status := alicorn.hosted_runtime_text_key(input.host, text_key)
-				if text_status == .Ok && result != .Unhandled {
-					js.event_prevent_default()
-					browser_input_sync_focus_target(input)
-					input.wake(input.wake_data)
-					return
-				}
+	}
+	if text_input_focused && !composition_active {
+		text_key, mapped := web_text_navigation_key(key_event, input.platform)
+		if mapped {
+			result, text_status := alicorn.hosted_runtime_text_key(input.host, text_key, composition_active)
+			if text_status == .Ok && result != .Unhandled {
+				js.event_prevent_default()
+				browser_input_sync_focus_target(input)
+				input.wake(input.wake_data)
+				return
 			}
 		}
 	}

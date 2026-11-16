@@ -35,6 +35,9 @@ Run_Lifecycle_Test_App :: struct {
 	initialized: bool,
 	joined: bool,
 	text: Node_ID,
+	text_key_events: int,
+	text_key_owner: Node_ID,
+	last_text_key: alicorn.Application_Text_Navigation_Key,
 }
 
 run_lifecycle_test_worker :: proc(data: rawptr) {
@@ -83,6 +86,18 @@ run_lifecycle_test_render :: proc(app: ^Run_Lifecycle_Test_App, ctx: ^UI) {
 run_lifecycle_test_initialize :: proc(app: ^Run_Lifecycle_Test_App, _rt: ^alicorn.Runtime) {
 	app.initializations += 1
 	app.initialized = true
+}
+
+run_lifecycle_test_text_key :: proc(
+	app: ^Run_Lifecycle_Test_App,
+	_rt: ^alicorn.Runtime,
+	owner: Node_ID,
+	event: alicorn.Application_Text_Key_Event,
+) -> bool {
+	app.text_key_events += 1
+	app.text_key_owner = owner
+	app.last_text_key = event.key
+	return event.key == .Line_Start
 }
 
 @(test)
@@ -148,9 +163,24 @@ test_runner_keeps_optional_hooks_absent_and_preserves_simple_app_policy :: proc(
 	app := Run_Lifecycle_Test_App{}
 	state := Run_State(Run_Lifecycle_Test_App){app=&app, render=run_lifecycle_test_render}
 	application := run_application(&state, "Simple test", 240, 120)
-	testing.expect(t, application.on_initialize == nil && application.on_start == nil && application.on_wake == nil && application.on_stop == nil && application.on_tick == nil &&
+	testing.expect(t, application.on_initialize == nil && application.on_start == nil && application.on_wake == nil && application.on_stop == nil && application.on_tick == nil && application.on_text_key == nil &&
 		application.interaction_update_policy == .Correct_After_Interaction,
 		"ordinary ui.run users must retain the existing policy and no polling or synthetic lifecycle callbacks")
 	wake(Application_Waker{})
 	invalidate(Application_Context(nil))
+}
+
+@(test)
+test_native_ui_run_forwards_application_owned_text_keys :: proc(t: ^testing.T) {
+	app := Run_Lifecycle_Test_App{}
+	state := Run_State(Run_Lifecycle_Test_App){app=&app, render=run_lifecycle_test_render,
+		on_text_key=run_lifecycle_test_text_key}
+	application := run_application(&state, "Editor test", 240, 120)
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 240, 120})
+	defer alicorn.destroy_runtime(&rt)
+	event := alicorn.Application_Text_Key_Event{key=.Line_Start, shift=true}
+	handled := application.on_text_key(application.state, &rt, Node_ID(42), event)
+	testing.expect(t, application.on_text_key != nil && handled && app.text_key_events == 1 &&
+		app.text_key_owner == Node_ID(42) && app.last_text_key == .Line_Start,
+		"native ui.run must forward the focused owner and normalized text-key event to app state")
 }
