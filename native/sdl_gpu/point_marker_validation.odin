@@ -183,6 +183,16 @@ point_marker_validation_pixel_alpha :: proc(pixels: []u8, width, x, y: int) -> u
 	return pixels[(y*width+x)*4+3]
 }
 
+point_marker_validation_debug_pixels :: proc(pixels: []u8, width, height, center_x, center_y: int) {
+	for y in max(0, center_y-3)..<min(height, center_y+4) {
+		for x in max(0, center_x-3)..<min(width, center_x+4) {
+			i := (y*width+x)*4
+			fmt.println("[DEBUG-201-RB]", "x", x, "y", y,
+				"rgba", pixels[i], pixels[i+1], pixels[i+2], pixels[i+3])
+		}
+	}
+}
+
 point_marker_validation_reference_coverage :: proc(
 	markers: []alicorn.GPU_Surface_Point_Marker,
 	logical_bounds: alicorn.Rect,
@@ -323,6 +333,7 @@ point_marker_validation_run_case :: proc(
 	markers[marker_count+1] = {center={f32(logical_width+1), 1}, diameter=4, color={1, 1, 1, 1}}
 	info, info_ok := alicorn.node_info(&rt, surface)
 	point_marker_validation_trace(trace, "readback-compare")
+	if trace { point_marker_validation_debug_pixels(pixels, pixel_width, pixel_height, 3, 16) }
 	if !info_ok || !point_marker_validation_compare_readback(
 		fmt.tprintf("%dpx-%s", logical_width, marker_name), markers,
 		info.bounds, logical_width, pixel_width, pixel_height, scale, pixels,
