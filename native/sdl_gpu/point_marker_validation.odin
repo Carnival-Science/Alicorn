@@ -75,24 +75,27 @@ point_marker_validation_renderers_destroy :: proc(renderers: ^Point_Marker_Valid
 }
 
 point_marker_validation_create_runtime :: proc(
+	rt: ^alicorn.Runtime,
 	logical_width: int,
-	stats: ^alicorn.Runtime_Allocation_Stats,
 	marker_size: Point_Marker_Validation_Size,
-) -> (rt: alicorn.Runtime, surface: alicorn.Node_ID, ok: bool) {
-	rt = alicorn.new_runtime(
-		alicorn.Rect{0, 0, f32(logical_width), POINT_MARKER_VALIDATION_HEIGHT},
-		config=alicorn.Runtime_Config{allocation_stats=stats},
-	)
-	if !alicorn.text_engine_load_default_fonts(&rt) { return rt, 0, false }
-	alicorn.invalidate_root(&rt, "issue #201 dense marker readback")
-	ui, build := alicorn.begin_frame(&rt)
-	if !build { return rt, 0, false }
+	trace: bool,
+) -> (surface: alicorn.Node_ID, ok: bool) {
+	if rt == nil { return 0, false }
+	point_marker_validation_trace(trace, "fonts-load")
+	if !alicorn.text_engine_load_default_fonts(rt) { return 0, false }
+	point_marker_validation_trace(trace, "fonts-ready")
+	alicorn.invalidate_root(rt, "issue #201 dense marker readback")
+	point_marker_validation_trace(trace, "root-invalidated")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return 0, false }
+	point_marker_validation_trace(trace, "frame-begun")
 	alicorn.container_begin(&ui, .Root, label="issue-201-root", key=alicorn.key_string("issue-201-root"),
 		style=alicorn.layout_style(.Column, width=f32(logical_width), height=POINT_MARKER_VALIDATION_HEIGHT))
 	surface = alicorn.gpu_geometry_surface(&ui, "issue-201-markers",
 		alicorn.layout_style(width=f32(logical_width), height=POINT_MARKER_VALIDATION_HEIGHT), 1)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
+	point_marker_validation_trace(trace, "description-finished")
 
 	count := (logical_width-1)/3 + 1
 	segments := make([]alicorn.GPU_Surface_Line_Segment, count-1, allocator=context.temp_allocator)
@@ -112,14 +115,15 @@ point_marker_validation_create_runtime :: proc(
 	// Two extra samples exercise surface clipping at both horizontal edges.
 	markers[count+0] = {center={-1, 1}, diameter=4, color={1, 1, 1, 1}}
 	markers[count+1] = {center={f32(logical_width+1), 1}, diameter=4, color={1, 1, 1, 1}}
-	if !alicorn.gpu_surface_update_geometry_with_markers(&rt, surface, segments, nil, markers) {
+	if !alicorn.gpu_surface_update_geometry_with_markers(rt, surface, segments, nil, markers) {
 		delete(segments)
 		delete(markers)
-		return rt, surface, false
+		return surface, false
 	}
+	point_marker_validation_trace(trace, "payload-retained")
 	delete(segments)
 	delete(markers)
-	return rt, surface, true
+	return surface, true
 }
 
 point_marker_validation_frame :: proc(
@@ -270,8 +274,12 @@ point_marker_validation_run_case :: proc(
 	pixel_height := int(f32(POINT_MARKER_VALIDATION_HEIGHT)*scale)
 	marker_count := (logical_width-1)/3+1
 	allocations := alicorn.Runtime_Allocation_Stats{}
+	rt := alicorn.new_runtime(
+		alicorn.Rect{0, 0, f32(logical_width), POINT_MARKER_VALIDATION_HEIGHT},
+		config=alicorn.Runtime_Config{allocation_stats=&allocations},
+	)
 	point_marker_validation_trace(trace, "runtime-create")
-	rt, surface, runtime_ok := point_marker_validation_create_runtime(logical_width, &allocations, marker_size)
+	surface, runtime_ok := point_marker_validation_create_runtime(&rt, logical_width, marker_size, trace)
 	point_marker_validation_trace(trace, "runtime-ready")
 	if !runtime_ok { point_marker_validation_fail("runtime fixture could not retain dense markers and lines") }
 	defer if rt.persistent_allocator_state != nil { alicorn.destroy_runtime(&rt) }
