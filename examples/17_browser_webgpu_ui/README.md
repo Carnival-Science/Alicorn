@@ -28,8 +28,10 @@ WASM application.
 
 The example demonstrates basic control interaction and textarea-backed text
 input, plus the permission-gated `Read clipboard` and `Copy sample text`
-actions through `UI_Host_Services`. Its `on_wake` handler also applies queued
-browser accessibility `Set_Value` requests to the application-owned text
-buffer. Use the buttons directly in the browser; clipboard access may be denied
-by browser policy. It does not claim assistive-technology validation or
-device-loss recovery.
+actions through `UI_Host_Services`. `Queue application wake` verifies that a
+posted `Application_Waker` is delivered to `on_wake` on the next demand-scheduled
+owner-thread frame. Its `on_wake` handler also applies queued browser
+accessibility `Set_Value` requests to the application-owned text buffer. Use
+the buttons directly in the browser; clipboard access may be denied by browser
+policy. It does not claim assistive-technology validation or device-loss
+recovery.

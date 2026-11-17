@@ -7,6 +7,8 @@ import ui "alicorn:ui"
 
 App :: struct {
 	activations: int,
+	wake_deliveries: int,
+	waker: ui.Application_Waker,
 	name: ui.Text_Buffer,
 	host_services: ui.UI_Host_Services,
 	clipboard_text: string,
@@ -23,6 +25,8 @@ render :: proc(state: ^App, ctx: ^ui.UI) {
 		ui.text(ctx, "The same retained UI API runs through the shared browser host.")
 		if ui.button(ctx, "Increment") { state.activations += 1 }
 		ui.text(ctx, fmt.tprintf("Button activations: %d", state.activations))
+		if ui.button(ctx, "Queue application wake") { ui.wake(state.waker) }
+		ui.text(ctx, fmt.tprintf("Application wake callbacks: %d", state.wake_deliveries))
 		input := ui.text_field(
 			ctx,
 			"Type here to exercise browser text input",
@@ -59,6 +63,7 @@ render :: proc(state: ^App, ctx: ^ui.UI) {
 on_wake :: proc(state: ^App, ctx: ui.Application_Context) {
 	rt := cast(^alicorn.Runtime)ctx
 	if state == nil || rt == nil { return }
+	state.wake_deliveries += 1
 	changed := false
 	for {
 		event, found := alicorn.semantic_request_pop(rt)
@@ -70,6 +75,11 @@ on_wake :: proc(state: ^App, ctx: ui.Application_Context) {
 		alicorn.semantic_request_event_destroy(rt, &event)
 	}
 	if changed { ui.invalidate(ctx, "browser accessibility value applied") }
+	else { ui.invalidate(ctx, "browser application wake delivered") }
+}
+
+on_start :: proc(state: ^App, waker: ui.Application_Waker) {
+	state.waker = waker
 }
 
 on_services :: proc(state: ^App, services: ui.UI_Host_Services) {
@@ -124,6 +134,7 @@ main :: proc() {
 		&app,
 		render,
 		title="Alicorn · WebGPU Browser",
+		on_start=on_start,
 		on_stop=on_stop,
 		on_services=on_services,
 		on_wake=on_wake,

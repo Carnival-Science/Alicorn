@@ -721,9 +721,21 @@ hosted_runtime_accessibility_action :: proc(
 	handled = semantic_action_request(&state.runtime, id, action, text_value, numeric_value, has_numeric_value)
 	if handled && state.on_wake != nil &&
 	   len(state.runtime.semantic_requests)-state.runtime.semantic_request_read_index > pending_before {
-		state.on_wake(state.app_state, &state.runtime)
+		_ = hosted_runtime_deliver_semantic_requests(host)
 	}
 	return handled, .Ok
+}
+
+// hosted_runtime_deliver_semantic_requests invokes the application callback
+// when app-owned semantic requests are pending. Hosts call it after draining
+// platform accessibility actions into Runtime; the callback owns the request
+// policy and should drain events with semantic_request_pop.
+hosted_runtime_deliver_semantic_requests :: proc(host: ^Hosted_Runtime) -> Hosted_Runtime_Status {
+	state, status := hosted_runtime_get_state(host)
+	if status != .Ok { return status }
+	pending := len(state.runtime.semantic_requests)-state.runtime.semantic_request_read_index
+	if pending > 0 && state.on_wake != nil { state.on_wake(state.app_state, &state.runtime) }
+	return .Ok
 }
 
 hosted_runtime_display_commands :: proc(host: ^Hosted_Runtime) -> ([]Paint_Command, Hosted_Runtime_Status) {

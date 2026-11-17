@@ -142,6 +142,7 @@ sdl3_webgpu_application_accessibility_drain_actions :: proc(
 ) {
 	if application == nil || rt == nil || !application.accessibility_ready { return }
 	sdl_accessibility.native_accessibility_drain_actions(&application.accessibility_host, rt)
+	_ = alicorn.hosted_runtime_deliver_semantic_requests(&application.hosted)
 	sdl3_webgpu_application_accessibility_collect_counters(application, rt)
 }
 
@@ -438,6 +439,9 @@ sdl3_webgpu_application_handle_event :: proc(
 ) -> SDL3_WebGPU_Application_Event_Result {
 	if application == nil || !application.initialized { return .Failure }
 	if event.type == application.wake_event_type {
+		if status := alicorn.hosted_runtime_deliver_wake(&application.hosted); status != .Ok {
+			return .Failure
+		}
 		if rt, status := alicorn.hosted_runtime_borrow(&application.hosted); status == .Ok {
 			sdl3_webgpu_application_accessibility_drain_actions(application, rt)
 		} else {

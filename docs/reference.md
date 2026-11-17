@@ -90,7 +90,7 @@ runner returns. All callbacks execute on the application thread:
 | --- | --- | --- |
 | `on_initialize` | `proc(app: ^App, runtime: ^Runtime)` | Register themes and application resources after Runtime creation and before the first description. |
 | `on_start` | `proc(app: ^App, waker: ui.Application_Waker)` | Start app-owned producers, copying the borrowed thread-safe waker if needed. Runs before the initial description. |
-| `on_wake` | `proc(app: ^App, ctx: ui.Application_Context)` | Adopt synchronized results and queued browser accessibility actions; call `ui.invalidate(ctx, reason)` when a new description is required. |
+| `on_wake` | `proc(app: ^App, ctx: ui.Application_Context)` | Adopt synchronized results and queued application-owned accessibility actions; call `ui.invalidate(ctx, reason)` when a new description is required. |
 | `on_stop` | `proc(app: ^App)` | Stop and join every producer before returning; release shared result storage after joining. |
 
 `ui.wake(waker)` forwards to the existing host event request. The application

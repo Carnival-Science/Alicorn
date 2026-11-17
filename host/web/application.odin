@@ -33,6 +33,7 @@ Browser_Application :: struct {
 	text_input_id: string,
 	wake_data: rawptr,
 	wake: Browser_Application_Wake_Proc,
+	host_wake_pending: bool,
 	next_wake_ns: u64,
 	clear_color: wgpu.Color,
 	visible: bool,
@@ -70,6 +71,7 @@ browser_application_id_is_safe :: proc(id: string) -> bool {
 browser_application_post_wake :: proc(data: rawptr) -> bool {
 	application := cast(^Browser_Application)data
 	if application == nil || application.wake == nil { return false }
+	application.host_wake_pending = true
 	application.wake(application.wake_data)
 	return true
 }
@@ -284,6 +286,12 @@ browser_application_resize :: proc(application: ^Browser_Application) -> Browser
 browser_application_step :: proc(application: ^Browser_Application, now_ns: u64) -> Browser_Application_Step {
 	if application == nil || !application.initialized {
 		return Browser_Application_Step{status=.Closed, presentation=.Invalid_Input}
+	}
+	if application.host_wake_pending {
+		application.host_wake_pending = false
+		if status := alicorn.hosted_runtime_deliver_wake(&application.hosted); status != .Ok {
+			return Browser_Application_Step{status=status, presentation=.Invalid_Input}
+		}
 	}
 	step, presentation := browser_surface_presenter_step(&application.presenter, now_ns)
 	if step.status != .Ok {

@@ -345,6 +345,11 @@ test_hosted_runtime_text_and_semantic_delivery :: proc(t: ^testing.T) {
 	testing.expect(t, action_status == .Ok && handled && app.wakes == 1 &&
 		app.semantic_value_received && app.semantic_value_id == field_id,
 		"queued accessibility values reach on_wake for application-owned adoption")
+	queued := semantic_action_request(rt, field_id, .Set_Value, text_value="accessible value")
+	delivery_status := hosted_runtime_deliver_semantic_requests(&host)
+	testing.expect(t, queued && delivery_status == .Ok && app.wakes == 2 &&
+		app.semantic_value_received && app.semantic_value_id == field_id,
+		"host-drained native semantic actions can notify the application before the next description")
 }
 
 @(test)
