@@ -26,6 +26,7 @@ SDL3_WebGPU_Run_Result :: enum {
 }
 
 SDL3_WEBGPU_DEVICE_LOSS_POLL_INTERVAL_NS :: u64(250_000_000)
+SDL3_WEBGPU_DEVICE_REQUEST_DIAGNOSTIC_NS :: u64(5_000_000_000)
 
 SDL3_WebGPU_Run_State :: struct {
 	instance: wgpu.Instance,
@@ -42,6 +43,9 @@ SDL3_WebGPU_Run_State :: struct {
 	device_complete: bool,
 	adapter_pending: bool,
 	device_pending: bool,
+	device_request_future: wgpu.Future,
+	device_request_started_ns: u64,
+	device_request_slow_reported: bool,
 	device_lost_callback_pending: bool,
 	failed: bool,
 	closing: bool,
@@ -63,7 +67,7 @@ SDL3_WebGPU_Run_State :: struct {
 sdl3_webgpu_run_adapter_callback :: proc "c" (
 	status: wgpu.RequestAdapterStatus,
 	adapter: wgpu.Adapter,
-	_message: wgpu.StringView,
+	message: wgpu.StringView,
 	userdata1, _userdata2: rawptr,
 ) {
 	state := cast(^SDL3_WebGPU_Run_State)userdata1
@@ -73,6 +77,7 @@ sdl3_webgpu_run_adapter_callback :: proc "c" (
 	state.adapter_complete = true
 	state.adapter_status = status
 	if status != .Success || adapter == nil {
+		fmt.printf("[alicorn-webgpu] adapter callback status=%v adapter_present=%v message=%s\n", status, adapter != nil, message)
 		if adapter != nil { wgpu.AdapterRelease(adapter) }
 		state.failed = true
 		return
@@ -82,6 +87,8 @@ sdl3_webgpu_run_adapter_callback :: proc "c" (
 
 	caps, caps_status := wgpu.SurfaceGetCapabilities(state.surface, adapter)
 	if caps_status != .Success || caps.formatCount == 0 || caps.alphaModeCount == 0 {
+		fmt.printf("[alicorn-webgpu] surface capabilities failed status=%v formats=%d alpha_modes=%d\n",
+			caps_status, caps.formatCount, caps.alphaModeCount)
 		if caps_status == .Success { wgpu.SurfaceCapabilitiesFreeMembers(caps) }
 		state.failed = true
 		return
@@ -113,6 +120,8 @@ sdl3_webgpu_run_request_device :: proc(state: ^SDL3_WebGPU_Run_State) {
 	state.device_complete = false
 	state.device_pending = true
 	state.device_lost_callback_pending = true
+	state.device_request_started_ns = u64(sdl3.GetTicksNS())
+	state.device_request_slow_reported = false
 	device_descriptor := wgpu.DeviceDescriptor{
 		label = "Alicorn native WebGPU device",
 		deviceLostCallbackInfo = {
@@ -121,11 +130,13 @@ sdl3_webgpu_run_request_device :: proc(state: ^SDL3_WebGPU_Run_State) {
 			userdata1 = rawptr(state),
 		},
 	}
-	_ = wgpu.AdapterRequestDevice(state.adapter, &device_descriptor, {
+	fmt.println("[alicorn-webgpu] device request begin")
+	state.device_request_future = wgpu.AdapterRequestDevice(state.adapter, &device_descriptor, {
 		mode = .AllowProcessEvents,
 		callback = sdl3_webgpu_run_device_callback,
 		userdata1 = rawptr(state),
 	})
+	fmt.printf("[alicorn-webgpu] device request returned future=%d\n", state.device_request_future.id)
 }
 
 @(private)
@@ -156,14 +167,16 @@ sdl3_webgpu_run_request_adapter :: proc(state: ^SDL3_WebGPU_Run_State, recovery:
 sdl3_webgpu_run_device_callback :: proc "c" (
 	status: wgpu.RequestDeviceStatus,
 	device: wgpu.Device,
-	_message: wgpu.StringView,
+	message: wgpu.StringView,
 	userdata1, _userdata2: rawptr,
 ) {
 	state := cast(^SDL3_WebGPU_Run_State)userdata1
 	if state == nil { return }
+	context = runtime.default_context()
 	state.device_pending = false
 	state.device_complete = true
 	state.device_status = status
+	fmt.printf("[alicorn-webgpu] device callback status=%v device_present=%v message=%s\n", status, device != nil, message)
 	if status != .Success || device == nil {
 		if device != nil {
 			state.device = device
@@ -452,6 +465,14 @@ sdl3_webgpu_run :: proc(
 	for !state.adapter_complete || (state.adapter != nil && !state.device_complete) {
 		wgpu.InstanceProcessEvents(state.instance)
 		if state.device != nil { _ = wgpu.DevicePoll(state.device, false) }
+		if state.device_pending && !state.device_request_slow_reported {
+			elapsed_ns := u64(sdl3.GetTicksNS()) - state.device_request_started_ns
+			if elapsed_ns >= SDL3_WEBGPU_DEVICE_REQUEST_DIAGNOSTIC_NS {
+				fmt.printf("[alicorn-webgpu] device request still pending elapsed_ms=%d future=%d; continuing event processing\n",
+					elapsed_ns / 1_000_000, state.device_request_future.id)
+				state.device_request_slow_reported = true
+			}
+		}
 	if state.failed {
 		fmt.eprintln("[alicorn-webgpu] adapter/device initialization failed", state.adapter_status, state.device_status)
 		return .WebGPU_Failure
