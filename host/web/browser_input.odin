@@ -160,10 +160,8 @@ browser_input_text_owner :: proc(input: ^Browser_Input) -> (^alicorn.Runtime, al
 browser_input_focus_dom_target :: proc(input: ^Browser_Input, wants_text: bool) {
 	if input == nil || input.text_input_id == "" { return }
 	if input.dom_focus_known && input.dom_focus_is_text == wants_text { return }
-	target_id := input.canvas_id
-	if wants_text { target_id = input.text_input_id }
 	input.focus_transfer = true
-	js.evaluate(fmt.tprintf("document.getElementById('%s').focus({{preventScroll:true}})", target_id))
+	js.evaluate(browser_input_focus_script(input.canvas_id, input.text_input_id, wants_text))
 	input.focus_transfer = false
 	input.dom_focus_known = true
 	input.dom_focus_is_text = wants_text
