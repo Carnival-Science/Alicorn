@@ -8,6 +8,8 @@ import "core:strings"
 
 Hosted_Test_App :: struct {
 	descriptions, wakes, scheduled, stops, posts, pointer_cancels, scroll_events: int,
+	host_services, starts: int,
+	host_services_before_start: bool,
 	button, field, generic_text_target, scroll: Node_ID,
 	waker: Hosted_Waker,
 	worker_notified, worker_coalesced: bool,
@@ -52,7 +54,14 @@ hosted_test_init :: proc(data: rawptr, rt: ^Runtime) {
 
 hosted_test_start :: proc(data: rawptr, waker: Hosted_Waker) {
 	app := (^Hosted_Test_App)(data)
+	app.starts += 1
 	app.waker, _ = hosted_waker_clone(waker)
+}
+
+hosted_test_services :: proc(data: rawptr, services: Hosted_Host_Services) {
+	app := (^Hosted_Test_App)(data)
+	app.host_services += 1
+	app.host_services_before_start = app.starts == 0
 }
 
 hosted_test_wake :: proc(data: rawptr, rt: ^Runtime) {
@@ -115,11 +124,73 @@ hosted_test_open :: proc(host: ^Hosted_Runtime, app: ^Hosted_Test_App) -> Hosted
 		state=rawptr(app), logical_width=240, logical_height=240,
 		pixel_width=480, pixel_height=480, dpi_scale=2,
 		post_wake_data=rawptr(app), post_wake=hosted_test_post, render=hosted_test_render,
-		on_initialize=hosted_test_init, on_start=hosted_test_start, on_wake=hosted_test_wake,
+		on_initialize=hosted_test_init, on_host_services=hosted_test_services,
+		on_start=hosted_test_start, on_wake=hosted_test_wake,
 		on_scheduled_wake=hosted_test_scheduled, on_stop=hosted_test_stop, on_pointer=hosted_test_pointer,
 		on_text_change=hosted_test_text_change, on_text_key=hosted_test_text_key,
 		on_scroll=hosted_test_scroll, on_key=hosted_test_key,
 	})
+}
+
+@(test)
+test_hosted_runtime_delivers_host_services_before_start :: proc(t: ^testing.T) {
+	host: Hosted_Runtime
+	app: Hosted_Test_App
+	if hosted_test_open(&host, &app) != .Ok { testing.expect(t, false, "open failed"); return }
+	defer hosted_waker_release(&app.waker)
+	defer hosted_runtime_destroy(&host)
+	testing.expect(t, app.host_services == 1 && app.starts == 1 && app.host_services_before_start,
+		"optional host services are delivered during initialization before the app starts")
+}
+
+Hosted_Window_Service_Test_State :: struct {
+	opened, closed, topped, titled: int,
+	last_topmost: bool,
+	last_title: string,
+}
+
+hosted_test_window_open :: proc(data: rawptr, description: Hosted_Window_Description) -> bool {
+	state := cast(^Hosted_Window_Service_Test_State)data
+	state.opened += 1
+	return description.title == "child"
+}
+
+hosted_test_window_close :: proc(data: rawptr) {
+	state := cast(^Hosted_Window_Service_Test_State)data
+	state.closed += 1
+}
+
+hosted_test_window_topmost :: proc(data: rawptr, value: bool) -> bool {
+	state := cast(^Hosted_Window_Service_Test_State)data
+	state.topped += 1
+	state.last_topmost = value
+	return true
+}
+
+hosted_test_window_title :: proc(data: rawptr, value: string) -> bool {
+	state := cast(^Hosted_Window_Service_Test_State)data
+	state.titled += 1
+	state.last_title = value
+	return true
+}
+
+@(test)
+test_hosted_window_service_optional_and_forwards :: proc(t: ^testing.T) {
+	testing.expect(t, !hosted_window_open({}, {}), "an unsupported window service rejects requests")
+	state := Hosted_Window_Service_Test_State{}
+	service := Hosted_Window_Service{
+		data=rawptr(&state), open=hosted_test_window_open, close=hosted_test_window_close,
+		set_always_on_top=hosted_test_window_topmost, set_title=hosted_test_window_title,
+	}
+	description := Hosted_Window_Description{title="child"}
+	testing.expect(t, hosted_window_open(service, description) && state.opened == 1,
+		"the service forwards an accepted child-window description")
+	testing.expect(t, hosted_window_set_always_on_top(service, true) && state.topped == 1 && state.last_topmost,
+		"the service forwards always-on-top changes")
+	testing.expect(t, hosted_window_set_title(service, "renamed") && state.titled == 1 && state.last_title == "renamed",
+		"the service forwards title changes")
+	hosted_window_close(service)
+	testing.expect(t, state.closed == 1, "the service forwards close requests")
 }
 
 @(test)

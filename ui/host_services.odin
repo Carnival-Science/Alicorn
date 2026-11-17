@@ -1,12 +1,33 @@
 package ui
 
 import clipboard "alicorn:host/clipboard"
+import alicorn "alicorn:runtime"
 
 // UI_Host_Services contains capabilities supplied by the selected platform
-// host. Unsupported services are nil; applications can use the same callback
-// on native and browser targets without importing a renderer package.
+// host. Unsupported services are nil. Native ui.run_webgpu currently provides
+// one secondary window; browser UI currently has no window service.
 UI_Host_Services :: struct {
 	clipboard: clipboard.Clipboard_Service,
+	windows: alicorn.Hosted_Window_Service,
+}
+
+UI_Window_Description :: alicorn.Hosted_Window_Description
+UI_Window_Service :: alicorn.Hosted_Window_Service
+
+ui_window_open :: proc(service: UI_Window_Service, description: UI_Window_Description) -> bool {
+	return alicorn.hosted_window_open(service, description)
+}
+
+ui_window_close :: proc(service: UI_Window_Service) {
+	alicorn.hosted_window_close(service)
+}
+
+ui_window_set_always_on_top :: proc(service: UI_Window_Service, always_on_top: bool) -> bool {
+	return alicorn.hosted_window_set_always_on_top(service, always_on_top)
+}
+
+ui_window_set_title :: proc(service: UI_Window_Service, title: string) -> bool {
+	return alicorn.hosted_window_set_title(service, title)
 }
 
 UI_Clipboard_Request_ID :: clipboard.Clipboard_Request_ID

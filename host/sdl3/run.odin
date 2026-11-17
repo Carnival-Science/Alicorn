@@ -37,6 +37,7 @@ SDL3_WebGPU_Run_State :: struct {
 	recovery_policy: presentation_host.WebGPU_Recovery_Policy,
 	requested_backend: wgpu.BackendType,
 	application: ^SDL3_WebGPU_Application,
+	windows: ^SDL3_WebGPU_Window_Manager,
 	adapter_complete: bool,
 	device_complete: bool,
 	adapter_pending: bool,
@@ -77,6 +78,7 @@ sdl3_webgpu_run_adapter_callback :: proc "c" (
 		return
 	}
 	state.adapter = adapter
+	if state.windows != nil { state.windows.adapter = adapter }
 
 	caps, caps_status := wgpu.SurfaceGetCapabilities(state.surface, adapter)
 	if caps_status != .Success || caps.formatCount == 0 || caps.alphaModeCount == 0 {
@@ -180,6 +182,10 @@ sdl3_webgpu_run_device_callback :: proc "c" (
 		return
 	}
 	state.configuration.device = device
+	if state.windows != nil {
+		state.windows.device = device
+		state.windows.queue = state.queue
+	}
 }
 
 @(private)
@@ -199,6 +205,7 @@ sdl3_webgpu_run_device_lost_callback :: proc "c" (
 	if state.application != nil {
 		sdl3_webgpu_application_mark_device_lost(state.application)
 	}
+	sdl3_webgpu_window_mark_device_lost(state.windows)
 	if reason == .Destroyed || reason == .CallbackCancelled {
 		if !state.closing { state.recovery_terminal_failure = true }
 		return
@@ -234,6 +241,15 @@ sdl3_webgpu_run_release_state :: proc(state: ^SDL3_WebGPU_Run_State) {
 		wgpu.InstanceRelease(state.instance)
 		state.instance = nil
 	}
+}
+
+@(private)
+sdl3_webgpu_run_destroy_windows :: proc(data: rawptr) {
+	state := cast(^SDL3_WebGPU_Run_State)data
+	if state == nil || state.windows == nil { return }
+	sdl3_webgpu_window_manager_destroy(
+		state.windows, state.instance, state.device, state.device_lost,
+	)
 }
 
 @(private)
@@ -295,6 +311,7 @@ sdl3_webgpu_run_recovery_step :: proc(
 		   !sdl3_webgpu_application_detach_lost_presenter(application) {
 			return false
 		}
+		if !sdl3_webgpu_window_detach_lost_presenter(state.windows) { return false }
 		sdl3_webgpu_run_release_device_handles(state, false)
 		state.device_lost = false
 		state.device_loss_reason = {}
@@ -339,6 +356,15 @@ sdl3_webgpu_run_recovery_step :: proc(
 			fmt.eprintln("[alicorn-webgpu] presenter reattach failed", result)
 			state.recovery_terminal_failure = true
 			return true
+		}
+		if state.windows != nil {
+			state.windows.device = state.device
+			state.windows.queue = state.queue
+			if !sdl3_webgpu_window_attach_presenter(state.windows, state.configuration) {
+				fmt.eprintln("[alicorn-webgpu] secondary presenter reattach failed")
+				state.recovery_terminal_failure = true
+				return true
+			}
 		}
 		state.recovery_active = false
 		state.device_lost = false
@@ -398,8 +424,12 @@ sdl3_webgpu_run :: proc(
 
 	state: SDL3_WebGPU_Run_State
 	defer sdl3_webgpu_run_release_state(&state)
+	window_manager: SDL3_WebGPU_Window_Manager
+	window_manager.primary_window = window
+	state.windows = &window_manager
 	state.instance = wgpu.CreateInstance(nil)
 	if state.instance == nil { return .WebGPU_Failure }
+	window_manager.instance = state.instance
 	state.surface = sdl3glue.GetSurface(state.instance, window)
 	if state.surface == nil { return .WebGPU_Failure }
 
@@ -453,9 +483,11 @@ sdl3_webgpu_run :: proc(
 	}
 
 	application: SDL3_WebGPU_Application
+	application_config := hosted_config
+	application_config.host_services.windows = sdl3_webgpu_window_service(&window_manager)
 	if result := sdl3_webgpu_application_init(
 		&application,
-		hosted_config,
+		application_config,
 		window,
 		state.surface,
 		state.device,
@@ -463,11 +495,15 @@ sdl3_webgpu_run :: proc(
 		state.configuration,
 		clear_color,
 	); result != .Ok {
+		sdl3_webgpu_window_manager_destroy(
+			&window_manager, state.instance, state.device, state.device_lost,
+		)
 		if result == .Runtime_Failure { return .Runtime_Failure }
 		return .Presenter_Failure
 	}
 	state.application = &application
 	defer sdl3_webgpu_run_destroy_application(&application, &state)
+	defer sdl3_webgpu_run_destroy_windows(rawptr(&state))
 	if state.closing { return .Ok }
 	if !sdl3.ShowWindow(window) { return .SDL_Failure }
 
@@ -476,6 +512,16 @@ sdl3_webgpu_run :: proc(
 	for {
 		now_ns := u64(sdl3.GetTicksNS())
 		state.last_now_ns = now_ns
+		if window_manager.pending && !state.device_lost && !state.recovery_active {
+			if !sdl3_webgpu_window_create_pending(
+				&window_manager, state.configuration, clear_color,
+			) {
+				fmt.eprintln("[alicorn-webgpu] secondary window setup failed")
+			}
+		}
+		if window_manager.pending_close && window_manager.child != nil {
+			_ = sdl3_webgpu_window_destroy(&window_manager)
+		}
 		if state.device_lost && !state.recovery_active {
 			fmt.eprintln("[alicorn-webgpu] WebGPU device lost without recovery", state.device_loss_reason)
 			return .Device_Lost
@@ -486,6 +532,18 @@ sdl3_webgpu_run :: proc(
 		}
 		step := sdl3_webgpu_application_step(&application, now_ns)
 		if step.status != .Ok { return .Runtime_Failure }
+		child_step: SDL3_WebGPU_Application_Step
+		child_stepped := window_manager.child != nil && !window_manager.pending_close
+		if child_stepped {
+			child_step = sdl3_webgpu_application_step(&window_manager.child.application, now_ns)
+			if child_step.status != .Ok { return .Runtime_Failure }
+			#partial switch child_step.presentation {
+			case .Invalid_Input, .Resource_Failure, .Render_Failure,
+			     .Surface_Acquire_Failure, .Present_Failure:
+				return .Presenter_Failure
+			case .Ok, .Suspended, .Retry_Later, .No_Frame, .Reconfigure_Required, .Hidden:
+			}
+		}
 		#partial switch step.presentation {
 		case .Ok:
 			did_present = true
@@ -512,9 +570,28 @@ sdl3_webgpu_run :: proc(
 				return .Event_Failure
 			case .Ignored, .Handled, .Wake:
 			}
+			if window_manager.child != nil {
+				child_result := sdl3_webgpu_application_handle_event(&window_manager.child.application, event)
+				switch child_result {
+				case .Close_Requested:
+					window_manager.pending_close = true
+				case .Failure:
+					return .Event_Failure
+				case .Ignored, .Handled, .Wake:
+				}
+			}
 		}
 
-		in_flight := sdl3_webgpu_application_has_in_flight(&application)
+		if window_manager.pending_close && window_manager.child != nil {
+			_ = sdl3_webgpu_window_destroy(&window_manager)
+		}
+		in_flight := sdl3_webgpu_application_has_in_flight(&application) ||
+			sdl3_webgpu_window_has_in_flight(&window_manager)
+		next_wake_ns := step.next_wake_ns
+		if child_stepped && child_step.next_wake_ns != 0 &&
+		   (next_wake_ns == 0 || child_step.next_wake_ns < next_wake_ns) {
+			next_wake_ns = child_step.next_wake_ns
+		}
 		maintenance_due := state.device_lost_callback_pending && now_ns >= state.next_wgpu_poll_ns
 		if in_flight || state.adapter_pending || state.device_pending || maintenance_due {
 			// Native completion and loss callbacks require explicit maintenance.
@@ -540,13 +617,13 @@ sdl3_webgpu_run :: proc(
 			} else {
 				timeout_ms = int(min(u64(1000), (state.recovery_policy.retry_at_ns-now_ns+999_999)/1_000_000))
 			}
-		} else if step.has_more_work {
+		} else if step.has_more_work || (child_stepped && child_step.has_more_work) {
 			timeout_ms = 0
-		} else if step.next_wake_ns != 0 {
-			if step.next_wake_ns <= now_ns {
+		} else if next_wake_ns != 0 {
+			if next_wake_ns <= now_ns {
 				timeout_ms = 0
 			} else {
-				timeout_ms = int(min(u64(1000), (step.next_wake_ns-now_ns+999_999)/1_000_000))
+				timeout_ms = int(min(u64(1000), (next_wake_ns-now_ns+999_999)/1_000_000))
 			}
 		}
 		if in_flight && (timeout_ms < 0 || timeout_ms > 16) { timeout_ms = 16 }
@@ -570,6 +647,16 @@ sdl3_webgpu_run :: proc(
 			case .Failure:
 				return .Event_Failure
 			case .Ignored, .Handled, .Wake:
+			}
+			if window_manager.child != nil {
+				child_result := sdl3_webgpu_application_handle_event(&window_manager.child.application, event)
+				switch child_result {
+				case .Close_Requested:
+					window_manager.pending_close = true
+				case .Failure:
+					return .Event_Failure
+				case .Ignored, .Handled, .Wake:
+				}
 			}
 		}
 	}

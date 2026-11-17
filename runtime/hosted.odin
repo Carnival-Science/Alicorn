@@ -69,7 +69,60 @@ Hosted_Text_Input_Proc :: proc(
 	event: Hosted_Text_Input_Event,
 )
 
-// Hosted_Runtime_Config describes one native surface. It owns one retained
+// Hosted_Window_Description requests one host-owned secondary surface. The
+// host copies the description and services the request at an event-loop safe
+// point. The caller retains ownership of config.state and all callback data
+// until on_stop has run (or on_open_failed runs before callbacks start).
+Hosted_Window_Open_Failed_Proc :: proc(state: rawptr)
+Hosted_Window_Description :: struct {
+	title: string,
+	width, height: int,
+	always_on_top: bool,
+	config: Hosted_Runtime_Config,
+	on_open_failed: Hosted_Window_Open_Failed_Proc,
+}
+
+Hosted_Window_Open_Proc :: proc(data: rawptr, description: Hosted_Window_Description) -> bool
+Hosted_Window_Close_Proc :: proc(data: rawptr)
+Hosted_Window_Topmost_Proc :: proc(data: rawptr, always_on_top: bool) -> bool
+Hosted_Window_Set_Title_Proc :: proc(data: rawptr, title: string) -> bool
+
+// Hosted_Window_Service is optional and borrowed for the Hosted_Runtime
+// lifetime. Calls are owner-thread-only. open reports whether the request was
+// accepted, not whether asynchronous native window creation succeeded. Browser
+// hosts and headless fixtures may leave it empty; native implementations defer
+// creation and teardown until their event loop reaches a safe point.
+Hosted_Window_Service :: struct {
+	data: rawptr,
+	open: Hosted_Window_Open_Proc,
+	close: Hosted_Window_Close_Proc,
+	set_always_on_top: Hosted_Window_Topmost_Proc,
+	set_title: Hosted_Window_Set_Title_Proc,
+}
+
+Hosted_Host_Services :: struct {
+	windows: Hosted_Window_Service,
+}
+
+Hosted_Host_Services_Proc :: proc(state: rawptr, services: Hosted_Host_Services)
+
+hosted_window_open :: proc(service: Hosted_Window_Service, description: Hosted_Window_Description) -> bool {
+	return service.open != nil && service.open(service.data, description)
+}
+
+hosted_window_close :: proc(service: Hosted_Window_Service) {
+	if service.close != nil { service.close(service.data) }
+}
+
+hosted_window_set_always_on_top :: proc(service: Hosted_Window_Service, always_on_top: bool) -> bool {
+	return service.set_always_on_top != nil && service.set_always_on_top(service.data, always_on_top)
+}
+
+hosted_window_set_title :: proc(service: Hosted_Window_Service, title: string) -> bool {
+	return service.set_title != nil && service.set_title(service.data, title)
+}
+
+// Hosted_Runtime_Config describes one host-owned surface. It owns one retained
 // Runtime for every control rendered into that surface. Renderer and native
 // window ownership stay with the embedding host.
 Hosted_Runtime_Config :: struct {
@@ -86,6 +139,8 @@ Hosted_Runtime_Config :: struct {
 	render: Hosted_Render_Proc,
 	render_overlays: Hosted_Render_Proc,
 	on_initialize: Hosted_Initialize_Proc,
+	on_host_services: Hosted_Host_Services_Proc,
+	host_services: Hosted_Host_Services,
 	on_start: Hosted_Start_Proc,
 	on_wake: Hosted_Wake_Proc,
 	on_scheduled_wake: Hosted_Scheduled_Wake_Proc,
@@ -240,6 +295,7 @@ hosted_runtime_init :: proc(host: ^Hosted_Runtime, config: Hosted_Runtime_Config
 	wake_control.active = true
 	state.wake_control = wake_control
 	host.state = state
+	if config.on_host_services != nil { config.on_host_services(config.state, config.host_services) }
 	if config.on_initialize != nil { config.on_initialize(config.state, &state.runtime) }
 	if config.on_start != nil { config.on_start(config.state, Hosted_Waker{control=wake_control}) }
 	return .Ok

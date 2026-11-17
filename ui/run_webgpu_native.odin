@@ -9,9 +9,10 @@ import host "alicorn:host/sdl3"
 // run_webgpu is an opt-in native entry point for dogfooding the shared
 // WebGPU renderer through SDL3. It preserves the ui.run callback model while
 // leaving ui.run on SDL_GPU until the renderer's migration acceptance gates
-// pass. on_services supplies host capabilities before on_start. This initial
-// host does not yet provide SDL_GPU's integrated titlebar, native application
-// menu, secondary-window manager, or AccessKit adapter.
+// pass. on_services supplies host capabilities before on_start. The WebGPU
+// host supports one independently retained secondary window through
+// UI_Host_Services.windows; integrated titlebars, native menus, and the
+// AccessKit adapter are not yet ported.
 run_webgpu :: proc(
 	state: ^$T,
 	render: proc(^T, ^UI),

@@ -121,6 +121,10 @@ run_hosted_config :: proc(
 		state := cast(^Run_State(T))data
 		if state.on_pointer != nil { state.on_pointer(state.app, rt, event, target) }
 	}
+	host_services :: proc(data: rawptr, services: alicorn.Hosted_Host_Services) {
+		state := cast(^Run_State(T))data
+		state.host_services.windows = services.windows
+	}
 
 	config := alicorn.Hosted_Runtime_Config{
 		state=rawptr(run_state),
@@ -130,6 +134,7 @@ run_hosted_config :: proc(
 		pixel_height=pixel_height,
 		dpi_scale=dpi_scale,
 		runtime=runtime_config,
+		on_host_services=host_services,
 		post_wake_data=post_wake_data,
 		post_wake=post_wake,
 		render=describe,
