@@ -207,6 +207,28 @@ test_hosted_runtime_step_resize_and_idle :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_hosted_runtime_host_presentation_request_reuses_description :: proc(t: ^testing.T) {
+	host: Hosted_Runtime
+	app: Hosted_Test_App
+	if hosted_test_open(&host, &app) != .Ok { testing.expect(t, false, "open failed"); return }
+	defer hosted_waker_release(&app.waker)
+	defer hosted_runtime_destroy(&host)
+	step := hosted_runtime_step(&host, 1)
+	if step.render_required { _ = hosted_runtime_frame_submission_succeeded(&host) }
+	for turn in 2..<8 {
+		step = hosted_runtime_step(&host, u64(turn))
+		if step.render_required { _ = hosted_runtime_frame_submission_succeeded(&host) }
+		if !step.has_more_work && !step.render_required { break }
+	}
+	descriptions_before := app.descriptions
+	testing.expect(t, hosted_runtime_request_presentation(&host, "test presenter reattached") == .Ok)
+	requested := hosted_runtime_step(&host, 8)
+	testing.expect(t, requested.status == .Ok && requested.render_required && !requested.description_built)
+	testing.expect(t, app.descriptions == descriptions_before,
+		"replacing a presenter requests paint without rebuilding the application description")
+}
+
+@(test)
 test_hosted_runtime_text_and_semantic_delivery :: proc(t: ^testing.T) {
 	host: Hosted_Runtime
 	app: Hosted_Test_App

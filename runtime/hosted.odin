@@ -389,6 +389,19 @@ hosted_runtime_set_renderable :: proc(host: ^Hosted_Runtime, renderable: bool) -
 	return .Ok
 }
 
+// hosted_runtime_request_presentation wakes retained paint after a host-side
+// renderer or surface is replaced. It does not invalidate or rebuild the UI
+// description.
+hosted_runtime_request_presentation :: proc(
+	host: ^Hosted_Runtime,
+	reason := "hosted renderer needs retained presentation",
+) -> Hosted_Runtime_Status {
+	state, status := hosted_runtime_get_state(host)
+	if status != .Ok { return status }
+	request_presentation(&state.runtime, reason)
+	return .Ok
+}
+
 // hosted_runtime_resize adopts logical and drawable dimensions together.
 // Pixel size may be zero while minimized; in that case the last device scale
 // is retained until the host reports a drawable size again.

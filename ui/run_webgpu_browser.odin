@@ -115,7 +115,11 @@ alicorn_browser_frame :: proc(now_ns: u64) -> bool {
 		_ = browser_ui_run_finish_shutdown()
 		return false
 	}
-	if host.browser_webgpu_run_status(&browser_ui_run.runner) != .Ready { return false }
+	status := host.browser_webgpu_run_status(&browser_ui_run.runner)
+	if status == .Recovery_Draining || status == .Recovery_Waiting {
+		return host.browser_webgpu_run_recovery_step(&browser_ui_run.runner, now_ns)
+	}
+	if status != .Ready { return false }
 	step := host.browser_webgpu_run_step(&browser_ui_run.runner, now_ns)
 	return step.status == .Ok && step.has_more_work
 }
@@ -125,8 +129,9 @@ alicorn_browser_next_wake_ns :: proc() -> u64 {
 	return host.browser_webgpu_run_next_wake_ns(&browser_ui_run.runner)
 }
 
-// 0 = initializing, 1 = ready, 2 = device lost, 3 = shutdown pending,
-// -1 = initialization failure, -2 = shutdown complete.
+// 0 = initializing, 1 = ready, 2 = non-recoverable/intentional device loss,
+// 3 = shutdown pending, 4 = recovering, -1 = initialization failure,
+// -2 = shutdown complete, -3 = bounded recovery exhausted.
 @(export)
 alicorn_browser_status :: proc() -> i32 {
 	switch host.browser_webgpu_run_status(&browser_ui_run.runner) {
@@ -134,6 +139,10 @@ alicorn_browser_status :: proc() -> i32 {
 		return 1
 	case .Device_Lost:
 		return 2
+	case .Recovery_Draining, .Recovery_Waiting, .Recovery_Adapter_Pending, .Recovery_Device_Pending:
+		return 4
+	case .Recovery_Failed:
+		return -3
 	case .Failed:
 		return -1
 	case .Destroying:

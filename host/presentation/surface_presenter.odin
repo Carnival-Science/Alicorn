@@ -48,8 +48,10 @@ hosted_surface_presenter_state :: struct {
 	clear_color: wgpu.Color,
 	wake_data: rawptr,
 	wake: Hosted_Surface_Wake_Proc,
+	pending_completions: u64,
 	completion_failed: bool,
 	presentation_failed: bool,
+	device_lost: bool,
 }
 
 @(private)
@@ -122,6 +124,10 @@ hosted_surface_presenter_init :: proc(
 	}
 	wgpu.SurfaceConfigure(surface, &state.configuration)
 	presenter.state = rawptr(state)
+	if status := alicorn.hosted_runtime_request_presentation(hosted, "WebGPU presenter attached"); status != .Ok {
+		_ = hosted_surface_presenter_destroy(presenter)
+		return .Invalid_Input
+	}
 	return .Ok
 }
 
@@ -281,6 +287,7 @@ hosted_surface_present_pending :: proc(presenter: ^Hosted_Surface_Presenter) -> 
 		return .Resource_Failure
 	}
 	completion.submission = submission
+	state.pending_completions += 1
 	wgpu.QueueOnSubmittedWorkDone(state.queue, {
 		mode=.AllowProcessEvents,
 		callback=hosted_surface_presenter_queue_done,
@@ -304,13 +311,27 @@ hosted_surface_presenter_queue_done :: proc "c" (
 	if completion == nil { return }
 	state := completion.state
 	if state != nil {
-		if !webgpu_renderer.WebGPU_Presenter_Complete_Submission(&state.renderer, completion.submission) {
-			state.completion_failed = true
+		if state.device_lost {
+			// A lost device invalidates normal fence retirement. Keep the presenter
+			// alive until this callback arrives, then let the host abandon its GPU
+			// resources once all such callbacks have drained.
+		} else {
+			if !webgpu_renderer.WebGPU_Presenter_Complete_Submission(&state.renderer, completion.submission) {
+				state.completion_failed = true
+			}
+			if status != .Success { state.completion_failed = true }
 		}
-		if status != .Success { state.completion_failed = true }
+		if state.pending_completions > 0 { state.pending_completions -= 1 }
 		if state.wake != nil { state.wake(state.wake_data) }
 	}
 	free(completion, allocator=completion.allocator)
+}
+
+// Mark loss before the host begins recovery. This immediately prevents new
+// presentation work from using resources belonging to the lost device.
+hosted_surface_presenter_mark_device_lost :: proc(presenter: ^Hosted_Surface_Presenter) {
+	state := hosted_surface_state(presenter)
+	if state != nil { state.device_lost = true }
 }
 
 // Destroy is nonblocking. It returns false while GPU work is in flight; keep
@@ -321,6 +342,22 @@ hosted_surface_presenter_destroy :: proc(presenter: ^Hosted_Surface_Presenter) -
 	if presenter == nil { return false }
 	if state == nil { return true }
 	if !webgpu_renderer.WebGPU_Presenter_Destroy(&state.renderer) { return false }
+	wgpu.SurfaceUnconfigure(state.surface)
+	allocator := state.allocator
+	free(state, allocator=allocator)
+	presenter^ = {}
+	return true
+}
+
+// Destroy a presenter after device loss. The host must keep it and its Runtime
+// alive until all queue callbacks have arrived; this function enforces that
+// callback-drain boundary before releasing renderer resources.
+hosted_surface_presenter_destroy_after_device_loss :: proc(presenter: ^Hosted_Surface_Presenter) -> bool {
+	state := hosted_surface_state(presenter)
+	if presenter == nil { return false }
+	if state == nil { return true }
+	if !state.device_lost || state.pending_completions != 0 { return false }
+	if !webgpu_renderer.WebGPU_Presenter_Destroy_After_Device_Loss(&state.renderer) { return false }
 	wgpu.SurfaceUnconfigure(state.surface)
 	allocator := state.allocator
 	free(state, allocator=allocator)

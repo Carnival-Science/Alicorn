@@ -23,6 +23,7 @@
 		const context = exports.default_context_ptr();
 		const status = options.statusElement || null;
 		const readyMessage = "WebGPU UI ready. Resize, click, or type to exercise the retained host.";
+		const recoveringMessage = "WebGPU device lost. Rebuilding presentation while preserving retained UI state…";
 		let disposed = false;
 		const scheduler = new root.AlicornDemandScheduler({
 			visible: !root.document.hidden,
@@ -43,12 +44,23 @@
 					return { hasMoreWork, nextWakeNs: 0n, notifyIdle: false };
 				}
 				if (state < 0) {
-					if (status) status.textContent = "WebGPU initialization failed. Check the browser console.";
+					if (status) status.textContent = state === -3
+						? "WebGPU recovery failed. Reload the page to restart."
+						: "WebGPU initialization failed. Check the browser console.";
 					return { hasMoreWork: false, nextWakeNs: 0n, notifyIdle: false };
 				}
 				if (state === 2) {
-					if (status) status.textContent = "The WebGPU device was lost. This host does not recreate devices yet.";
+					if (status) status.textContent = "The WebGPU device was explicitly destroyed or its loss callback was cancelled; automatic recovery is disabled.";
 					return { hasMoreWork: false, nextWakeNs: 0n, notifyIdle: false };
+				}
+				if (state === 4) {
+					if (status && status.textContent !== recoveringMessage) status.textContent = recoveringMessage;
+					const hasMoreWork = !!exports.alicorn_browser_frame(nowNs, context);
+					return {
+						hasMoreWork,
+						nextWakeNs: exports.alicorn_browser_next_wake_ns(context),
+						notifyIdle: false,
+					};
 				}
 				if (state !== 1) return { hasMoreWork: false, nextWakeNs: 0n, notifyIdle: false };
 				if (status && status.textContent !== readyMessage) status.textContent = readyMessage;

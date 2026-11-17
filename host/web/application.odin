@@ -34,8 +34,17 @@ Browser_Application :: struct {
 	wake_data: rawptr,
 	wake: Browser_Application_Wake_Proc,
 	next_wake_ns: u64,
+	clear_color: wgpu.Color,
+	visible: bool,
 	initialized: bool,
 	input_detached: bool,
+	presenter_device_lost: bool,
+}
+
+Browser_Canvas_Metrics :: struct {
+	logical_width, logical_height: int,
+	pixel_width, pixel_height: int,
+	dpi: f32,
 }
 
 Browser_Application_Step :: struct {
@@ -62,6 +71,85 @@ browser_application_post_wake :: proc(data: rawptr) -> bool {
 	application := cast(^Browser_Application)data
 	if application == nil || application.wake == nil { return false }
 	application.wake(application.wake_data)
+	return true
+}
+
+@(private)
+browser_application_canvas_metrics :: proc(canvas_id: string) -> Browser_Canvas_Metrics {
+	rect := js.get_bounding_client_rect(canvas_id)
+	dpi := max(js.device_pixel_ratio(), 0.01)
+	return Browser_Canvas_Metrics{
+		logical_width=max(1, int(rect.width)),
+		logical_height=max(1, int(rect.height)),
+		pixel_width=max(1, int(rect.width*dpi)),
+		pixel_height=max(1, int(rect.height*dpi)),
+		dpi=f32(dpi),
+	}
+}
+
+// Attach or reattach a device-bound presenter without recreating the retained
+// Hosted_Runtime, input bridge, or accessibility projection.
+browser_application_attach_presenter :: proc(
+	application: ^Browser_Application,
+	surface: wgpu.Surface,
+	device: wgpu.Device,
+	queue: wgpu.Queue,
+	configuration: wgpu.SurfaceConfiguration,
+) -> Browser_Application_Result {
+	if application == nil || surface == nil || device == nil || queue == nil ||
+	   configuration.format == .Undefined || application.hosted.state == nil ||
+	   application.presenter.state != nil {
+		return .Invalid_Input
+	}
+	metrics := browser_application_canvas_metrics(application.canvas_id)
+	surface_configuration := configuration
+	surface_configuration.width = u32(metrics.pixel_width)
+	surface_configuration.height = u32(metrics.pixel_height)
+	js.set_element_key_f64(application.canvas_id, "width", f64(metrics.pixel_width))
+	js.set_element_key_f64(application.canvas_id, "height", f64(metrics.pixel_height))
+	if result := browser_surface_presenter_init(
+		&application.presenter,
+		&application.hosted,
+		surface,
+		device,
+		queue,
+		surface_configuration,
+		metrics.logical_width,
+		metrics.logical_height,
+		metrics.dpi,
+		rawptr(application),
+		browser_application_wake,
+		application.clear_color,
+	); result != .Ok {
+		return .Presenter_Failure
+	}
+	application.surface = surface
+	application.device = device
+	application.queue = queue
+	application.configuration = surface_configuration
+	application.presenter_device_lost = false
+	if !application.visible {
+		_ = browser_surface_presenter_set_visible(&application.presenter, false)
+	}
+	return .Ok
+}
+
+// Mark the old GPU presentation path unavailable while retaining the logical
+// application state and browser interaction bridges.
+browser_application_mark_device_lost :: proc(application: ^Browser_Application) {
+	if application == nil { return }
+	application.presenter_device_lost = true
+	browser_surface_presenter_mark_device_lost(&application.presenter)
+}
+
+browser_application_detach_lost_presenter :: proc(application: ^Browser_Application) -> bool {
+	if application == nil || !application.initialized { return true }
+	if !application.presenter_device_lost { return false }
+	if !browser_surface_presenter_destroy_after_device_loss(&application.presenter) { return false }
+	application.surface = nil
+	application.device = nil
+	application.queue = nil
+	application.configuration = {}
 	return true
 }
 
@@ -93,49 +181,27 @@ browser_application_init :: proc(
 	   configuration.format == .Undefined {
 		return .Invalid_Input
 	}
-	rect := js.get_bounding_client_rect(canvas_id)
-	dpi := max(js.device_pixel_ratio(), 0.01)
-	logical_width, logical_height := max(1, int(rect.width)), max(1, int(rect.height))
-	pixel_width, pixel_height := max(1, int(rect.width*dpi)), max(1, int(rect.height*dpi))
-	surface_configuration := configuration
-	surface_configuration.width = u32(pixel_width)
-	surface_configuration.height = u32(pixel_height)
-	js.set_element_key_f64(canvas_id, "width", f64(pixel_width))
-	js.set_element_key_f64(canvas_id, "height", f64(pixel_height))
+	metrics := browser_application_canvas_metrics(canvas_id)
 	application^ = Browser_Application{
-		surface=surface,
-		device=device,
-		queue=queue,
-		configuration=surface_configuration,
+		configuration=configuration,
 		canvas_id=canvas_id,
 		text_input_id=text_input_id,
 		wake_data=wake_data,
 		wake=wake,
+		clear_color=clear_color,
+		visible=true,
 	}
 	config := hosted_config
-	config.logical_width, config.logical_height = logical_width, logical_height
-	config.pixel_width, config.pixel_height = pixel_width, pixel_height
-	config.dpi_scale = f32(dpi)
+	config.logical_width, config.logical_height = metrics.logical_width, metrics.logical_height
+	config.pixel_width, config.pixel_height = metrics.pixel_width, metrics.pixel_height
+	config.dpi_scale = metrics.dpi
 	config.post_wake_data = rawptr(application)
 	config.post_wake = browser_application_post_wake
 	if status := alicorn.hosted_runtime_init(&application.hosted, config); status != .Ok {
 		application^ = {}
 		return .Runtime_Failure
 	}
-	if result := browser_surface_presenter_init(
-		&application.presenter,
-		&application.hosted,
-		surface,
-		device,
-		queue,
-		surface_configuration,
-		logical_width,
-		logical_height,
-		f32(dpi),
-		rawptr(application),
-		browser_application_wake,
-		clear_color,
-	); result != .Ok {
+	if result := browser_application_attach_presenter(application, surface, device, queue, configuration); result != .Ok {
 		_ = alicorn.hosted_runtime_destroy(&application.hosted)
 		application^ = {}
 		return .Presenter_Failure
@@ -184,6 +250,8 @@ browser_application_wake :: proc(data: rawptr) {
 browser_application_visibility_changed :: proc(data: rawptr, visible: bool) {
 	application := cast(^Browser_Application)data
 	if application == nil || !application.initialized { return }
+	application.visible = visible
+	if application.presenter.state == nil { return }
 	if result := browser_surface_presenter_set_visible(&application.presenter, visible); result != .Ok {
 		return
 	}
@@ -248,7 +316,11 @@ browser_application_destroy :: proc(application: ^Browser_Application) -> bool {
 		application.input_detached = true
 	}
 	if application.accessibility.initialized { browser_accessibility_destroy(&application.accessibility) }
-	if !browser_surface_presenter_destroy(&application.presenter) { return false }
+	if application.presenter_device_lost {
+		if !browser_surface_presenter_destroy_after_device_loss(&application.presenter) { return false }
+	} else if !browser_surface_presenter_destroy(&application.presenter) {
+		return false
+	}
 	if alicorn.hosted_runtime_destroy(&application.hosted) != .Ok { return false }
 	application^ = {}
 	return true

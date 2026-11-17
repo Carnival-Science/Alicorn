@@ -10,13 +10,17 @@ async function makeHost() {
 	let shutdownCalls = 0;
 	let shutdownCompletes = true;
 	let browserStatus = 1;
+	let nextWakeNs = 0n;
+	let frameCalls = 0;
 	let scheduler;
 	let wgpuInterface;
+	const statusElement = { textContent: "" };
 	const exports = {
 		default_context_ptr: () => 7,
 		_start: () => {},
 		alicorn_browser_status: () => browserStatus,
 		alicorn_browser_frame: () => {
+			frameCalls++;
 			if (browserStatus === 3) {
 				if (shutdownCompletes) {
 					shutdownCalls++;
@@ -25,7 +29,7 @@ async function makeHost() {
 			}
 			return false;
 		},
-		alicorn_browser_next_wake_ns: () => 0n,
+		alicorn_browser_next_wake_ns: () => nextWakeNs,
 		alicorn_browser_resize: () => 0,
 		alicorn_browser_shutdown: () => {
 			shutdownCalls++;
@@ -70,16 +74,42 @@ async function makeHost() {
 		addEventListener: (name, callback) => listeners.set(name, callback),
 	};
 	vm.runInNewContext(fs.readFileSync("host/web/webgpu_ui_host.js", "utf8"), root);
-	await root.AlicornWebGPUHost.start("app.wasm");
+	await root.AlicornWebGPUHost.start("app.wasm", { statusElement });
 	return {
 		listeners,
 		schedulerCalls,
 		setDocumentHidden: value => { root.document.hidden = value; },
 		setShutdownCompletes: value => { shutdownCompletes = value; },
+		setBrowserStatus: value => { browserStatus = value; },
+		setNextWakeNs: value => { nextWakeNs = BigInt(value); },
 		shutdownCalls: () => shutdownCalls,
+		frameCalls: () => frameCalls,
+		statusText: () => statusElement.textContent,
 		callGpuCallback: () => wgpuInterface.callCallback(() => {}, []),
 		runFrame: nowNs => scheduler.runFrame(nowNs),
 	};
+}
+
+async function testRecoveryUsesBoundedLifecycleFramesAndReportsOutcome() {
+	const host = await makeHost();
+	host.setBrowserStatus(4);
+	const recovery = host.runFrame(5_000_000n);
+	assert.equal(host.frameCalls(), 1, "recovery status advances the Odin lifecycle without regular UI frames");
+	assert.equal(recovery.hasMoreWork, false, "recovery waits for callbacks instead of polling");
+	assert.equal(host.statusText().includes("preserving retained UI state"), true);
+
+	host.setNextWakeNs(1_000_000_000n);
+	const retry = host.runFrame(10_000_000n);
+	assert.equal(retry.nextWakeNs, 1_000_000_000n, "bounded retry deadline is handed to the demand scheduler");
+	assert.equal(retry.notifyIdle, false);
+
+	host.setBrowserStatus(1);
+	host.runFrame(1_000_000_000n);
+	assert.equal(host.statusText(), "WebGPU UI ready. Resize, click, or type to exercise the retained host.");
+
+	host.setBrowserStatus(-3);
+	host.runFrame(1_100_000_000n);
+	assert.equal(host.statusText().includes("Reload the page"), true, "failed recovery asks for a reload");
 }
 
 async function testBackForwardCacheSuspendsAndResumesExistingHost() {
@@ -119,6 +149,7 @@ async function testPendingShutdownRetriesAfterGpuCompletionWake() {
 
 (async () => {
 	for (const test of [
+		testRecoveryUsesBoundedLifecycleFramesAndReportsOutcome,
 		testBackForwardCacheSuspendsAndResumesExistingHost,
 		testOrdinaryPagehideRequestsShutdown,
 		testPendingShutdownRetriesAfterGpuCompletionWake,

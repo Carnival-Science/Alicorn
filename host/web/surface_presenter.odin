@@ -60,3 +60,11 @@ browser_surface_presenter_step :: proc(
 browser_surface_presenter_destroy :: proc(presenter: ^Browser_Surface_Presenter) -> bool {
 	return shared.hosted_surface_presenter_destroy(presenter)
 }
+
+browser_surface_presenter_mark_device_lost :: proc(presenter: ^Browser_Surface_Presenter) {
+	shared.hosted_surface_presenter_mark_device_lost(presenter)
+}
+
+browser_surface_presenter_destroy_after_device_loss :: proc(presenter: ^Browser_Surface_Presenter) -> bool {
+	return shared.hosted_surface_presenter_destroy_after_device_loss(presenter)
+}
