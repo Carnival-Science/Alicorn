@@ -58,7 +58,7 @@ uploads remain renderer-specific.
 | Phase | Exit evidence | Status |
 | --- | --- | --- |
 | 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: the pre-change Windows SDL_GPU reference and D3D12 effects profile are recorded in `docs/validation/sdl-gpu-reference-windows-2026-11-15.md`; a Runtime-only Windows construction, phase, allocator high-water, and sampled process-working-set comparison is recorded in `docs/validation/runtime-construction-windows-2026-11-16.md`. Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes. Windows browser canvas resize now verifies retained-only redraw with a fresh output revision and no UI re-description. Browser fallback/vendor metadata is exposed, but does not establish hardware acceleration. Physical Linux GPU/Wayland, genuine driver/OS loss and recovery, full application same-workload comparison, and app-level stage/visible-latency measurements remain open |
-| 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring and CPU preparation are SDL-independent; `renderer/webgpu/presenter.odin` consumes a borrowed finalized display list and encodes into caller-owned WebGPU frame objects, with queue submission and async completion owned by the host. `host/presentation/surface_presenter.odin` supplies a shared Hosted_Runtime-to-WebGPU-surface boundary; `host/web/surface_presenter.odin` preserves browser-facing aliases. `host/web/application.odin` composes that presenter with Hosted_Runtime, browser input/textarea, canvas sizing/DPR, visibility, bounded retry deadlines, and nonblocking teardown; the feasibility fixture consumes this coordinator. `host/sdl3/application.odin` now composes the same Hosted_Runtime presenter with an SDL window identity, wake event, resize/DPI and visibility handling, focus changes, pointer/wheel, keyboard, text/IME routing, bounded retry deadlines, and nonblocking teardown. SDL3 pointer, modifier, wheel, focused-control, context-menu, application-shortcut, text-editing key, and native text/IME routing lives in `host/sdl3`, with the existing SDL_GPU frontend retaining thin wrappers. The browser fixture exercises resize, visibility, input, recovery, and async retirement; Windows SDL3 smoke exercises native retained presentation, pointer activation, synthetic key/text/IME routing, resize, and queue completion. `paint_display_list_for_output` routes commands by disjoint retained root, preserves paint order and shared owner-zero overlays, and tags views with output identity and revision. Native D3D12/Vulkan fixture parity passes and the package builds for `js_wasm32`. Adapter/device bootstrap, physical keyboard/IME verification, clipboard and broader SDL3/window integrations, production `ui.run`, native `ui.run` target selection, and downstream app import migration remain outstanding |
+| 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring and CPU preparation are SDL-independent; `renderer/webgpu/presenter.odin` consumes a borrowed finalized display list and encodes into caller-owned WebGPU frame objects, with queue submission and async completion owned by the host. `host/presentation/surface_presenter.odin` supplies a shared Hosted_Runtime-to-WebGPU-surface boundary; `host/web/surface_presenter.odin` preserves browser-facing aliases. `host/web/application.odin` composes that presenter with Hosted_Runtime, browser input/textarea, canvas sizing/DPR, visibility, bounded retry deadlines, and nonblocking teardown; the feasibility fixture consumes this coordinator. `host/sdl3/application.odin` now composes the same Hosted_Runtime presenter with an SDL window identity, wake event, resize/DPI and visibility handling, focus changes, pointer/wheel, keyboard, text/IME routing, bounded retry deadlines, and nonblocking teardown. SDL3 pointer, modifier, wheel, focused-control, context-menu, application-shortcut, text-editing key, and native text/IME routing lives in `host/sdl3`, with the existing SDL_GPU frontend retaining thin wrappers. The browser fixture exercises resize, visibility, input, recovery, and async retirement; Windows SDL3 smoke exercises native retained presentation, pointer activation, synthetic key/text/IME routing, resize, and queue completion. `paint_display_list_for_output` routes commands by disjoint retained root, preserves paint order and shared owner-zero overlays, and tags views with output identity and revision. Native D3D12/Vulkan fixture parity passes and the package builds for `js_wasm32`. An opt-in native `ui.run_webgpu` path now owns SDL3 window/device bootstrap and native SDL input while retaining SDL_GPU as the default `ui.run` backend. Default backend target selection, physical keyboard/IME verification, clipboard, native menus/titlebars/AccessKit/secondary windows, device recovery, and downstream app import migration remain outstanding |
 | 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and D3D12 fixtures exercise per-resource custom-surface caching, budget pressure, in-flight protection, instance transforms, readback, and resize. One shared compositor preserves interleaved paint order; text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, clipping, waveform samples, and cropped mixed-renderer readback pass Windows D3D12 and browser WebGPU. Shared CPU backdrop planning/meshes feed renderer-owned WebGPU prefix capture, filtering, and in-order composition for up to four markers within one aggregate 48 MiB tracked mesh+texture allocation budget. Two overlapping markers pass pixel readback on Windows D3D12/Vulkan and browser WebGPU; the later marker's capture includes the earlier marker's composed result. D3D12 also verifies unchanged-prefix reuse, changed-prefix invalidation, resized-target retirement behind the prior queue serial, and exact ordinary-paint parity when a valid effect exceeds budget. Six shared WGSL sources are compile-time loaded for native and `js_wasm32` builds. The rounded raised relief surface under increased contrast/reduced transparency now passes browser pixel readback as well as Windows D3D12/Vulkan; browser run also verified live canvas resize, output acknowledgement, and return to demand-driven idle. Full theme/accessibility combinations, application host presentation, and broader cross-platform GPU validation remain open |
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | In progress: image, custom-geometry, and backdrop resources have bounded asynchronous retirement and completion-driven release tests; async readback is exercised. Same-device compositor teardown/rebuild now reproduces every RGBA pixel on Windows D3D12 and Vulkan from retained Runtime products. Genuine driver/OS device loss and device recovery, plus primary/secondary window teardown/recreation, remain unvalidated. Intentional `DeviceDestroy` callbacks are tracked separately and do not count as driver-loss evidence |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
@@ -2031,3 +2031,47 @@ This is an opt-in accessibility host foundation, not browser acceptance.
 Live screen-reader behavior, keyboard-only focus/action routing, visual focus
 feedback, text editing/selection in a real browser, physical IME, and
 virtualized collection navigation still need browser validation.
+
+### Opt-in native WebGPU `ui.run` consumer (Windows, 2026-11-16)
+
+`host/sdl3/run.odin` now owns an ordinary SDL3 window and the native WebGPU
+adapter/device bootstrap for UI applications. It uses asynchronous WebGPU
+callbacks, processes them from the SDL owner thread, configures the surface
+from adapter capabilities, and delegates retained presentation, SDL input,
+IME routing, resize/DPI, visibility, wake events, and frame retirement to the
+existing `SDL3_WebGPU_Application` and shared `Hosted_Surface_Presenter`.
+WGPU polling is bounded to adapter/device setup or outstanding submissions;
+the settled event loop blocks in SDL. Queue synchronization is used only while
+draining the final submission during shutdown.
+
+`ui.run_webgpu` adapts the same app-owned render and lifecycle callbacks used by
+`ui.run` into `Hosted_Runtime`, initializes the bundled default fonts, and
+offers an opt-in native consumer without switching the default backend. The
+new `examples/16_native_webgpu_ui` demonstrates text, a button, a controlled
+text field, and app-owned state. `--backend=vulkan` and `--backend=d3d12` select
+the native adapter for local validation; the default leaves backend selection
+to wgpu-native. This is not yet a replacement for `ui.run`.
+
+Validation with `C:\odin\odin.exe` (`dev-2026-11-nightly:08539cd`) on Windows:
+
+- `odin check host/sdl3 -collection:alicorn=. -no-entry-point` passed.
+- The complete `tools/test.ps1 -Odin C:\odin\odin.exe` suite passed before the
+  backend-selector addition; it included the UI, Runtime, SDL3, browser host,
+  and existing SDL_GPU suites. The repository's existing large-stack-local
+  warnings remain.
+- `examples/16_native_webgpu_ui` built as `out/alicorn_webgpu_ui.exe`.
+- `out/alicorn_webgpu_ui.exe --smoke --backend=d3d12` presented a frame and
+  retired its queue submission on an NVIDIA GeForce RTX 2080 SUPER.
+- `out/alicorn_webgpu_ui.exe --smoke --backend=vulkan` did the same on the
+  NVIDIA GeForce RTX 2080 SUPER.
+- Smoke mode exits only after one successful surface presentation and its
+  in-flight submission have completed. It does not validate physical input,
+  typing, resize, IME, accessibility, or long-running behavior in this new
+  app-level wrapper.
+
+The new path is still missing the SDL_GPU host's integrated titlebar, native
+menus, AccessKit adapter, secondary-window manager, optional system-font
+fallbacks, clipboard, and drag/drop. Physical keyboard/IME checks, device
+recovery, and macOS/Linux builds remain open. Genuine driver loss is not
+simulated by the smoke. `ui.run` continues to select SDL_GPU, and this opt-in
+consumer is only a first production-shaped native host slice.

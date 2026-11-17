@@ -49,6 +49,12 @@ run_hosted_wake :: proc(data: rawptr) {
 	alicorn.hosted_waker_notify(waker^)
 }
 
+@(private)
+run_hosted_unused_post_wake :: proc(_data: rawptr) -> bool {
+	// The native coordinator replaces this callback with an SDL user event.
+	return true
+}
+
 // run_hosted_config adapts the target-neutral ui.run description and lifecycle
 // hooks to an embedding host's Hosted_Runtime. The caller owns both the config
 // inputs and Run_State lifetime; Run_State must remain valid until
