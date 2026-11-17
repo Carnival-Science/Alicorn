@@ -22,8 +22,8 @@ browser_ui_run: Browser_UI_Run
 // accessibility root with id "alicorn-accessibility". The application state
 // pointer must remain valid until alicorn_browser_shutdown reports completion;
 // browser applications normally keep it in package-global storage.
-// on_services runs before on_start. Browser clipboard capability is currently
-// absent; text-input paste remains available through the configured textarea.
+// on_services runs before on_start. Browser clipboard read/write requests use
+// the Clipboard API and complete asynchronously after browser permission checks.
 run :: proc(
 	state: ^$T,
 	render: proc(^T, ^UI),
@@ -101,6 +101,9 @@ run :: proc(
 		if start_result == .Resource_Failure { return }
 		panic("ui.run could not start the browser WebGPU host")
 	}
+	run_state.host_services = UI_Host_Services{
+		clipboard=host.browser_webgpu_run_clipboard_service(&browser_ui_run.runner),
+	}
 }
 
 @(private)
@@ -172,6 +175,16 @@ alicorn_browser_failure_code :: proc() -> i32 {
 alicorn_browser_resize :: proc() -> i32 {
 	result := host.browser_webgpu_run_resize(&browser_ui_run.runner)
 	return i32(result)
+}
+
+@(export)
+alicorn_browser_clipboard_read_buffer :: proc(token: u32, byte_length: u32) -> u32 {
+	return host.browser_webgpu_run_clipboard_read_buffer(&browser_ui_run.runner, token, byte_length)
+}
+
+@(export)
+alicorn_browser_clipboard_complete :: proc(token: u32, result_code: u32, byte_length: u32) {
+	host.browser_webgpu_run_clipboard_complete(&browser_ui_run.runner, token, result_code, byte_length)
 }
 
 // Shutdown can return false while initialization callbacks or submitted GPU

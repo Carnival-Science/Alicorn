@@ -57,6 +57,7 @@ Browser_WebGPU_Run :: struct {
 	queue: wgpu.Queue,
 	configuration: wgpu.SurfaceConfiguration,
 	application: Browser_Application,
+	clipboard: Browser_Clipboard,
 	hosted_config: alicorn.Hosted_Runtime_Config,
 	canvas_id: string,
 	text_input_id: string,
@@ -496,6 +497,7 @@ browser_webgpu_run_destroy :: proc(host: ^Browser_WebGPU_Run) -> bool {
 	if !host.initialized { return true }
 	host.destroy_requested = true
 	host.status = .Destroying
+	browser_clipboard_close(&host.clipboard)
 	if host.application.initialized && !browser_application_destroy(&host.application) { return false }
 	if host.adapter_pending || host.device_pending { return false }
 	browser_webgpu_run_release_handles(host)

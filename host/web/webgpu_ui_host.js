@@ -40,6 +40,94 @@
 		memoryInterface.setExports(exports);
 		if (exports.memory) memoryInterface.setMemory(exports.memory);
 		const context = exports.default_context_ptr();
+		const clipboardResult = {
+			success: 0,
+			unsupported: 1,
+			permissionDenied: 2,
+			unavailable: 3,
+			tooLarge: 4,
+			cancelled: 5,
+			failed: 6,
+		};
+		const clipboardLimit = 1024 * 1024;
+		const clipboardFailureResult = error => {
+			const name = String(error && error.name || "");
+			if (name === "NotAllowedError" || name === "SecurityError") return clipboardResult.permissionDenied;
+			if (name === "NotSupportedError" || name === "NotFoundError") return clipboardResult.unavailable;
+			return clipboardResult.failed;
+		};
+		const clipboardComplete = (token, result, byteLength = 0) => {
+			try {
+				exports.alicorn_browser_clipboard_complete(context, token, result, byteLength);
+			} catch (error) {
+				root.console.error("[alicorn-webgpu] clipboard completion failed", error);
+			}
+		};
+		root.__alicornWebGPUClipboard = {
+			readText(token) {
+				const api = root.navigator && root.navigator.clipboard;
+				if (!api || typeof api.readText !== "function") {
+					clipboardComplete(token, clipboardResult.unsupported);
+					return;
+				}
+				let pending;
+				try {
+					// Invoke before returning to preserve the caller's transient user activation.
+					pending = api.readText();
+				} catch (error) {
+					clipboardComplete(token, clipboardFailureResult(error));
+					return;
+				}
+				Promise.resolve(pending).then(value => {
+					try {
+						const text = String(value);
+						const scratch = new Uint8Array(clipboardLimit + 4);
+						const encoded = new root.TextEncoder().encodeInto(text, scratch);
+						if (encoded.read !== text.length || encoded.written > clipboardLimit) {
+							clipboardComplete(token, clipboardResult.tooLarge);
+							return;
+						}
+						if (encoded.written === 0) {
+							clipboardComplete(token, clipboardResult.success);
+							return;
+						}
+						const pointer = exports.alicorn_browser_clipboard_read_buffer(context, token, encoded.written);
+						if (!pointer) {
+							clipboardComplete(token, clipboardResult.unavailable);
+							return;
+						}
+						memoryInterface.loadBytes(Number(pointer) >>> 0, encoded.written).set(scratch.subarray(0, encoded.written));
+						clipboardComplete(token, clipboardResult.success, encoded.written);
+					} catch (error) {
+						clipboardComplete(token, clipboardFailureResult(error));
+					}
+				}, error => clipboardComplete(token, clipboardFailureResult(error)));
+			},
+			writeText(token, pointer, byteLength) {
+				const api = root.navigator && root.navigator.clipboard;
+				if (!api || typeof api.writeText !== "function") {
+					clipboardComplete(token, clipboardResult.unsupported);
+					return;
+				}
+				if (byteLength > clipboardLimit) {
+					clipboardComplete(token, clipboardResult.tooLarge);
+					return;
+				}
+				let pending;
+				try {
+					const text = memoryInterface.loadString(Number(pointer) >>> 0, byteLength);
+					// Start the permission-gated operation in the originating event stack.
+					pending = api.writeText(text);
+				} catch (error) {
+					clipboardComplete(token, clipboardFailureResult(error));
+					return;
+				}
+				Promise.resolve(pending).then(
+					() => clipboardComplete(token, clipboardResult.success),
+					error => clipboardComplete(token, clipboardFailureResult(error)),
+				);
+			},
+		};
 		const status = options.statusElement || null;
 		const readyMessage = "WebGPU UI ready. Resize, click, or type to exercise the retained host.";
 		const recoveringMessage = "WebGPU device lost. Rebuilding presentation while preserving retained UI state…";

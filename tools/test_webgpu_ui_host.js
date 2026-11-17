@@ -4,7 +4,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
 
-async function makeHost() {
+async function makeHost(options = {}) {
 	const listeners = new Map();
 	const schedulerCalls = { wake: 0, visible: [], dispose: 0 };
 	let shutdownCalls = 0;
@@ -15,6 +15,10 @@ async function makeHost() {
 	let frameCalls = 0;
 	let scheduler;
 	let wgpuInterface;
+	let wasmMemoryInterface;
+	let clipboardLive = true;
+	const clipboardCompletions = [];
+	const clipboardBufferPointer = 1024;
 	const statusElement = { textContent: "" };
 	const exports = {
 		default_context_ptr: () => 7,
@@ -33,6 +37,14 @@ async function makeHost() {
 		},
 		alicorn_browser_next_wake_ns: () => nextWakeNs,
 		alicorn_browser_resize: () => 0,
+		alicorn_browser_clipboard_read_buffer: (_context, _token, _length) => clipboardLive ? clipboardBufferPointer : 0,
+		alicorn_browser_clipboard_complete: (_context, token, result, byteLength) => {
+			if (!clipboardLive) return;
+			const text = result === 0 && byteLength > 0
+				? new TextDecoder().decode(new Uint8Array(wasmMemoryInterface.memory.buffer, clipboardBufferPointer, byteLength))
+				: "";
+			clipboardCompletions.push({ token, result, byteLength, text });
+		},
 		alicorn_browser_shutdown: () => {
 			shutdownCalls++;
 			browserStatus = shutdownCompletes ? -2 : 3;
@@ -47,19 +59,24 @@ async function makeHost() {
 		runFrame(nowNs) { return this.options.runFrame(nowNs); }
 	}
 	class FakeMemoryInterface {
-		constructor() { this.memory = {}; }
+		constructor() { this.memory = { buffer: new ArrayBuffer(2 * 1024 * 1024) }; wasmMemoryInterface = this; }
 		setIntSize() {}
 		setExports() {}
 		setMemory() {}
+		loadBytes(pointer, length) { return new Uint8Array(this.memory.buffer, pointer, Number(length)); }
+		loadString(pointer, length) { return new TextDecoder().decode(this.loadBytes(pointer, length)); }
 	}
 	class FakeWebGPUInterface {
-		constructor() { wgpuInterface = this; }
+		constructor(wasmMemoryInterface) { wgpuInterface = this; this.wasmMemoryInterface = wasmMemoryInterface; }
 		getInterface() { return {}; }
 		callCallback(callback, args) { callback(...args); }
 	}
 	const root = {
 		isSecureContext: true,
-		navigator: { gpu: {} },
+		navigator: { gpu: {}, clipboard: Object.prototype.hasOwnProperty.call(options, "clipboard") ? options.clipboard : {
+			readText: async () => "",
+			writeText: async () => {},
+		} },
 		document: {
 			hidden: false,
 			getElementById: id => id === "alicorn-canvas" ? {} : null,
@@ -73,12 +90,20 @@ async function makeHost() {
 		AlicornDemandScheduler: FakeScheduler,
 		fetch: async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(0) }),
 		WebAssembly: { instantiate: async () => ({ instance: { exports } }) },
+		TextEncoder,
+		TextDecoder,
+		Uint8Array,
 		console: { error: () => {} },
 		addEventListener: (name, callback) => listeners.set(name, callback),
 	};
 	vm.runInNewContext(fs.readFileSync("host/web/webgpu_ui_host.js", "utf8"), root);
 	await root.AlicornWebGPUHost.start("app.wasm", { statusElement });
 	return {
+		root,
+		clipboard: root.__alicornWebGPUClipboard,
+		clipboardCompletions,
+		memoryInterface: wasmMemoryInterface,
+		setClipboardLive: value => { clipboardLive = value; },
 		listeners,
 		schedulerCalls,
 		setDocumentHidden: value => { root.document.hidden = value; },
@@ -92,6 +117,63 @@ async function makeHost() {
 		callGpuCallback: () => wgpuInterface.callCallback(() => {}, []),
 		runFrame: nowNs => scheduler.runFrame(nowNs),
 	};
+}
+
+async function testBrowserClipboardReadsAndWritesUnicodeText() {
+	let written = null;
+	const host = await makeHost({ clipboard: {
+		readText: async () => "Copied from browser 🐉",
+		writeText: async text => { written = text; },
+	} });
+	host.clipboard.readText(11);
+	for (let count = 0; count < 5 && host.clipboardCompletions.length === 0; count++) await Promise.resolve();
+	assert.deepEqual(host.clipboardCompletions, [{
+		token: 11,
+		result: 0,
+		byteLength: new TextEncoder().encode("Copied from browser 🐉").length,
+		text: "Copied from browser 🐉",
+	}]);
+
+	const outgoing = "Clipboard write 🦊";
+	const encoded = new TextEncoder().encode(outgoing);
+	host.memoryInterface.loadBytes(256, encoded.length).set(encoded);
+	host.clipboard.writeText(12, 256, encoded.length);
+	for (let count = 0; count < 5 && host.clipboardCompletions.length < 2; count++) await Promise.resolve();
+	assert.equal(written, outgoing, "writeText decodes Odin's UTF-8 bytes before calling the browser API");
+	assert.equal(host.clipboardCompletions[1].result, 0);
+	assert.equal(host.clipboardCompletions[1].token, 12);
+}
+
+async function testBrowserClipboardReportsPermissionAndUnsupportedResults() {
+	const denied = await makeHost({ clipboard: {
+		readText: async () => { const error = new Error("permission"); error.name = "NotAllowedError"; throw error; },
+		writeText: async () => {},
+	} });
+	denied.clipboard.readText(21);
+	for (let count = 0; count < 5 && denied.clipboardCompletions.length === 0; count++) await Promise.resolve();
+	assert.equal(denied.clipboardCompletions[0].result, 2, "browser permission denial has a distinct result");
+
+	const unsupported = await makeHost({ clipboard: undefined });
+	unsupported.clipboard.readText(22);
+	assert.equal(unsupported.clipboardCompletions[0].result, 1, "missing browser API is reported as unsupported");
+	const noClipboard = await makeHost({ clipboard: null });
+	noClipboard.clipboard.readText(23);
+	assert.equal(noClipboard.clipboardCompletions[0].result, 1);
+}
+
+async function testBrowserClipboardBoundsReadsAndIgnoresLateSettlement() {
+	const oversized = await makeHost({ clipboard: { readText: async () => "x".repeat(1024 * 1024 + 8) } });
+	oversized.clipboard.readText(31);
+	for (let count = 0; count < 5 && oversized.clipboardCompletions.length === 0; count++) await Promise.resolve();
+	assert.equal(oversized.clipboardCompletions[0].result, 4, "large clipboard reads are rejected before WASM allocation");
+
+	let resolveRead;
+	const late = await makeHost({ clipboard: { readText: () => new Promise(resolve => { resolveRead = resolve; }) } });
+	late.clipboard.readText(32);
+	late.setClipboardLive(false);
+	resolveRead("late result");
+	for (let count = 0; count < 5; count++) await Promise.resolve();
+	assert.equal(late.clipboardCompletions.length, 0, "a settled promise after host teardown is ignored");
 }
 
 async function testWebGPUStartupExplainsUnavailableCapabilitiesBeforeLoadingWasm() {
@@ -198,6 +280,9 @@ async function testPendingShutdownRetriesAfterGpuCompletionWake() {
 (async () => {
 	for (const test of [
 		testWebGPUStartupExplainsUnavailableCapabilitiesBeforeLoadingWasm,
+		testBrowserClipboardReadsAndWritesUnicodeText,
+		testBrowserClipboardReportsPermissionAndUnsupportedResults,
+		testBrowserClipboardBoundsReadsAndIgnoresLateSettlement,
 		testAdapterFailureShowsActionableStatus,
 		testRecoveryUsesBoundedLifecycleFramesAndReportsOutcome,
 		testBackForwardCacheSuspendsAndResumesExistingHost,

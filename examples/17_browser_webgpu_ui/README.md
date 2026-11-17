@@ -27,5 +27,7 @@ If WebGPU is unavailable, the page reports whether it needs a secure context
 WASM application.
 
 The example demonstrates basic control interaction and textarea-backed text
-input. It does not claim assistive-technology validation or device-loss
-recovery.
+input, plus the permission-gated `Read clipboard` and `Copy sample text`
+actions through `UI_Host_Services`. Use the buttons directly in the browser;
+clipboard access may be denied by browser policy. It does not claim
+assistive-technology validation or device-loss recovery.
