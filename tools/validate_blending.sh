@@ -19,5 +19,5 @@ case "$(uname -s)" in
         *) echo 'Use tools/validate_blending.ps1 on Windows or tools/validate_blending.sh on macOS.' >&2; exit 1 ;;
 esac
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
-	build native/blend_validation_entry -out:out/alicorn_blend_validation
+	build native/blend_validation_entry "-collection:alicorn=$REPO_ROOT" -out:out/alicorn_blend_validation
 exec ./out/alicorn_blend_validation
