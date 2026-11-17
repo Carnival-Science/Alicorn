@@ -33,6 +33,7 @@ FEASIBILITY_TEST_SURFACE_PRESENTER :: #config(FEASIBILITY_TEST_SURFACE_PRESENTER
 FEASIBILITY_TEST_WEB_CANVAS_PRESENTER :: #config(FEASIBILITY_TEST_WEB_CANVAS_PRESENTER, false)
 FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER :: #config(FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER, false)
 FEASIBILITY_TEST_NATIVE_HOSTED_SMOKE :: #config(FEASIBILITY_TEST_NATIVE_HOSTED_SMOKE, false)
+FEASIBILITY_TEST_NATIVE_MULTI_SURFACE :: #config(FEASIBILITY_TEST_NATIVE_MULTI_SURFACE, false)
 SURFACE_CACHE_PRESSURE_BATCH_COUNT :: 120
 SURFACE_CACHE_PRESSURE_FIRST_WIDTH :: 100
 SURFACE_CACHE_PRESSURE_SECOND_WIDTH :: SURFACE_CACHE_PRESSURE_FIRST_WIDTH + SURFACE_CACHE_PRESSURE_BATCH_COUNT
@@ -75,6 +76,17 @@ state: struct {
 	native_hosted_has_more_work: bool,
 	native_hosted_next_wake_ns: u64,
 	native_hosted_app: Native_Hosted_Feasibility_App,
+	native_secondary_surface: wgpu.Surface,
+	native_secondary_hosted_app: Native_Hosted_Feasibility_App,
+	native_secondary_hosted_ready: bool,
+	native_secondary_presented: bool,
+	native_secondary_click_sent: bool,
+	native_secondary_resize_requested: bool,
+	native_secondary_resize_applied: bool,
+	native_secondary_resize_presented: bool,
+	native_secondary_shutdown_passed: bool,
+	native_secondary_has_more_work: bool,
+	native_secondary_next_wake_ns: u64,
 	solid_runtime: alicorn.Runtime,
 	solid_renderer: webgpu_renderer.Solid_Renderer,
 	solid_runtime_ready: bool,
@@ -192,6 +204,10 @@ main :: proc() {
 	if state.instance == nil { fmt.panicf("WebGPU instance creation failed") }
 	state.surface = os_get_surface(state.instance)
 	if state.surface == nil { fmt.panicf("WebGPU surface creation failed") }
+	when FEASIBILITY_TEST_NATIVE_MULTI_SURFACE {
+		state.native_secondary_surface = os_get_secondary_surface(state.instance)
+		if state.native_secondary_surface == nil { fmt.panicf("secondary WebGPU surface creation failed") }
+	}
 	wgpu.InstanceRequestAdapter(state.instance, &wgpu.RequestAdapterOptions{
 		compatibleSurface = state.surface,
 		powerPreference = .HighPerformance,
@@ -216,6 +232,22 @@ main :: proc() {
 			os_exit_failure()
 		}
 		fmt.println("[webgpu-feasibility] native Hosted_Runtime pointer, application text-key, text/IME routing, resize, and lifecycle smoke PASS")
+	}
+	when FEASIBILITY_TEST_NATIVE_MULTI_SURFACE {
+		if !state.native_secondary_presented || !state.native_secondary_resize_applied ||
+		   !state.native_secondary_resize_presented || state.native_secondary_hosted_ready ||
+		   !state.native_secondary_shutdown_passed || state.native_secondary_hosted_app.click_count != 1 {
+			fmt.eprintln("[webgpu-feasibility] two-surface lifecycle smoke FAIL",
+				"initial_present", state.native_secondary_presented,
+				"resize_applied", state.native_secondary_resize_applied,
+				"resize_present", state.native_secondary_resize_presented,
+				"shutdown", state.native_secondary_shutdown_passed,
+				"secondary_clicks", state.native_secondary_hosted_app.click_count,
+				"still_ready", state.native_secondary_hosted_ready,
+			)
+			os_exit_failure()
+		}
+		fmt.println("[webgpu-feasibility] shared-device two-surface presentation, resize, independent Runtime teardown PASS")
 	}
 	when FEASIBILITY_TEST_QUIT_AFTER_READBACK {
 		if !state.readback_done || !state.queue_work_done || !state.queue_work_done_ok {
@@ -664,6 +696,14 @@ step :: proc(dt: f32, now_ns: u64) -> bool {
 
 finish :: proc() {
 	when FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER {
+		when FEASIBILITY_TEST_NATIVE_MULTI_SURFACE {
+			native_secondary_hosted_shutdown()
+			if state.native_secondary_surface != nil {
+				wgpu.SurfaceUnconfigure(state.native_secondary_surface)
+				wgpu.SurfaceRelease(state.native_secondary_surface)
+				state.native_secondary_surface = nil
+			}
+		}
 		native_hosted_shutdown()
 	}
 	webgpu_renderer.Compositor_Destroy(&state.compositor)

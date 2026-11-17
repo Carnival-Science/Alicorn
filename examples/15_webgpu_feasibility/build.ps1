@@ -24,6 +24,8 @@ try {
 	if ($LASTEXITCODE -ne 0) { throw "Native resize smoke fixture build failed: $LASTEXITCODE" }
 	& $Odin build . -collection:alicorn=../.. -define:FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER=true -define:FEASIBILITY_TEST_NATIVE_HOSTED_SMOKE=true -out:out\native_hosted_feasibility.exe
 	if ($LASTEXITCODE -ne 0) { throw "Native Hosted_Runtime presenter smoke fixture build failed: $LASTEXITCODE" }
+	& $Odin build . -collection:alicorn=../.. -define:FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER=true -define:FEASIBILITY_TEST_NATIVE_HOSTED_SMOKE=true -define:FEASIBILITY_TEST_NATIVE_MULTI_SURFACE=true -out:out\native_multi_surface_feasibility.exe
+	if ($LASTEXITCODE -ne 0) { throw "Native shared-device multi-surface smoke fixture build failed: $LASTEXITCODE" }
 	Copy-Item (Join-Path $odinRoot 'vendor\sdl3\SDL3.dll') (Join-Path $root 'out\SDL3.dll') -Force
 	$wgpuDll=Join-Path $odinRoot 'vendor\wgpu\lib\wgpu-windows-x86_64-msvc-release\lib\wgpu_native.dll'
 	if (Test-Path -LiteralPath $wgpuDll) { Copy-Item $wgpuDll (Join-Path $root 'out\wgpu_native.dll') -Force }
@@ -43,5 +45,6 @@ try {
 	Write-Host "Native SDL surface presenter smoke: $root\out\webgpu_feasibility_surface_presenter.exe"
 	Write-Host "Native resize smoke: $root\out\webgpu_feasibility_resize_smoke.exe"
 	Write-Host "Native Hosted_Runtime presenter smoke: $root\out\native_hosted_feasibility.exe"
+	Write-Host "Native shared-device multi-surface smoke: $root\out\native_multi_surface_feasibility.exe"
 	Write-Host "Browser shared-renderer fixture: serve $root\web on localhost and open /index.html"
 } finally { Pop-Location }

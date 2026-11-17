@@ -35,6 +35,8 @@ echo 'Building native surface-resize smoke fixture'
 "$ODIN" build . -collection:alicorn=../.. -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -define:FEASIBILITY_TEST_RESIZE=true -out:out/webgpu_feasibility_resize_smoke
 echo 'Building native SDL3 Hosted_Runtime surface smoke fixture'
 "$ODIN" build . -collection:alicorn=../.. -define:FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER=true -define:FEASIBILITY_TEST_NATIVE_HOSTED_SMOKE=true -out:out/native_hosted_feasibility
+echo 'Building native shared-device multi-surface lifecycle smoke fixture'
+"$ODIN" build . -collection:alicorn=../.. -define:FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER=true -define:FEASIBILITY_TEST_NATIVE_HOSTED_SMOKE=true -define:FEASIBILITY_TEST_NATIVE_MULTI_SURFACE=true -out:out/native_multi_surface_feasibility
 if ! command -v wasm-ld >/dev/null 2>&1; then
 	echo 'The js_wasm32 build requires wasm-ld. On macOS install it with `brew install lld` and add `$(brew --prefix lld)/bin` to PATH.' >&2
 	exit 1
@@ -53,4 +55,5 @@ printf 'Native host-owned presenter smoke: %s/out/webgpu_feasibility_presenter_s
 printf 'Native SDL surface presenter smoke: %s/out/webgpu_feasibility_surface_presenter\n' "$SCRIPT_DIR"
 printf 'Native resize smoke: %s/out/webgpu_feasibility_resize_smoke\n' "$SCRIPT_DIR"
 printf 'Native Hosted_Runtime presenter smoke: %s/out/native_hosted_feasibility\n' "$SCRIPT_DIR"
+printf 'Native shared-device multi-surface smoke: %s/out/native_multi_surface_feasibility\n' "$SCRIPT_DIR"
 printf 'Browser shared-renderer fixture: serve %s/web on localhost and open /index.html\n' "$SCRIPT_DIR"

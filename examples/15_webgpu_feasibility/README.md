@@ -192,6 +192,24 @@ path; it does not compare swapchain pixels or claim display scanout. The
 existing interactive fixture still draws its own scene unless this explicit
 smoke target is selected.
 
+The multi-surface smoke opens two SDL windows, gives each an independent
+`Hosted_Runtime` and WebGPU presenter, and shares one adapter/device/queue. It
+checks that the second surface supports the selected format, routes synthetic
+focus and pointer input only to its Runtime, resizes and presents the second
+surface, then retires its presenter after queue completion before shutting down
+the primary. It is a host-lifecycle fixture, not an application-facing
+secondary-window service or a device-loss recovery test. Build and run it with:
+
+~~~powershell
+C:\odin\odin.exe build . -collection:alicorn=../.. `
+    -define:FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER=true `
+    -define:FEASIBILITY_TEST_NATIVE_HOSTED_SMOKE=true `
+    -define:FEASIBILITY_TEST_NATIVE_MULTI_SURFACE=true `
+    -out:out\native_multi_surface_feasibility.exe
+.\out\native_multi_surface_feasibility.exe --backend=d3d12
+.\out\native_multi_surface_feasibility.exe --backend=vulkan
+~~~
+
 For native surface reconfiguration during motion and after it settles, run:
 
 ~~~powershell

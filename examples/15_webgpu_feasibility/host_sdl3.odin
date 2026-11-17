@@ -13,9 +13,11 @@ import native_sdl3_host "../../host/sdl3"
 
 OS :: struct {
 	window: ^SDL.Window,
+	secondary_window: ^SDL.Window,
 }
 
 native_hosted_application: native_sdl3_host.SDL3_WebGPU_Application
+native_secondary_hosted_application: native_sdl3_host.SDL3_WebGPU_Application
 
 SMOKE_TIMEOUT_SECONDS :: 15.0
 
@@ -34,6 +36,12 @@ os_init :: proc() {
 	if !SDL.Init({.VIDEO}) { fmt.panicf("SDL init failed: %s",SDL.GetError()) }
 	state.os.window=SDL.CreateWindow("Alicorn WebGPU feasibility",960,540,{.RESIZABLE,.HIGH_PIXEL_DENSITY})
 	if state.os.window==nil { fmt.panicf("SDL window creation failed: %s",SDL.GetError()) }
+	when FEASIBILITY_TEST_NATIVE_MULTI_SURFACE {
+		state.os.secondary_window = SDL.CreateWindow(
+			"Alicorn WebGPU second surface", 640, 400, {.RESIZABLE, .HIGH_PIXEL_DENSITY},
+		)
+		if state.os.secondary_window == nil { fmt.panicf("secondary SDL window creation failed: %s", SDL.GetError()) }
+	}
 }
 
 os_run :: proc() {
@@ -96,6 +104,41 @@ os_run :: proc() {
 					}
 				}
 			}
+			when FEASIBILITY_TEST_NATIVE_MULTI_SURFACE {
+				if state.native_secondary_hosted_ready {
+					secondary_step := native_sdl3_host.sdl3_webgpu_application_step(
+						&native_secondary_hosted_application, u64(SDL.GetTicksNS()),
+					)
+					if secondary_step.status != .Ok {
+						fmt.panicf("secondary Hosted_Runtime step failed: %v", secondary_step.status)
+					}
+					if secondary_step.presentation == .Invalid_Input || secondary_step.presentation == .Resource_Failure ||
+					   secondary_step.presentation == .Render_Failure || secondary_step.presentation == .Surface_Acquire_Failure ||
+					   secondary_step.presentation == .Present_Failure {
+						fmt.panicf("secondary WebGPU surface presentation failed: %v", secondary_step.presentation)
+					}
+					if secondary_step.presentation == .Ok {
+						if !state.native_secondary_presented {
+							state.native_secondary_presented = true
+							fmt.println("[webgpu-feasibility] secondary surface first presentation PASS")
+						}
+						if !state.native_secondary_click_sent {
+							native_secondary_hosted_smoke_click_button()
+							state.native_secondary_click_sent = true
+						}
+						if state.native_secondary_resize_applied { state.native_secondary_resize_presented = true }
+					}
+					state.native_secondary_has_more_work = secondary_step.has_more_work
+					state.native_secondary_next_wake_ns = secondary_step.next_wake_ns
+					if state.native_secondary_presented && !state.native_secondary_resize_requested {
+						state.native_secondary_resize_requested = true
+						if !SDL.SetWindowSize(state.os.secondary_window, 720, 450) {
+							fmt.panicf("secondary WebGPU surface smoke could not request its resize: %s", SDL.GetError())
+						}
+						fmt.println("[webgpu-feasibility] secondary surface resize requested")
+					}
+				}
+			}
 		} else {
 		if state.ready && (state.dirty || state.animation_seconds<ANIMATION_SECONDS) {
 			if !state.surface_presenter_completion_pending {
@@ -152,11 +195,26 @@ os_run :: proc() {
 			   state.native_hosted_resize_presented &&
 			   !native_sdl3_host.sdl3_webgpu_application_has_in_flight(&native_hosted_application) &&
 			   !state.readback_pending && !state.queue_work_done_pending {
-				state.quit = true
+				when !FEASIBILITY_TEST_NATIVE_MULTI_SURFACE {
+					state.quit = true
+				}
 			}
 			smoke_elapsed += f64(dt)
 			if smoke_elapsed >= SMOKE_TIMEOUT_SECONDS && !state.quit {
 				fmt.println("[webgpu-feasibility] native Hosted_Runtime presenter smoke timed out")
+				state.quit = true
+			}
+		}
+		when FEASIBILITY_TEST_NATIVE_MULTI_SURFACE {
+			primary_smoke_complete := state.native_hosted_presented && state.native_hosted_resize_presented &&
+				state.native_hosted_app.click_count == 1 && state.native_hosted_app.text_key_passed &&
+				state.native_hosted_app.text_input_passed
+			secondary_smoke_complete := state.native_secondary_presented && state.native_secondary_resize_applied &&
+				state.native_secondary_resize_presented && state.native_secondary_hosted_app.click_count == 1
+			if primary_smoke_complete && secondary_smoke_complete &&
+			   !native_sdl3_host.sdl3_webgpu_application_has_in_flight(&native_hosted_application) &&
+			   !native_sdl3_host.sdl3_webgpu_application_has_in_flight(&native_secondary_hosted_application) &&
+			   !state.readback_pending && !state.queue_work_done_pending {
 				state.quit = true
 			}
 		}
@@ -199,6 +257,10 @@ os_run :: proc() {
 			needs_wakeup = needs_wakeup || native_sdl3_host.sdl3_webgpu_application_has_in_flight(&native_hosted_application)
 			needs_wakeup = needs_wakeup || state.native_hosted_has_more_work
 		}
+		when FEASIBILITY_TEST_NATIVE_MULTI_SURFACE {
+			needs_wakeup = needs_wakeup || native_sdl3_host.sdl3_webgpu_application_has_in_flight(&native_secondary_hosted_application)
+			needs_wakeup = needs_wakeup || state.native_secondary_has_more_work
+		}
 		when FEASIBILITY_TEST_SURFACE_PRESENTER {
 			needs_wakeup = needs_wakeup || state.surface_motion_active || (state.ready && state.surface_present_count == 0)
 		}
@@ -219,6 +281,17 @@ os_run :: proc() {
 						wait_timeout_ms = min(1000, max(1, int((deadline-now_ns+999_999)/1_000_000)))
 					} else if deadline != 0 {
 						wait_timeout_ms = 0
+					}
+				}
+			}
+			when FEASIBILITY_TEST_NATIVE_MULTI_SURFACE {
+				if state.native_secondary_hosted_ready {
+					if state.native_secondary_has_more_work {
+						wait_timeout_ms = 0
+					} else if deadline := state.native_secondary_next_wake_ns; deadline != 0 {
+						now_ns := u64(SDL.GetTicksNS())
+						if deadline <= now_ns { wait_timeout_ms = 0 }
+						else { wait_timeout_ms = min(wait_timeout_ms, max(1, int((deadline-now_ns+999_999)/1_000_000))) }
 					}
 				}
 			}
@@ -254,26 +327,51 @@ os_run :: proc() {
 		fmt.println("[webgpu-feasibility] explicit-destroy callback probe PASS: exactly one reason=Destroyed callback before teardown; this is not driver/OS loss evidence")
 	}
 	SDL.DestroyWindow(state.os.window)
+	when FEASIBILITY_TEST_NATIVE_MULTI_SURFACE {
+		if state.os.secondary_window != nil {
+			SDL.DestroyWindow(state.os.secondary_window)
+			state.os.secondary_window = nil
+		}
+	}
 	SDL.Quit()
 }
 
 handle_event :: proc(event:SDL.Event) {
 	#partial switch event.type {
 	case .QUIT: state.quit=true
-	case .WINDOW_RESIZED,.WINDOW_PIXEL_SIZE_CHANGED: resize()
+	case .WINDOW_RESIZED,.WINDOW_PIXEL_SIZE_CHANGED:
+		when FEASIBILITY_TEST_NATIVE_MULTI_SURFACE {
+			if event.window.windowID == SDL.GetWindowID(state.os.secondary_window) {
+				native_secondary_hosted_resize()
+			} else {
+				resize()
+			}
+		} else {
+			resize()
+		}
 	case .WINDOW_HIDDEN,.WINDOW_MINIMIZED:
 		when FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER {
-				_ = native_sdl3_host.sdl3_webgpu_application_set_visible(&native_hosted_application, false)
+			_ = native_sdl3_host.sdl3_webgpu_application_handle_event(&native_hosted_application, event)
+			when FEASIBILITY_TEST_NATIVE_MULTI_SURFACE {
+				_ = native_sdl3_host.sdl3_webgpu_application_handle_event(&native_secondary_hosted_application, event)
+			}
 		}
 	case .WINDOW_SHOWN,.WINDOW_RESTORED:
 		when FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER {
-				_ = native_sdl3_host.sdl3_webgpu_application_set_visible(&native_hosted_application, true)
+			_ = native_sdl3_host.sdl3_webgpu_application_handle_event(&native_hosted_application, event)
+			when FEASIBILITY_TEST_NATIVE_MULTI_SURFACE {
+				_ = native_sdl3_host.sdl3_webgpu_application_handle_event(&native_secondary_hosted_application, event)
+			}
 		}
 	case .WINDOW_FOCUS_GAINED, .WINDOW_FOCUS_LOST, .KEY_DOWN, .KEY_UP,
 	     .MOUSE_MOTION, .MOUSE_BUTTON_DOWN, .MOUSE_BUTTON_UP, .MOUSE_WHEEL:
 		when FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER {
 			result := native_sdl3_host.sdl3_webgpu_application_handle_event(&native_hosted_application, event)
 			if result == .Failure { fmt.panicf("native SDL3/WebGPU event routing failed for %v", event.type) }
+			when FEASIBILITY_TEST_NATIVE_MULTI_SURFACE {
+				secondary_result := native_sdl3_host.sdl3_webgpu_application_handle_event(&native_secondary_hosted_application, event)
+				if secondary_result == .Failure { fmt.panicf("secondary SDL3/WebGPU event routing failed for %v", event.type) }
+			}
 		}
 	}
 }
@@ -287,10 +385,19 @@ os_set_surface_size :: proc(width,height:u32) {}
 os_get_surface :: proc(instance:wgpu.Instance)->wgpu.Surface {
 	return sdl3glue.GetSurface(instance,state.os.window)
 }
+when FEASIBILITY_TEST_NATIVE_MULTI_SURFACE {
+	os_get_secondary_surface :: proc(instance: wgpu.Instance) -> wgpu.Surface {
+		if state.os.secondary_window == nil { return nil }
+		return sdl3glue.GetSurface(instance, state.os.secondary_window)
+	}
+}
 os_process_gpu_events :: proc() {
 	needs_poll := state.readback_pending || state.queue_work_done_pending || state.surface_presenter_completion_pending
 	when FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER {
 		needs_poll = needs_poll || native_sdl3_host.sdl3_webgpu_application_has_in_flight(&native_hosted_application)
+		when FEASIBILITY_TEST_NATIVE_MULTI_SURFACE {
+			needs_poll = needs_poll || native_sdl3_host.sdl3_webgpu_application_has_in_flight(&native_secondary_hosted_application)
+		}
 	}
 	when FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY {
 		needs_poll = needs_poll || (!state.ready && !state.device_lost)
@@ -340,6 +447,132 @@ native_hosted_init :: proc() {
 	state.animation_seconds = ANIMATION_SECONDS
 	state.dirty = false
 	fmt.println("[webgpu-feasibility] SDL3 native host uses shared Hosted_Runtime WebGPU surface presenter")
+	when FEASIBILITY_TEST_NATIVE_MULTI_SURFACE {
+		native_secondary_hosted_init()
+	}
+}
+
+when FEASIBILITY_TEST_NATIVE_MULTI_SURFACE {
+	native_secondary_hosted_init :: proc() {
+		if state.os.secondary_window == nil || state.native_secondary_surface == nil || state.adapter == nil {
+			fmt.panicf("two-surface smoke is missing its SDL window, WGPU surface, or adapter")
+		}
+		caps, status := wgpu.SurfaceGetCapabilities(state.native_secondary_surface, state.adapter)
+		if status != .Success || caps.formatCount == 0 || caps.alphaModeCount == 0 || caps.presentModeCount == 0 {
+			if status == .Success { wgpu.SurfaceCapabilitiesFreeMembers(caps) }
+			fmt.panicf("secondary surface capabilities unavailable: %v", status)
+		}
+		config := state.config
+		format_ok, alpha_ok, present_ok := false, false, false
+		for i in 0..<int(caps.formatCount) { if caps.formats[i] == config.format { format_ok = true; break } }
+		for i in 0..<int(caps.alphaModeCount) { if caps.alphaModes[i] == config.alphaMode { alpha_ok = true; break } }
+		for i in 0..<int(caps.presentModeCount) { if caps.presentModes[i] == config.presentMode { present_ok = true; break } }
+		wgpu.SurfaceCapabilitiesFreeMembers(caps)
+		if !format_ok || !alpha_ok || !present_ok {
+			fmt.panicf("secondary WebGPU surface does not support the selected format/present/alpha configuration")
+		}
+		logical_w, logical_h, pixel_w, pixel_h: i32
+		if !SDL.GetWindowSize(state.os.secondary_window, &logical_w, &logical_h) ||
+		   !SDL.GetWindowSizeInPixels(state.os.secondary_window, &pixel_w, &pixel_h) ||
+		   logical_w <= 0 || logical_h <= 0 || pixel_w <= 0 || pixel_h <= 0 {
+			fmt.panicf("secondary SDL window metrics unavailable")
+		}
+		config.width, config.height = u32(pixel_w), u32(pixel_h)
+		state.native_secondary_hosted_app = {}
+		host_config := alicorn.Hosted_Runtime_Config{
+			state=rawptr(&state.native_secondary_hosted_app),
+			render=native_hosted_render,
+			on_initialize=native_hosted_initialize_runtime,
+			on_text_change=native_hosted_text_change,
+			on_text_key=native_hosted_text_key,
+		}
+		if result := native_sdl3_host.sdl3_webgpu_application_init(
+			&native_secondary_hosted_application,
+			host_config,
+			state.os.secondary_window,
+			state.native_secondary_surface,
+			state.device,
+			state.queue,
+			config,
+		); result != .Ok {
+			fmt.panicf("secondary SDL3/WebGPU application initialization failed: %v", result)
+		}
+		state.native_secondary_hosted_ready = true
+		fmt.println("[webgpu-feasibility] second independent Hosted_Runtime attached to shared WGPU device")
+	}
+
+	native_secondary_hosted_resize :: proc() {
+		if !state.native_secondary_hosted_ready { return }
+		logical_w, logical_h, pixel_w, pixel_h: i32
+		if !SDL.GetWindowSize(state.os.secondary_window, &logical_w, &logical_h) ||
+		   !SDL.GetWindowSizeInPixels(state.os.secondary_window, &pixel_w, &pixel_h) {
+			fmt.panicf("secondary SDL window resize metrics unavailable")
+		}
+		result := native_sdl3_host.sdl3_webgpu_application_resize(&native_secondary_hosted_application)
+		if result != .Ok && result != .Suspended { fmt.panicf("secondary WebGPU surface resize failed: %v", result) }
+		if state.native_secondary_resize_requested && logical_w == 720 && logical_h == 450 && pixel_w > 0 && pixel_h > 0 {
+			if !state.native_secondary_resize_applied {
+				state.native_secondary_resize_applied = true
+				fmt.printf("[webgpu-feasibility] secondary SDL resize applied PASS logical=%dx%d pixel=%dx%d\n",
+					logical_w, logical_h, pixel_w, pixel_h)
+			}
+		}
+	}
+
+	native_secondary_hosted_shutdown :: proc() {
+		if !state.native_secondary_hosted_ready {
+			state.native_secondary_shutdown_passed = true
+			return
+		}
+		for native_sdl3_host.sdl3_webgpu_application_has_in_flight(&native_secondary_hosted_application) {
+			_ = wgpu.DevicePoll(state.device, true)
+			if state.instance != nil { wgpu.InstanceProcessEvents(state.instance) }
+		}
+		if !native_sdl3_host.sdl3_webgpu_application_destroy(&native_secondary_hosted_application) {
+			fmt.eprintln("[webgpu-feasibility] secondary Hosted_Runtime teardown remains pending")
+			return
+		}
+		state.native_secondary_hosted_ready = false
+		state.native_secondary_shutdown_passed = true
+		fmt.println("[webgpu-feasibility] secondary Hosted_Runtime and presenter retired after queue completion")
+	}
+}
+
+native_secondary_hosted_smoke_click_button :: proc() {
+	rt, borrow_status := alicorn.hosted_runtime_borrow(&native_secondary_hosted_application.hosted)
+	if borrow_status != .Ok || rt == nil { fmt.panicf("secondary smoke could not borrow its independent Runtime") }
+	id, found := alicorn.node_by_key(rt, alicorn.key_string("native-hosted-button"), .Button)
+	if !found { fmt.panicf("secondary smoke button is absent after its first frame") }
+	info, info_found := alicorn.node_info(rt, id)
+	if !info_found { fmt.panicf("secondary smoke button geometry is unavailable") }
+	window_id := SDL.GetWindowID(state.os.secondary_window)
+	focus := SDL.Event{type=.WINDOW_FOCUS_GAINED}
+	focus.window.windowID = window_id
+	if native_sdl3_host.sdl3_webgpu_application_handle_event(&native_hosted_application, focus) != .Ignored ||
+	   native_sdl3_host.sdl3_webgpu_application_handle_event(&native_secondary_hosted_application, focus) != .Handled {
+		fmt.panicf("focus event was not isolated to the secondary SDL window")
+	}
+	x := info.bounds.x + info.bounds.w * 0.5
+	y := info.bounds.y + info.bounds.h * 0.5
+	down := SDL.Event{type=.MOUSE_BUTTON_DOWN}
+	down.button.windowID = window_id
+	down.button.button = 1
+	down.button.clicks = 1
+	down.button.x, down.button.y = x, y
+	up := SDL.Event{type=.MOUSE_BUTTON_UP}
+	up.button.windowID = window_id
+	up.button.button = 1
+	up.button.clicks = 1
+	up.button.x, up.button.y = x, y
+	if native_sdl3_host.sdl3_webgpu_application_handle_event(&native_hosted_application, down) != .Ignored ||
+	   native_sdl3_host.sdl3_webgpu_application_handle_event(&native_secondary_hosted_application, down) != .Handled ||
+	   native_sdl3_host.sdl3_webgpu_application_handle_event(&native_hosted_application, up) != .Ignored ||
+	   native_sdl3_host.sdl3_webgpu_application_handle_event(&native_secondary_hosted_application, up) != .Handled {
+		fmt.panicf("pointer event was not isolated to the secondary SDL window")
+	}
+	wake := SDL.Event{type=native_secondary_hosted_application.wake_event_type}
+	if !SDL.PushEvent(&wake) { fmt.panicf("secondary smoke could not wake after pointer activation") }
+	fmt.println("[webgpu-feasibility] secondary-window focus and pointer routing isolated to its Runtime PASS")
 }
 
 native_hosted_text_change :: proc(data: rawptr, _rt: ^alicorn.Runtime, change: alicorn.Text_Change) {
