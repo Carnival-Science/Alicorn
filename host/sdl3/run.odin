@@ -509,6 +509,7 @@ sdl3_webgpu_run :: proc(
 
 	started_ns := u64(sdl3.GetTicksNS())
 	did_present := false
+	child_did_present := false
 	for {
 		now_ns := u64(sdl3.GetTicksNS())
 		state.last_now_ns = now_ns
@@ -522,6 +523,7 @@ sdl3_webgpu_run :: proc(
 		if window_manager.pending_close && window_manager.child != nil {
 			_ = sdl3_webgpu_window_destroy(&window_manager)
 		}
+		if window_manager.child == nil { child_did_present = false }
 		if state.device_lost && !state.recovery_active {
 			fmt.eprintln("[alicorn-webgpu] WebGPU device lost without recovery", state.device_loss_reason)
 			return .Device_Lost
@@ -538,10 +540,12 @@ sdl3_webgpu_run :: proc(
 			child_step = sdl3_webgpu_application_step(&window_manager.child.application, now_ns)
 			if child_step.status != .Ok { return .Runtime_Failure }
 			#partial switch child_step.presentation {
+			case .Ok:
+				child_did_present = true
 			case .Invalid_Input, .Resource_Failure, .Render_Failure,
 			     .Surface_Acquire_Failure, .Present_Failure:
 				return .Presenter_Failure
-			case .Ok, .Suspended, .Retry_Later, .No_Frame, .Reconfigure_Required, .Hidden:
+			case .Suspended, .Retry_Later, .No_Frame, .Reconfigure_Required, .Hidden:
 			}
 		}
 		#partial switch step.presentation {
@@ -555,7 +559,11 @@ sdl3_webgpu_run :: proc(
 			// under the coordinator's bounded deadline.
 		}
 
-		if smoke && did_present && !sdl3_webgpu_application_has_in_flight(&application) {
+		child_smoke_complete := window_manager.child == nil || (
+			child_did_present && !sdl3_webgpu_window_has_in_flight(&window_manager)
+		)
+		if smoke && did_present && child_smoke_complete &&
+		   !sdl3_webgpu_application_has_in_flight(&application) {
 			return .Ok
 		}
 		if smoke && now_ns-started_ns > 15_000_000_000 { return .Smoke_Timeout }

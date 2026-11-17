@@ -2480,6 +2480,30 @@ startup path. Validation on Windows x64 with Odin dev-2026-11-nightly:08539cd:
 - The Windows Computer Use helper timed out on app enumeration, so I could not
   inspect the native window or capture the point where the child path stalls.
 
+### Native secondary-window smoke acceptance recheck (Windows, 2026-11-17)
+
+The `--child-smoke` success condition now requires the primary surface to
+present and drain, and, when a child exists, also requires a successful child
+presentation and no child submission in flight. This prevents the smoke from
+passing merely because the primary window rendered while the auxiliary window
+was initialized and immediately torn down.
+
+- `odin check host/sdl3 -collection:alicorn=. -no-entry-point` passed with the
+  stricter smoke condition.
+- The optimized `examples/16_native_webgpu_ui` build passed with the pinned
+  AccessKit compiler/linker arguments.
+- A bounded rerun of the existing
+  `examples/15_webgpu_feasibility/out/native_multi_surface_speed.exe
+  --backend=vulkan` selected the NVIDIA GeForce RTX 2080 SUPER and successfully
+  queried surface capabilities, but produced no device callback within 60
+  seconds after submitting its device request. The process was stopped. This
+  shared bootstrap failure occurs before the new window service runs, so it
+  does not establish a secondary-window presentation or teardown failure.
+- The strengthened `--child-smoke` did not complete in this environment. Child
+  presentation, native interactive input/resize/close, and recovery therefore
+  remain unvalidated; do not treat the earlier primary-only smoke as child
+  acceptance.
+
 The production service is compiled but still needs a real Windows interactive
 run that opens, types/scrolls, resizes, and closes the child, followed by
 macOS/Linux host validation and secondary-surface device-loss evidence.
