@@ -77,3 +77,22 @@ backend performance win. Neither smoke produced an input-latency sample.
 The automated desktop capture helper timed out twice while trying to inspect
 the interactive test window (`FrameArrived timed out` / `window capture timed
 out`), so this record deliberately contains no claimed click latency sample.
+
+## Exact-head recheck (`184292b`, Windows, 2026-11-17)
+
+The optimized native fixture was rebuilt from `184292b` on an NVIDIA GeForce
+RTX 2080 SUPER and selected D3D12. Both the WebGPU `--smoke --timings`
+invocation and the fixture-only SDL_GPU reference `--smoke` invocation exited+successfully. The WebGPU smoke again produced one cold frame:
+
+| CPU metric | sample |
+| --- | ---: |
+| Runtime step | 5.248 ms |
+| Surface acquire | 17.4 µs |
+| Renderer encode | 1.008 ms |
+| Queue submit path | 1.444 ms |
+| Surface present call | 355.3 µs |
+| Runtime-step-to-present | 8.091 ms |
+
+It produced no input samples. The SDL_GPU reference smoke also passed through+the exact same Odin `render` callback and reported one submission. Its native+diagnostics included a 4.323 ms frame p95, 2.988 ms encode, and 1.237 ms submit+path. The timing boundaries differ, and one cold frame per backend is not a+performance comparison.+
+The following checks passed on the same source revision:+
+- `odin test renderer/webgpu`: 6 tests.+- `odin test host/presentation`: 5 tests.+- `odin test host/web`: 13 tests.+- `odin test host/sdl3`: 10 tests with the repository-pinned AccessKit+  compiler arguments and the fixture DLL directory on `PATH`.+- `odin check host/presentation -target:js_wasm32 -no-entry-point`.+- `odin check ui -target:js_wasm32 -no-entry-point`.++This recheck strengthens build and smoke evidence for the timing/fixture+change only. Physical input-to-submit samples, application-workload parity,+and display-level visible-latency measurement remain open.
