@@ -2267,11 +2267,11 @@ Validation with `C:\odin\odin.exe` on Windows:
 - `examples/16_native_webgpu_ui` built and its `--backend=vulkan --smoke` run
   exited successfully after presenting a frame and draining normal teardown.
   The selected adapter was an NVIDIA GeForce RTX 2080 SUPER on Vulkan.
-- A D3D12 run passed once before the final runtime-renderability adjustment.
-  After that adjustment, repeated native UI and feasibility smoke attempts did
-  not complete within 20–25 seconds and produced no adapter details. D3D12
-  validation of the exact final build is therefore inconclusive; the retry
-  behavior was not treated as an application regression or a pass.
+- Initial default-mode D3D12 `ui.run_webgpu` attempts stalled before adapter
+  details, but a rebuild of the exact `d04f72f` source with `-o:speed` passed
+  the D3D12 UI smoke twice, and the freshly rebuilt D3D12 Hosted_Runtime
+  interaction/resize smoke also passed. The earlier stall remains unexplained;
+  see the [follow-up validation](validation/native-webgpu-ui-windows-2026-11-16.md).
 
 This verifies native application bootstrap, ordinary D3D12 presentation,
 teardown, and compile-time integration. It does not trigger or validate a
@@ -2279,3 +2279,17 @@ genuine driver/OS device-loss event, replacement-device recovery, macOS/Linux
 native recovery, or secondary-window recovery. Those remain Phase 3 acceptance
 work. The earlier browser recovery note above records its historical status;
 the shared retry policy and native host have since advanced as described here.
+
+### Exact-source D3D12 native UI retest (Windows, 2026-11-16)
+
+The first default-mode `examples/16_native_webgpu_ui` D3D12 attempts did not
+produce adapter output before being stopped. After isolating the native UI host
+from the D3D12 feasibility fixture, the exact `d04f72f` source was rebuilt in
+optimized mode and passed twice. A freshly rebuilt D3D12 Hosted_Runtime
+feasibility smoke also passed pointer routing, synthetic text-key and IME
+preedit/cancel/commit routing, resize, queue completion, and teardown. The
+default-mode stall's cause is still unknown; do not treat this retest as
+evidence for debug-mode startup or genuine device-loss recovery.
+
+See [`native-webgpu-ui-windows-2026-11-16.md`](validation/native-webgpu-ui-windows-2026-11-16.md)
+for exact commands, outputs, and validation limits.
