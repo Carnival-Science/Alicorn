@@ -34,6 +34,12 @@ class FakeElement {
 		this.children.push(child);
 		return child;
 	}
+	removeChild(child) {
+		const index = this.children.indexOf(child);
+		if (index >= 0) this.children.splice(index, 1);
+		child.parentNode = null;
+		return child;
+	}
 	insertBefore(child, before) {
 		child.remove();
 		child.parentNode = this;
@@ -57,7 +63,10 @@ class FakeElement {
 		return this === element || this.children.some(child => child.contains(element));
 	}
 	addEventListener(name, callback) { this.listeners.set(name, callback); }
-	focus() { this.ownerDocument.activeElement = this; }
+	focus(options = {}) {
+		this.focusOptions = options;
+		this.ownerDocument.activeElement = this;
+	}
 	getBoundingClientRect() { return { ...this.rect }; }
 }
 
@@ -125,6 +134,20 @@ function testKeyboardFocusMarkerTracksCanvasGeometryAndModality() {
 	const marker = document.body.children.find(element => element.getAttribute("aria-hidden") === "true" && element.localName === "div");
 	assert.ok(marker, "the focus indicator is a separate, hidden-from-AT overlay");
 	window.alicornAccessibilityApply(makePayload());
+	const button = root.children[0];
+	button.focus();
+	window.alicornAccessibilityApply(makePayload({
+		revision: 2,
+		focus: "removed-button",
+		nodes: [],
+	}));
+	assert.equal(document.activeElement, root, "removing the focused semantic node restores focus to the application root");
+	assert.equal(root.focusOptions.preventScroll, true, "focus recovery does not scroll the page");
+	window.alicornAccessibilityApply(makePayload({
+		revision: 3,
+		focus: "run-button",
+	}));
+	assert.equal(document.activeElement, root.children[0], "a newly projected semantic focus target receives focus on the next update");
 	assert.equal(marker.style.display, "block");
 	assert.equal(marker.style.left, "60px");
 	assert.equal(marker.style.top, "50px");

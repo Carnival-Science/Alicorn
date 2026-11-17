@@ -268,8 +268,14 @@
     }
 
     const focused = payload.focus ? tree.nodes.get(payload.focus) : null;
-    if (restoreFocus && focused && document.activeElement !== focused) {
-      focused.focus({ preventScroll: true });
+    if (restoreFocus) {
+      // A semantic node can disappear during virtualization or when a control
+      // is removed. Keep browser focus inside the application instead of
+      // letting removal silently drop it onto document.body.
+      const focusTarget = focused || tree.root;
+      if (document.activeElement !== focusTarget) {
+        focusTarget.focus({ preventScroll: true });
+      }
     }
     tree.revision = payload.revision;
     tree.hasRevision = true;

@@ -2293,3 +2293,17 @@ evidence for debug-mode startup or genuine device-loss recovery.
 
 See [`native-webgpu-ui-windows-2026-11-16.md`](validation/native-webgpu-ui-windows-2026-11-16.md)
 for exact commands, outputs, and validation limits.
+
+### Browser accessibility focus recovery (Windows, 2026-11-17)
+
+When a semantic DOM node that currently owns browser focus disappears during a
+new snapshot (for example, after a virtualized or structural update), the
+projection now restores focus to the newly reported semantic target when one
+exists, or to Alicorn's hidden accessibility root when it does not. Focus
+restoration uses `preventScroll` so the recovery does not move the page. A
+headless DOM regression covers removal and subsequent focus transfer.
+
+Validation with Node on Windows: `node tools/test_accessibility_dom.js` passed;
+`git diff --check` passed. This validates projection logic only; browser-native
+focus behavior and assistive-technology announcements still need physical
+browser validation.
