@@ -17,7 +17,7 @@ Also install the native platform tools:
   C++**, including MSVC and a Windows SDK. Use an Odin distribution with its
   `vendor/sdl3` package and `SDL3.dll`.
 - **macOS:** Xcode Command Line Tools (`xcode-select --install`) and SDL3
-  `3.4.18` (`brew install sdl3`). Keep the SDL3 version at `3.4.18`; the host
+  `3.4.20` (`brew install sdl3`). Keep the SDL3 version at `3.4.20`; the host
   checks it when it starts.
 - **Linux:** a Wayland session, Vulkan-capable SDL3 development and library
   outputs, Fontconfig, `pkg-config`, and a C compiler. `vulkan-tools` and

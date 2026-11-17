@@ -6,6 +6,11 @@ changelogs.
 
 ## [Unreleased]
 
+### Changed
+
+- Updated Alicorn's pinned native SDL version to 3.4.20 across macOS builds,
+  Windows static-link preparation, runtime validation, and package provenance.
+
 ### Added
 
 - Added typed retained color motion for solid semantic-surface fills. The

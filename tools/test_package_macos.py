@@ -83,14 +83,14 @@ class PackageDependencyAuditTests(unittest.TestCase):
         )
 
     def test_sdl_source_pin_matches_release(self):
-        self.assertEqual(SDL_VERSION, "3.4.18")
+        self.assertEqual(SDL_VERSION, "3.4.20")
         self.assertEqual(
             SDL_SOURCE,
-            "https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz",
+            "https://github.com/libsdl-org/SDL/releases/download/release-3.4.20/SDL3-3.4.20.tar.gz",
         )
         self.assertEqual(
             SDL_SOURCE_SHA256,
-            "9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3",
+            "f3bb06f55bed9557227a700af2ea62e49497ebdf58037732a731a5fb3ef8581f",
         )
         self.assertEqual(
             sdl_source_provenance(),
@@ -105,51 +105,51 @@ class PackageDependencyAuditTests(unittest.TestCase):
             runtime = pathlib.Path(directory) / "libSDL3.0.dylib"
             runtime.write_bytes(b"test SDL dylib")
 
-            provenance = sdl_runtime_provenance(runtime, "3.4.18", "homebrew")
+            provenance = sdl_runtime_provenance(runtime, "3.4.20", "homebrew")
 
         self.assertEqual(
             provenance["sdlRuntime"],
             {
                 "inputFilename": "libSDL3.0.dylib",
                 "inputSha256": "27c0d2d7ee75d88c6fa8beedf05a9d8f3c6bed434d1527f38ad90b186485e942",
-                "detectedVersion": "3.4.18",
+                "detectedVersion": "3.4.20",
                 "provenance": {"provider": "homebrew", "formula": "sdl3"},
             },
         )
         self.assertNotIn("sdlSource", provenance)
 
     def test_shared_version_is_read_from_the_supplied_library(self):
-        get_version = Mock(return_value=3_004_018)
+        get_version = Mock(return_value=3_004_020)
         library = SimpleNamespace(SDL_GetVersion=get_version)
         with tempfile.TemporaryDirectory() as directory:
             runtime = pathlib.Path(directory) / "libSDL3.dylib"
             runtime.touch()
             with patch("package_macos.ctypes.CDLL", return_value=library):
-                self.assertEqual(detect_sdl_runtime_version(runtime), "3.4.18")
+                self.assertEqual(detect_sdl_runtime_version(runtime), "3.4.20")
         self.assertEqual(get_version.argtypes, [])
         self.assertEqual(get_version.restype, package_macos.ctypes.c_int)
 
     def test_shared_runtime_must_match_host_exact_version(self):
-        validate_sdl_runtime_version("3.4.18", "3.4.18")
-        with self.assertRaisesRegex(RuntimeError, "package expects 3.4.18"):
-            validate_sdl_runtime_version("3.4.19", "3.4.18")
-        with self.assertRaisesRegex(RuntimeError, "macOS Alicorn requires SDL 3.4.18"):
+        validate_sdl_runtime_version("3.4.20", "3.4.20")
+        with self.assertRaisesRegex(RuntimeError, "package expects 3.4.20"):
+            validate_sdl_runtime_version("3.4.19", "3.4.20")
+        with self.assertRaisesRegex(RuntimeError, "macOS Alicorn requires SDL 3.4.20"):
             validate_sdl_runtime_version("3.4.19", "3.4.19")
 
     def test_launch_smoke_requires_expected_runtime_and_gpu_submission(self):
         validate_smoke_output(
-            "sdl3_version 3 4 18\nSDL application PASS submissions 2 retired 2\n",
-            "3.4.18",
+            "sdl3_version 3 4 20\nSDL application PASS submissions 2 retired 2\n",
+            "3.4.20",
         )
-        with self.assertRaisesRegex(RuntimeError, "SDL 3.4.19; expected 3.4.18"):
+        with self.assertRaisesRegex(RuntimeError, "SDL 3.4.19; expected 3.4.20"):
             validate_smoke_output(
                 "sdl3_version 3 4 19\nSDL application PASS submissions 2\n",
-                "3.4.18",
+                "3.4.20",
             )
         with self.assertRaisesRegex(RuntimeError, "GPU frame submission"):
             validate_smoke_output(
-                "sdl3_version 3 4 18\nSDL application PASS submissions 0\n",
-                "3.4.18",
+                "sdl3_version 3 4 20\nSDL application PASS submissions 0\n",
+                "3.4.20",
             )
 
     def test_recognizes_versioned_sdl_dylib_names_only(self):

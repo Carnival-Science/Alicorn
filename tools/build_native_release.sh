@@ -35,7 +35,7 @@ METADATA_PATH="$REPO_ROOT/$METADATA"
 APP_PACKAGE=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["odinPackage"])' "$METADATA_PATH")
 APP_NAME=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["executableName"])' "$METADATA_PATH")
 OUT_ROOT="$REPO_ROOT/out/native-package"
-SDL_ROOT="$OUT_ROOT/sdl-3.4.18"
+SDL_ROOT="$OUT_ROOT/sdl-3.4.20"
 alicorn_build_pinned_macos_sdl "$SDL_LINKAGE" "$SDL_ROOT"
 SOURCE=$ALICORN_MACOS_SDL_SOURCE_DIR
 PREFIX=$ALICORN_MACOS_SDL_PREFIX
