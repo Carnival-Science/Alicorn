@@ -32,6 +32,18 @@ Browser_WebGPU_Run_Result :: enum {
 	Input_Failure,
 }
 
+Browser_WebGPU_Run_Failure :: enum i32 {
+	None = 0,
+	Instance = 1,
+	Canvas_Surface = 2,
+	Adapter_Unavailable = 3,
+	Adapter_Request = 4,
+	Surface_Capabilities = 5,
+	Device_Request = 6,
+	Queue = 7,
+	Presenter = 8,
+}
+
 // Browser_WebGPU_Run owns browser WebGPU bootstrap and the resulting
 // Browser_Application. It is a single-owner-thread object. Keep it alive until
 // browser_webgpu_run_destroy returns true, including while adapter/device
@@ -54,6 +66,7 @@ Browser_WebGPU_Run :: struct {
 	wake: Browser_Application_Wake_Proc,
 	clear_color: wgpu.Color,
 	status: Browser_WebGPU_Run_Status,
+	failure: Browser_WebGPU_Run_Failure,
 	recovery_policy: presentation_host.WebGPU_Recovery_Policy,
 	last_now_ns: u64,
 	adapter_pending: bool,
@@ -98,6 +111,7 @@ browser_webgpu_run_start :: proc(
 	}
 	host.instance = wgpu.CreateInstance(nil)
 	if host.instance == nil {
+		host.failure = .Instance
 		host.status = .Failed
 		return .Resource_Failure
 	}
@@ -112,6 +126,7 @@ browser_webgpu_run_start :: proc(
 	host.surface = wgpu.InstanceCreateSurface(host.instance, &surface_descriptor)
 	if host.surface == nil {
 		browser_webgpu_run_release_handles(host)
+		host.failure = .Canvas_Surface
 		host.status = .Failed
 		return .Resource_Failure
 	}
@@ -185,6 +200,8 @@ browser_webgpu_run_adapter_callback :: proc "c" (
 		if host.recovery_active {
 			browser_webgpu_run_recovery_attempt_failed(host)
 		} else {
+			host.failure = .Adapter_Request
+			if status == .Unavailable { host.failure = .Adapter_Unavailable }
 			host.status = .Failed
 			browser_webgpu_run_wake(host)
 		}
@@ -199,6 +216,7 @@ browser_webgpu_run_adapter_callback :: proc "c" (
 		if host.recovery_active {
 			browser_webgpu_run_recovery_attempt_failed(host)
 		} else {
+			host.failure = .Surface_Capabilities
 			host.status = .Failed
 			browser_webgpu_run_wake(host)
 		}
@@ -272,14 +290,19 @@ browser_webgpu_run_device_callback :: proc "c" (
 		return
 	}
 	if status != .Success || device == nil {
+		if !host.recovery_active { host.failure = .Device_Request }
 		if device != nil {
 			// A failed request that nevertheless returned a device is unusual.
 			// Keep it owned until shutdown so its lost callback context remains
 			// valid instead of retrying around an outstanding callback.
 			host.device = device
-			if host.recovery_active { presentation_host.webgpu_recovery_abort(&host.recovery_policy) }
-			host.status = .Recovery_Failed
-			host.recovery_active = false
+			if host.recovery_active {
+				presentation_host.webgpu_recovery_abort(&host.recovery_policy)
+				host.status = .Recovery_Failed
+				host.recovery_active = false
+			} else {
+				host.status = .Failed
+			}
 			browser_webgpu_run_wake(host)
 			return
 		}
@@ -295,6 +318,7 @@ browser_webgpu_run_device_callback :: proc "c" (
 	host.device = device
 	host.queue = wgpu.DeviceGetQueue(device)
 	if host.queue == nil {
+		if !host.recovery_active { host.failure = .Queue }
 		if host.recovery_active {
 			presentation_host.webgpu_recovery_abort(&host.recovery_policy)
 			host.recovery_active = false
@@ -335,6 +359,7 @@ browser_webgpu_run_device_callback :: proc "c" (
 		)
 	}
 	if app_result != .Ok {
+		if !host.recovery_active { host.failure = .Presenter }
 		if host.recovery_active {
 			presentation_host.webgpu_recovery_abort(&host.recovery_policy)
 			host.recovery_active = false
@@ -397,6 +422,11 @@ browser_webgpu_run_application_wake :: proc(data: rawptr) {
 browser_webgpu_run_status :: proc(host: ^Browser_WebGPU_Run) -> Browser_WebGPU_Run_Status {
 	if host == nil { return .Failed }
 	return host.status
+}
+
+browser_webgpu_run_failure :: proc(host: ^Browser_WebGPU_Run) -> Browser_WebGPU_Run_Failure {
+	if host == nil { return .None }
+	return host.failure
 }
 
 browser_webgpu_run_step :: proc(host: ^Browser_WebGPU_Run, now_ns: u64) -> Browser_Application_Step {

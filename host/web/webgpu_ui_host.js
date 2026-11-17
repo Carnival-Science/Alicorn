@@ -1,6 +1,20 @@
 (function (root) {
 	"use strict";
 
+	function initializationFailureMessage(code) {
+		switch (Number(code)) {
+		case 1: return "WebGPU could not create an instance.";
+		case 2: return "WebGPU could not create a presentation surface for this canvas.";
+		case 3: return "No compatible WebGPU adapter is available. Check browser GPU support, drivers, and permissions.";
+		case 4: return "The browser failed to request a WebGPU adapter. Check browser settings and the console.";
+		case 5: return "The browser does not support presenting WebGPU to this canvas.";
+		case 6: return "The browser could not create a WebGPU device. Check GPU settings and the console.";
+		case 7: return "The WebGPU device did not provide a submission queue.";
+		case 8: return "Alicorn could not initialize its WebGPU renderer for this canvas.";
+		default: return "WebGPU initialization failed. Check browser compatibility and the console.";
+		}
+	}
+
 	async function start(wasmUrl, options = {}) {
 		if (!root.isSecureContext) {
 			throw new Error("WebGPU requires a secure context. Serve this app over HTTPS or localhost.");
@@ -49,9 +63,13 @@
 					return { hasMoreWork, nextWakeNs: 0n, notifyIdle: false };
 				}
 				if (state < 0) {
-					if (status) status.textContent = state === -3
-						? "WebGPU recovery failed. Reload the page to restart."
-						: "WebGPU initialization failed. Check the browser console.";
+					if (status) {
+						status.textContent = state === -3
+							? "WebGPU recovery failed. Reload the page to restart."
+							: initializationFailureMessage(exports.alicorn_browser_failure_code
+								? exports.alicorn_browser_failure_code()
+								: 0);
+					}
 					return { hasMoreWork: false, nextWakeNs: 0n, notifyIdle: false };
 				}
 				if (state === 2) {

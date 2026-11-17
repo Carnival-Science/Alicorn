@@ -81,7 +81,7 @@ run :: proc(
 	browser_ui_run = Browser_UI_Run{
 		run_state=rawptr(run_state),
 	}
-	if result := host.browser_webgpu_run_start(
+	start_result := host.browser_webgpu_run_start(
 		&browser_ui_run.runner,
 		hosted,
 		"alicorn-canvas",
@@ -90,7 +90,11 @@ run :: proc(
 		browser_ui_run_wake,
 		"alicorn-text-input",
 		"alicorn-accessibility",
-	); result != .Ok {
+	)
+	if start_result != .Ok {
+		// Instance/surface creation failures are reported through the same
+		// browser status channel as asynchronous adapter/device failures.
+		if start_result == .Resource_Failure { return }
 		panic("ui.run could not start the browser WebGPU host")
 	}
 }
@@ -153,6 +157,11 @@ alicorn_browser_status :: proc() -> i32 {
 		return 0
 	}
 	return 0
+}
+
+@(export)
+alicorn_browser_failure_code :: proc() -> i32 {
+	return i32(host.browser_webgpu_run_failure(&browser_ui_run.runner))
 }
 
 @(export)

@@ -10,6 +10,7 @@ async function makeHost() {
 	let shutdownCalls = 0;
 	let shutdownCompletes = true;
 	let browserStatus = 1;
+	let failureCode = 0;
 	let nextWakeNs = 0n;
 	let frameCalls = 0;
 	let scheduler;
@@ -19,6 +20,7 @@ async function makeHost() {
 		default_context_ptr: () => 7,
 		_start: () => {},
 		alicorn_browser_status: () => browserStatus,
+		alicorn_browser_failure_code: () => failureCode,
 		alicorn_browser_frame: () => {
 			frameCalls++;
 			if (browserStatus === 3) {
@@ -82,6 +84,7 @@ async function makeHost() {
 		setDocumentHidden: value => { root.document.hidden = value; },
 		setShutdownCompletes: value => { shutdownCompletes = value; },
 		setBrowserStatus: value => { browserStatus = value; },
+		setFailureCode: value => { failureCode = value; },
 		setNextWakeNs: value => { nextWakeNs = BigInt(value); },
 		shutdownCalls: () => shutdownCalls,
 		frameCalls: () => frameCalls,
@@ -138,6 +141,25 @@ async function testRecoveryUsesBoundedLifecycleFramesAndReportsOutcome() {
 	assert.equal(host.statusText().includes("Reload the page"), true, "failed recovery asks for a reload");
 }
 
+async function testAdapterFailureShowsActionableStatus() {
+	const host = await makeHost();
+	host.setBrowserStatus(-1);
+	for (const [code, expected] of [
+		[1, /could not create an instance/],
+		[2, /presentation surface for this canvas/],
+		[3, /No compatible WebGPU adapter.*drivers.*permissions/],
+		[4, /failed to request a WebGPU adapter/],
+		[5, /does not support presenting WebGPU/],
+		[6, /could not create a WebGPU device/],
+		[7, /did not provide a submission queue/],
+		[8, /could not initialize its WebGPU renderer/],
+	]) {
+		host.setFailureCode(code);
+		host.runFrame(1_000_000n + BigInt(code));
+		assert.match(host.statusText(), expected, `failure code ${code} should have specific guidance`);
+	}
+}
+
 async function testBackForwardCacheSuspendsAndResumesExistingHost() {
 	const host = await makeHost();
 	host.listeners.get("pagehide")({ persisted: true });
@@ -176,6 +198,7 @@ async function testPendingShutdownRetriesAfterGpuCompletionWake() {
 (async () => {
 	for (const test of [
 		testWebGPUStartupExplainsUnavailableCapabilitiesBeforeLoadingWasm,
+		testAdapterFailureShowsActionableStatus,
 		testRecoveryUsesBoundedLifecycleFramesAndReportsOutcome,
 		testBackForwardCacheSuspendsAndResumesExistingHost,
 		testOrdinaryPagehideRequestsShutdown,

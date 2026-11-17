@@ -2314,8 +2314,23 @@ Browser startup now reports an insecure-context requirement separately from
 missing WebGPU support, and rejects before downloading the WASM module. This
 makes the secure-context restriction actionable for users who opened the app
 from an unsupported origin, while retaining the explicit unsupported-browser
-message.
+message. Once WASM starts, the Odin host reports distinct failure codes for
+instance creation, adapter unavailable/request failure, canvas
+surface/capability failure, device request, queue creation, and Alicorn
+presenter initialization. Synchronous instance/surface allocation failures
+use this status path instead of trapping the WASM runtime. The page maps the
+codes to actionable status text. An adapter-unavailable message points users
+to browser GPU support, drivers, and permissions; it does not claim the browser
+has hardware acceleration.
 
-Validation with Node on Windows: `node tools/test_webgpu_ui_host.js` passed all
-five startup/lifecycle cases, including both capability failures;
-`node --check host/web/webgpu_ui_host.js` and `git diff --check` passed.
+Validation with Odin `dev-2026-11-nightly:08539cd` and Node on Windows:
+
+- `node tools/test_webgpu_ui_host.js` passed all six startup/lifecycle tests,
+  covering insecure context, missing WebGPU, and all eight initialization
+  failure messages.
+- `node --check host/web/webgpu_ui_host.js` passed.
+- `odin check host/web -target:js_wasm32 -collection:alicorn=. -no-entry-point`
+  and the matching `odin check ui` passed.
+- `examples/17_browser_webgpu_ui/build.ps1 -Odin C:\odin\odin.exe` rebuilt
+  the browser `ui.run` consumer and patched the generated WebGPU bindings.
+- `git diff --check` passed.
