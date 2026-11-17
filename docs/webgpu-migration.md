@@ -2582,3 +2582,33 @@ validation. Windows accessibility actions through assistive technology, macOS
 build and VoiceOver validation, and the rest of the native physical-input
 acceptance matrix remain open. The Windows shared-library workaround is not yet
 validated on macOS or other architectures.
+
+### Exact-head Windows and browser recheck (`ef6c05b`, 2026-11-17)
+
+On Windows x64 with Odin `dev-2026-11-nightly:08539cd`, the following exact-head
+checks passed:
+
+- `tools/check.ps1 -Odin C:\odin\odin.exe` completed successfully. It still
+  reports the existing large-stack-local warning for SDL_GPU secondary-window
+  test values.
+- `examples/17_browser_webgpu_ui/build.ps1 -Odin C:\odin\odin.exe` built the
+  `js_wasm32` `ui.run` consumer; `node tools/test_webgpu_ui_host.js` passed all
+  9 browser-host lifecycle and clipboard tests.
+- `examples/15_webgpu_feasibility/build.ps1 -Odin C:\odin\odin.exe` rebuilt
+  the native fixtures and browser renderer fixture. The D3D12 and Vulkan
+  readback/cache-pressure smokes passed on the NVIDIA GeForce RTX 2080 SUPER.
+- The D3D12 resize-during/after-motion smoke passed. Compositor destruction and
+  reconstruction produced pixel-identical output from retained CPU products.
+- The D3D12 two-surface Hosted_Runtime smoke passed independent input/focus,
+  synthetic text/IME, resize, presentation, and queue-drained teardown checks.
+
+At the time of this recheck, the `ef6c05b` Windows foundation and Linux WebGPU
+CI jobs had passed; the macOS foundation and macOS packaging jobs were still
+queued ([foundation](https://github.com/samanshaiza004/alicorn/actions/runs/44127379589),
+[packaging](https://github.com/samanshaiza004/alicorn/actions/runs/44127379537)).
+This is exact-source automated and physical Windows GPU evidence; it does not
+trigger genuine driver/OS device loss, establish physical Linux/Wayland or
+macOS behavior, compare production Scratchpad/Punks workloads, or measure
+input-to-photon latency. Those acceptance items remain open. The feasibility
+build also exposed a missing ignore entry for its generated accessibility DOM
+copy; `examples/15_webgpu_feasibility/.gitignore` now covers that build output.
