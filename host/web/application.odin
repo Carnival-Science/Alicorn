@@ -297,7 +297,10 @@ browser_application_step :: proc(application: ^Browser_Application, now_ns: u64)
 		}
 	}
 	browser_input_update_text_input_area(&application.input)
-	if application.accessibility.initialized { _ = browser_accessibility_sync(&application.accessibility) }
+	if application.accessibility.initialized {
+		application.accessibility.show_focus = application.input.keyboard_modality
+		_ = browser_accessibility_sync(&application.accessibility)
+	}
 	return Browser_Application_Step{
 		status=.Ok,
 		presentation=presentation,

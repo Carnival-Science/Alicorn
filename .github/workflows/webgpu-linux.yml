@@ -25,6 +25,9 @@ jobs:
       - name: Verify browser WebGPU host lifecycle
         run: node tools/test_webgpu_ui_host.js
 
+      - name: Verify browser accessibility focus projection
+        run: node tools/test_accessibility_dom.js
+
       - name: Verify Odin WebGPU promise callback bridge patch
         run: node tools/test_odin_wgpu_js_patch.js
 

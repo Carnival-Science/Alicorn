@@ -2003,8 +2003,10 @@ text-selection events route through the existing Hosted_Runtime semantic
 action APIs. DOM UTF-16 selection offsets convert to Alicorn selectable text-run
 units; offsets inside astral Unicode scalars snap to a grapheme boundary. The
 root is visually hidden and the canvas is marked `aria-hidden` while this
-projection is enabled, so visible focus mirroring remains an open usability
-item.
+projection is enabled. Keyboard modality now drives a separate system-color
+focus outline positioned from the focused semantic node's bounds; it remains
+hidden during pointer modality. The marker is excluded from the accessibility
+tree and recomputes its CSS geometry when the canvas or page moves/resizes.
 
 The projection bounds snapshots to 4,096 candidate nodes, output to 2,048 DOM
 controls, semantic text to 1 MiB, and serialized JSON to 8 MiB. Oversized or
@@ -2028,9 +2030,36 @@ Validation with `C:\odin\odin.exe` on Windows:
   was served, and does not validate the new accessibility DOM at runtime.
 
 This is an opt-in accessibility host foundation, not browser acceptance.
-Live screen-reader behavior, keyboard-only focus/action routing, visual focus
-feedback, text editing/selection in a real browser, physical IME, and
-virtualized collection navigation still need browser validation.
+Live screen-reader behavior, keyboard-only focus/action routing, text
+editing/selection in a real browser, physical IME, and virtualized collection
+navigation still need browser validation.
+
+### Browser keyboard focus mirror (Windows `js_wasm32`, headless DOM regression, 2026-11-16)
+
+The browser accessibility payload now carries focused-control bounds and the
+Runtime viewport size. `Browser_Application` forwards the input adapter's
+keyboard-modality state, so pointer use hides the visual ring and keyboard
+navigation shows it without requiring another Runtime semantic revision. A
+single `aria-hidden`, pointer-transparent overlay uses system `Highlight` and
+`Canvas` colors, clips to the canvas, scales logical bounds to its CSS rectangle,
+and follows canvas resize or document scroll. Destroy removes the overlay and
+its listeners and restores the canvas ARIA attributes.
+
+Validation with `C:\odin\odin.exe` on Windows:
+
+- `odin test host/web -collection:alicorn=.` passed all 15 tests; the existing
+  payload test now asserts bounds, viewport, and focus-modality serialization.
+- `odin check host/web -target:js_wasm32 -collection:alicorn=. -no-entry-point`
+  passed.
+- `node tools/test_accessibility_dom.js` passed geometry scaling, same-revision
+  modality and viewport changes, resize repositioning, missing-bounds behavior,
+  and teardown.
+- `node --check host/web/accessibility_dom.js` passed. The Linux WebGPU workflow
+  now runs the DOM focus regression as well.
+
+This is deterministic DOM-geometry evidence, not a live browser screenshot or
+assistive-technology result. Focus appearance under browser zoom, high-contrast
+settings, and real screen readers remains to be checked.
 
 ### Opt-in native WebGPU `ui.run` consumer (Windows, 2026-11-16)
 

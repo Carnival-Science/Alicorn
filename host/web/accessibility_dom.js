@@ -131,6 +131,49 @@
     }
   };
 
+  const repositionFocusMarker = tree => {
+    const marker = tree.focusMarker;
+    const node = tree.focusNode;
+    const viewportWidth = Number(tree.viewportWidth);
+    const viewportHeight = Number(tree.viewportHeight);
+    if (!tree.showFocus || !node || !node.hasBounds ||
+        !Number.isFinite(viewportWidth) || !Number.isFinite(viewportHeight) ||
+        viewportWidth <= 0 || viewportHeight <= 0) {
+      marker.style.display = "none";
+      return;
+    }
+    const x = Number(node.boundsX);
+    const y = Number(node.boundsY);
+    const width = Number(node.boundsWidth);
+    const height = Number(node.boundsHeight);
+    if (![x, y, width, height].every(Number.isFinite) || width <= 0 || height <= 0) {
+      marker.style.display = "none";
+      return;
+    }
+    const canvasRect = tree.canvas.getBoundingClientRect();
+    if (canvasRect.width <= 0 || canvasRect.height <= 0) {
+      marker.style.display = "none";
+      return;
+    }
+    const scaleX = canvasRect.width / viewportWidth;
+    const scaleY = canvasRect.height / viewportHeight;
+    const left = Math.max(canvasRect.left, canvasRect.left + x * scaleX);
+    const top = Math.max(canvasRect.top, canvasRect.top + y * scaleY);
+    const right = Math.min(canvasRect.right, canvasRect.left + (x + width) * scaleX);
+    const bottom = Math.min(canvasRect.bottom, canvasRect.top + (y + height) * scaleY);
+    if (right <= left || bottom <= top) {
+      marker.style.display = "none";
+      return;
+    }
+    Object.assign(marker.style, {
+      display: "block",
+      left: `${left}px`,
+      top: `${top}px`,
+      width: `${right - left}px`,
+      height: `${bottom - top}px`,
+    });
+  };
+
   window.alicornAccessibilityInit = (rootId, canvasId, textInputId = "") => {
     const root = document.getElementById(rootId);
     const canvas = document.getElementById(canvasId);
@@ -149,13 +192,50 @@
       const textInput = document.getElementById(textInputId);
       if (textInput) setAttribute(textInput, "aria-hidden", "true");
     }
-    trees.set(rootId, { root, canvas, nodes: new Map(), revision: 0 });
+    const focusMarker = document.createElement("div");
+    setAttribute(focusMarker, "aria-hidden", "true");
+    Object.assign(focusMarker.style, {
+      position: "fixed", display: "none", boxSizing: "border-box", pointerEvents: "none",
+      border: "2px solid Highlight", outline: "1px solid Canvas", outlineOffset: "1px",
+      borderRadius: "2px", zIndex: "2147483647",
+    });
+    document.body.appendChild(focusMarker);
+    const tree = {
+      root, canvas, nodes: new Map(), revision: 0, hasRevision: false,
+      focusMarker, focusNode: null, focusId: "", showFocus: false,
+      viewportWidth: 0, viewportHeight: 0,
+      repositionFocus: null, resizeObserver: null,
+    };
+    tree.repositionFocus = () => repositionFocusMarker(tree);
+    window.addEventListener("resize", tree.repositionFocus);
+    window.addEventListener("scroll", tree.repositionFocus, true);
+    if (typeof window.ResizeObserver === "function") {
+      tree.resizeObserver = new window.ResizeObserver(tree.repositionFocus);
+      tree.resizeObserver.observe(canvas);
+    }
+    trees.set(rootId, tree);
   };
 
   window.alicornAccessibilityApply = payload => {
     const tree = trees.get(payload.root);
     if (!tree) throw new Error("Alicorn accessibility tree was not initialized");
-    if (payload.revision === tree.revision) return;
+    const focusId = payload.focus || "";
+    const focusNode = payload.nodes.find(node => node.id === focusId) || null;
+    const showFocus = !!payload.showFocus;
+    const viewportWidth = Number(payload.viewportWidth) || 0;
+    const viewportHeight = Number(payload.viewportHeight) || 0;
+    if (tree.hasRevision && payload.revision === tree.revision &&
+        focusId === tree.focusId && showFocus === tree.showFocus &&
+        viewportWidth === tree.viewportWidth && viewportHeight === tree.viewportHeight) return;
+    if (tree.hasRevision && payload.revision === tree.revision) {
+      tree.focusId = focusId;
+      tree.focusNode = focusNode;
+      tree.showFocus = showFocus;
+      tree.viewportWidth = viewportWidth;
+      tree.viewportHeight = viewportHeight;
+      repositionFocusMarker(tree);
+      return;
+    }
     const previousFocus = document.activeElement;
     const restoreFocus = tree.root.contains(previousFocus);
     const desiredIds = new Set(payload.nodes.map(node => node.id));
@@ -192,6 +272,13 @@
       focused.focus({ preventScroll: true });
     }
     tree.revision = payload.revision;
+    tree.hasRevision = true;
+    tree.focusId = focusId;
+    tree.focusNode = focusNode;
+    tree.showFocus = showFocus;
+    tree.viewportWidth = viewportWidth;
+    tree.viewportHeight = viewportHeight;
+    repositionFocusMarker(tree);
   };
 
   window.alicornAccessibilityDestroy = rootId => {
@@ -199,6 +286,10 @@
     if (!tree) return;
     for (const element of tree.nodes.values()) element.remove();
     tree.nodes.clear();
+    if (tree.resizeObserver) tree.resizeObserver.disconnect();
+    window.removeEventListener("resize", tree.repositionFocus);
+    window.removeEventListener("scroll", tree.repositionFocus, true);
+    tree.focusMarker.remove();
     setAttribute(tree.canvas, "aria-hidden", null);
     setAttribute(tree.canvas, "tabindex", "0");
     tree.root.removeAttribute("role");

@@ -28,6 +28,8 @@ test_browser_accessibility_payload_preserves_semantics_and_stable_ids :: proc(t:
 		description="Run the current query",
 		states=button_states,
 		actions=button_actions,
+		bounds=alicorn.Rect{x=25, y=15, w=50, h=20},
+		has_bounds=true,
 		tree_order=1,
 	})
 	field_actions := alicorn.semantic_actions_add({}, .Focus)
@@ -51,7 +53,13 @@ test_browser_accessibility_payload_preserves_semantics_and_stable_ids :: proc(t:
 		tree_order=3,
 	})
 
-	payload, status := browser_accessibility_payload_build(snapshot, "a11y-root")
+	payload, status := browser_accessibility_payload_build(
+		snapshot,
+		"a11y-root",
+		show_focus=true,
+		viewport_width=400,
+		viewport_height=300,
+	)
 	defer delete(payload.nodes)
 	if !testing.expect(t, status == .Success && payload.revision == 19 && len(payload.nodes) == 2,
 	                   "the browser projection is bounded to exposed semantic controls") { return }
@@ -60,10 +68,13 @@ test_browser_accessibility_payload_preserves_semantics_and_stable_ids :: proc(t:
 	testing.expect(t,
 		button_view.id == browser_accessibility_semantic_dom_id("a11y-root", button_id) &&
 		button_view.role == "button" && button_view.disabled && button_view.can_press &&
+		button_view.has_bounds && button_view.bounds_x == 25 && button_view.bounds_y == 15 &&
+		button_view.bounds_width == 50 && button_view.bounds_height == 20 &&
 		field_view.role == "textbox" && !field_view.multiline && field_view.can_set_text_selection,
 		"role, disabled state, edit actions, and stable namespaced IDs should survive projection")
-	testing.expect(t, payload.focus == field_view.id,
-		"semantic keyboard focus should map to the stable DOM identity")
+	testing.expect(t, payload.focus == field_view.id && payload.show_focus &&
+		payload.viewport_width == 400 && payload.viewport_height == 300,
+		"keyboard focus, modality, and viewport geometry should map to the DOM projection")
 	encoded, json_status := browser_accessibility_payload_json(payload)
 	defer delete(encoded)
 	json_text := string(encoded)

@@ -36,6 +36,12 @@ Browser_Accessibility :: struct {
 	revision: u64,
 	initialized: bool,
 	has_revision: bool,
+	show_focus: bool,
+	synced_show_focus: bool,
+	has_synced_show_focus: bool,
+	synced_viewport_width: f64,
+	synced_viewport_height: f64,
+	has_synced_viewport: bool,
 }
 
 browser_accessibility_init :: proc(
@@ -88,7 +94,15 @@ browser_accessibility_sync :: proc(accessibility: ^Browser_Accessibility) -> boo
 	rt, borrow_status := alicorn.hosted_runtime_borrow(accessibility.host)
 	if borrow_status != .Ok || rt == nil { return false }
 	revision := alicorn.semantic_revision(rt)
-	if accessibility.has_revision && revision == accessibility.revision { return true }
+	viewport_width := f64(rt.viewport.w)
+	viewport_height := f64(rt.viewport.h)
+	show_focus_changed := !accessibility.has_synced_show_focus ||
+		accessibility.show_focus != accessibility.synced_show_focus
+	viewport_changed := !accessibility.has_synced_viewport ||
+		viewport_width != accessibility.synced_viewport_width ||
+		viewport_height != accessibility.synced_viewport_height
+	if accessibility.has_revision && revision == accessibility.revision &&
+		!show_focus_changed && !viewport_changed { return true }
 
 	snapshot, truncated := alicorn.semantic_snapshot_bounded(
 		rt,
@@ -97,22 +111,36 @@ browser_accessibility_sync :: proc(accessibility: ^Browser_Accessibility) -> boo
 		context.temp_allocator,
 	)
 	defer alicorn.semantic_snapshot_destroy(&snapshot)
-	if truncated { return browser_accessibility_sync_unavailable(accessibility, revision) }
+	if truncated {
+		return browser_accessibility_sync_unavailable(accessibility, revision, viewport_width, viewport_height)
+	}
 	payload, projection_status := browser_accessibility_payload_build(
 		snapshot,
 		accessibility.root_id,
-		context.temp_allocator,
+		show_focus=accessibility.show_focus,
+		viewport_width=viewport_width,
+		viewport_height=viewport_height,
+		allocator=context.temp_allocator,
 	)
-	if projection_status != .Success { return browser_accessibility_sync_unavailable(accessibility, revision) }
+	if projection_status != .Success {
+		return browser_accessibility_sync_unavailable(accessibility, revision, viewport_width, viewport_height)
+	}
 	defer delete(payload.nodes)
 	data, json_status := browser_accessibility_payload_json(payload, context.temp_allocator)
-	if json_status != .Success { return browser_accessibility_sync_unavailable(accessibility, revision) }
+	if json_status != .Success {
+		return browser_accessibility_sync_unavailable(accessibility, revision, viewport_width, viewport_height)
+	}
 	defer delete(data)
 	json_text := string(data)
 	js.evaluate(fmt.tprintf("window.alicornAccessibilityApply(%s)", json_text))
 	if !browser_accessibility_bindings_sync(accessibility, snapshot) { return false }
 	accessibility.revision = revision
 	accessibility.has_revision = true
+	accessibility.synced_show_focus = accessibility.show_focus
+	accessibility.has_synced_show_focus = true
+	accessibility.synced_viewport_width = viewport_width
+	accessibility.synced_viewport_height = viewport_height
+	accessibility.has_synced_viewport = true
 	return true
 }
 
@@ -122,6 +150,8 @@ browser_accessibility_sync :: proc(accessibility: ^Browser_Accessibility) -> boo
 browser_accessibility_sync_unavailable :: proc(
 	accessibility: ^Browser_Accessibility,
 	revision: u64,
+	viewport_width: f64,
+	viewport_height: f64,
 ) -> bool {
 	if accessibility == nil || !accessibility.initialized { return false }
 	payload := Browser_Accessibility_Payload{
@@ -137,6 +167,7 @@ browser_accessibility_sync_unavailable :: proc(
 		live="polite",
 		order=0,
 	})
+	payload.show_focus = false
 	data, status := browser_accessibility_payload_json(payload, context.temp_allocator)
 	if status != .Success { return false }
 	defer delete(data)
@@ -144,6 +175,11 @@ browser_accessibility_sync_unavailable :: proc(
 	_ = browser_accessibility_bindings_sync(accessibility, alicorn.Semantic_Snapshot{})
 	accessibility.revision = revision
 	accessibility.has_revision = true
+	accessibility.synced_show_focus = false
+	accessibility.has_synced_show_focus = true
+	accessibility.synced_viewport_width = viewport_width
+	accessibility.synced_viewport_height = viewport_height
+	accessibility.has_synced_viewport = true
 	return true
 }
 

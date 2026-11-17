@@ -595,6 +595,7 @@ browser_input_element_blur :: proc(event: js.Event) {
 
 browser_input_window_blur :: proc(event: js.Event) {
 	input := cast(^Browser_Input)event.user_data
+	if input != nil { input.keyboard_modality = false }
 	browser_input_focus_lost(input)
 }
 

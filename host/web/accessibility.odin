@@ -25,6 +25,11 @@ Browser_Accessibility_Node_View :: struct {
 	busy: bool "json:\"busy\"",
 	modified: bool "json:\"modified\"",
 	current: bool "json:\"current\"",
+	has_bounds: bool "json:\"hasBounds\"",
+	bounds_x: f64 "json:\"boundsX\"",
+	bounds_y: f64 "json:\"boundsY\"",
+	bounds_width: f64 "json:\"boundsWidth\"",
+	bounds_height: f64 "json:\"boundsHeight\"",
 	can_press: bool "json:\"canPress\"",
 	can_focus: bool "json:\"canFocus\"",
 	can_set_value: bool "json:\"canSetValue\"",
@@ -58,6 +63,9 @@ Browser_Accessibility_Payload :: struct {
 	root: string "json:\"root\"",
 	revision: u64 "json:\"revision\"",
 	focus: string "json:\"focus\"",
+	show_focus: bool "json:\"showFocus\"",
+	viewport_width: f64 "json:\"viewportWidth\"",
+	viewport_height: f64 "json:\"viewportHeight\"",
 	nodes: [dynamic]Browser_Accessibility_Node_View "json:\"nodes\"",
 }
 
@@ -121,12 +129,18 @@ browser_accessibility_role_name :: proc(role: alicorn.Semantic_Role) -> string {
 browser_accessibility_payload_build :: proc(
 	snapshot: alicorn.Semantic_Snapshot,
 	root_id: string,
+	show_focus: bool = false,
+	viewport_width: f64 = 0,
+	viewport_height: f64 = 0,
 	allocator := context.allocator,
 ) -> (payload: Browser_Accessibility_Payload, status: Browser_Accessibility_Projection_Status) {
 	if !browser_accessibility_dom_id_is_safe(root_id) { return {}, .Invalid_Root_ID }
 	payload = Browser_Accessibility_Payload{
 		root=root_id,
 		revision=snapshot.revision,
+		show_focus=show_focus,
+		viewport_width=max(viewport_width, 0),
+		viewport_height=max(viewport_height, 0),
 		nodes=make([dynamic]Browser_Accessibility_Node_View, 0, min(len(snapshot.nodes), BROWSER_ACCESSIBILITY_MAX_NODES), allocator=allocator),
 	}
 	text_bytes := 0
@@ -164,6 +178,11 @@ browser_accessibility_payload_build :: proc(
 			busy=alicorn.semantic_states_has(node.states, .Busy),
 			modified=alicorn.semantic_states_has(node.states, .Modified),
 			current=alicorn.semantic_states_has(node.states, .Current),
+			has_bounds=node.has_bounds,
+			bounds_x=f64(node.bounds.x),
+			bounds_y=f64(node.bounds.y),
+			bounds_width=f64(node.bounds.w),
+			bounds_height=f64(node.bounds.h),
 			can_press=alicorn.semantic_actions_has(node.actions, .Press),
 			can_focus=alicorn.semantic_actions_has(node.actions, .Focus),
 			can_set_value=alicorn.semantic_actions_has(node.actions, .Set_Value),
