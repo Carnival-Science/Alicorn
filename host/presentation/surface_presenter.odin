@@ -2,9 +2,74 @@ package presentation_host
 
 import "core:mem"
 import "base:runtime"
+import "core:time"
 import alicorn "alicorn:runtime"
 import "vendor:wgpu"
 import webgpu_renderer "alicorn:renderer/webgpu"
+
+HOSTED_SURFACE_TIMING_SAMPLE_CAPACITY :: 256
+
+// Timings cover CPU wall time in the host/presenter path. They do not measure
+// GPU execution, display scanout, or photon-visible latency.
+Hosted_Surface_Timing_Sample :: struct {
+	display_revision: u64,
+	submission_serial: u64,
+	runtime_step_ns: u64,
+	surface_acquire_ns: u64,
+	renderer_encode_ns: u64,
+	queue_submit_ns: u64,
+	surface_present_ns: u64,
+	step_to_present_ns: u64,
+	input_to_submit_ns: u64,
+}
+
+@(private)
+hosted_surface_timing_buffer :: struct {
+	samples: [HOSTED_SURFACE_TIMING_SAMPLE_CAPACITY]Hosted_Surface_Timing_Sample,
+	first: int,
+	count: int,
+	overwritten: u64,
+	pending_input_since: time.Tick,
+	pending_input_revision: u64,
+	pending_input: bool,
+}
+
+@(private)
+hosted_surface_timing_elapsed_ns :: proc(start: time.Tick) -> u64 {
+	ns := time.duration_nanoseconds(time.tick_diff(start, time.tick_now()))
+	if ns <= 0 { return 0 }
+	return u64(ns)
+}
+
+@(private)
+hosted_surface_timing_record :: proc(buffer: ^hosted_surface_timing_buffer, sample: Hosted_Surface_Timing_Sample) {
+	if buffer == nil { return }
+	if buffer.count < HOSTED_SURFACE_TIMING_SAMPLE_CAPACITY {
+		index := (buffer.first + buffer.count) % HOSTED_SURFACE_TIMING_SAMPLE_CAPACITY
+		buffer.samples[index] = sample
+		buffer.count += 1
+		return
+	}
+	buffer.samples[buffer.first] = sample
+	buffer.first = (buffer.first + 1) % HOSTED_SURFACE_TIMING_SAMPLE_CAPACITY
+	buffer.overwritten += 1
+}
+
+@(private)
+hosted_surface_timing_take :: proc(
+	buffer: ^hosted_surface_timing_buffer,
+	output: []Hosted_Surface_Timing_Sample,
+) -> int {
+	if buffer == nil || len(output) == 0 { return 0 }
+	taken := min(buffer.count, len(output))
+	for i in 0..<taken {
+		index := (buffer.first + i) % HOSTED_SURFACE_TIMING_SAMPLE_CAPACITY
+		output[i] = buffer.samples[index]
+	}
+	buffer.first = (buffer.first + taken) % HOSTED_SURFACE_TIMING_SAMPLE_CAPACITY
+	buffer.count -= taken
+	return taken
+}
 
 Hosted_Surface_Result :: enum {
 	Ok,
@@ -52,6 +117,8 @@ hosted_surface_presenter_state :: struct {
 	completion_failed: bool,
 	presentation_failed: bool,
 	device_lost: bool,
+	timing_enabled: bool,
+	timing: ^hosted_surface_timing_buffer,
 }
 
 @(private)
@@ -208,11 +275,88 @@ hosted_surface_presenter_step :: proc(
 ) -> (step: alicorn.Hosted_Step_Result, presentation: Hosted_Surface_Result) {
 	state := hosted_surface_state(presenter)
 	if state == nil { return alicorn.Hosted_Step_Result{status=.Closed}, .Invalid_Input }
+	timing_start: time.Tick
+	if state.timing_enabled { timing_start = time.tick_now() }
 	step = alicorn.hosted_runtime_step(state.hosted, now_ns)
 	if step.status != .Ok { return step, .Invalid_Input }
-	if !step.render_required { return step, .No_Frame }
-	presentation = hosted_surface_present_pending(presenter)
+	if !step.render_required {
+		// An input event that produced no requested presentation has no visible
+		// response to time. Do not carry its marker into an unrelated later frame.
+		if state.timing != nil { state.timing.pending_input = false }
+		return step, .No_Frame
+	}
+	if state.timing != nil && state.timing.pending_input &&
+	   state.timing.pending_input_revision == state.runtime.presentation_revision {
+		// The Runtime did submit work, but the input did not change the retained
+		// presentation. Keep unrelated animation or maintenance frames out of the
+		// input-to-submit distribution.
+		state.timing.pending_input = false
+	}
+	timing_sample: Hosted_Surface_Timing_Sample
+	if state.timing_enabled {
+		timing_sample.runtime_step_ns = hosted_surface_timing_elapsed_ns(timing_start)
+	}
+	presentation = hosted_surface_present_pending(presenter, &timing_sample)
+	if state.timing_enabled && timing_sample.submission_serial != 0 {
+		timing_sample.step_to_present_ns = hosted_surface_timing_elapsed_ns(timing_start)
+		hosted_surface_timing_record(state.timing, timing_sample)
+	}
 	return
+}
+
+// Enable bounded CPU timing samples for this presenter. Timing is disabled by
+// default; changing the setting clears prior samples and pending input markers.
+hosted_surface_presenter_set_timing_enabled :: proc(
+	presenter: ^Hosted_Surface_Presenter,
+	enabled: bool,
+) -> bool {
+	state := hosted_surface_state(presenter)
+	if state == nil { return false }
+	if state.timing_enabled == enabled { return true }
+	if !enabled {
+		if state.timing != nil { free(state.timing, allocator=state.allocator) }
+		state.timing = nil
+		state.timing_enabled = false
+		return true
+	}
+	state.timing = new(hosted_surface_timing_buffer, allocator=state.allocator)
+	if state.timing == nil { return false }
+	state.timing_enabled = true
+	return true
+}
+
+// Mark the start of an input-to-submit sample. Multiple inputs before the next
+// successful frame retain the earliest timestamp, matching event-to-frame
+// latency semantics.
+hosted_surface_presenter_note_input :: proc(presenter: ^Hosted_Surface_Presenter) {
+	state := hosted_surface_state(presenter)
+	if state == nil || !state.timing_enabled || state.timing == nil || state.timing.pending_input { return }
+	state.timing.pending_input_since = time.tick_now()
+	state.timing.pending_input_revision = state.runtime.presentation_revision
+	state.timing.pending_input = true
+}
+
+// Drain oldest-first timing samples into caller-owned storage.
+hosted_surface_presenter_take_timing_samples :: proc(
+	presenter: ^Hosted_Surface_Presenter,
+	output: []Hosted_Surface_Timing_Sample,
+) -> int {
+	state := hosted_surface_state(presenter)
+	if state == nil || !state.timing_enabled || state.timing == nil { return 0 }
+	return hosted_surface_timing_take(state.timing, output)
+}
+
+hosted_surface_presenter_timing_overwritten :: proc(presenter: ^Hosted_Surface_Presenter) -> u64 {
+	state := hosted_surface_state(presenter)
+	if state == nil || !state.timing_enabled || state.timing == nil { return 0 }
+	return state.timing.overwritten
+}
+
+@(private)
+hosted_surface_timing_buffer_destroy :: proc(state: ^hosted_surface_presenter_state) {
+	if state == nil || state.timing == nil { return }
+	free(state.timing, allocator=state.allocator)
+	state.timing = nil
 }
 
 // hosted_surface_presenter_has_in_flight reports whether the host must keep
@@ -223,7 +367,10 @@ hosted_surface_presenter_has_in_flight :: proc(presenter: ^Hosted_Surface_Presen
 }
 
 @(private)
-hosted_surface_present_pending :: proc(presenter: ^Hosted_Surface_Presenter) -> Hosted_Surface_Result {
+hosted_surface_present_pending :: proc(
+	presenter: ^Hosted_Surface_Presenter,
+	timing_sample: ^Hosted_Surface_Timing_Sample,
+) -> Hosted_Surface_Result {
 	state := hosted_surface_state(presenter)
 	if state == nil { return .Invalid_Input }
 	if state.presentation_failed { return .Present_Failure }
@@ -233,7 +380,12 @@ hosted_surface_present_pending :: proc(presenter: ^Hosted_Surface_Presenter) -> 
 	display, display_ready := alicorn.paint_display_list(state.runtime)
 	if !display_ready || display.revision == 0 { return .No_Frame }
 
+	acquire_start: time.Tick
+	if state.timing_enabled { acquire_start = time.tick_now() }
 	surface_texture := wgpu.SurfaceGetCurrentTexture(state.surface)
+	if state.timing_enabled {
+		timing_sample.surface_acquire_ns = hosted_surface_timing_elapsed_ns(acquire_start)
+	}
 	switch surface_texture.status {
 	case .SuccessOptimal, .SuccessSuboptimal:
 	case .Timeout:
@@ -256,6 +408,8 @@ hosted_surface_present_pending :: proc(presenter: ^Hosted_Surface_Presenter) -> 
 	view := wgpu.TextureCreateView(surface_texture.texture)
 	if view == nil { return .Resource_Failure }
 	defer wgpu.TextureViewRelease(view)
+	encode_start: time.Tick
+	if state.timing_enabled { encode_start = time.tick_now() }
 	encoder := wgpu.DeviceCreateCommandEncoder(state.device)
 	if encoder == nil { return .Resource_Failure }
 	defer wgpu.CommandEncoderRelease(encoder)
@@ -267,6 +421,9 @@ hosted_surface_present_pending :: proc(presenter: ^Hosted_Surface_Presenter) -> 
 		return .Render_Failure
 	}
 	command := wgpu.CommandEncoderFinish(encoder)
+	if state.timing_enabled {
+		timing_sample.renderer_encode_ns = hosted_surface_timing_elapsed_ns(encode_start)
+	}
 	if command == nil {
 		_ = webgpu_renderer.WebGPU_Presenter_Cancel_Frame(&state.renderer)
 		return .Resource_Failure
@@ -279,12 +436,24 @@ hosted_surface_present_pending :: proc(presenter: ^Hosted_Surface_Presenter) -> 
 	}
 	completion.allocator = state.allocator
 	completion.state = state
+	submit_start: time.Tick
+	if state.timing_enabled { submit_start = time.tick_now() }
 	wgpu.QueueSubmit(state.queue, {command})
 	submission, submitted := webgpu_renderer.WebGPU_Presenter_Submission_Succeeded(&state.renderer)
 	if !submitted {
 		free(completion, allocator=completion.allocator)
 		state.completion_failed = true
 		return .Resource_Failure
+	}
+	if state.timing_enabled {
+		timing_sample.display_revision = submission.display_revision
+		timing_sample.submission_serial = submission.serial
+		timing_sample.queue_submit_ns = hosted_surface_timing_elapsed_ns(submit_start)
+		if state.timing.pending_input {
+			ns := time.duration_nanoseconds(time.tick_diff(state.timing.pending_input_since, time.tick_now()))
+			if ns > 0 { timing_sample.input_to_submit_ns = u64(ns) }
+			state.timing.pending_input = false
+		}
 	}
 	completion.submission = submission
 	state.pending_completions += 1
@@ -293,7 +462,13 @@ hosted_surface_present_pending :: proc(presenter: ^Hosted_Surface_Presenter) -> 
 		callback=hosted_surface_presenter_queue_done,
 		userdata1=rawptr(completion),
 	})
-	if !hosted_surface_present_succeeded(state.surface) {
+	present_start: time.Tick
+	if state.timing_enabled { present_start = time.tick_now() }
+	present_succeeded := hosted_surface_present_succeeded(state.surface)
+	if state.timing_enabled {
+		timing_sample.surface_present_ns = hosted_surface_timing_elapsed_ns(present_start)
+	}
+	if !present_succeeded {
 		state.presentation_failed = true
 		return .Present_Failure
 	}
@@ -344,6 +519,7 @@ hosted_surface_presenter_destroy :: proc(presenter: ^Hosted_Surface_Presenter) -
 	if !webgpu_renderer.WebGPU_Presenter_Destroy(&state.renderer) { return false }
 	wgpu.SurfaceUnconfigure(state.surface)
 	allocator := state.allocator
+	hosted_surface_timing_buffer_destroy(state)
 	free(state, allocator=allocator)
 	presenter^ = {}
 	return true
@@ -360,6 +536,7 @@ hosted_surface_presenter_destroy_after_device_loss :: proc(presenter: ^Hosted_Su
 	if !webgpu_renderer.WebGPU_Presenter_Destroy_After_Device_Loss(&state.renderer) { return false }
 	wgpu.SurfaceUnconfigure(state.surface)
 	allocator := state.allocator
+	hosted_surface_timing_buffer_destroy(state)
 	free(state, allocator=allocator)
 	presenter^ = {}
 	return true

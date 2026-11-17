@@ -5,6 +5,7 @@ package sdl3_host
 import "core:c"
 import "core:fmt"
 import "core:os"
+import "core:sort"
 import "core:strings"
 import "base:runtime"
 import alicorn "alicorn:runtime"
@@ -238,6 +239,83 @@ sdl3_webgpu_run_requested_backend :: proc() -> (backend: wgpu.BackendType, valid
 		if strings.has_prefix(argument, "--backend=") { return .Undefined, false }
 	}
 	return .Undefined, true
+}
+
+@(private)
+sdl3_webgpu_run_timing_requested :: proc() -> bool {
+	for argument in os.args {
+		if argument == "--timings" { return true }
+	}
+	return false
+}
+
+@(private)
+sdl3_webgpu_run_timing_percentiles :: proc(samples: []u64) -> (p50, p95, p99: u64) {
+	if len(samples) == 0 { return }
+	sort.quick_sort(samples)
+	return samples[int(0.50*f64(len(samples)-1))],
+		samples[int(0.95*f64(len(samples)-1))],
+		samples[int(0.99*f64(len(samples)-1))]
+}
+
+@(private)
+sdl3_webgpu_run_report_timing :: proc(application: ^SDL3_WebGPU_Application) {
+	if application == nil { return }
+	samples: [presentation_host.HOSTED_SURFACE_TIMING_SAMPLE_CAPACITY]presentation_host.Hosted_Surface_Timing_Sample
+	count := presentation_host.hosted_surface_presenter_take_timing_samples(
+		&application.presenter, samples[:],
+	)
+	overwritten := presentation_host.hosted_surface_presenter_timing_overwritten(&application.presenter)
+	runtime_step, acquire, encode, submit, present, step_to_present: [presentation_host.HOSTED_SURFACE_TIMING_SAMPLE_CAPACITY]u64
+	input_to_submit: [presentation_host.HOSTED_SURFACE_TIMING_SAMPLE_CAPACITY]u64
+	input_count := 0
+	for i in 0..<count {
+		sample := samples[i]
+		runtime_step[i] = sample.runtime_step_ns
+		acquire[i] = sample.surface_acquire_ns
+		encode[i] = sample.renderer_encode_ns
+		submit[i] = sample.queue_submit_ns
+		present[i] = sample.surface_present_ns
+		step_to_present[i] = sample.step_to_present_ns
+		if sample.input_to_submit_ns != 0 {
+			input_to_submit[input_count] = sample.input_to_submit_ns
+			input_count += 1
+		}
+	}
+	runtime_p50, runtime_p95, runtime_p99 := sdl3_webgpu_run_timing_percentiles(runtime_step[:count])
+	acquire_p50, acquire_p95, acquire_p99 := sdl3_webgpu_run_timing_percentiles(acquire[:count])
+	encode_p50, encode_p95, encode_p99 := sdl3_webgpu_run_timing_percentiles(encode[:count])
+	submit_p50, submit_p95, submit_p99 := sdl3_webgpu_run_timing_percentiles(submit[:count])
+	present_p50, present_p95, present_p99 := sdl3_webgpu_run_timing_percentiles(present[:count])
+	whole_p50, whole_p95, whole_p99 := sdl3_webgpu_run_timing_percentiles(step_to_present[:count])
+	input_p50, input_p95, input_p99 := sdl3_webgpu_run_timing_percentiles(input_to_submit[:input_count])
+	fmt.printf("[alicorn-webgpu-timing] samples=%d overwritten=%d metric=CPU_wall_time_not_GPU_execution_or_scanout\n", count, overwritten)
+	fmt.printf("[alicorn-webgpu-timing] runtime_step_ns_p50=%d p95=%d p99=%d surface_acquire_ns_p50=%d p95=%d p99=%d renderer_encode_ns_p50=%d p95=%d p99=%d\n",
+		runtime_p50, runtime_p95, runtime_p99, acquire_p50, acquire_p95, acquire_p99,
+		encode_p50, encode_p95, encode_p99)
+	fmt.printf("[alicorn-webgpu-timing] queue_submit_ns_p50=%d p95=%d p99=%d surface_present_call_ns_p50=%d p95=%d p99=%d step_to_present_ns_p50=%d p95=%d p99=%d input_samples=%d input_to_submit_ns_p50=%d p95=%d p99=%d\n",
+		submit_p50, submit_p95, submit_p99, present_p50, present_p95, present_p99,
+		whole_p50, whole_p95, whole_p99, input_count, input_p50, input_p95, input_p99)
+}
+
+@(private)
+sdl3_webgpu_run_dispatch_event :: proc(
+	application: ^SDL3_WebGPU_Application,
+	event: sdl3.Event,
+) -> SDL3_WebGPU_Application_Event_Result {
+	if application == nil { return .Failure }
+	input_event := false
+	#partial switch event.type {
+	case .KEY_DOWN, .TEXT_INPUT, .TEXT_EDITING, .MOUSE_MOTION,
+	     .MOUSE_BUTTON_DOWN, .MOUSE_BUTTON_UP, .MOUSE_WHEEL:
+		input_event = true
+	case:
+	}
+	result := sdl3_webgpu_application_handle_event(application, event)
+	if input_event && result == .Handled {
+		presentation_host.hosted_surface_presenter_note_input(&application.presenter)
+	}
+	return result
 }
 
 @(private)
@@ -526,6 +604,15 @@ sdl3_webgpu_run :: proc(
 	state.application = &application
 	defer sdl3_webgpu_run_destroy_application(&application, &state)
 	defer sdl3_webgpu_run_destroy_windows(rawptr(&state))
+	timing_enabled := sdl3_webgpu_run_timing_requested()
+	if timing_enabled {
+		if !presentation_host.hosted_surface_presenter_set_timing_enabled(&application.presenter, true) {
+			return .Presenter_Failure
+		}
+	}
+	defer {
+		if timing_enabled { sdl3_webgpu_run_report_timing(&application) }
+	}
 	if state.closing { return .Ok }
 	if !sdl3.ShowWindow(window) { return .SDL_Failure }
 
@@ -592,7 +679,7 @@ sdl3_webgpu_run :: proc(
 
 		event: sdl3.Event
 		for sdl3.PollEvent(&event) {
-			result := sdl3_webgpu_application_handle_event(&application, event)
+			result := sdl3_webgpu_run_dispatch_event(&application, event)
 			switch result {
 			case .Close_Requested:
 				return .Ok
@@ -601,7 +688,7 @@ sdl3_webgpu_run :: proc(
 			case .Ignored, .Handled, .Wake:
 			}
 			if window_manager.child != nil {
-				child_result := sdl3_webgpu_application_handle_event(&window_manager.child.application, event)
+				child_result := sdl3_webgpu_run_dispatch_event(&window_manager.child.application, event)
 				switch child_result {
 				case .Close_Requested:
 					window_manager.pending_close = true
@@ -670,7 +757,7 @@ sdl3_webgpu_run :: proc(
 		if timeout_ms < 0 {
 			_ = sdl3.WaitEvent(&event)
 		} else if sdl3.WaitEventTimeout(&event, sdl3.Sint32(timeout_ms)) {
-			result := sdl3_webgpu_application_handle_event(&application, event)
+			result := sdl3_webgpu_run_dispatch_event(&application, event)
 			switch result {
 			case .Close_Requested:
 				return .Ok
@@ -679,7 +766,7 @@ sdl3_webgpu_run :: proc(
 			case .Ignored, .Handled, .Wake:
 			}
 			if window_manager.child != nil {
-				child_result := sdl3_webgpu_application_handle_event(&window_manager.child.application, event)
+			child_result := sdl3_webgpu_run_dispatch_event(&window_manager.child.application, event)
 				switch child_result {
 				case .Close_Requested:
 					window_manager.pending_close = true
