@@ -84,6 +84,9 @@ jobs:
           echo "$odin_root" >> "$GITHUB_PATH"
           echo "ODIN_ROOT=$odin_root" >> "$GITHUB_ENV"
           echo "ALICORN_ODIN=$odin_root/odin" >> "$GITHUB_ENV"
+      - name: Install hash-verified wgpu-native for pinned Odin bindings
+        shell: sh
+        run: sh tools/setup_macos_wgpu_native.sh "$ODIN_ROOT"
       - name: Report Odin installation
         shell: sh
         run: |

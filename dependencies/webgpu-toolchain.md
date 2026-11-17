@@ -60,9 +60,12 @@ records binding/package coverage rather than a project support commitment.
 
 The macOS arm64 foundation workflow downloads the exact release archive and
 checks its SHA-256 with `tools/setup_macos_wgpu_native.sh` before installing it
-under Odin's `vendor/wgpu/lib` tree. The hosted native build, Metal readback and
-resize, and patched explicit-destroy callback probes have passed. This is
-hosted macOS arm64 evidence; it does not replace a maintainer-run Metal session.
+under Odin's `vendor/wgpu/lib` tree; the native packaging workflow now uses the
+same bootstrap because native `ui` consumers compile the opt-in WebGPU host
+package even while `ui.run` still selects SDL_GPU. The hosted native build,
+Metal readback, resize, and patched explicit-destroy callback probes have
+passed. This is hosted macOS arm64 evidence; it does not replace a
+maintainer-run Metal session.
 The Linux x64 WebGPU workflow similarly verifies the official wgpu-native
 archive and exercises the native X11 surface through Xvfb with Mesa lavapipe.
 That is software Vulkan evidence, not physical-GPU or Wayland validation.
