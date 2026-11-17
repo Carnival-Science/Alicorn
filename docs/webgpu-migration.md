@@ -2695,7 +2695,11 @@ Validation on Windows x64 with Odin `dev-2026-11-nightly:08539cd`:
 - Runtime tests verify owner-thread wake delivery and application-owned
   semantic request delivery; presentation-host tests pass.
 - The SDL3 WebGPU host and AccessKit paths compile and run through the full
-  Windows `tools/check.ps1` suite.
+  Windows `tools/check.ps1` suite. The native application example exposes an
+  app-owned wake callback probe, and an SDL event-queue regression uses the
+  production registered-event callback and event handler to verify that a
+  queued notification invokes `on_wake` once on the owner thread (11 SDL3 host
+  tests passed).
 - The browser `Set_Value` smoke, browser host tests, and `js_wasm32` Example 17
   build pass after the host-specific wake routing change.
 

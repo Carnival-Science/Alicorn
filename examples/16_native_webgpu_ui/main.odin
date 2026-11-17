@@ -13,6 +13,8 @@ Child_App :: struct {
 
 App :: struct {
 	count: int,
+	wake_deliveries: int,
+	waker: ui.Application_Waker,
 	name: ui.Text_Buffer,
 	timing_motion: bool,
 	windows: ui.UI_Window_Service,
@@ -27,6 +29,8 @@ render :: proc(app: ^App, ctx: ^ui.UI) {
 		ui.text(ctx, "The retained runtime and surface presenter are shared with the browser host.")
 		if ui.button(ctx, "Increment") { app.count += 1 }
 		ui.text(ctx, fmt.tprintf("Button activations: %d", app.count))
+		if ui.button(ctx, "Queue application wake") { ui.wake(app.waker) }
+		ui.text(ctx, fmt.tprintf("Application wake callbacks: %d", app.wake_deliveries))
 		ui.text_field(ctx, "Try native text input", &app.name)
 		if ui.button(ctx, "Open auxiliary window") {
 			app.child_open_accepted = open_auxiliary_window(app)
@@ -54,6 +58,16 @@ render :: proc(app: ^App, ctx: ^ui.UI) {
 			}
 		}
 	}
+}
+
+start :: proc(app: ^App, waker: ui.Application_Waker) {
+	app.waker = waker
+}
+
+wake :: proc(app: ^App, ctx: ui.Application_Context) {
+	if app == nil || ctx == nil { return }
+	app.wake_deliveries += 1
+	ui.invalidate(ctx, "native WebGPU application wake delivered")
 }
 
 auxiliary_render :: proc(data: rawptr, ctx: ^alicorn.UI, _width, _height: int, _dpi: f32) {
@@ -132,8 +146,10 @@ main :: proc() {
 		}
 	}
 	if sdl_gpu_reference {
-		ui.run(&app, render, title="Alicorn · Native Renderer Probe", on_stop=stop, smoke=smoke, on_services=services)
+		ui.run(&app, render, title="Alicorn · Native Renderer Probe", on_start=start, on_wake=wake,
+			on_stop=stop, smoke=smoke, on_services=services)
 	} else {
-		ui.run_webgpu(&app, render, title="Alicorn · Native Renderer Probe", on_stop=stop, smoke=smoke, on_services=services)
+		ui.run_webgpu(&app, render, title="Alicorn · Native Renderer Probe", on_start=start, on_wake=wake,
+			on_stop=stop, smoke=smoke, on_services=services)
 	}
 }
