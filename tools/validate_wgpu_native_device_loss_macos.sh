@@ -40,6 +40,13 @@ if [ "$actual_patch_sha" != "$expected_patch_sha" ]; then
 	echo "Device-loss patch digest mismatch: expected $expected_patch_sha, got $actual_patch_sha." >&2
 	exit 1
 fi
+routing_patch_file="$REPO_ROOT/dependencies/patches/wgpu-native-v29.0.1.1-device-loss-routing.patch"
+expected_routing_patch_sha=81AB7D4F69A17F02FA7D9333E928C735BA0D5887EAE9EB9ED68E161C86D474F5
+actual_routing_patch_sha=$(shasum -a 256 "$routing_patch_file" | awk '{print toupper($1)}')
+if [ "$actual_routing_patch_sha" != "$expected_routing_patch_sha" ]; then
+	echo "Device-loss routing patch digest mismatch: expected $expected_routing_patch_sha, got $actual_routing_patch_sha." >&2
+	exit 1
+fi
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/alicorn-wgpu-loss.XXXXXX")
 wgpu_lib="$ODIN_ROOT/vendor/wgpu/lib/wgpu-macos-aarch64-release/lib/libwgpu_native.a"
@@ -64,6 +71,8 @@ if [ "$(git -C "$source" rev-parse HEAD)" != "$release_commit" ]; then
 fi
 git -C "$source" apply --check "$patch_file"
 git -C "$source" apply "$patch_file"
+git -C "$source" apply --check "$routing_patch_file"
+git -C "$source" apply "$routing_patch_file"
 
 echo 'Building patched wgpu-native v29.0.1.1 with the Metal and WGSL features'
 (
@@ -105,5 +114,9 @@ build_and_run release-before-poll \
 	-define:FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_RELEASE_BEFORE_POLL=true
 build_and_run after-readback \
 	-define:FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY=true
+build_and_run post-destroy-errors \
+	-define:FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY=true \
+	-define:FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_EARLY=true \
+	-define:FEASIBILITY_TEST_WGPU_NATIVE_POST_DESTROY_ERRORS=true
 
-echo 'Patched macOS Metal explicit-destroy callback probes passed (not driver-loss tests).'
+echo 'Patched macOS Metal explicit-destroy callback and post-destroy error-routing probes passed (not driver-loss tests).'

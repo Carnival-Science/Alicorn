@@ -146,6 +146,38 @@ and [core closure/poll path](https://github.com/gfx-rs/wgpu/blob/v29.0.1/wgpu-co
 This source finding explains why polling, callback mode, and an empty queue
 didn't fix the original binary. No upstream report has been filed.
 
+### Native error routing after device loss (2026-11-17)
+
+The lost-callback registration patch does not by itself prevent every native
+loss path from aborting. In wgpu-native v29.0.1.1,
+`wgpuQueueSubmit` and `wgpuSurfaceGetCurrentTexture` route returned core errors
+through `handle_error_fatal`. The checked-in
+[`device-loss-routing` patch](patches/wgpu-native-v29.0.1.1-device-loss-routing.patch)
+adapts [wgpu-native PR #641](https://github.com/gfx-rs/wgpu-native/pull/641)
+to this pinned release. It sends those errors to the configured error sink and
+returns `.Error` plus a null texture for surface acquisition.
+
+The native D3D12 regression intentionally destroys a device, then submits a
+valid pre-destroy empty command buffer and acquires from its configured
+surface. On Windows x64 / NVIDIA RTX 2080 SUPER, both errors reached the
+uncaptured-error callback, queue submission returned, surface acquisition
+returned `.Error`, the one-shot `Destroyed` callback arrived, and teardown
+completed. See the [Windows error-routing validation record](../docs/validation/webgpu-native-error-routing-windows-2026-11-17.md).
+
+This test also established that wgpu-native's default uncaptured-error handler
+panics if no C callback is installed. Both Alicorn WebGPU hosts now register a
+logging callback; the dedicated device-lost callback remains the sole owner of
+recovery state transitions. This prevents an uncaptured error from invoking
+the default panic, but does not make every error recoverable.
+
+The patch covers only queue submission and surface texture acquisition. Other
+native C API operations may still use the fatal path, and the Odin SDK's
+installed library remains unmodified. The patch has not been integrated into
+the supported dependency bootstrap. The macOS native validation script now
+applies both patches and runs this regression; its updated hosted result is
+pending. Neither this probe nor explicit-destroy callbacks establish genuine
+driver/OS loss or successful recovery.
+
 ### Windows native AccessKit linkage
 
 When a Windows executable links both the pinned AccessKit C library and Odin's
@@ -153,11 +185,14 @@ default static `wgpu_native.lib`, the link fails because both Rust runtimes
 define `rust_eh_personality`. For native WebGPU consumers that also use
 AccessKit, build with `-define:WGPU_SHARED=true` and distribute Odin's matching
 `wgpu_native.dll` beside the executable. The SDL3 runtime DLL must also be
-distributed. `tools/build_examples.ps1` applies this only to
-`16_native_webgpu_ui`; the native SDL_GPU consumers continue using the existing
-link mode. This workaround was validated for Windows x86-64 with Odin
+distributed. `tools/build_examples.ps1` applies this to
+`16_native_webgpu_ui`; the native Hosted_Runtime feasibility fixtures use the
+same shared-library mode. The Unix example builder also selects it for
+`16_native_webgpu_ui` to avoid the same duplicate Rust runtime symbols.
+The native SDL_GPU consumers continue using the existing link mode. This
+workaround was validated for Windows x86-64 with Odin
 `dev-2026-11-nightly:08539cd` and its bundled wgpu-native v29.0.1.1. Other
-platform linkage and redistribution behavior remain unverified.
+platform runtime linkage and redistribution behavior remain unverified.
 
 A related, separate wgpu-core issue is [#9579](https://github.com/gfx-rs/wgpu/issues/9579),
 which remains open as of 2026-11-15. In the pinned v29.0.1 source, explicit

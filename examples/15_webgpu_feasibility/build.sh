@@ -20,23 +20,24 @@ if [ "$#" -ne 0 ]; then
 	exit 2
 fi
 ODIN=$(alicorn_resolve_odin "$ODIN_ARG")
+ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
 
 cd "$SCRIPT_DIR"
 mkdir -p out web
 echo 'Building interactive native fixture'
-"$ODIN" build . -collection:alicorn=../.. -out:out/webgpu_feasibility
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" build . -collection:alicorn="$REPO_ROOT" -out:out/webgpu_feasibility
 echo 'Building native asynchronous-readback smoke fixture'
-"$ODIN" build . -collection:alicorn=../.. -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -out:out/webgpu_feasibility_smoke
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" build . -collection:alicorn="$REPO_ROOT" -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -out:out/webgpu_feasibility_smoke
 echo 'Building native host-owned presenter smoke fixture'
-"$ODIN" build . -collection:alicorn=../.. -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -define:FEASIBILITY_TEST_WEBGPU_PRESENTER=true -out:out/webgpu_feasibility_presenter_smoke
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" build . -collection:alicorn="$REPO_ROOT" -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -define:FEASIBILITY_TEST_WEBGPU_PRESENTER=true -out:out/webgpu_feasibility_presenter_smoke
 echo 'Building native SDL surface presenter smoke fixture'
-"$ODIN" build . -collection:alicorn=../.. -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -define:FEASIBILITY_TEST_SURFACE_PRESENTER=true -out:out/webgpu_feasibility_surface_presenter
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" build . -collection:alicorn="$REPO_ROOT" -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -define:FEASIBILITY_TEST_SURFACE_PRESENTER=true -out:out/webgpu_feasibility_surface_presenter
 echo 'Building native surface-resize smoke fixture'
-"$ODIN" build . -collection:alicorn=../.. -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -define:FEASIBILITY_TEST_RESIZE=true -out:out/webgpu_feasibility_resize_smoke
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" build . -collection:alicorn="$REPO_ROOT" -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -define:FEASIBILITY_TEST_RESIZE=true -out:out/webgpu_feasibility_resize_smoke
 echo 'Building native SDL3 Hosted_Runtime surface smoke fixture'
-"$ODIN" build . -collection:alicorn=../.. -define:FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER=true -define:FEASIBILITY_TEST_NATIVE_HOSTED_SMOKE=true -out:out/native_hosted_feasibility
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" build . -collection:alicorn="$REPO_ROOT" -define:WGPU_SHARED=true -define:FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER=true -define:FEASIBILITY_TEST_NATIVE_HOSTED_SMOKE=true -out:out/native_hosted_feasibility
 echo 'Building native shared-device multi-surface lifecycle smoke fixture'
-"$ODIN" build . -collection:alicorn=../.. -define:FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER=true -define:FEASIBILITY_TEST_NATIVE_HOSTED_SMOKE=true -define:FEASIBILITY_TEST_NATIVE_MULTI_SURFACE=true -out:out/native_multi_surface_feasibility
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" build . -collection:alicorn="$REPO_ROOT" -define:WGPU_SHARED=true -define:FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER=true -define:FEASIBILITY_TEST_NATIVE_HOSTED_SMOKE=true -define:FEASIBILITY_TEST_NATIVE_MULTI_SURFACE=true -out:out/native_multi_surface_feasibility
 if ! command -v wasm-ld >/dev/null 2>&1; then
 	echo 'The js_wasm32 build requires wasm-ld. On macOS install it with `brew install lld` and add `$(brew --prefix lld)/bin` to PATH.' >&2
 	exit 1

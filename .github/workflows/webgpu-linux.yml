@@ -49,7 +49,16 @@ jobs:
         run: sh tools/setup_linux_wgpu_native.sh "$ODIN_ROOT"
 
       - name: Validate SDL3 native host input mapping on Linux
-        run: odin test host/sdl3 -collection:alicorn=. -out:out/alicorn_sdl3_host_tests
+        shell: sh
+        run: |
+          set -eu
+          REPO_ROOT=$PWD
+          . tools/common.sh
+          ODIN=$(alicorn_resolve_odin "$ALICORN_ODIN")
+          ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
+          mkdir -p out
+          alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+            test host/sdl3 -collection:alicorn="$REPO_ROOT" -out:out/alicorn_sdl3_host_tests
 
       - name: Compile the shared Alicorn UI package for browser WASM
         shell: sh

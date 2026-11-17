@@ -29,6 +29,13 @@ for example in examples/*; do
 	[ -f "$example/main.odin" ] || continue
 	name=${example##*/}
 	echo "Building example $name"
-	alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
-		build "$example" "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/$name"
+	if [ "$name" = '16_native_webgpu_ui' ]; then
+		# Avoid duplicate Rust runtime symbols from static AccessKit and static
+		# wgpu-native on Unix, matching the Windows example build policy.
+		alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+			build "$example" "-collection:alicorn=$REPO_ROOT" -define:WGPU_SHARED=true "-out:$OUT_DIR/$name"
+	else
+		alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+			build "$example" "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/$name"
+	fi
 done

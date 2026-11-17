@@ -34,11 +34,23 @@ os_requested_backend :: proc() -> (wgpu.BackendType, bool) {
 
 os_init :: proc() {
 	if !SDL.Init({.VIDEO}) { fmt.panicf("SDL init failed: %s",SDL.GetError()) }
-	state.os.window=SDL.CreateWindow("Alicorn WebGPU feasibility",960,540,{.RESIZABLE,.HIGH_PIXEL_DENSITY})
+	when FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER {
+		if !native_sdl3_host.sdl3_webgpu_prepare_accessibility_platform() {
+			fmt.panicf("SDL3 WebGPU accessibility platform preparation failed")
+		}
+	}
+	window_flags := SDL.WindowFlags{.RESIZABLE,.HIGH_PIXEL_DENSITY}
+	when FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER {
+		// AccessKit's Windows adapter must subclass the native window before it
+		// becomes visible. The ordinary renderer fixture remains immediately visible.
+		window_flags += {.HIDDEN}
+	}
+	state.os.window=SDL.CreateWindow("Alicorn WebGPU feasibility",960,540,window_flags)
 	if state.os.window==nil { fmt.panicf("SDL window creation failed: %s",SDL.GetError()) }
 	when FEASIBILITY_TEST_NATIVE_MULTI_SURFACE {
+		secondary_window_flags := SDL.WindowFlags{.RESIZABLE, .HIGH_PIXEL_DENSITY, .HIDDEN}
 		state.os.secondary_window = SDL.CreateWindow(
-			"Alicorn WebGPU second surface", 640, 400, {.RESIZABLE, .HIGH_PIXEL_DENSITY},
+			"Alicorn WebGPU second surface", 640, 400, secondary_window_flags,
 		)
 		if state.os.secondary_window == nil { fmt.panicf("secondary SDL window creation failed: %s", SDL.GetError()) }
 	}
@@ -303,15 +315,32 @@ os_run :: proc() {
 	when FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY {
 		callback_count := sync.atomic_load(&state.device_lost_callback_count)
 		reason := wgpu.DeviceLostReason(sync.atomic_load(&state.device_loss_reason_raw))
+		expected_reason := reason == .Destroyed
+		when FEASIBILITY_TEST_WGPU_NATIVE_POST_DESTROY_ERRORS {
+			// wgpu-native maps a DeviceError::Lost encountered by the routed C API
+			// calls to Unknown; an explicit destroy may instead win the callback race.
+			expected_reason = reason == .Unknown || reason == .Destroyed
+		}
 		state.test_explicit_destroy_callback_passed = state.test_explicit_destroy_triggered && state.device_lost &&
-			callback_count == 1 && reason == .Destroyed
+			callback_count == 1 && expected_reason
 		if !state.test_explicit_destroy_callback_passed {
-			fmt.printf("[webgpu-feasibility] explicit-destroy callback probe FAIL before teardown (triggered=%v invalidated=%v reason=%v callbacks=%d; expected exactly one Destroyed callback)\n",
+			fmt.printf("[webgpu-feasibility] explicit-destroy callback probe FAIL before teardown (triggered=%v invalidated=%v reason=%v callbacks=%d)\n",
 				state.test_explicit_destroy_triggered,
 				state.device_lost,
 				reason,
 				callback_count,
 			)
+		}
+		when FEASIBILITY_TEST_WGPU_NATIVE_POST_DESTROY_ERRORS {
+			state.test_explicit_destroy_callback_passed = state.test_explicit_destroy_callback_passed &&
+				state.test_post_destroy_queue_returned && state.test_post_destroy_surface_error &&
+			sync.atomic_load(&state.test_post_destroy_error_callback_count) >= 2 &&
+			wgpu.ErrorType(sync.atomic_load(&state.test_post_destroy_error_callback_type_raw)) == .Validation
+			if !state.test_explicit_destroy_callback_passed {
+				fmt.printf("[webgpu-feasibility] post-destroy error routing probe FAIL (queue_returned=%v surface_error=%v uncaptured_errors=%d)\n",
+					state.test_post_destroy_queue_returned, state.test_post_destroy_surface_error,
+					sync.atomic_load(&state.test_post_destroy_error_callback_count))
+			}
 		}
 	}
 	finish()
@@ -324,7 +353,12 @@ os_run :: proc() {
 			)
 			os_exit_failure()
 		}
-		fmt.println("[webgpu-feasibility] explicit-destroy callback probe PASS: exactly one reason=Destroyed callback before teardown; this is not driver/OS loss evidence")
+		when FEASIBILITY_TEST_WGPU_NATIVE_POST_DESTROY_ERRORS {
+			fmt.printf("[webgpu-feasibility] post-destroy error routing PASS: QueueSubmit returned, surface acquisition reported Error, uncaptured_errors=%d, and exactly one loss callback arrived; this is intentional-destroy validation, not driver-loss evidence\n",
+				sync.atomic_load(&state.test_post_destroy_error_callback_count))
+		} else {
+			fmt.println("[webgpu-feasibility] explicit-destroy callback probe PASS: exactly one reason=Destroyed callback before teardown; this is not driver/OS loss evidence")
+		}
 	}
 	SDL.DestroyWindow(state.os.window)
 	when FEASIBILITY_TEST_NATIVE_MULTI_SURFACE {
@@ -449,6 +483,14 @@ native_hosted_init :: proc() {
 	fmt.println("[webgpu-feasibility] SDL3 native host uses shared Hosted_Runtime WebGPU surface presenter")
 	when FEASIBILITY_TEST_NATIVE_MULTI_SURFACE {
 		native_secondary_hosted_init()
+	}
+	if !SDL.ShowWindow(state.os.window) {
+		fmt.panicf("native SDL3/WebGPU primary window show failed: %s", SDL.GetError())
+	}
+	when FEASIBILITY_TEST_NATIVE_MULTI_SURFACE {
+		if !SDL.ShowWindow(state.os.secondary_window) {
+			fmt.panicf("native SDL3/WebGPU secondary window show failed: %s", SDL.GetError())
+		}
 	}
 }
 

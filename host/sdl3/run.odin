@@ -130,6 +130,10 @@ sdl3_webgpu_run_request_device :: proc(state: ^SDL3_WebGPU_Run_State) {
 			callback = sdl3_webgpu_run_device_lost_callback,
 			userdata1 = rawptr(state),
 		},
+		uncapturedErrorCallbackInfo = {
+			callback = sdl3_webgpu_run_uncaptured_error_callback,
+			userdata1 = rawptr(state),
+		},
 	}
 	fmt.println("[alicorn-webgpu] device request begin")
 	state.device_request_future = wgpu.AdapterRequestDevice(state.adapter, &device_descriptor, {
@@ -229,6 +233,21 @@ sdl3_webgpu_run_device_lost_callback :: proc "c" (
 	}
 	state.recovery_active = true
 	state.recovery_draining = true
+}
+
+@(private)
+sdl3_webgpu_run_uncaptured_error_callback :: proc "c" (
+	_device: ^wgpu.Device,
+	error_type: wgpu.ErrorType,
+	message: wgpu.StringView,
+	userdata1, _userdata2: rawptr,
+) {
+	state := cast(^SDL3_WebGPU_Run_State)userdata1
+	if state == nil { return }
+	context = runtime.default_context()
+	// The DeviceLost callback owns recovery. This callback replaces wgpu-native's
+	// default panic handler while preserving an actionable diagnostic.
+	fmt.printf("[alicorn-webgpu] uncaptured device error type=%v message=%s\n", error_type, message)
 }
 
 @(private)

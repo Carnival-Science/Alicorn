@@ -25,6 +25,7 @@ FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY :: #config(FEASIBILITY_TEST_EXPLICIT_DE
 FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_EARLY :: #config(FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_EARLY, false)
 FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_SPONTANEOUS_CALLBACK :: #config(FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_SPONTANEOUS_CALLBACK, false)
 FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_RELEASE_BEFORE_POLL :: #config(FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_RELEASE_BEFORE_POLL, false)
+FEASIBILITY_TEST_WGPU_NATIVE_POST_DESTROY_ERRORS :: #config(FEASIBILITY_TEST_WGPU_NATIVE_POST_DESTROY_ERRORS, false)
 FEASIBILITY_TEST_QUIT_AFTER_READBACK :: #config(FEASIBILITY_TEST_QUIT_AFTER_READBACK, false)
 FEASIBILITY_TEST_RESIZE :: #config(FEASIBILITY_TEST_RESIZE, false)
 FEASIBILITY_TEST_COMPOSITOR_RECREATION :: #config(FEASIBILITY_TEST_COMPOSITOR_RECREATION, false)
@@ -183,6 +184,11 @@ state: struct {
 	test_explicit_destroy_pending: bool,
 	test_explicit_destroy_triggered: bool,
 	test_explicit_destroy_callback_passed: bool,
+	test_post_destroy_command: wgpu.CommandBuffer,
+	test_post_destroy_queue_returned: bool,
+	test_post_destroy_surface_error: bool,
+	test_post_destroy_error_callback_count: i64,
+	test_post_destroy_error_callback_type_raw: i64,
 	device_lost_callback_count: i64,
 	device_loss_reason_raw: i64,
 	native_destroy_wait_probed: bool,
@@ -363,6 +369,9 @@ on_adapter :: proc "c" (status: wgpu.RequestAdapterStatus, adapter: wgpu.Adapter
 		label="Alicorn WebGPU feasibility device",
 		deviceLostCallbackInfo={mode=loss_callback_mode,callback=on_device_lost},
 	}
+	when FEASIBILITY_TEST_WGPU_NATIVE_POST_DESTROY_ERRORS {
+		device_desc.uncapturedErrorCallbackInfo.callback = on_uncaptured_error
+	}
 	wgpu.AdapterRequestDevice(adapter, &device_desc, {callback = on_device})
 }
 
@@ -376,6 +385,14 @@ on_device_lost :: proc "c" (device:^wgpu.Device, reason:wgpu.DeviceLostReason, m
 	}
 	device_handle_present := device != nil && device^ != nil
 	fmt.printf("[webgpu-feasibility] device loss notification reason=%v device_handle_present=%v message=%s\n",reason,device_handle_present,message)
+}
+
+on_uncaptured_error :: proc "c" (device:^wgpu.Device, error_type:wgpu.ErrorType, message:wgpu.StringView, userdata1,userdata2:rawptr) {
+	context = state.ctx
+	sync.atomic_store(&state.test_post_destroy_error_callback_type_raw, i64(error_type))
+	sync.atomic_add(&state.test_post_destroy_error_callback_count, 1)
+	fmt.printf("[webgpu-feasibility] uncaptured WebGPU error type=%v device_handle_present=%v message=%s\n",
+		error_type, device != nil && device^ != nil, message)
 }
 
 on_queue_work_done :: proc "c" (status:wgpu.QueueWorkDoneStatus, message:wgpu.StringView, userdata1,userdata2:rawptr) {
@@ -545,7 +562,22 @@ on_device :: proc "c" (status: wgpu.RequestDeviceStatus, device: wgpu.Device, me
 	state.device = device
 	state.queue = wgpu.DeviceGetQueue(device)
 	when FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_EARLY {
-		fmt.println("[webgpu-feasibility] early device-destroy probe: no GPU resources or submissions")
+		fmt.println("[webgpu-feasibility] early device-destroy probe: configure the surface, then destroy before presentation")
+		when FEASIBILITY_TEST_WGPU_NATIVE_POST_DESTROY_ERRORS {
+			state.width, state.height = os_get_framebuffer_size()
+			state.config.device = device
+			state.config.usage = {.RenderAttachment}
+			state.config.width, state.config.height = max(state.width, 1), max(state.height, 1)
+			state.config.presentMode = .Fifo
+			wgpu.SurfaceConfigure(state.surface, &state.config)
+			fmt.println("[webgpu-feasibility] post-destroy error probe configured the presentation surface")
+			encoder := wgpu.DeviceCreateCommandEncoder(state.device)
+			if encoder == nil { fmt.panicf("post-destroy error probe command encoder creation failed") }
+			state.test_post_destroy_command = wgpu.CommandEncoderFinish(encoder)
+			wgpu.CommandEncoderRelease(encoder)
+			if state.test_post_destroy_command == nil { fmt.panicf("post-destroy error probe command buffer creation failed") }
+			fmt.println("[webgpu-feasibility] post-destroy error probe prepared one empty command buffer")
+		}
 		state.test_explicit_destroy_pending=true
 		return
 	}

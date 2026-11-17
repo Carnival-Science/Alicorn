@@ -2472,6 +2472,20 @@ begin_test_explicit_device_destroy :: proc() {
 			} else {
 				wgpu.DeviceDestroy(state.device)
 			}
+			when FEASIBILITY_TEST_WGPU_NATIVE_POST_DESTROY_ERRORS {
+				commands := [1]wgpu.CommandBuffer{state.test_post_destroy_command}
+				wgpu.QueueSubmit(state.queue, commands[:])
+				state.test_post_destroy_queue_returned = true
+				wgpu.CommandBufferRelease(state.test_post_destroy_command)
+				state.test_post_destroy_command = nil
+				fmt.println("[webgpu-feasibility] QueueSubmit returned after explicit device destroy")
+
+				surface_texture := wgpu.SurfaceGetCurrentTexture(state.surface)
+				state.test_post_destroy_surface_error = surface_texture.status == .Error
+				if surface_texture.texture != nil { wgpu.TextureRelease(surface_texture.texture) }
+				fmt.printf("[webgpu-feasibility] SurfaceGetCurrentTexture after destroy status=%v expected=Error\n",
+					surface_texture.status)
+			}
 		}
 	}
 }

@@ -257,6 +257,10 @@ browser_webgpu_run_adapter_callback :: proc "c" (
 			callback=browser_webgpu_run_device_lost,
 			userdata1=rawptr(host),
 		},
+		uncapturedErrorCallbackInfo={
+			callback=browser_webgpu_run_uncaptured_error,
+			userdata1=rawptr(host),
+		},
 	}
 	host.device_lost_callback_pending = true
 	wgpu.AdapterRequestDevice(host.adapter, &device_descriptor, {
@@ -412,6 +416,21 @@ browser_webgpu_run_device_lost :: proc "c" (
 		host.status = .Recovery_Draining
 	}
 	browser_webgpu_run_wake(host)
+}
+
+@(private)
+browser_webgpu_run_uncaptured_error :: proc "c" (
+	_device: ^wgpu.Device,
+	error_type: wgpu.ErrorType,
+	message: wgpu.StringView,
+	userdata1, _userdata2: rawptr,
+) {
+	host := cast(^Browser_WebGPU_Run)userdata1
+	if host == nil { return }
+	context = host.ctx
+	// Device loss has a separate callback and recovery path. Keep unexpected
+	// WebGPU errors visible without invoking the binding's aborting default.
+	fmt.printf("[alicorn-webgpu] uncaptured browser device error type=%v message=%s\n", error_type, message)
 }
 
 @(private)
