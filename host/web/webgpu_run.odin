@@ -31,9 +31,6 @@ Browser_WebGPU_Run_Result :: enum {
 	Input_Failure,
 }
 
-BROWSER_WEBGPU_RECOVERY_MAX_ATTEMPTS :: 3
-BROWSER_WEBGPU_RECOVERY_BACKOFF_NS :: [3]u64{250_000_000, 1_000_000_000, 2_000_000_000}
-
 // Browser_WebGPU_Run owns browser WebGPU bootstrap and the resulting
 // Browser_Application. It is a single-owner-thread object. Keep it alive until
 // browser_webgpu_run_destroy returns true, including while adapter/device
@@ -56,8 +53,7 @@ Browser_WebGPU_Run :: struct {
 	wake: Browser_Application_Wake_Proc,
 	clear_color: wgpu.Color,
 	status: Browser_WebGPU_Run_Status,
-	recovery_attempts: int,
-	recovery_retry_at_ns: u64,
+	recovery_policy: Browser_WebGPU_Recovery_Policy,
 	last_now_ns: u64,
 	adapter_pending: bool,
 	device_pending: bool,
@@ -134,13 +130,19 @@ browser_webgpu_run_request_adapter :: proc(host: ^Browser_WebGPU_Run, recovery: 
 		powerPreference=.HighPerformance,
 		compatibleSurface=host.surface,
 	}
-	host.adapter_pending = true
 	if recovery {
-		host.recovery_attempts += 1
+		if !browser_webgpu_recovery_attempt_begin(&host.recovery_policy, host.last_now_ns) {
+			host.recovery_active = false
+			host.status = .Recovery_Failed
+			browser_webgpu_recovery_abort(&host.recovery_policy)
+			browser_webgpu_run_wake(host)
+			return
+		}
 		host.status = .Recovery_Adapter_Pending
 	} else {
 		host.status = .Adapter_Pending
 	}
+	host.adapter_pending = true
 	wgpu.InstanceRequestAdapter(host.instance, &options, {
 		mode=.AllowSpontaneos,
 		callback=browser_webgpu_run_adapter_callback,
@@ -151,13 +153,10 @@ browser_webgpu_run_request_adapter :: proc(host: ^Browser_WebGPU_Run, recovery: 
 @(private)
 browser_webgpu_run_recovery_attempt_failed :: proc(host: ^Browser_WebGPU_Run) {
 	browser_webgpu_run_release_device_handles(host, false)
-	if host.recovery_attempts >= BROWSER_WEBGPU_RECOVERY_MAX_ATTEMPTS {
+	if !browser_webgpu_recovery_attempt_failed(&host.recovery_policy, host.last_now_ns) {
+		host.recovery_active = false
 		host.status = .Recovery_Failed
-		host.recovery_retry_at_ns = 0
 	} else {
-		backoff := BROWSER_WEBGPU_RECOVERY_BACKOFF_NS
-		backoff_index := clamp(host.recovery_attempts-1, 0, len(BROWSER_WEBGPU_RECOVERY_BACKOFF_NS)-1)
-		host.recovery_retry_at_ns = host.last_now_ns + backoff[backoff_index]
 		host.status = .Recovery_Waiting
 	}
 	browser_webgpu_run_wake(host)
@@ -277,7 +276,9 @@ browser_webgpu_run_device_callback :: proc "c" (
 			// Keep it owned until shutdown so its lost callback context remains
 			// valid instead of retrying around an outstanding callback.
 			host.device = device
+			if host.recovery_active { browser_webgpu_recovery_abort(&host.recovery_policy) }
 			host.status = .Recovery_Failed
+			host.recovery_active = false
 			browser_webgpu_run_wake(host)
 			return
 		}
@@ -294,6 +295,8 @@ browser_webgpu_run_device_callback :: proc "c" (
 	host.queue = wgpu.DeviceGetQueue(device)
 	if host.queue == nil {
 		if host.recovery_active {
+			browser_webgpu_recovery_abort(&host.recovery_policy)
+			host.recovery_active = false
 			host.status = .Recovery_Failed
 			browser_webgpu_run_wake(host)
 		} else {
@@ -332,6 +335,8 @@ browser_webgpu_run_device_callback :: proc "c" (
 	}
 	if app_result != .Ok {
 		if host.recovery_active {
+			browser_webgpu_recovery_abort(&host.recovery_policy)
+			host.recovery_active = false
 			host.status = .Recovery_Failed
 			browser_webgpu_run_wake(host)
 		} else {
@@ -349,8 +354,7 @@ browser_webgpu_run_device_callback :: proc "c" (
 	}
 	host.status = .Ready
 	host.recovery_active = false
-	host.recovery_attempts = 0
-	host.recovery_retry_at_ns = 0
+	browser_webgpu_recovery_succeed(&host.recovery_policy)
 	browser_webgpu_run_wake(host)
 }
 
@@ -374,9 +378,10 @@ browser_webgpu_run_device_lost :: proc "c" (
 	if reason == .Destroyed || reason == .CallbackCancelled {
 		host.status = .Device_Lost
 	} else {
-		if !host.recovery_active { host.recovery_attempts = 0 }
+		if !host.recovery_active {
+			browser_webgpu_recovery_begin(&host.recovery_policy, host.last_now_ns)
+		}
 		host.recovery_active = true
-		host.recovery_retry_at_ns = 0
 		host.status = .Recovery_Draining
 	}
 	browser_webgpu_run_wake(host)
@@ -403,7 +408,7 @@ browser_webgpu_run_step :: proc(host: ^Browser_WebGPU_Run, now_ns: u64) -> Brows
 
 browser_webgpu_run_next_wake_ns :: proc(host: ^Browser_WebGPU_Run) -> u64 {
 	if host == nil { return 0 }
-	if host.status == .Recovery_Waiting { return host.recovery_retry_at_ns }
+	if host.status == .Recovery_Waiting { return host.recovery_policy.retry_at_ns }
 	if host.status != .Ready { return 0 }
 	return host.application.next_wake_ns
 }
@@ -415,20 +420,27 @@ browser_webgpu_run_recovery_step :: proc(host: ^Browser_WebGPU_Run, now_ns: u64)
 	if host == nil || host.destroy_requested || !host.recovery_active { return false }
 	host.last_now_ns = now_ns
 	if host.status == .Recovery_Draining {
+		// A loss can be reported before the corresponding device-request
+		// callback runs. Let that callback settle before retiring its adapter or
+		// starting another request against the same host state.
+		if host.adapter_pending || host.device_pending { return false }
 		if host.application.initialized && !browser_application_detach_lost_presenter(&host.application) {
 			return false
 		}
 		browser_webgpu_run_release_device_handles(host, false)
-		host.status = .Recovery_Waiting
-		host.recovery_retry_at_ns = now_ns
-	}
-	if host.status == .Recovery_Waiting && now_ns >= host.recovery_retry_at_ns {
-		if host.recovery_attempts >= BROWSER_WEBGPU_RECOVERY_MAX_ATTEMPTS {
-			host.status = .Recovery_Failed
-			host.recovery_retry_at_ns = 0
-			browser_webgpu_run_wake(host)
-			return false
+		if host.recovery_policy.attempt_pending {
+			if !browser_webgpu_recovery_attempt_failed(&host.recovery_policy, now_ns) {
+				host.recovery_active = false
+				host.status = .Recovery_Failed
+				browser_webgpu_run_wake(host)
+				return false
+			}
+		} else {
+			host.recovery_policy.retry_at_ns = now_ns
 		}
+		host.status = .Recovery_Waiting
+	}
+	if host.status == .Recovery_Waiting && browser_webgpu_recovery_attempt_due(&host.recovery_policy, now_ns) {
 		browser_webgpu_run_request_adapter(host, true)
 	}
 	return false
