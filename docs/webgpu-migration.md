@@ -2110,7 +2110,12 @@ Validation with Odin `dev-2026-11-nightly:08539cd` on Windows:
 - `examples/17_browser_webgpu_ui/build.ps1 -Odin C:\odin\odin.exe` produced
   `examples/17_browser_webgpu_ui/out/web/app.wasm`; the static page returned HTTP
   200 from localhost.
-- `node --check host/web/webgpu_ui_host.js` passed.
+- `node --check host/web/webgpu_ui_host.js` passed, and
+  `node tools/test_webgpu_ui_host.js` passed the browser-host lifecycle cases.
+  A page entering the back/forward cache now suspends scheduling without
+  destroying its WASM/WebGPU state; `pageshow` resumes it. Ordinary page exit
+  still requests nonblocking teardown, retaining the scheduler if GPU work is
+  outstanding. The same cases run in the Linux WebGPU workflow.
 - The POSIX build script was added for macOS/Linux but was not run here; the
   installed Git Bash process could not start because Windows denied its signal
   pipe.

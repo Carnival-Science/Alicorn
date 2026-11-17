@@ -22,6 +22,9 @@ jobs:
       - name: Verify demand-driven browser scheduler
         run: node tools/test_web_scheduler.js
 
+      - name: Verify browser WebGPU host lifecycle
+        run: node tools/test_webgpu_ui_host.js
+
       - name: Install pinned Odin Linux x64 SDK
         shell: bash
         run: |

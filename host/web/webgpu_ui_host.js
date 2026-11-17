@@ -77,8 +77,14 @@
 			scheduler.wake();
 		});
 		root.document.addEventListener("visibilitychange", () => scheduler.setVisible(!root.document.hidden));
-		root.addEventListener("pagehide", () => {
+		root.addEventListener("pagehide", event => {
 			if (disposed) return;
+			// A page entering the back/forward cache keeps its JS/WASM state alive.
+			// Suspend demand-driven work, then resume the same WebGPU host on pageshow.
+			if (event && event.persisted) {
+				scheduler.setVisible(false);
+				return;
+			}
 			if (exports.alicorn_browser_shutdown(context)) {
 				disposed = true;
 				scheduler.dispose();
