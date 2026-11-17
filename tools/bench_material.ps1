@@ -5,6 +5,7 @@ param(
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\common.ps1"
 $Odin = Resolve-AlicornOdin -Requested $Odin
+$RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 New-Item -ItemType Directory -Force -Path 'out' | Out-Null
 $AccessKit = Get-AlicornAccessKit
 & $Odin build benchmarks/native_material @($AccessKit.CompilerArguments) -o:speed -out:out\alicorn_material_benchmark.exe
@@ -14,7 +15,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 # needed by this geometry-only benchmark.
 & .\out\alicorn_material_benchmark.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $Odin build benchmarks/native_material_budget @($AccessKit.CompilerArguments) -o:speed -out:out\alicorn_material_budget.exe
+& $Odin build benchmarks/native_material_budget @($AccessKit.CompilerArguments) "-collection:alicorn=$RepoRoot" -o:speed -out:out\alicorn_material_budget.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & .\out\alicorn_material_budget.exe
 exit $LASTEXITCODE

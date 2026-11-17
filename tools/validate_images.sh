@@ -11,5 +11,5 @@ cd "$REPO_ROOT"
 mkdir -p out
 ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
-	build native/image_validation_entry -out:out/alicorn_image_validation
+	build native/image_validation_entry "-collection:alicorn=$REPO_ROOT" -out:out/alicorn_image_validation
 exec ./out/alicorn_image_validation

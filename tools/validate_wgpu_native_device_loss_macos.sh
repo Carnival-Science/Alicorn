@@ -88,7 +88,7 @@ build_and_run() {
 	shift
 	exe="$work/device-loss-$name"
 	echo "Building and running patched Metal callback probe: $name"
-	"$ODIN" build . "$@" "-out:$exe"
+	"$ODIN" build . "$@" "-collection:alicorn=$REPO_ROOT" "-out:$exe"
 	"$exe"
 }
 
