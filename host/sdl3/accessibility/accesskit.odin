@@ -1,11 +1,24 @@
-package alicorn_sdl_gpu
+#+build !js
+
+package sdl3_accessibility
 
 import libc "core:c/libc"
 import "base:runtime"
 import "core:strings"
-import alicorn "../../runtime"
+import alicorn "alicorn:runtime"
 import ak "accesskit:accesskit"
 import "vendor:sdl3"
+
+Native_Host_Event_Waker :: struct {
+	event_type: sdl3.EventType,
+	active: bool,
+}
+
+native_host_event_wake :: proc(state: ^Native_Host_Event_Waker) -> bool {
+	if state == nil || !state.active { return false }
+	event := sdl3.Event{type=state.event_type}
+	return sdl3.PushEvent(&event)
+}
 
 // Alicorn keeps semantic projection and action routing; C ABI declarations,
 // AccessKit identifiers, and native adapters live in the standalone package.

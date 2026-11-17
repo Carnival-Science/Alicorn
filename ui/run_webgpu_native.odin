@@ -11,8 +11,8 @@ import host "alicorn:host/sdl3"
 // leaving ui.run on SDL_GPU until the renderer's migration acceptance gates
 // pass. on_services supplies host capabilities before on_start. The WebGPU
 // host supports one independently retained secondary window through
-// UI_Host_Services.windows; integrated titlebars, native menus, and the
-// AccessKit adapter are not yet ported.
+// UI_Host_Services.windows and native AccessKit adapters on Windows/macOS;
+// integrated titlebars and native menus are not yet ported.
 run_webgpu :: proc(
 	state: ^$T,
 	render: proc(^T, ^UI),

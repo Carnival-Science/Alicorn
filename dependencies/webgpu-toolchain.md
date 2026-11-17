@@ -146,6 +146,19 @@ and [core closure/poll path](https://github.com/gfx-rs/wgpu/blob/v29.0.1/wgpu-co
 This source finding explains why polling, callback mode, and an empty queue
 didn't fix the original binary. No upstream report has been filed.
 
+### Windows native AccessKit linkage
+
+When a Windows executable links both the pinned AccessKit C library and Odin's
+default static `wgpu_native.lib`, the link fails because both Rust runtimes
+define `rust_eh_personality`. For native WebGPU consumers that also use
+AccessKit, build with `-define:WGPU_SHARED=true` and distribute Odin's matching
+`wgpu_native.dll` beside the executable. The SDL3 runtime DLL must also be
+distributed. `tools/build_examples.ps1` applies this only to
+`16_native_webgpu_ui`; the native SDL_GPU consumers continue using the existing
+link mode. This workaround was validated for Windows x86-64 with Odin
+`dev-2026-11-nightly:08539cd` and its bundled wgpu-native v29.0.1.1. Other
+platform linkage and redistribution behavior remain unverified.
+
 A related, separate wgpu-core issue is [#9579](https://github.com/gfx-rs/wgpu/issues/9579),
 which remains open as of 2026-11-15. In the pinned v29.0.1 source, explicit
 destroy marks the device invalid at the start, while the device-lost closure

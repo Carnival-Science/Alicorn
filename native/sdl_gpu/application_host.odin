@@ -224,13 +224,6 @@ Native_Application_Waker :: struct {
 	active:     bool,
 }
 
-// Host redraw events are separate from Application_Waker so a chrome repaint
-// cannot be mistaken for an asynchronous application producer wake.
-Native_Host_Event_Waker :: struct {
-	event_type: sdl3.EventType,
-	active:     bool,
-}
-
 NATIVE_OPPORTUNISTIC_QUIET_NS :: u64(150_000_000)
 
 native_application_schedule_after :: proc(data: rawptr, class: Scheduled_Wake_Class, delay_ns: u64) -> bool {
@@ -296,12 +289,6 @@ native_application_wake :: proc(data: rawptr) {
 	if state == nil || !state.active { return }
 	event := sdl3.Event{type=state.event_type}
 	_ = sdl3.PushEvent(&event)
-}
-
-native_host_event_wake :: proc(state: ^Native_Host_Event_Waker) -> bool {
-	if state == nil || !state.active { return false }
-	event := sdl3.Event{type=state.event_type}
-	return sdl3.PushEvent(&event)
 }
 
 native_application_request_quit :: proc(data: rawptr) {

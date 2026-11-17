@@ -1,8 +1,10 @@
-package alicorn_sdl_gpu
+#+build !js
+
+package sdl3_accessibility
 
 import "core:testing"
 import "core:c/libc"
-import alicorn "../../runtime"
+import alicorn "alicorn:runtime"
 import ak "accesskit:accesskit"
 
 when ODIN_OS == .Windows || ODIN_OS == .Darwin {

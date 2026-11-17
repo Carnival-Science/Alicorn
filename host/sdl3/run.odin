@@ -423,6 +423,7 @@ sdl3_webgpu_run :: proc(
 	}
 	if !sdl3.Init({.VIDEO}) { return .SDL_Failure }
 	defer sdl3.Quit()
+	if !sdl3_webgpu_prepare_accessibility_platform() { return .SDL_Failure }
 
 	title_cstring, title_error := strings.clone_to_cstring(title, context.temp_allocator)
 	if title_error != nil { return .Invalid_Input }

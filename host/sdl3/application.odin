@@ -5,8 +5,10 @@ package sdl3_host
 import alicorn "alicorn:runtime"
 import presentation_host "alicorn:host/presentation"
 import "core:c"
+import "core:fmt"
 import "vendor:sdl3"
 import "vendor:wgpu"
+import sdl_accessibility "alicorn:host/sdl3/accessibility"
 
 SDL3_WebGPU_Application_Result :: enum {
 	Ok,
@@ -48,6 +50,8 @@ SDL3_WebGPU_Text_Input_State :: struct {
 SDL3_WebGPU_Application :: struct {
 	hosted: alicorn.Hosted_Runtime,
 	presenter: presentation_host.Hosted_Surface_Presenter,
+	accessibility_host: sdl_accessibility.Native_Accessibility_Host,
+	host_waker: sdl_accessibility.Native_Host_Event_Waker,
 	window: ^sdl3.Window,
 	window_id: sdl3.WindowID,
 	wake_event_type: sdl3.EventType,
@@ -61,6 +65,7 @@ SDL3_WebGPU_Application :: struct {
 	next_wake_ns: u64,
 	visible: bool,
 	initialized: bool,
+	accessibility_ready: bool,
 	presenter_device_lost: bool,
 }
 
@@ -90,6 +95,54 @@ sdl3_webgpu_application_window_metrics :: proc(
 	}
 	if logical_w < 0 || logical_h < 0 || pixel_w < 0 || pixel_h < 0 { return }
 	return int(logical_w), int(logical_h), int(pixel_w), int(pixel_h), true
+}
+
+// Call before creating an SDL window when using the native WebGPU host.
+// AccessKit's Windows and macOS adapters install platform window integration
+// that must be prepared before the window is first shown or focused.
+sdl3_webgpu_prepare_accessibility_platform :: proc() -> bool {
+	return sdl_accessibility.native_accessibility_prepare_platform()
+}
+
+@(private)
+sdl3_webgpu_application_accessibility_collect_counters :: proc(
+	application: ^SDL3_WebGPU_Application,
+	rt: ^alicorn.Runtime,
+) {
+	if application == nil || rt == nil || !application.accessibility_ready { return }
+	counters := sdl_accessibility.native_accessibility_take_counters(&application.accessibility_host)
+	rt.stats.accessibility_activation_wakes += counters.activation_wakes
+	rt.stats.accessibility_updates_submitted += counters.updates_submitted
+	rt.stats.accessibility_requests_received += counters.actions_received
+	rt.stats.accessibility_requests_dropped += counters.actions_dropped
+}
+
+@(private)
+sdl3_webgpu_application_accessibility_sync :: proc(
+	application: ^SDL3_WebGPU_Application,
+	rt: ^alicorn.Runtime,
+) {
+	if application == nil || rt == nil || !application.accessibility_ready { return }
+	lw, lh, pw, ph, ok := sdl3_webgpu_application_window_metrics(application.window)
+	if !ok || lw <= 0 || lh <= 0 || pw <= 0 || ph <= 0 { return }
+	sdl_accessibility.native_accessibility_sync(
+		&application.accessibility_host,
+		rt,
+		0,
+		f32(pw)/f32(lw),
+		f32(ph)/f32(lh),
+	)
+	sdl3_webgpu_application_accessibility_collect_counters(application, rt)
+}
+
+@(private)
+sdl3_webgpu_application_accessibility_drain_actions :: proc(
+	application: ^SDL3_WebGPU_Application,
+	rt: ^alicorn.Runtime,
+) {
+	if application == nil || rt == nil || !application.accessibility_ready { return }
+	sdl_accessibility.native_accessibility_drain_actions(&application.accessibility_host, rt)
+	sdl3_webgpu_application_accessibility_collect_counters(application, rt)
 }
 
 // Initialize around an SDL window and WebGPU surface created by the caller.
@@ -145,9 +198,37 @@ sdl3_webgpu_application_init :: proc(
 		application^ = {}
 		return .Runtime_Failure
 	}
+	when ODIN_OS == .Windows || ODIN_OS == .Darwin {
+		application.host_waker = sdl_accessibility.Native_Host_Event_Waker{
+			event_type=wake_event,
+			active=true,
+		}
+		if sdl_accessibility.native_accessibility_host_init(
+			&application.accessibility_host,
+			&application.host_waker,
+		) {
+			application.accessibility_ready = true
+			if sdl_accessibility.native_accessibility_adapter_init(&application.accessibility_host, window) {
+				if rt, status := alicorn.hosted_runtime_borrow(&application.hosted); status == .Ok {
+					sdl3_webgpu_application_accessibility_sync(application, rt)
+				}
+			} else {
+				fmt.println("accessibility", "WebGPU host adapter initialization failed; native semantics are unavailable")
+				sdl_accessibility.native_accessibility_host_destroy(&application.accessibility_host)
+				application.accessibility_ready = false
+			}
+		} else {
+			fmt.println("accessibility", "WebGPU host queue initialization failed; native semantics are unavailable")
+			application.host_waker.active = false
+		}
+	}
 	if result := sdl3_webgpu_application_attach_presenter(
 		application, surface, device, queue, configuration,
 	); result != .Ok {
+		if application.accessibility_ready {
+			sdl_accessibility.native_accessibility_host_destroy(&application.accessibility_host)
+			application.accessibility_ready = false
+		}
 		_ = alicorn.hosted_runtime_destroy(&application.hosted)
 		application^ = {}
 		return .Presenter_Failure
@@ -327,6 +408,9 @@ sdl3_webgpu_application_step :: proc(
 	if !sdl3_webgpu_application_sync_text_input(application) {
 		return {status=.Invalid_Argument, presentation=presentation}
 	}
+	if rt, runtime_status := alicorn.hosted_runtime_borrow(&application.hosted); runtime_status == .Ok {
+		sdl3_webgpu_application_accessibility_sync(application, rt)
+	}
 	application.next_wake_ns = step.next_wake_ns
 	if presentation == .Retry_Later {
 		retry_ns := now_ns + 16_666_667
@@ -353,7 +437,14 @@ sdl3_webgpu_application_handle_event :: proc(
 	event: sdl3.Event,
 ) -> SDL3_WebGPU_Application_Event_Result {
 	if application == nil || !application.initialized { return .Failure }
-	if event.type == application.wake_event_type { return .Wake }
+	if event.type == application.wake_event_type {
+		if rt, status := alicorn.hosted_runtime_borrow(&application.hosted); status == .Ok {
+			sdl3_webgpu_application_accessibility_drain_actions(application, rt)
+		} else {
+			return .Failure
+		}
+		return .Wake
+	}
 	if event.type == .QUIT { return .Close_Requested }
 	if event.type == .WINDOW_CLOSE_REQUESTED && event.window.windowID == application.window_id {
 		return .Close_Requested
@@ -375,6 +466,7 @@ sdl3_webgpu_application_handle_event :: proc(
 		application.text_input.window_focused = true
 		application.modifiers = sdl3.GetModState()
 		if alicorn.hosted_runtime_focus_changed(&application.hosted, true) != .Ok { return .Failure }
+		sdl_accessibility.native_accessibility_focus_changed(&application.accessibility_host, true)
 		if !sdl3_webgpu_application_sync_text_input(application) { return .Failure }
 		return .Handled
 	case .WINDOW_FOCUS_LOST:
@@ -385,6 +477,7 @@ sdl3_webgpu_application_handle_event :: proc(
 		pointer_button_state_clear(&application.pointer_buttons)
 		application.modifiers = {}
 		if alicorn.hosted_runtime_focus_changed(&application.hosted, false) != .Ok { return .Failure }
+		sdl_accessibility.native_accessibility_focus_changed(&application.accessibility_host, false)
 		if !sdl3_webgpu_application_sync_text_input(application) { return .Failure }
 		return .Handled
 	case .KEY_DOWN, .KEY_UP:
@@ -433,6 +526,11 @@ sdl3_webgpu_application_destroy :: proc(application: ^SDL3_WebGPU_Application) -
 	if alicorn.hosted_runtime_focus_changed(&application.hosted, false) != .Ok ||
 		!sdl3_webgpu_application_sync_text_input(application) {
 		return false
+	}
+	if application.accessibility_ready {
+		sdl_accessibility.native_accessibility_focus_changed(&application.accessibility_host, false)
+		sdl_accessibility.native_accessibility_host_destroy(&application.accessibility_host)
+		application.accessibility_ready = false
 	}
 	if alicorn.hosted_runtime_destroy(&application.hosted) != .Ok { return false }
 	application^ = {}

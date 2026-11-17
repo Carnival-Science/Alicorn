@@ -1,8 +1,10 @@
-package alicorn_sdl_gpu
+#+build !js
+
+package sdl3_accessibility
 
 import "core:mem"
 import "core:strings"
-import alicorn "../../runtime"
+import alicorn "alicorn:runtime"
 
 // This is a backend-neutral projection format. The native AccessKit adapter
 // can translate these records to AccessKit nodes without making AccessKit's
