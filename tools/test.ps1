@@ -40,7 +40,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & $Odin test runtime
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $Odin test host\sdl3 "-collection:alicorn=$RepoRoot" -out:out\alicorn_sdl3_host_tests.exe
+& $Odin test host\sdl3 "-collection:alicorn=$RepoRoot" @($AccessKit.CompilerArguments) -out:out\alicorn_sdl3_host_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin test host\web "-collection:alicorn=$RepoRoot" -out:out\alicorn_web_host_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

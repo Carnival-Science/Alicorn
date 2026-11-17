@@ -46,6 +46,12 @@ $env:PATH = (Join-Path $PWD 'out\webgpu-phase0') + ';' + $env:PATH
 - Renderer/WebGPU tests: 6 passed. Presentation-host tests: 5 passed. SDL3
   host tests: 10 passed. `odin check host/web -no-entry-point
   -target:js_wasm32` passed.
+- The full repository `tools/check.ps1 -Odin C:\odin\odin.exe` passed,
+  including example/fixture builds, the canonical test suites, workspace
+  restoration checks, and native text-input/ownership checks. This run first
+  exposed that `tools/test.ps1` omitted AccessKit compiler arguments for the
+  SDL3 host tests; the runner now supplies the same pinned arguments used by
+  the other native targets.
 
 The recovery callback is invoked with `.Unknown` after the fixture's first
 successful frame. It exercises the host recovery state machine, lost-presenter
