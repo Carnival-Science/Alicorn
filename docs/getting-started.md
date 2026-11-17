@@ -25,7 +25,6 @@ Also install the native platform tools:
   sh tools/setup_macos_sdl3.sh
   SDL3_PREFIX="$PWD/out/native-package/sdl-3.4.18/shared/prefix"
   export ALICORN_SDL3_PREFIX="$SDL3_PREFIX"
-  export ALICORN_EXTRA_LINKER_FLAGS="-L$SDL3_PREFIX/lib -Wl,-rpath,$SDL3_PREFIX/lib"
   export DYLD_LIBRARY_PATH="$SDL3_PREFIX/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
   ```
 

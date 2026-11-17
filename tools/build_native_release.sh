@@ -108,7 +108,7 @@ if [ -n "$SDL_LINK_FLAGS" ]; then
 else
 	LINK_FLAGS="$ACCESSKIT_LINK_FLAGS"
 fi
-alicorn_odin_with_linker_flags "$ODIN" "$LINK_FLAGS" \
+ALICORN_SKIP_SDL3_PREFIX_LINKER_FLAGS=1 alicorn_odin_with_linker_flags "$ODIN" "$LINK_FLAGS" \
 	build "$APP_PACKAGE" "-collection:alicorn=$REPO_ROOT" "-out:$BUILT" -o:speed
 
 PACKAGE_ARGS=(
