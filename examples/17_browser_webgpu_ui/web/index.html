@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Alicorn WebGPU UI</title>
+<style>
+html,body{height:100%;margin:0;background:#101319;color:#dfe6e8;font:15px system-ui}
+body{display:grid;grid-template-rows:1fr auto}
+#alicorn-canvas{width:min(100vw,1000px);height:min(76vh,700px);display:block;margin:auto;touch-action:none}
+#alicorn-text-input{position:fixed;left:0;top:0;width:1px;height:1px;box-sizing:border-box;padding:0;border:0;resize:none;overflow:hidden;opacity:0;color:transparent;background:transparent;caret-color:transparent;font:1px/1px monospace;white-space:pre;pointer-events:none;z-index:1}
+#status{padding:10px 14px;background:#191f25;color:#abb8bd}
+</style>
+</head>
+<body>
+<canvas id="alicorn-canvas" tabindex="0" aria-label="Alicorn WebGPU application"></canvas>
+<textarea id="alicorn-text-input" tabindex="-1" aria-label="Alicorn text input" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+<div id="alicorn-accessibility"></div>
+<div id="status" role="status" aria-live="polite">Starting WebGPU…</div>
+<script src="./odin.js"></script>
+<script src="./wgpu.js"></script>
+<script src="./alicorn_demand_scheduler.js"></script>
+<script src="./alicorn_accessibility_dom.js"></script>
+<script src="./alicorn_webgpu_host.js"></script>
+<script>
+AlicornWebGPUHost.start("./app.wasm", { statusElement: document.querySelector("#status") })
+	.catch(error => { document.querySelector("#status").textContent = "WebGPU startup failed: " + error; console.error(error) });
+</script>
+</body>
+</html>
