@@ -2,10 +2,15 @@
 	"use strict";
 
 	async function start(wasmUrl, options = {}) {
+		if (!root.isSecureContext) {
+			throw new Error("WebGPU requires a secure context. Serve this app over HTTPS or localhost.");
+		}
+		if (!root.navigator || !root.navigator.gpu) {
+			throw new Error("This browser does not expose WebGPU. Use a WebGPU-capable browser.");
+		}
 		if (!root.odin || !root.AlicornDemandScheduler) {
 			throw new Error("Load Odin's wasm JavaScript and AlicornDemandScheduler before starting the app.");
 		}
-		if (!root.navigator.gpu) throw new Error("This browser does not expose WebGPU.");
 		const memoryInterface = new root.odin.WasmMemoryInterface();
 		memoryInterface.setIntSize(4);
 		const wgpuInterface = new root.odin.WebGPUInterface(memoryInterface);

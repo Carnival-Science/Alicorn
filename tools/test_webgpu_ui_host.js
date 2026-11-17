@@ -56,6 +56,7 @@ async function makeHost() {
 		callCallback(callback, args) { callback(...args); }
 	}
 	const root = {
+		isSecureContext: true,
 		navigator: { gpu: {} },
 		document: {
 			hidden: false,
@@ -88,6 +89,31 @@ async function makeHost() {
 		callGpuCallback: () => wgpuInterface.callCallback(() => {}, []),
 		runFrame: nowNs => scheduler.runFrame(nowNs),
 	};
+}
+
+async function testWebGPUStartupExplainsUnavailableCapabilitiesBeforeLoadingWasm() {
+	const source = fs.readFileSync("host/web/webgpu_ui_host.js", "utf8");
+	for (const testCase of [
+		{
+			name: "insecure context",
+			root: { isSecureContext: false, navigator: { gpu: {} } },
+			message: /secure context.*HTTPS or localhost/,
+		},
+		{
+			name: "browser without WebGPU",
+			root: { isSecureContext: true, navigator: {} },
+			message: /does not expose WebGPU/,
+		},
+	]) {
+		let fetchCalls = 0;
+		const root = {
+			...testCase.root,
+			fetch: async () => { fetchCalls++; throw new Error("WASM must not load"); },
+		};
+		vm.runInNewContext(source, root);
+		await assert.rejects(root.AlicornWebGPUHost.start("app.wasm"), testCase.message, testCase.name);
+		assert.equal(fetchCalls, 0, `${testCase.name} must fail before downloading WASM`);
+	}
 }
 
 async function testRecoveryUsesBoundedLifecycleFramesAndReportsOutcome() {
@@ -149,6 +175,7 @@ async function testPendingShutdownRetriesAfterGpuCompletionWake() {
 
 (async () => {
 	for (const test of [
+		testWebGPUStartupExplainsUnavailableCapabilitiesBeforeLoadingWasm,
 		testRecoveryUsesBoundedLifecycleFramesAndReportsOutcome,
 		testBackForwardCacheSuspendsAndResumesExistingHost,
 		testOrdinaryPagehideRequestsShutdown,

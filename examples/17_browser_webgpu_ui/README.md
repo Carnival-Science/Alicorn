@@ -22,6 +22,10 @@ state passed to `ui.run` must outlive the browser host; this example stores it
 in package-global memory. `ui.run` returns after requesting the adapter and
 device because WebGPU initialization is asynchronous in browsers.
 
+If WebGPU is unavailable, the page reports whether it needs a secure context
+(HTTPS or localhost) or a browser that exposes WebGPU before downloading the
+WASM application.
+
 The example demonstrates basic control interaction and textarea-backed text
 input. It does not claim assistive-technology validation or device-loss
 recovery.

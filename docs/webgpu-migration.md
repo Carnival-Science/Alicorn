@@ -2307,3 +2307,15 @@ Validation with Node on Windows: `node tools/test_accessibility_dom.js` passed;
 `git diff --check` passed. This validates projection logic only; browser-native
 focus behavior and assistive-technology announcements still need physical
 browser validation.
+
+### Browser WebGPU capability errors (Windows, 2026-11-17)
+
+Browser startup now reports an insecure-context requirement separately from
+missing WebGPU support, and rejects before downloading the WASM module. This
+makes the secure-context restriction actionable for users who opened the app
+from an unsupported origin, while retaining the explicit unsupported-browser
+message.
+
+Validation with Node on Windows: `node tools/test_webgpu_ui_host.js` passed all
+five startup/lifecycle cases, including both capability failures;
+`node --check host/web/webgpu_ui_host.js` and `git diff --check` passed.
