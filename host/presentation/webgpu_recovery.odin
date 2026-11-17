@@ -1,9 +1,19 @@
 package presentation_host
 
+import "vendor:wgpu"
+
 // Device reacquisition starts immediately after loss, then allows three
 // bounded retries. Both SDL3 and browser hosts use the same backoff policy.
 WEBGPU_RECOVERY_BACKOFF_NS :: [3]u64{250_000_000, 1_000_000_000, 2_000_000_000}
 WEBGPU_RECOVERY_MAX_ATTEMPTS :: len(WEBGPU_RECOVERY_BACKOFF_NS) + 1
+
+// Explicit DeviceDestroy and a cancelled callback are lifecycle outcomes, not
+// evidence of driver/OS loss. Hosts must not enter automatic recovery for
+// either reason. Other reasons use the bounded recovery policy; that policy
+// decision is not itself evidence that the OS or driver caused the loss.
+webgpu_device_loss_should_recover :: proc(reason: wgpu.DeviceLostReason) -> bool {
+	return reason != .Destroyed && reason != .CallbackCancelled
+}
 
 WebGPU_Recovery_Policy :: struct {
 	active: bool,

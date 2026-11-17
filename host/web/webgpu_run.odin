@@ -406,7 +406,7 @@ browser_webgpu_run_device_lost :: proc "c" (
 		return
 	}
 	if host.application.initialized { browser_application_mark_device_lost(&host.application) }
-	if reason == .Destroyed || reason == .CallbackCancelled {
+	if !presentation_host.webgpu_device_loss_should_recover(reason) {
 		host.status = .Device_Lost
 	} else {
 		if !host.recovery_active {

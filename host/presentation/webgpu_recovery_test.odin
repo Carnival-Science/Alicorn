@@ -3,6 +3,21 @@
 package presentation_host
 
 import "core:testing"
+import "vendor:wgpu"
+
+@(test)
+test_webgpu_device_loss_classification_separates_teardown_from_recovery :: proc(t: ^testing.T) {
+	testing.expect(t, !webgpu_device_loss_should_recover(.Destroyed),
+		"explicit DeviceDestroy is not driver-loss evidence")
+	testing.expect(t, !webgpu_device_loss_should_recover(.CallbackCancelled),
+		"cancelled loss callback is not a recovery trigger")
+	testing.expect(t, webgpu_device_loss_should_recover(.Unknown),
+		"unknown loss enters bounded recovery")
+	testing.expect(t, webgpu_device_loss_should_recover(.Undefined),
+		"unspecified loss still enters bounded recovery")
+	testing.expect(t, webgpu_device_loss_should_recover(.FailedCreation),
+		"failed device creation is handled by bounded recovery retries")
+}
 
 @(test)
 test_webgpu_recovery_policy_uses_all_bounded_backoffs :: proc(t: ^testing.T) {

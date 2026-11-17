@@ -224,7 +224,7 @@ sdl3_webgpu_run_device_lost_callback :: proc "c" (
 		sdl3_webgpu_application_mark_device_lost(state.application)
 	}
 	sdl3_webgpu_window_mark_device_lost(state.windows)
-	if reason == .Destroyed || reason == .CallbackCancelled {
+	if !presentation_host.webgpu_device_loss_should_recover(reason) {
 		if !state.closing { state.recovery_terminal_failure = true }
 		return
 	}
