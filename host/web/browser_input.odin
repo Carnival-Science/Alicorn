@@ -163,7 +163,7 @@ browser_input_focus_dom_target :: proc(input: ^Browser_Input, wants_text: bool) 
 	target_id := input.canvas_id
 	if wants_text { target_id = input.text_input_id }
 	input.focus_transfer = true
-	js.evaluate(fmt.tprintf("document.getElementById('%s').focus({preventScroll:true})", target_id))
+	js.evaluate(fmt.tprintf("document.getElementById('%s').focus({{preventScroll:true}})", target_id))
 	input.focus_transfer = false
 	input.dom_focus_known = true
 	input.dom_focus_is_text = wants_text

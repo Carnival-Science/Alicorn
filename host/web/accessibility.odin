@@ -224,7 +224,7 @@ browser_accessibility_payload_json :: proc(
 	encoded, err := json.marshal(payload, allocator=allocator)
 	if err != nil { return nil, .Serialization_Failed }
 	if len(encoded) > BROWSER_ACCESSIBILITY_MAX_JSON_BYTES {
-		delete(encoded)
+		delete(encoded, allocator)
 		return nil, .Serialization_Failed
 	}
 	data = encoded

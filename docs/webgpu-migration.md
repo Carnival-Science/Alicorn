@@ -2612,3 +2612,34 @@ macOS behavior, compare production Scratchpad/Punks workloads, or measure
 input-to-photon latency. Those acceptance items remain open. The feasibility
 build also exposed a missing ignore entry for its generated accessibility DOM
 copy; `examples/15_webgpu_feasibility/.gitignore` now covers that build output.
+
+### Browser accessibility allocator and focus fixes (Windows, 2026-11-17)
+
+A fresh load of Example 17 initially failed on its first scheduled browser
+frame with `RuntimeError: unreachable` in the WASM allocator. The accessibility
+DOM projection serialized its bounded JSON using `context.temp_allocator`, but
+released the resulting byte slice through the default allocator. The same
+allocator mismatch existed in its unavailable-projection fallback and in the
+oversized-JSON cleanup path. All three now release the slice through the
+allocator that created it; the host accessibility tests explicitly exercise
+temporary-allocator payload and JSON ownership.
+
+Live browser interaction also exposed an Odin formatting issue in the DOM focus
+handoff: literal braces in the JavaScript `focus({preventScroll:true})` call
+were parsed as format directives. The format string now escapes those braces.
+
+Validation on Windows x64 with Odin `dev-2026-11-nightly:08539cd`:
+
+- `tools/check.ps1 -Odin C:\odin\odin.exe` passed, including the WASM
+  package-boundary build and host checks. Existing large-stack-local warnings
+  in SDL_GPU secondary-window tests remain.
+- `examples/17_browser_webgpu_ui/build.ps1 -Odin C:\odin\odin.exe` built the
+  browser consumer; `node tools/test_webgpu_ui_host.js` passed all 9 tests.
+- In a fresh browser load, WebGPU UI initialization, clicking into the text
+  input, DOM focus transfer, ASCII input, and Unicode input (`é🌍`) all worked;
+  the retained accessibility value updated and no new runtime error appeared.
+
+This closes the reported first-frame allocator crash and exercises the browser
+text-input focus path on this Windows browser/device. It does not establish
+physical macOS/Linux browser behavior, real assistive-technology behavior, or
+the remaining native device-loss and migration acceptance gates.

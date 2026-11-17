@@ -59,6 +59,7 @@ test_browser_accessibility_payload_preserves_semantics_and_stable_ids :: proc(t:
 		show_focus=true,
 		viewport_width=400,
 		viewport_height=300,
+		allocator=context.temp_allocator,
 	)
 	defer delete(payload.nodes)
 	if !testing.expect(t, status == .Success && payload.revision == 19 && len(payload.nodes) == 2,
@@ -75,8 +76,8 @@ test_browser_accessibility_payload_preserves_semantics_and_stable_ids :: proc(t:
 	testing.expect(t, payload.focus == field_view.id && payload.show_focus &&
 		payload.viewport_width == 400 && payload.viewport_height == 300,
 		"keyboard focus, modality, and viewport geometry should map to the DOM projection")
-	encoded, json_status := browser_accessibility_payload_json(payload)
-	defer delete(encoded)
+	encoded, json_status := browser_accessibility_payload_json(payload, context.temp_allocator)
+	defer delete(encoded, context.temp_allocator)
 	json_text := string(encoded)
 	testing.expect(t, json_status == .Success &&
 		strings.contains(json_text, `"canSetTextSelection":true`) &&
@@ -102,7 +103,11 @@ test_browser_accessibility_projection_rejects_invalid_and_oversized_roots :: pro
 			role=.Static_Text,
 		}
 	}
-	too_many, status := browser_accessibility_payload_build(snapshot, "a11y-root")
+	too_many, status := browser_accessibility_payload_build(
+		snapshot,
+		"a11y-root",
+		allocator=context.temp_allocator,
+	)
 	_ = too_many
 	testing.expect(t, status == .Too_Many_Nodes,
 		"a semantic tree above the DOM bound must fail closed rather than materialize unbounded controls")
@@ -121,7 +126,11 @@ test_browser_accessibility_projection_caps_text_payload :: proc(t: ^testing.T) {
 		role=.Static_Text,
 		value=string(large_value),
 	}
-	payload, status := browser_accessibility_payload_build(snapshot, "a11y-root")
+	payload, status := browser_accessibility_payload_build(
+		snapshot,
+		"a11y-root",
+		allocator=context.temp_allocator,
+	)
 	_ = payload
 	testing.expect(t, status == .Too_Much_Text,
 		"a semantic snapshot with oversized text must fail closed before JSON serialization")
@@ -176,8 +185,8 @@ test_browser_accessibility_role_mapping_covers_runtime_roles :: proc(t: ^testing
 @(test)
 test_browser_accessibility_payload_json_is_strict_json :: proc(t: ^testing.T) {
 	payload := Browser_Accessibility_Payload{root="a11y", revision=3}
-	data, status := browser_accessibility_payload_json(payload)
-	defer delete(data)
+	data, status := browser_accessibility_payload_json(payload, context.temp_allocator)
+	defer delete(data, context.temp_allocator)
 	value, parse_error := json.parse(string(data))
 	defer json.destroy_value(value)
 	testing.expect(t, status == .Success && parse_error == nil,

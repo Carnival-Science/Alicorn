@@ -130,7 +130,7 @@ browser_accessibility_sync :: proc(accessibility: ^Browser_Accessibility) -> boo
 	if json_status != .Success {
 		return browser_accessibility_sync_unavailable(accessibility, revision, viewport_width, viewport_height)
 	}
-	defer delete(data)
+	defer delete(data, context.temp_allocator)
 	json_text := string(data)
 	js.evaluate(fmt.tprintf("window.alicornAccessibilityApply(%s)", json_text))
 	if !browser_accessibility_bindings_sync(accessibility, snapshot) { return false }
@@ -170,7 +170,7 @@ browser_accessibility_sync_unavailable :: proc(
 	payload.show_focus = false
 	data, status := browser_accessibility_payload_json(payload, context.temp_allocator)
 	if status != .Success { return false }
-	defer delete(data)
+	defer delete(data, context.temp_allocator)
 	js.evaluate(fmt.tprintf("window.alicornAccessibilityApply(%s)", string(data)))
 	_ = browser_accessibility_bindings_sync(accessibility, alicorn.Semantic_Snapshot{})
 	accessibility.revision = revision
