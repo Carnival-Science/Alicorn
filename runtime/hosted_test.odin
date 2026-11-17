@@ -17,6 +17,8 @@ Hosted_Test_App :: struct {
 	post_fails: bool,
 	text_changes: int,
 	committed_text: bool,
+	semantic_value_received: bool,
+	semantic_value_id: Semantic_ID,
 	key_events: int,
 	last_key: Application_Key,
 	text_key_events: int,
@@ -67,6 +69,15 @@ hosted_test_services :: proc(data: rawptr, services: Hosted_Host_Services) {
 hosted_test_wake :: proc(data: rawptr, rt: ^Runtime) {
 	app := (^Hosted_Test_App)(data)
 	app.wakes += 1
+	for {
+		event, found := semantic_request_pop(rt)
+		if !found { break }
+		if event.kind == .Perform && event.action == .Set_Value && event.text_value == "accessible value" {
+			app.semantic_value_received = true
+			app.semantic_value_id = event.id
+		}
+		semantic_request_event_destroy(rt, &event)
+	}
 	invalidate_root(rt, "hosted worker wake")
 }
 
@@ -325,7 +336,15 @@ test_hosted_runtime_text_and_semantic_delivery :: proc(t: ^testing.T) {
 	testing.expect(t, status == .Ok && len(snapshot.nodes) >= 2)
 	button_id := rt.nodes[app.button].semantic_id
 	handled, action_status := hosted_runtime_accessibility_action(&host, button_id, .Press)
-	testing.expect(t, action_status == .Ok && handled)
+	testing.expect(t, action_status == .Ok && handled && app.wakes == 0,
+		"realized activation stays runtime-owned and does not call the application semantic-event callback")
+	field_id := rt.nodes[app.field].semantic_id
+	handled, action_status = hosted_runtime_accessibility_action(
+		&host, field_id, .Set_Value, text_value="accessible value",
+	)
+	testing.expect(t, action_status == .Ok && handled && app.wakes == 1 &&
+		app.semantic_value_received && app.semantic_value_id == field_id,
+		"queued accessibility values reach on_wake for application-owned adoption")
 }
 
 @(test)

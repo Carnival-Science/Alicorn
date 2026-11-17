@@ -63,7 +63,7 @@ uploads remain renderer-specific.
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | In progress: image, custom-geometry, and backdrop resources have bounded asynchronous retirement and completion-driven release tests; async readback is exercised. Same-device compositor teardown/rebuild reproduces every RGBA pixel on Windows D3D12 and Vulkan from retained Runtime products. Browser recovery drains queue callbacks, recreates adapter/device/presenter with one immediate attempt plus three bounded retries, and requests retained repaint without UI re-description. Native SDL3 recovery now drains callbacks, preserves Hosted_Runtime/input state, abandons old device-bound renderer handles, recreates primary and secondary SDL surfaces, reacquires adapter/device, and reattaches both presenters. The synthetic `.Unknown` callback recovery smoke passes for primary and primary-plus-child windows on Windows D3D12 and Vulkan; see `docs/validation/webgpu-native-synthetic-recovery-windows-2026-11-17.md`. This exposed and fixed stale surface texture reuse and a lost-device resource-release panic. Renderer/WebGPU (6), presentation-host (5), and SDL3 host (10) tests pass; the full Windows `tools/check.ps1` also passes after fixing its SDL3 test invocation to use the pinned AccessKit compiler arguments. The fixture strict child smoke continues to pass on Windows Vulkan and D3D12. This is callback-path evidence only: it does not trigger actual driver/OS loss or validate real callback ordering. Physical input, resize/close interaction, genuine loss recovery, and device-loss resource behavior remain open. Browser callback-ordering research and the generated Odin JS correction are recorded in `dependencies/webgpu-toolchain.md`. Intentional `DeviceDestroy` callbacks remain separate and do not count as driver-loss evidence |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
-| 6. Browser host | interaction, accessibility, text/IME, lifecycle and demand-driven scheduling complete | In progress: reusable demand-driven scheduling, host-side key mapping, DOM input routing, optional textarea-backed UTF-8/IME input, Hosted_Runtime surface presentation, and the reusable `Browser_Application` coordinator live in `host/web/`. Example 17's `ui.run` consumer builds for `js_wasm32`; its renderer-neutral host services now include an asynchronous Clipboard API adapter with explicit unsupported/permission/error results, an eight-request bound, a 1 MiB transfer bound, and shutdown cancellation. JS tests cover Unicode transfer, permission denial, unsupported APIs, size limits, and late promise settlement. Prior local browser feasibility and native host runs are recorded above, but this clipboard adapter has not yet been exercised in a physical browser. A fresh browser run of Example 17 now verifies the `ui.run` consumer, DOM focus handoff, and ASCII/Unicode text entry; see the exact-head browser validation below. `host/web/webgpu_run.odin` owns async browser adapter/device/surface setup and bounded recovery after unexpected loss; JS tests cover callback-driven retries without polling. Actual device loss/recovery is not physically validated. Headless tests cover the bounded DOM/ARIA model, Unicode selection, focus recovery, and secure-context/WebGPU capability errors. Physical IME and assistive-technology validation, browser clipboard permission interaction, actual device-loss recovery, and broader application dogfooding remain outstanding |
+| 6. Browser host | interaction, accessibility, text/IME, lifecycle and demand-driven scheduling complete | In progress: reusable demand-driven scheduling, host-side key mapping, DOM input routing, optional textarea-backed UTF-8/IME input, Hosted_Runtime surface presentation, and the reusable `Browser_Application` coordinator live in `host/web/`. Example 17's `ui.run` consumer builds for `js_wasm32`; its renderer-neutral host services now include an asynchronous Clipboard API adapter with explicit unsupported/permission/error results, an eight-request bound, a 1 MiB transfer bound, and shutdown cancellation. JS tests cover Unicode transfer, permission denial, unsupported APIs, size limits, and late promise settlement. Queued browser accessibility actions now invoke `on_wake` on the owner thread, and Example 17 applies textbox `Set_Value` to its app-owned buffer; fresh browser validation confirms the semantic value updates. The clipboard adapter has not yet been exercised in a physical browser. `host/web/webgpu_run.odin` owns async browser adapter/device/surface setup and bounded recovery after unexpected loss; JS tests cover callback-driven retries without polling. Actual device loss/recovery is not physically validated. Headless tests cover the bounded DOM/ARIA model, Unicode selection, focus recovery, and secure-context/WebGPU capability errors. Physical IME and assistive-technology validation, browser clipboard permission interaction, actual device-loss recovery, and broader application dogfooding remain outstanding |
 | 7. Release readiness | docs, reproducible setup, CI and substantive shared-renderer web example | Not started |
 
 The Phase 0 evidence authorizes bounded, testable renderer slices; it does not
@@ -2646,3 +2646,33 @@ This closes the reported first-frame allocator crash and exercises the browser
 text-input focus path on this Windows browser/device. It does not establish
 physical macOS/Linux browser behavior, real assistive-technology behavior, or
 the remaining native device-loss and migration acceptance gates.
+
+### Browser semantic text-value delivery (Windows, 2026-11-17)
+
+The accessibility DOM correctly converted textbox input into a semantic
+`Set_Value` request, but the hosted browser path only scheduled a frame; it did
+not invoke the application callback that drains queued domain actions. The
+request therefore remained queued and the controlled application buffer stayed
+unchanged. `hosted_runtime_accessibility_action` now calls `on_wake` on the
+owner thread when an action is queued for application handling. Runtime-owned
+Press/Focus actions still use their direct interaction path and do not call
+the application callback. Example 17 drains and destroys semantic request
+events, applying `Set_Value` to its app-owned text buffer.
+
+Validation on Windows x64 with Odin `dev-2026-11-nightly:08539cd`:
+
+- `odin test runtime -collection:alicorn=.` passed all 363 tests, including a
+  regression proving queued values reach `on_wake` while realized Press stays
+  runtime-owned.
+- `odin test host/web -collection:alicorn=.` passed all 14 tests.
+- `examples/17_browser_webgpu_ui/build.ps1 -Odin C:\odin\odin.exe` succeeded;
+  `node tools/test_webgpu_ui_host.js` passed all 9 tests.
+- Full `tools/check.ps1 -Odin C:\odin\odin.exe` passed. It emits the existing
+  large-stack-local warnings for SDL_GPU secondary-window test values.
+- After reloading the local Example 17 browser page, setting the accessible
+  textbox to `WebGPU semantic input` updated its semantic value and the focused
+  textbox state.
+
+This verifies the DOM action-to-application-state path in the local browser,
+not physical screen-reader interoperability. Physical assistive-technology
+validation and the other Phase 6/overall migration gates remain open.

@@ -2,6 +2,7 @@ package main
 
 import "core:fmt"
 import "core:strings"
+import alicorn "alicorn:runtime"
 import ui "alicorn:ui"
 
 App :: struct {
@@ -11,6 +12,7 @@ App :: struct {
 	clipboard_text: string,
 	clipboard_status: string,
 	clipboard_sequence: u64,
+	input_semantic_id: alicorn.Semantic_ID,
 }
 
 app: App
@@ -21,7 +23,13 @@ render :: proc(state: ^App, ctx: ^ui.UI) {
 		ui.text(ctx, "The same retained UI API runs through the shared browser host.")
 		if ui.button(ctx, "Increment") { state.activations += 1 }
 		ui.text(ctx, fmt.tprintf("Button activations: %d", state.activations))
-		ui.text_field(ctx, "Type here to exercise browser text input", &state.name)
+		input := ui.text_field(
+			ctx,
+			"Type here to exercise browser text input",
+			&state.name,
+			key="browser-example-text-input",
+		)
+		state.input_semantic_id = alicorn.semantic_visual_id(input.node)
 		ui.text(ctx, "Clipboard access is permission-gated by the browser.")
 		if ui.button(ctx, "Read clipboard") {
 			state.clipboard_sequence += 1
@@ -46,6 +54,22 @@ render :: proc(state: ^App, ctx: ^ui.UI) {
 		if state.clipboard_status != "" { ui.text(ctx, state.clipboard_status) }
 		if state.clipboard_text != "" { ui.text(ctx, fmt.tprintf("Clipboard: %s", state.clipboard_text)) }
 	}
+}
+
+on_wake :: proc(state: ^App, ctx: ui.Application_Context) {
+	rt := cast(^alicorn.Runtime)ctx
+	if state == nil || rt == nil { return }
+	changed := false
+	for {
+		event, found := alicorn.semantic_request_pop(rt)
+		if !found { break }
+		if event.kind == .Perform && event.id == state.input_semantic_id &&
+		   event.action == .Set_Value && ui.text_buffer_set(&state.name, event.text_value) {
+			changed = true
+		}
+		alicorn.semantic_request_event_destroy(rt, &event)
+	}
+	if changed { ui.invalidate(ctx, "browser accessibility value applied") }
 }
 
 on_services :: proc(state: ^App, services: ui.UI_Host_Services) {
@@ -102,5 +126,6 @@ main :: proc() {
 		title="Alicorn · WebGPU Browser",
 		on_stop=on_stop,
 		on_services=on_services,
+		on_wake=on_wake,
 	)
 }

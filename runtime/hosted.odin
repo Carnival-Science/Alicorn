@@ -702,6 +702,11 @@ hosted_runtime_text_key :: proc(
 	return result, .Ok
 }
 
+// hosted_runtime_accessibility_action routes an advertised semantic action.
+// When the action becomes an application-owned domain event, on_wake is called
+// on the owner thread so the application can drain and adopt that event before
+// the next description. Realized Press/Focus actions remain runtime-owned and
+// do not invoke the application callback.
 hosted_runtime_accessibility_action :: proc(
 	host: ^Hosted_Runtime,
 	id: Semantic_ID,
@@ -712,7 +717,13 @@ hosted_runtime_accessibility_action :: proc(
 ) -> (handled: bool, status: Hosted_Runtime_Status) {
 	state, access_status := hosted_runtime_get_state(host)
 	if access_status != .Ok { return false, access_status }
-	return semantic_action_request(&state.runtime, id, action, text_value, numeric_value, has_numeric_value), .Ok
+	pending_before := len(state.runtime.semantic_requests)-state.runtime.semantic_request_read_index
+	handled = semantic_action_request(&state.runtime, id, action, text_value, numeric_value, has_numeric_value)
+	if handled && state.on_wake != nil &&
+	   len(state.runtime.semantic_requests)-state.runtime.semantic_request_read_index > pending_before {
+		state.on_wake(state.app_state, &state.runtime)
+	}
+	return handled, .Ok
 }
 
 hosted_runtime_display_commands :: proc(host: ^Hosted_Runtime) -> ([]Paint_Command, Hosted_Runtime_Status) {

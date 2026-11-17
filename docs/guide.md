@@ -41,6 +41,9 @@ actions. The description can therefore run again after a click: keep file I/O,
 worker submissions, and other external side effects behind consumed actions
 or explicit application transitions. Worker completions are adopted in
 `on_wake`, which explicitly requests a description with `ui.invalidate`.
+Browser applications also receive queued application-owned accessibility
+actions there; drain them with `semantic_request_pop`, apply the action to
+application state, and release each event with `semantic_request_event_destroy`.
 Use `host.Run` for runtime/font initialization and additional native events
 or host services.
 
