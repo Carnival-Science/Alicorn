@@ -14,6 +14,7 @@ Child_App :: struct {
 App :: struct {
 	count: int,
 	name: ui.Text_Buffer,
+	timing_motion: bool,
 	windows: ui.UI_Window_Service,
 	child: Child_App,
 	open_child_on_services: bool,
@@ -32,6 +33,26 @@ render :: proc(app: ^App, ctx: ^ui.UI) {
 		}
 		if app.child_open_accepted { ui.text(ctx, "Auxiliary window request accepted") }
 		if app.child.open_failed { ui.text(ctx, "Auxiliary window could not be created") }
+		if app.timing_motion {
+			if ui.row(ctx, height=24, label="timing-motion-probe") {
+				marker := alicorn.container_begin(
+					ctx,
+					.Container,
+					label="retained-motion-timing-probe",
+					key="retained-motion-timing-probe",
+					style=ui.layout_style(.Row, width=24, height=16),
+					color=ui.rgb(0x4EA6C7),
+				)
+				_ = ui.motion(
+					ctx,
+					marker,
+					ui.Motion_Target{translation=ui.Motion_Vector2{180, 0}, has_translation=true},
+					.Reveal,
+					ui.Motion_Vector2{-180, 0},
+				)
+				alicorn.container_end(ctx)
+			}
+		}
 	}
 }
 
@@ -104,6 +125,7 @@ main :: proc() {
 	for argument in os.args {
 		if argument == "--smoke" { smoke = true }
 		if argument == "--backend=sdl-gpu" { sdl_gpu_reference = true }
+		if argument == "--timing-motion" { app.timing_motion = true }
 		if argument == "--child-smoke" {
 			smoke = true
 			app.open_child_on_services = true

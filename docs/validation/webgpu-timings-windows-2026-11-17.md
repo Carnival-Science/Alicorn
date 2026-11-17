@@ -82,7 +82,8 @@ out`), so this record deliberately contains no claimed click latency sample.
 
 The optimized native fixture was rebuilt from `184292b` on an NVIDIA GeForce
 RTX 2080 SUPER and selected D3D12. Both the WebGPU `--smoke --timings`
-invocation and the fixture-only SDL_GPU reference `--smoke` invocation exited+successfully. The WebGPU smoke again produced one cold frame:
+invocation and the fixture-only SDL_GPU reference `--smoke` invocation exited
+successfully. The WebGPU smoke again produced one cold frame:
 
 | CPU metric | sample |
 | --- | ---: |
@@ -93,6 +94,56 @@ invocation and the fixture-only SDL_GPU reference `--smoke` invocation exited+s
 | Surface present call | 355.3 µs |
 | Runtime-step-to-present | 8.091 ms |
 
-It produced no input samples. The SDL_GPU reference smoke also passed through+the exact same Odin `render` callback and reported one submission. Its native+diagnostics included a 4.323 ms frame p95, 2.988 ms encode, and 1.237 ms submit+path. The timing boundaries differ, and one cold frame per backend is not a+performance comparison.+
-The following checks passed on the same source revision:+
-- `odin test renderer/webgpu`: 6 tests.+- `odin test host/presentation`: 5 tests.+- `odin test host/web`: 13 tests.+- `odin test host/sdl3`: 10 tests with the repository-pinned AccessKit+  compiler arguments and the fixture DLL directory on `PATH`.+- `odin check host/presentation -target:js_wasm32 -no-entry-point`.+- `odin check ui -target:js_wasm32 -no-entry-point`.++This recheck strengthens build and smoke evidence for the timing/fixture+change only. Physical input-to-submit samples, application-workload parity,+and display-level visible-latency measurement remain open.
+It produced no input samples. The SDL_GPU reference smoke also passed through
+the exact same Odin `render` callback and reported one submission. Its native
+diagnostics included a 4.323 ms frame p95, 2.988 ms encode, and 1.237 ms submit
+path. The timing boundaries differ, and one cold frame per backend is not a
+performance comparison.
+
+The following checks passed on the same source revision:
+
+- `odin test renderer/webgpu`: 6 tests.
+- `odin test host/presentation`: 5 tests.
+- `odin test host/web`: 13 tests.
+- `odin test host/sdl3`: 10 tests with the repository-pinned AccessKit
+  compiler arguments and the fixture DLL directory on `PATH`.
+- `odin check host/presentation -target:js_wasm32 -no-entry-point`.
+- `odin check ui -target:js_wasm32 -no-entry-point`.
+
+This recheck strengthens build and smoke evidence for the timing/fixture
+change only. Physical input-to-submit samples, application-workload parity,
+and display-level visible-latency measurement remain open.
+
+### Retained-motion multi-frame probe (Windows, 2026-11-17)
+
+The native UI fixture now has an opt-in `--timing-motion` workload. It adds a
+small retained marker with a one-shot `.Reveal` target; normal fixture runs do
+not add it. The same Odin `render` callback ran for three seconds through both
+`ui.run_webgpu` and the SDL_GPU reference host on the RTX 2080 SUPER / D3D12
+system:
+
+```powershell
+& .\out\webgpu-phase0\native_webgpu_ui.exe --smoke --timings --timing-motion --backend=d3d12
+& .\out\webgpu-phase0\native_webgpu_ui.exe --smoke --timing-motion --backend=sdl-gpu
+```
+
+WebGPU recorded 48 submitted-frame samples, with these CPU wall-time
+percentiles:
+
+| Metric | p50 | p95 | p99 |
+| --- | ---: | ---: | ---: |
+| Runtime step | 5.8 µs | 8.6 µs | 13.7 µs |
+| Surface acquire | 6.9 µs | 1.976 ms | 5.039 ms |
+| Renderer encode | 92.2 µs | 168.6 µs | 691.8 µs |
+| Queue submit path | 56.1 µs | 79.8 µs | 97.3 µs |
+| Surface present call | 76.3 µs | 179.7 µs | 269.6 µs |
+| Runtime-step-to-present | 243.1 µs | 3.580 ms | 6.681 ms |
+
+The SDL_GPU reference recorded 37 submissions and 36 motion samples. Its
+existing aggregate diagnostics reported a 17.959 ms frame p95, one text mesh
+rebuild and 36 cache hits. SDL_GPU encode/submit values are accumulated totals,
+so they are not directly comparable to WebGPU's per-frame percentiles. These
+results demonstrate a warm, repeated same-callback retained-motion run; they
+do not establish renderer performance parity, production-application behavior,
+input-to-present latency, or physical display visibility. No input events were
+part of this workload.
