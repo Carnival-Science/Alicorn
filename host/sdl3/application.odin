@@ -55,8 +55,13 @@ SDL3_WebGPU_Application :: struct {
 	modifiers: sdl3.Keymod,
 	text_input: SDL3_WebGPU_Text_Input_State,
 	dpi_scale: f32,
+	clear_color: wgpu.Color,
+	last_logical_width, last_logical_height: int,
+	last_pixel_width, last_pixel_height: int,
 	next_wake_ns: u64,
+	visible: bool,
 	initialized: bool,
+	presenter_device_lost: bool,
 }
 
 @(private)
@@ -120,6 +125,12 @@ sdl3_webgpu_application_init :: proc(
 			window_focused=sdl3.GetKeyboardFocus() == window,
 		},
 		dpi_scale=f32(pixel_width) / f32(logical_width),
+		clear_color=clear_color,
+		last_logical_width=logical_width,
+		last_logical_height=logical_height,
+		last_pixel_width=pixel_width,
+		last_pixel_height=pixel_height,
+		visible=true,
 		initialized=true,
 	}
 	if application.window_id == 0 { application^ = {}; return .Window_Failure }
@@ -134,19 +145,8 @@ sdl3_webgpu_application_init :: proc(
 		application^ = {}
 		return .Runtime_Failure
 	}
-	if result := presentation_host.hosted_surface_presenter_init(
-		&application.presenter,
-		&application.hosted,
-		surface,
-		device,
-		queue,
-		configuration,
-		logical_width,
-		logical_height,
-		dpi,
-		rawptr(application),
-		sdl3_webgpu_application_wake,
-		clear_color,
+	if result := sdl3_webgpu_application_attach_presenter(
+		application, surface, device, queue, configuration,
 	); result != .Ok {
 		_ = alicorn.hosted_runtime_destroy(&application.hosted)
 		application^ = {}
@@ -154,6 +154,100 @@ sdl3_webgpu_application_init :: proc(
 	}
 	application.initialized = true
 	return .Ok
+}
+
+// Attach or reattach the device-bound presenter while keeping the same
+// Hosted_Runtime, SDL input state, and native text-input owner. After loss,
+// callers must first mark and detach the old presenter once its queue callbacks
+// have drained.
+sdl3_webgpu_application_attach_presenter :: proc(
+	application: ^SDL3_WebGPU_Application,
+	surface: wgpu.Surface,
+	device: wgpu.Device,
+	queue: wgpu.Queue,
+	configuration: wgpu.SurfaceConfiguration,
+) -> SDL3_WebGPU_Application_Result {
+	if application == nil || !application.initialized || application.hosted.state == nil ||
+	   surface == nil || device == nil || queue == nil || configuration.format == .Undefined ||
+	   application.presenter.state != nil {
+		return .Invalid_Input
+	}
+	logical_width, logical_height, pixel_width, pixel_height, metrics_ok :=
+		sdl3_webgpu_application_window_metrics(application.window)
+	if !metrics_ok { return .Window_Failure }
+	if logical_width > 0 && logical_height > 0 && pixel_width > 0 && pixel_height > 0 {
+		application.last_logical_width, application.last_logical_height = logical_width, logical_height
+		application.last_pixel_width, application.last_pixel_height = pixel_width, pixel_height
+		application.dpi_scale = f32(pixel_width) / f32(logical_width)
+	}
+	if application.last_logical_width <= 0 || application.last_logical_height <= 0 ||
+	   application.last_pixel_width <= 0 || application.last_pixel_height <= 0 {
+		return .Window_Failure
+	}
+	surface_configuration := configuration
+	surface_configuration.width = u32(application.last_pixel_width)
+	surface_configuration.height = u32(application.last_pixel_height)
+	if result := presentation_host.hosted_surface_presenter_init(
+		&application.presenter,
+		&application.hosted,
+		surface,
+		device,
+		queue,
+		surface_configuration,
+		application.last_logical_width,
+		application.last_logical_height,
+		application.dpi_scale,
+		rawptr(application),
+		sdl3_webgpu_application_wake,
+		application.clear_color,
+	); result != .Ok {
+		return .Presenter_Failure
+	}
+	application.presenter_device_lost = false
+	renderable := application.visible && logical_width > 0 && logical_height > 0 &&
+		pixel_width > 0 && pixel_height > 0
+	if alicorn.hosted_runtime_set_renderable(&application.hosted, renderable) != .Ok {
+		_ = presentation_host.hosted_surface_presenter_destroy(&application.presenter)
+		return .Presenter_Failure
+	}
+	if logical_width == 0 || logical_height == 0 || pixel_width == 0 || pixel_height == 0 {
+		resize_result := presentation_host.hosted_surface_presenter_resize(
+			&application.presenter,
+			logical_width,
+			logical_height,
+			pixel_width,
+			pixel_height,
+			application.dpi_scale,
+		)
+		if resize_result != .Suspended {
+			_ = presentation_host.hosted_surface_presenter_destroy(&application.presenter)
+			return .Presenter_Failure
+		}
+	}
+	if !application.visible {
+		if presentation_host.hosted_surface_presenter_set_visible(&application.presenter, false) != .Ok {
+			_ = presentation_host.hosted_surface_presenter_destroy(&application.presenter)
+			return .Presenter_Failure
+		}
+	}
+	return .Ok
+}
+
+// A loss invalidates the old presenter immediately. Its Runtime and input
+// bridges remain live for reattachment to a replacement device.
+sdl3_webgpu_application_mark_device_lost :: proc(application: ^SDL3_WebGPU_Application) {
+	if application == nil || !application.initialized { return }
+	application.presenter_device_lost = true
+	presentation_host.hosted_surface_presenter_mark_device_lost(&application.presenter)
+	_ = alicorn.hosted_runtime_set_renderable(&application.hosted, false)
+}
+
+sdl3_webgpu_application_detach_lost_presenter :: proc(
+	application: ^SDL3_WebGPU_Application,
+) -> bool {
+	if application == nil || !application.initialized { return true }
+	if !application.presenter_device_lost { return false }
+	return presentation_host.hosted_surface_presenter_destroy_after_device_loss(&application.presenter)
 }
 
 sdl3_webgpu_application_pointer :: proc(
@@ -172,6 +266,23 @@ sdl3_webgpu_application_resize :: proc(application: ^SDL3_WebGPU_Application) ->
 	dpi := application.dpi_scale
 	if lw > 0 && pw > 0 { dpi = f32(pw) / f32(lw) }
 	else if lh > 0 && ph > 0 { dpi = f32(ph) / f32(lh) }
+	if lw > 0 && lh > 0 && pw > 0 && ph > 0 {
+		application.last_logical_width, application.last_logical_height = lw, lh
+		application.last_pixel_width, application.last_pixel_height = pw, ph
+	}
+	if application.presenter.state == nil || application.presenter_device_lost {
+		if alicorn.hosted_runtime_resize(&application.hosted, lw, lh, pw, ph, dpi) != .Ok {
+			return .Invalid_Input
+		}
+		renderable := !application.presenter_device_lost && application.visible &&
+			lw > 0 && lh > 0 && pw > 0 && ph > 0
+		if alicorn.hosted_runtime_set_renderable(&application.hosted, renderable) != .Ok {
+			return .Invalid_Input
+		}
+		application.dpi_scale = dpi
+		if renderable { return .Ok }
+		return .Suspended
+	}
 	result := presentation_host.hosted_surface_presenter_resize(
 		&application.presenter, lw, lh, pw, ph, dpi,
 	)
@@ -184,6 +295,17 @@ sdl3_webgpu_application_set_visible :: proc(
 	visible: bool,
 ) -> presentation_host.Hosted_Surface_Result {
 	if application == nil || !application.initialized { return .Invalid_Input }
+	application.visible = visible
+	if application.presenter.state == nil || application.presenter_device_lost {
+		lw, lh, pw, ph, ok := sdl3_webgpu_application_window_metrics(application.window)
+		if !ok { return .Invalid_Input }
+		renderable := !application.presenter_device_lost && visible &&
+			lw > 0 && lh > 0 && pw > 0 && ph > 0
+		if alicorn.hosted_runtime_set_renderable(&application.hosted, renderable) != .Ok {
+			return .Invalid_Input
+		}
+		return .Ok
+	}
 	return presentation_host.hosted_surface_presenter_set_visible(&application.presenter, visible)
 }
 
@@ -196,6 +318,9 @@ sdl3_webgpu_application_step :: proc(
 ) -> SDL3_WebGPU_Application_Step {
 	if application == nil || !application.initialized {
 		return {status=.Closed, presentation=.Invalid_Input}
+	}
+	if application.presenter.state == nil || application.presenter_device_lost {
+		return {status=.Ok, presentation=.No_Frame}
 	}
 	step, presentation := presentation_host.hosted_surface_presenter_step(&application.presenter, now_ns)
 	if step.status != .Ok { return {status=step.status, presentation=presentation} }
@@ -294,7 +419,15 @@ sdl3_webgpu_application_handle_event :: proc(
 sdl3_webgpu_application_destroy :: proc(application: ^SDL3_WebGPU_Application) -> bool {
 	if application == nil { return false }
 	if !application.initialized { return true }
-	if !presentation_host.hosted_surface_presenter_destroy(&application.presenter) { return false }
+	if application.presenter.state != nil {
+		if application.presenter_device_lost {
+			if !presentation_host.hosted_surface_presenter_destroy_after_device_loss(&application.presenter) {
+				return false
+			}
+		} else if !presentation_host.hosted_surface_presenter_destroy(&application.presenter) {
+			return false
+		}
+	}
 	application.text_input.window_focused = false
 	application.text_input.composition_owner = 0
 	if alicorn.hosted_runtime_focus_changed(&application.hosted, false) != .Ok ||

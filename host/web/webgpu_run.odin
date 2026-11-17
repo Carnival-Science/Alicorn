@@ -5,6 +5,7 @@ package web_host
 import "base:runtime"
 import "core:fmt"
 import alicorn "alicorn:runtime"
+import presentation_host "alicorn:host/presentation"
 import "vendor:wgpu"
 
 Browser_WebGPU_Run_Status :: enum {
@@ -53,7 +54,7 @@ Browser_WebGPU_Run :: struct {
 	wake: Browser_Application_Wake_Proc,
 	clear_color: wgpu.Color,
 	status: Browser_WebGPU_Run_Status,
-	recovery_policy: Browser_WebGPU_Recovery_Policy,
+	recovery_policy: presentation_host.WebGPU_Recovery_Policy,
 	last_now_ns: u64,
 	adapter_pending: bool,
 	device_pending: bool,
@@ -131,10 +132,10 @@ browser_webgpu_run_request_adapter :: proc(host: ^Browser_WebGPU_Run, recovery: 
 		compatibleSurface=host.surface,
 	}
 	if recovery {
-		if !browser_webgpu_recovery_attempt_begin(&host.recovery_policy, host.last_now_ns) {
+		if !presentation_host.webgpu_recovery_attempt_begin(&host.recovery_policy, host.last_now_ns) {
 			host.recovery_active = false
 			host.status = .Recovery_Failed
-			browser_webgpu_recovery_abort(&host.recovery_policy)
+			presentation_host.webgpu_recovery_abort(&host.recovery_policy)
 			browser_webgpu_run_wake(host)
 			return
 		}
@@ -153,7 +154,7 @@ browser_webgpu_run_request_adapter :: proc(host: ^Browser_WebGPU_Run, recovery: 
 @(private)
 browser_webgpu_run_recovery_attempt_failed :: proc(host: ^Browser_WebGPU_Run) {
 	browser_webgpu_run_release_device_handles(host, false)
-	if !browser_webgpu_recovery_attempt_failed(&host.recovery_policy, host.last_now_ns) {
+	if !presentation_host.webgpu_recovery_attempt_failed(&host.recovery_policy, host.last_now_ns) {
 		host.recovery_active = false
 		host.status = .Recovery_Failed
 	} else {
@@ -276,7 +277,7 @@ browser_webgpu_run_device_callback :: proc "c" (
 			// Keep it owned until shutdown so its lost callback context remains
 			// valid instead of retrying around an outstanding callback.
 			host.device = device
-			if host.recovery_active { browser_webgpu_recovery_abort(&host.recovery_policy) }
+			if host.recovery_active { presentation_host.webgpu_recovery_abort(&host.recovery_policy) }
 			host.status = .Recovery_Failed
 			host.recovery_active = false
 			browser_webgpu_run_wake(host)
@@ -295,7 +296,7 @@ browser_webgpu_run_device_callback :: proc "c" (
 	host.queue = wgpu.DeviceGetQueue(device)
 	if host.queue == nil {
 		if host.recovery_active {
-			browser_webgpu_recovery_abort(&host.recovery_policy)
+			presentation_host.webgpu_recovery_abort(&host.recovery_policy)
 			host.recovery_active = false
 			host.status = .Recovery_Failed
 			browser_webgpu_run_wake(host)
@@ -335,7 +336,7 @@ browser_webgpu_run_device_callback :: proc "c" (
 	}
 	if app_result != .Ok {
 		if host.recovery_active {
-			browser_webgpu_recovery_abort(&host.recovery_policy)
+			presentation_host.webgpu_recovery_abort(&host.recovery_policy)
 			host.recovery_active = false
 			host.status = .Recovery_Failed
 			browser_webgpu_run_wake(host)
@@ -354,7 +355,7 @@ browser_webgpu_run_device_callback :: proc "c" (
 	}
 	host.status = .Ready
 	host.recovery_active = false
-	browser_webgpu_recovery_succeed(&host.recovery_policy)
+	presentation_host.webgpu_recovery_succeed(&host.recovery_policy)
 	browser_webgpu_run_wake(host)
 }
 
@@ -379,7 +380,7 @@ browser_webgpu_run_device_lost :: proc "c" (
 		host.status = .Device_Lost
 	} else {
 		if !host.recovery_active {
-			browser_webgpu_recovery_begin(&host.recovery_policy, host.last_now_ns)
+			presentation_host.webgpu_recovery_begin(&host.recovery_policy, host.last_now_ns)
 		}
 		host.recovery_active = true
 		host.status = .Recovery_Draining
@@ -429,7 +430,7 @@ browser_webgpu_run_recovery_step :: proc(host: ^Browser_WebGPU_Run, now_ns: u64)
 		}
 		browser_webgpu_run_release_device_handles(host, false)
 		if host.recovery_policy.attempt_pending {
-			if !browser_webgpu_recovery_attempt_failed(&host.recovery_policy, now_ns) {
+			if !presentation_host.webgpu_recovery_attempt_failed(&host.recovery_policy, now_ns) {
 				host.recovery_active = false
 				host.status = .Recovery_Failed
 				browser_webgpu_run_wake(host)
@@ -440,7 +441,7 @@ browser_webgpu_run_recovery_step :: proc(host: ^Browser_WebGPU_Run, now_ns: u64)
 		}
 		host.status = .Recovery_Waiting
 	}
-	if host.status == .Recovery_Waiting && browser_webgpu_recovery_attempt_due(&host.recovery_policy, now_ns) {
+	if host.status == .Recovery_Waiting && presentation_host.webgpu_recovery_attempt_due(&host.recovery_policy, now_ns) {
 		browser_webgpu_run_request_adapter(host, true)
 	}
 	return false
