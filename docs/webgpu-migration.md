@@ -2560,10 +2560,12 @@ Validation with Odin `dev-2026-11-nightly:08539cd` on Windows:
 - `odin check host/sdl3` and `odin check native/sdl_gpu` passed; the latter
   emitted only the existing large-stack-local warnings from secondary-window
   tests.
-- A full `odin test native/sdl_gpu` run was started but did not produce a
-  completion summary during the bounded attempt. It emitted the existing
-  diagnostics negative-case message and was interrupted; no full legacy-suite
-  pass is claimed here.
+- `odin test native/sdl_gpu` passed all 172 tests in 4m19s using one test
+  thread, random seed 1, and `-o:speed`. Together with the 22 tests in
+  `host/sdl3/accessibility`, that validates the moved package and the retained
+  SDL_GPU compatibility surface across all 194 tests. The first default
+  12-thread attempt had been stopped before its summary; the deterministic
+  rerun completed successfully.
 - The optimized `examples/16_native_webgpu_ui` build passed with
   `-define:WGPU_SHARED=true`. Static wgpu-native and AccessKit each bring a
   Rust runtime defining `rust_eh_personality`; the shared Odin wgpu-native
