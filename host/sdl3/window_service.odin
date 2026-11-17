@@ -303,6 +303,21 @@ sdl3_webgpu_window_detach_lost_presenter :: proc(manager: ^SDL3_WebGPU_Window_Ma
 	return sdl3_webgpu_application_detach_lost_presenter(&manager.child.application)
 }
 
+sdl3_webgpu_window_recreate_surface_after_device_loss :: proc(
+	manager: ^SDL3_WebGPU_Window_Manager,
+) -> bool {
+	if manager == nil || manager.child == nil { return true }
+	child := manager.child
+	if child.surface != nil {
+		wgpu.SurfaceUnconfigure(child.surface)
+		wgpu.SurfaceRelease(child.surface)
+		child.surface = nil
+	}
+	if child.window == nil || manager.instance == nil { return false }
+	child.surface = sdl3glue.GetSurface(manager.instance, child.window)
+	return child.surface != nil
+}
+
 sdl3_webgpu_window_attach_presenter :: proc(
 	manager: ^SDL3_WebGPU_Window_Manager,
 	configuration: wgpu.SurfaceConfiguration,

@@ -534,7 +534,6 @@ hosted_surface_presenter_destroy_after_device_loss :: proc(presenter: ^Hosted_Su
 	if state == nil { return true }
 	if !state.device_lost || state.pending_completions != 0 { return false }
 	if !webgpu_renderer.WebGPU_Presenter_Destroy_After_Device_Loss(&state.renderer) { return false }
-	wgpu.SurfaceUnconfigure(state.surface)
 	allocator := state.allocator
 	hosted_surface_timing_buffer_destroy(state)
 	free(state, allocator=allocator)

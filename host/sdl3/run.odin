@@ -250,6 +250,14 @@ sdl3_webgpu_run_timing_requested :: proc() -> bool {
 }
 
 @(private)
+sdl3_webgpu_run_loss_injection_requested :: proc() -> bool {
+	for argument in os.args {
+		if argument == "--test-simulate-unexpected-device-loss" { return true }
+	}
+	return false
+}
+
+@(private)
 sdl3_webgpu_run_timing_percentiles :: proc(samples: []u64) -> (p50, p95, p99: u64) {
 	if len(samples) == 0 { return }
 	sort.quick_sort(samples)
@@ -322,12 +330,12 @@ sdl3_webgpu_run_dispatch_event :: proc(
 sdl3_webgpu_run_release_state :: proc(state: ^SDL3_WebGPU_Run_State) {
 	if state == nil { return }
 	state.closing = true
-	sdl3_webgpu_run_release_device_handles(state, !state.device_lost)
 	if state.surface != nil {
 		wgpu.SurfaceUnconfigure(state.surface)
 		wgpu.SurfaceRelease(state.surface)
 		state.surface = nil
 	}
+	sdl3_webgpu_run_release_device_handles(state, !state.device_lost)
 	if state.instance != nil {
 		wgpu.InstanceRelease(state.instance)
 		state.instance = nil
@@ -403,6 +411,23 @@ sdl3_webgpu_run_recovery_step :: proc(
 			return false
 		}
 		if !sdl3_webgpu_window_detach_lost_presenter(state.windows) { return false }
+		// Surface configurations are device-bound. Recreate native WebGPU
+		// surfaces as well as presenters so a replacement device cannot acquire
+		// a stale swapchain texture owned by the lost device.
+		if state.surface != nil {
+			wgpu.SurfaceUnconfigure(state.surface)
+			wgpu.SurfaceRelease(state.surface)
+			state.surface = nil
+		}
+		if state.windows == nil || state.windows.primary_window == nil || state.instance == nil {
+			state.recovery_terminal_failure = true
+			return true
+		}
+		state.surface = sdl3glue.GetSurface(state.instance, state.windows.primary_window)
+		if state.surface == nil || !sdl3_webgpu_window_recreate_surface_after_device_loss(state.windows) {
+			state.recovery_terminal_failure = true
+			return true
+		}
 		sdl3_webgpu_run_release_device_handles(state, false)
 		state.device_lost = false
 		state.device_loss_reason = {}
@@ -619,6 +644,7 @@ sdl3_webgpu_run :: proc(
 	started_ns := u64(sdl3.GetTicksNS())
 	did_present := false
 	child_did_present := false
+	inject_loss_after_present := sdl3_webgpu_run_loss_injection_requested()
 	for {
 		now_ns := u64(sdl3.GetTicksNS())
 		state.last_now_ns = now_ns
@@ -660,6 +686,21 @@ sdl3_webgpu_run :: proc(
 		#partial switch step.presentation {
 		case .Ok:
 			did_present = true
+			if inject_loss_after_present {
+				inject_loss_after_present = false
+				did_present = false
+				child_did_present = false
+				fmt.println(
+					"[alicorn-webgpu] test injection: simulating an unexpected Unknown device-loss callback; not hardware-loss evidence",
+				)
+				sdl3_webgpu_run_device_lost_callback(
+					&state.device,
+					.Unknown,
+					{},
+					rawptr(&state),
+					nil,
+				)
+			}
 		case .Invalid_Input, .Resource_Failure, .Render_Failure,
 		     .Surface_Acquire_Failure, .Present_Failure:
 			return .Presenter_Failure
@@ -671,7 +712,7 @@ sdl3_webgpu_run :: proc(
 		child_smoke_complete := window_manager.child == nil || (
 			child_did_present && !sdl3_webgpu_window_has_in_flight(&window_manager)
 		)
-		if smoke && did_present && child_smoke_complete &&
+		if smoke && !state.recovery_active && !state.device_lost && did_present && child_smoke_complete &&
 		   !sdl3_webgpu_application_has_in_flight(&application) {
 			return .Ok
 		}

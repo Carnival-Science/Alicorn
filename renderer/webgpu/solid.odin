@@ -347,14 +347,26 @@ Solid_Encode :: proc(
 // Replacing a grown buffer only releases this renderer's reference; it does
 // not explicitly destroy a buffer that an earlier queue submission may use.
 Solid_Destroy :: proc(renderer: ^Solid_Renderer) {
+	solid_destroy(renderer, true)
+}
+
+@(private)
+Solid_Abandon_After_Device_Loss :: proc(renderer: ^Solid_Renderer) {
+	solid_destroy(renderer, false)
+}
+
+@(private)
+solid_destroy :: proc(renderer: ^Solid_Renderer, release_gpu: bool) {
 	if renderer == nil { return }
-	if renderer.vertex_buffer != nil { wgpu.BufferRelease(renderer.vertex_buffer) }
-	if renderer.bind_group != nil { wgpu.BindGroupRelease(renderer.bind_group) }
-	if renderer.pipeline != nil { wgpu.RenderPipelineRelease(renderer.pipeline) }
-	if renderer.shader != nil { wgpu.ShaderModuleRelease(renderer.shader) }
-	if renderer.pipeline_layout != nil { wgpu.PipelineLayoutRelease(renderer.pipeline_layout) }
-	if renderer.bind_group_layout != nil { wgpu.BindGroupLayoutRelease(renderer.bind_group_layout) }
-	if renderer.uniform_buffer != nil { wgpu.BufferRelease(renderer.uniform_buffer) }
+	if release_gpu {
+		if renderer.vertex_buffer != nil { wgpu.BufferRelease(renderer.vertex_buffer) }
+		if renderer.bind_group != nil { wgpu.BindGroupRelease(renderer.bind_group) }
+		if renderer.pipeline != nil { wgpu.RenderPipelineRelease(renderer.pipeline) }
+		if renderer.shader != nil { wgpu.ShaderModuleRelease(renderer.shader) }
+		if renderer.pipeline_layout != nil { wgpu.PipelineLayoutRelease(renderer.pipeline_layout) }
+		if renderer.bind_group_layout != nil { wgpu.BindGroupLayoutRelease(renderer.bind_group_layout) }
+		if renderer.uniform_buffer != nil { wgpu.BufferRelease(renderer.uniform_buffer) }
+	}
 	delete(renderer.vertices)
 	delete(renderer.draws)
 	renderer^ = {}

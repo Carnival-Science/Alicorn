@@ -401,25 +401,37 @@ Surface_Complete_Submission :: proc(renderer: ^Surface_Renderer, completed_seria
 }
 
 Surface_Destroy :: proc(renderer: ^Surface_Renderer) {
+	surface_destroy(renderer, true)
+}
+
+@(private)
+Surface_Abandon_After_Device_Loss :: proc(renderer: ^Surface_Renderer) {
+	surface_destroy(renderer, false)
+}
+
+@(private)
+surface_destroy :: proc(renderer: ^Surface_Renderer, release_gpu: bool) {
 	if renderer == nil { return }
-	for &resource in renderer.resources {
-		if resource.vertex_buffer != nil { wgpu.BufferRelease(resource.vertex_buffer) }
+	if release_gpu {
+		for &resource in renderer.resources {
+			if resource.vertex_buffer != nil { wgpu.BufferRelease(resource.vertex_buffer) }
+		}
+		for &retired in renderer.retired {
+			if retired.buffer != nil { wgpu.BufferRelease(retired.buffer) }
+		}
+		if renderer.instance_buffer != nil { wgpu.BufferRelease(renderer.instance_buffer) }
+		if renderer.marker_bind_group != nil { wgpu.BindGroupRelease(renderer.marker_bind_group) }
+		if renderer.marker_view != nil { wgpu.TextureViewRelease(renderer.marker_view) }
+		if renderer.marker_texture != nil { wgpu.TextureRelease(renderer.marker_texture) }
+		if renderer.marker_sampler != nil { wgpu.SamplerRelease(renderer.marker_sampler) }
+		if renderer.view_bind_group != nil { wgpu.BindGroupRelease(renderer.view_bind_group) }
+		if renderer.pipeline != nil { wgpu.RenderPipelineRelease(renderer.pipeline) }
+		if renderer.shader != nil { wgpu.ShaderModuleRelease(renderer.shader) }
+		if renderer.pipeline_layout != nil { wgpu.PipelineLayoutRelease(renderer.pipeline_layout) }
+		if renderer.marker_layout != nil { wgpu.BindGroupLayoutRelease(renderer.marker_layout) }
+		if renderer.view_layout != nil { wgpu.BindGroupLayoutRelease(renderer.view_layout) }
+		if renderer.view_buffer != nil { wgpu.BufferRelease(renderer.view_buffer) }
 	}
-	for &retired in renderer.retired {
-		if retired.buffer != nil { wgpu.BufferRelease(retired.buffer) }
-	}
-	if renderer.instance_buffer != nil { wgpu.BufferRelease(renderer.instance_buffer) }
-	if renderer.marker_bind_group != nil { wgpu.BindGroupRelease(renderer.marker_bind_group) }
-	if renderer.marker_view != nil { wgpu.TextureViewRelease(renderer.marker_view) }
-	if renderer.marker_texture != nil { wgpu.TextureRelease(renderer.marker_texture) }
-	if renderer.marker_sampler != nil { wgpu.SamplerRelease(renderer.marker_sampler) }
-	if renderer.view_bind_group != nil { wgpu.BindGroupRelease(renderer.view_bind_group) }
-	if renderer.pipeline != nil { wgpu.RenderPipelineRelease(renderer.pipeline) }
-	if renderer.shader != nil { wgpu.ShaderModuleRelease(renderer.shader) }
-	if renderer.pipeline_layout != nil { wgpu.PipelineLayoutRelease(renderer.pipeline_layout) }
-	if renderer.marker_layout != nil { wgpu.BindGroupLayoutRelease(renderer.marker_layout) }
-	if renderer.view_layout != nil { wgpu.BindGroupLayoutRelease(renderer.view_layout) }
-	if renderer.view_buffer != nil { wgpu.BufferRelease(renderer.view_buffer) }
 	delete(renderer.instances)
 	delete(renderer.uploaded_instances)
 	delete(renderer.resources)

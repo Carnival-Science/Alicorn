@@ -390,18 +390,30 @@ Image_Complete_Submission :: proc(renderer: ^Image_Renderer, completed_serial: u
 }
 
 Image_Destroy :: proc(renderer: ^Image_Renderer) {
+	image_destroy(renderer, true)
+}
+
+@(private)
+Image_Abandon_After_Device_Loss :: proc(renderer: ^Image_Renderer) {
+	image_destroy(renderer, false)
+}
+
+@(private)
+image_destroy :: proc(renderer: ^Image_Renderer, release_gpu: bool) {
 	if renderer == nil { return }
-	for &resource in renderer.resources { image_resource_release_gpu(&resource) }
-	for &retired in renderer.retired { image_resource_release_gpu(&retired.resource) }
-	if renderer.vertex_buffer != nil { wgpu.BufferRelease(renderer.vertex_buffer) }
-	if renderer.pipeline != nil { wgpu.RenderPipelineRelease(renderer.pipeline) }
-	if renderer.shader != nil { wgpu.ShaderModuleRelease(renderer.shader) }
-	if renderer.pipeline_layout != nil { wgpu.PipelineLayoutRelease(renderer.pipeline_layout) }
-	if renderer.image_layout != nil { wgpu.BindGroupLayoutRelease(renderer.image_layout) }
-	if renderer.view_bind_group != nil { wgpu.BindGroupRelease(renderer.view_bind_group) }
-	if renderer.view_layout != nil { wgpu.BindGroupLayoutRelease(renderer.view_layout) }
-	if renderer.view_buffer != nil { wgpu.BufferRelease(renderer.view_buffer) }
-	if renderer.sampler != nil { wgpu.SamplerRelease(renderer.sampler) }
+	if release_gpu {
+		for &resource in renderer.resources { image_resource_release_gpu(&resource) }
+		for &retired in renderer.retired { image_resource_release_gpu(&retired.resource) }
+		if renderer.vertex_buffer != nil { wgpu.BufferRelease(renderer.vertex_buffer) }
+		if renderer.pipeline != nil { wgpu.RenderPipelineRelease(renderer.pipeline) }
+		if renderer.shader != nil { wgpu.ShaderModuleRelease(renderer.shader) }
+		if renderer.pipeline_layout != nil { wgpu.PipelineLayoutRelease(renderer.pipeline_layout) }
+		if renderer.image_layout != nil { wgpu.BindGroupLayoutRelease(renderer.image_layout) }
+		if renderer.view_bind_group != nil { wgpu.BindGroupRelease(renderer.view_bind_group) }
+		if renderer.view_layout != nil { wgpu.BindGroupLayoutRelease(renderer.view_layout) }
+		if renderer.view_buffer != nil { wgpu.BufferRelease(renderer.view_buffer) }
+		if renderer.sampler != nil { wgpu.SamplerRelease(renderer.sampler) }
+	}
 	delete(renderer.vertices)
 	delete(renderer.draws)
 	delete(renderer.resources)

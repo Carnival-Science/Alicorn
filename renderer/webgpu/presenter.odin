@@ -303,18 +303,19 @@ WebGPU_Presenter_Destroy :: proc(presenter: ^WebGPU_Presenter) -> bool {
 	return true
 }
 
-// WebGPU_Presenter_Destroy_After_Device_Loss releases CPU and GPU-side
-// renderer ownership after the host has observed device loss and drained every
-// callback that can reference this presenter. Submitted work cannot complete
-// normally on a lost device, so the ordinary fence-gated destroy path is not
-// applicable. The host must stop encoding and guarantee callback quiescence.
+// WebGPU_Presenter_Destroy_After_Device_Loss abandons device-owned handles and
+// releases CPU-side renderer allocations after the host has observed device
+// loss and drained every callback that can reference this presenter. Submitted
+// work cannot complete normally on a lost device, so the ordinary fence-gated
+// destroy path is not applicable. The host must stop encoding and guarantee
+// callback quiescence.
 WebGPU_Presenter_Destroy_After_Device_Loss :: proc(presenter: ^WebGPU_Presenter) -> bool {
 	state := webgpu_presenter_state(presenter)
 	if presenter == nil { return false }
 	if state == nil { return true }
 	if state.frame_pending { return false }
 	state_allocator := state.allocator
-	Compositor_Destroy(&state.compositor)
+	Compositor_Abandon_After_Device_Loss(&state.compositor)
 	free(state, allocator=state_allocator)
 	presenter^ = {}
 	return true

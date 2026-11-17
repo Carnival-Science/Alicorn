@@ -392,22 +392,34 @@ Text_Commit_Submission :: proc(renderer: ^Text_Renderer, rt: ^alicorn.Runtime) {
 }
 
 Text_Destroy :: proc(renderer: ^Text_Renderer) {
+	text_destroy(renderer, true)
+}
+
+@(private)
+Text_Abandon_After_Device_Loss :: proc(renderer: ^Text_Renderer) {
+	text_destroy(renderer, false)
+}
+
+@(private)
+text_destroy :: proc(renderer: ^Text_Renderer, release_gpu: bool) {
 	if renderer == nil { return }
-	for &page in renderer.atlas_pages {
-		if page.bind_group != nil { wgpu.BindGroupRelease(page.bind_group) }
-		if page.view != nil { wgpu.TextureViewRelease(page.view) }
-		if page.texture != nil { wgpu.TextureRelease(page.texture) }
+	if release_gpu {
+		for &page in renderer.atlas_pages {
+			if page.bind_group != nil { wgpu.BindGroupRelease(page.bind_group) }
+			if page.view != nil { wgpu.TextureViewRelease(page.view) }
+			if page.texture != nil { wgpu.TextureRelease(page.texture) }
+		}
+		if renderer.vertex_buffer != nil { wgpu.BufferRelease(renderer.vertex_buffer) }
+		if renderer.pipeline != nil { wgpu.RenderPipelineRelease(renderer.pipeline) }
+		if renderer.shader != nil { wgpu.ShaderModuleRelease(renderer.shader) }
+		if renderer.pipeline_layout != nil { wgpu.PipelineLayoutRelease(renderer.pipeline_layout) }
+		if renderer.atlas_layout != nil { wgpu.BindGroupLayoutRelease(renderer.atlas_layout) }
+		if renderer.view_bind_group != nil { wgpu.BindGroupRelease(renderer.view_bind_group) }
+		if renderer.view_layout != nil { wgpu.BindGroupLayoutRelease(renderer.view_layout) }
+		if renderer.view_buffer != nil { wgpu.BufferRelease(renderer.view_buffer) }
+		if renderer.translation_buffer != nil { wgpu.BufferRelease(renderer.translation_buffer) }
+		if renderer.sampler != nil { wgpu.SamplerRelease(renderer.sampler) }
 	}
-	if renderer.vertex_buffer != nil { wgpu.BufferRelease(renderer.vertex_buffer) }
-	if renderer.pipeline != nil { wgpu.RenderPipelineRelease(renderer.pipeline) }
-	if renderer.shader != nil { wgpu.ShaderModuleRelease(renderer.shader) }
-	if renderer.pipeline_layout != nil { wgpu.PipelineLayoutRelease(renderer.pipeline_layout) }
-	if renderer.atlas_layout != nil { wgpu.BindGroupLayoutRelease(renderer.atlas_layout) }
-	if renderer.view_bind_group != nil { wgpu.BindGroupRelease(renderer.view_bind_group) }
-	if renderer.view_layout != nil { wgpu.BindGroupLayoutRelease(renderer.view_layout) }
-	if renderer.view_buffer != nil { wgpu.BufferRelease(renderer.view_buffer) }
-	if renderer.translation_buffer != nil { wgpu.BufferRelease(renderer.translation_buffer) }
-	if renderer.sampler != nil { wgpu.SamplerRelease(renderer.sampler) }
 	delete(renderer.vertices)
 	delete(renderer.draws)
 	delete(renderer.translations)

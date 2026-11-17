@@ -323,6 +323,12 @@ backdrop_effect_set_destroy :: proc(set: ^Backdrop_Effect_Texture_Set) {
 	set^ = {}
 }
 
+@(private)
+backdrop_effect_set_abandon_after_device_loss :: proc(set: ^Backdrop_Effect_Texture_Set) {
+	if set == nil { return }
+	set^ = {}
+}
+
 Backdrop_Effect_Source_View :: proc(renderer: ^Backdrop_Effect_Renderer) -> wgpu.TextureView {
 	if renderer == nil { return nil }
 	return renderer.set.views[0]
@@ -453,21 +459,36 @@ backdrop_effect_retire_completed :: proc(renderer: ^Backdrop_Effect_Renderer) {
 }
 
 Backdrop_Effect_Destroy :: proc(renderer: ^Backdrop_Effect_Renderer) {
+	backdrop_effect_destroy(renderer, true)
+}
+
+@(private)
+Backdrop_Effect_Abandon_After_Device_Loss :: proc(renderer: ^Backdrop_Effect_Renderer) {
+	backdrop_effect_destroy(renderer, false)
+}
+
+@(private)
+backdrop_effect_destroy :: proc(renderer: ^Backdrop_Effect_Renderer, release_gpu: bool) {
 	if renderer == nil { return }
-	backdrop_effect_set_destroy(&renderer.set)
-	for &retired in renderer.retired { backdrop_effect_set_destroy(&retired.set) }
-	if renderer.vertex_buffer != nil { wgpu.BufferRelease(renderer.vertex_buffer) }
-	if renderer.filter_pipeline != nil { wgpu.RenderPipelineRelease(renderer.filter_pipeline) }
-	if renderer.composite_pipeline != nil { wgpu.RenderPipelineRelease(renderer.composite_pipeline) }
-	if renderer.shader != nil { wgpu.ShaderModuleRelease(renderer.shader) }
-	if renderer.pipeline_layout != nil { wgpu.PipelineLayoutRelease(renderer.pipeline_layout) }
-	if renderer.texture_layout != nil { wgpu.BindGroupLayoutRelease(renderer.texture_layout) }
-	if renderer.filter_view_bind_group != nil { wgpu.BindGroupRelease(renderer.filter_view_bind_group) }
-	if renderer.composite_view_bind_group != nil { wgpu.BindGroupRelease(renderer.composite_view_bind_group) }
-	if renderer.view_layout != nil { wgpu.BindGroupLayoutRelease(renderer.view_layout) }
-	if renderer.filter_view_buffer != nil { wgpu.BufferRelease(renderer.filter_view_buffer) }
-	if renderer.composite_view_buffer != nil { wgpu.BufferRelease(renderer.composite_view_buffer) }
-	if renderer.sampler != nil { wgpu.SamplerRelease(renderer.sampler) }
+	if release_gpu {
+		backdrop_effect_set_destroy(&renderer.set)
+		for &retired in renderer.retired { backdrop_effect_set_destroy(&retired.set) }
+		if renderer.vertex_buffer != nil { wgpu.BufferRelease(renderer.vertex_buffer) }
+		if renderer.filter_pipeline != nil { wgpu.RenderPipelineRelease(renderer.filter_pipeline) }
+		if renderer.composite_pipeline != nil { wgpu.RenderPipelineRelease(renderer.composite_pipeline) }
+		if renderer.shader != nil { wgpu.ShaderModuleRelease(renderer.shader) }
+		if renderer.pipeline_layout != nil { wgpu.PipelineLayoutRelease(renderer.pipeline_layout) }
+		if renderer.texture_layout != nil { wgpu.BindGroupLayoutRelease(renderer.texture_layout) }
+		if renderer.filter_view_bind_group != nil { wgpu.BindGroupRelease(renderer.filter_view_bind_group) }
+		if renderer.composite_view_bind_group != nil { wgpu.BindGroupRelease(renderer.composite_view_bind_group) }
+		if renderer.view_layout != nil { wgpu.BindGroupLayoutRelease(renderer.view_layout) }
+		if renderer.filter_view_buffer != nil { wgpu.BufferRelease(renderer.filter_view_buffer) }
+		if renderer.composite_view_buffer != nil { wgpu.BufferRelease(renderer.composite_view_buffer) }
+		if renderer.sampler != nil { wgpu.SamplerRelease(renderer.sampler) }
+	} else {
+		backdrop_effect_set_abandon_after_device_loss(&renderer.set)
+		for &retired in renderer.retired { backdrop_effect_set_abandon_after_device_loss(&retired.set) }
+	}
 	delete(renderer.vertices)
 	delete(renderer.retired)
 	renderer^ = {}

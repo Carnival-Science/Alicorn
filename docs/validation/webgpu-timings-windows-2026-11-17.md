@@ -118,9 +118,10 @@ and display-level visible-latency measurement remain open.
 
 The native UI fixture now has an opt-in `--timing-motion` workload. It adds a
 small retained marker with a one-shot `.Reveal` target; normal fixture runs do
-not add it. The same Odin `render` callback ran for three seconds through both
-`ui.run_webgpu` and the SDL_GPU reference host on the RTX 2080 SUPER / D3D12
-system:
+not add it. Both smoke commands used the same Odin `render` callback on the RTX
+2080 SUPER / D3D12 system. WebGPU smoke exits after a successful presentation
+and the retained work and queue drain; the SDL_GPU reference uses its own
+bounded smoke duration:
 
 ```powershell
 & .\out\webgpu-phase0\native_webgpu_ui.exe --smoke --timings --timing-motion --backend=d3d12

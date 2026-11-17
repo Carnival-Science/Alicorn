@@ -467,14 +467,35 @@ Compositor_Abort_Submission :: proc(compositor: ^WebGPU_Compositor) {
 }
 
 Compositor_Destroy :: proc(compositor: ^WebGPU_Compositor) {
+	compositor_destroy(compositor, true)
+}
+
+// Abandon device-owned handles only after the host has confirmed device loss
+// and drained callbacks. wgpu-native owns reclamation for those handles; the
+// renderer still frees its CPU-side retained caches and dynamic arrays.
+Compositor_Abandon_After_Device_Loss :: proc(compositor: ^WebGPU_Compositor) {
+	compositor_destroy(compositor, false)
+}
+
+@(private)
+compositor_destroy :: proc(compositor: ^WebGPU_Compositor, release_gpu: bool) {
 	if compositor == nil { return }
-	Image_Destroy(&compositor.images)
-	Surface_Destroy(&compositor.surfaces)
-	for &entry in compositor.backdrops { Backdrop_Effect_Destroy(&entry.renderer) }
+	if release_gpu {
+		Image_Destroy(&compositor.images)
+		Surface_Destroy(&compositor.surfaces)
+		for &entry in compositor.backdrops { Backdrop_Effect_Destroy(&entry.renderer) }
+		Text_Destroy(&compositor.text)
+		Icon_Destroy(&compositor.icons)
+		Solid_Destroy(&compositor.solid)
+	} else {
+		Image_Abandon_After_Device_Loss(&compositor.images)
+		Surface_Abandon_After_Device_Loss(&compositor.surfaces)
+		for &entry in compositor.backdrops { Backdrop_Effect_Abandon_After_Device_Loss(&entry.renderer) }
+		Text_Abandon_After_Device_Loss(&compositor.text)
+		Icon_Abandon_After_Device_Loss(&compositor.icons)
+		Solid_Abandon_After_Device_Loss(&compositor.solid)
+	}
 	delete(compositor.backdrops)
-	Text_Destroy(&compositor.text)
-	Icon_Destroy(&compositor.icons)
-	Solid_Destroy(&compositor.solid)
 	compositor^ = {}
 }
 
