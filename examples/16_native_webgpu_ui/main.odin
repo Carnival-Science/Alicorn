@@ -100,12 +100,18 @@ main :: proc() {
 	if !ok { panic("could not allocate example text buffer") }
 	app := App{name=name}
 	smoke := false
+	sdl_gpu_reference := false
 	for argument in os.args {
 		if argument == "--smoke" { smoke = true }
+		if argument == "--backend=sdl-gpu" { sdl_gpu_reference = true }
 		if argument == "--child-smoke" {
 			smoke = true
 			app.open_child_on_services = true
 		}
 	}
-	ui.run_webgpu(&app, render, title="Alicorn · Native WebGPU", on_stop=stop, smoke=smoke, on_services=services)
+	if sdl_gpu_reference {
+		ui.run(&app, render, title="Alicorn · Native Renderer Probe", on_stop=stop, smoke=smoke, on_services=services)
+	} else {
+		ui.run_webgpu(&app, render, title="Alicorn · Native Renderer Probe", on_stop=stop, smoke=smoke, on_services=services)
+	}
 }

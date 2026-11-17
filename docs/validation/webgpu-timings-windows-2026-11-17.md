@@ -40,12 +40,12 @@ D3D12 adapter. The single cold smoke frame reported:
 
 | CPU metric | p50 | p95 | p99 |
 | --- | ---: | ---: | ---: |
-| Runtime step | 4.528 ms | 4.528 ms | 4.528 ms |
-| Surface acquire | 14.0 µs | 14.0 µs | 14.0 µs |
-| Renderer encode | 990.4 µs | 990.4 µs | 990.4 µs |
-| Queue submit path | 1.462 ms | 1.462 ms | 1.462 ms |
-| Surface present call | 294.5 µs | 294.5 µs | 294.5 µs |
-| Runtime-step-to-present | 7.303 ms | 7.303 ms | 7.303 ms |
+| Runtime step | 4.609 ms | 4.609 ms | 4.609 ms |
+| Surface acquire | 18.7 µs | 18.7 µs | 18.7 µs |
+| Renderer encode | 1.104 ms | 1.104 ms | 1.104 ms |
+| Queue submit path | 1.545 ms | 1.545 ms | 1.545 ms |
+| Surface present call | 272.1 µs | 272.1 µs | 272.1 µs |
+| Runtime-step-to-present | 7.573 ms | 7.573 ms | 7.573 ms |
 
 The smoke had no input sample. One cold frame is only an instrumentation
 sanity check and is not a performance baseline.
@@ -54,10 +54,25 @@ sanity check and is not a performance baseline.
 
 Run the same executable without `--smoke`, keeping `--timings` enabled. Use the
 window normally and close it to print percentiles for the latest 256 frames.
-The build and run above measure the fixture application, not Scratchpad or
-Punks. A comparable application A/B still needs equivalent instrumentation
-and workload selection on the SDL_GPU and WebGPU paths. Visible latency still
-requires a display-level measurement method.
+The fixture's same `render` callback can also use the SDL_GPU reference path:
+
+```powershell
+& .\out\webgpu-phase0\native_webgpu_ui.exe --smoke --backend=sdl-gpu
+```
+
+This provides the exact same UI description for a basic native smoke
+comparison. It does not yet provide equivalent stage timing, pixel capture, or
+a production Scratchpad/Punks workload. A comparable application A/B still
+needs equivalent instrumentation and workload selection on both paths.
+Visible latency still requires a display-level measurement method.
+
+The one-frame SDL_GPU reference smoke also passed on the RTX 2080 SUPER / D3D12
+adapter. It reported one primary submission, `application_build_ns=4.050 ms`,
+`gpu_encode_ns=3.086 ms`, `gpu_submit_ns=553.4 µs`, `frame_p95_ns=3.723 ms`,
+and `first_application_submit_ns=10.353 ms`. These fields do not have exactly
+the same boundaries as the new WebGPU timings; the one-frame values are
+recorded to verify the shared consumer and diagnostic path, not to claim a
+backend performance win. Neither smoke produced an input-latency sample.
 
 The automated desktop capture helper timed out twice while trying to inspect
 the interactive test window (`FrameArrived timed out` / `window capture timed
