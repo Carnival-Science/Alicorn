@@ -70,3 +70,25 @@ device. Reusing the old surface returned a texture tied to the lost device on
 the next presentation, which caused `wgpuTextureRelease` to panic in
 wgpu-native; replacing the surface fixed that failure in both tested backends.
 
+## Exact-head recheck (`aebd636`, Windows, 2026-11-17)
+
+The optimized Example 16 executable was rebuilt from `aebd636` using the pinned
+AccessKit arguments and shared wgpu-native DLL. On the RTX 2080 SUPER, the
+`--child-smoke` presentation check passed on both D3D12 and Vulkan.
+
+The four recovery cases also passed:
+
+- Primary window with injected `.Unknown` callback on D3D12.
+- Primary plus auxiliary window with injected `.Unknown` callback on D3D12.
+- Primary window with injected `.Unknown` callback on Vulkan.
+- Primary plus auxiliary window with injected `.Unknown` callback on Vulkan.
+
+Each run logged the injected callback, a successful adapter/device recreation,
+and `WebGPU device recovered; retained application state preserved`, then
+exited successfully. The child smoke returns only after both primary and
+auxiliary windows have presented and their in-flight work has drained.
+
+This is exact-head synthetic callback-path evidence. It does not exercise
+physical pointer/keyboard input, OS/driver-initiated device loss, or real driver
+callback ordering; those acceptance items remain open.
+
