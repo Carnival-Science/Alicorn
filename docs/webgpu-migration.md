@@ -63,7 +63,7 @@ uploads remain renderer-specific.
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | In progress: image, custom-geometry, and backdrop resources have bounded asynchronous retirement and completion-driven release tests; async readback is exercised. Same-device compositor teardown/rebuild now reproduces every RGBA pixel on Windows D3D12 and Vulkan from retained Runtime products. Genuine driver/OS device loss and device recovery, plus primary/secondary window teardown/recreation, remain unvalidated. Intentional `DeviceDestroy` callbacks are tracked separately and do not count as driver-loss evidence |
 | 4. Desktop acceptance | full regression suite, pixel comparisons, performance and Scratchpad/Punks/AliKit dogfood | Not started |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
-| 6. Browser host | interaction, accessibility, text/IME, lifecycle and demand-driven scheduling complete | In progress: reusable demand-driven scheduling, host-side key mapping, DOM input routing, optional textarea-backed UTF-8/IME input, Hosted_Runtime surface presentation, and the reusable `Browser_Application` coordinator live in `host/web/`. The feasibility example uses that coordinator and builds for `js_wasm32`; on Windows, owner validation against a refreshed `http://localhost:8091/` confirmed retained button input, text entry, resize persistence, and demand-driven idle without a runtime trap. The earlier `RuntimeError: unreachable executed` was not reproduced after reload, confirming that the observed error was from a stale page instance. `host/web/webgpu_run.odin` now owns async browser adapter/device/surface setup, and the browser `ui.run` adapter plus a minimal consumer example build for `js_wasm32`. However, the new consumer has not yet passed an actual browser run: the local computer-use browser tab timed out while opening its localhost page. Physical IME validation, live browser DOM/ARIA focus and assistive-technology validation, device recovery, and app dogfooding remain outstanding; the bounded DOM/ARIA projection has headless model and Unicode-selection tests |
+| 6. Browser host | interaction, accessibility, text/IME, lifecycle and demand-driven scheduling complete | In progress: reusable demand-driven scheduling, host-side key mapping, DOM input routing, optional textarea-backed UTF-8/IME input, Hosted_Runtime surface presentation, and the reusable `Browser_Application` coordinator live in `host/web/`. The feasibility example uses that coordinator and builds for `js_wasm32`; on Windows, owner validation against a refreshed `http://localhost:8091/` confirmed retained button input, text entry, resize persistence, and demand-driven idle without a runtime trap. The earlier `RuntimeError: unreachable executed` was not reproduced after reload, confirming that the observed error was from a stale page instance. `host/web/webgpu_run.odin` now owns async browser adapter/device/surface setup, and the browser `ui.run` adapter plus minimal consumer example build for `js_wasm32`. On Windows, the consumer at `http://localhost:8092/` reached the host-reported ready state and exposed its canvas and text-input proxy in the browser accessibility tree. Screenshot/pixel confirmation and click, typing, and resize interaction were not completed because OS window capture timed out. Physical IME validation, live browser DOM/ARIA focus and assistive-technology validation, device recovery, and app dogfooding remain outstanding; the bounded DOM/ARIA projection has headless model and Unicode-selection tests |
 | 7. Release readiness | docs, reproducible setup, CI and substantive shared-renderer web example | Not started |
 
 The Phase 0 evidence authorizes bounded, testable renderer slices; it does not
@@ -2129,3 +2129,22 @@ Validation with Odin `dev-2026-11-nightly:08539cd` on Windows:
 This is a browser-host integration slice, not browser acceptance. Device loss
 recovery, visible DOM focus behavior, and assistive-technology behavior remain
 open.
+
+### Browser `ui.run` consumer bootstrap (Windows browser, 2026-11-16)
+
+The `examples/17_browser_webgpu_ui` consumer was rebuilt with
+`.\build.ps1 -Odin C:\odin\odin.exe`, served from `out/web` on port 8092,
+and opened at `http://127.0.0.1:8092/` in the Windows browser. The browser
+accessibility tree exposed the application canvas and textarea input proxy, and
+the status changed from `Starting WebGPU…` to
+`WebGPU UI ready. Resize, click, or type to exercise the retained host.`. In
+`host/web/webgpu_ui_host.js`, that ready status is only set after the browser
+WebGPU run state becomes ready; the host then requests the retained application
+frame. This advances the evidence from build-only to live host initialization.
+
+The screenshot-backed Windows window capture timed out during two recovery
+attempts. Therefore this check does not claim that pixels were visibly
+presented, or that button activation, typing, resize, IME, focus, and shutdown
+work in this consumer. The owner's separate `localhost:8091` validation is the
+feasibility example 15 and remains evidence for that example, not for this
+consumer. The 8092 server was left running for direct manual inspection.
