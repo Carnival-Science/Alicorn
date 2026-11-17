@@ -291,3 +291,31 @@ Append_Surface_Mesh :: proc(
 		return Solid_Draw{first, len(vertices^)-first, scissor, surface_scissor}
 	}
 }
+
+// Solid_Surface_Mesh_Fingerprint covers only inputs that affect the generated
+// solid vertex mesh plus each surface's display-list index. Unrelated text or
+// image revisions can then retain solid geometry while command indices remain
+// safe for ordered compositor dispatch.
+Solid_Surface_Mesh_Fingerprint :: proc(
+	rt: ^alicorn.Runtime,
+	display: []alicorn.Paint_Command,
+	scale_x, scale_y: f32,
+	target_w, target_h: int,
+) -> u64 {
+	hash := u64(1469598103934665603)
+	hash = backdrop_effect_hash_f32(hash, scale_x)
+	hash = backdrop_effect_hash_f32(hash, scale_y)
+	hash = alicorn.hash_mix(hash, u64(target_w))
+	hash = alicorn.hash_mix(hash, u64(target_h))
+	surface_count := 0
+	for command in display {
+		if alicorn.paint_command_is_surface(command) { surface_count += 1 }
+	}
+	hash = alicorn.hash_mix(hash, u64(surface_count))
+	for command, index in display {
+		if !alicorn.paint_command_is_surface(command) { continue }
+		hash = alicorn.hash_mix(hash, u64(index))
+		hash = backdrop_effect_hash_command(hash, command, rt)
+	}
+	return hash if hash != 0 else 1
+}

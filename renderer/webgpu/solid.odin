@@ -44,7 +44,7 @@ Solid_Renderer :: struct {
 	draws: [dynamic]Solid_Draw,
 	mesh_cache_valid: bool,
 	mesh_runtime: ^alicorn.Runtime,
-	mesh_revision: u64,
+	mesh_fingerprint: u64,
 	mesh_width, mesh_height: u32,
 	mesh_scale_x, mesh_scale_y: f32,
 	viewport_uniform_valid: bool,
@@ -177,8 +177,11 @@ Solid_Prepare :: proc(
 		}
 	}
 
+	fingerprint := cpu_renderer.Solid_Surface_Mesh_Fingerprint(
+		rt, commands, scale_x, scale_y, int(target_width), int(target_height),
+	)
 	mesh_changed := !renderer.mesh_cache_valid || renderer.mesh_runtime != rt ||
-		renderer.mesh_revision != display.revision || renderer.mesh_width != target_width ||
+		renderer.mesh_fingerprint != fingerprint || renderer.mesh_width != target_width ||
 		renderer.mesh_height != target_height || renderer.mesh_scale_x != scale_x || renderer.mesh_scale_y != scale_y
 	if mesh_changed {
 		renderer.mesh_cache_valid = false
@@ -226,7 +229,7 @@ Solid_Prepare :: proc(
 			renderer.vertex_upload_bytes += u64(upload_bytes)
 		}
 		renderer.mesh_runtime = rt
-		renderer.mesh_revision = display.revision
+		renderer.mesh_fingerprint = fingerprint
 		renderer.mesh_width, renderer.mesh_height = target_width, target_height
 		renderer.mesh_scale_x, renderer.mesh_scale_y = scale_x, scale_y
 		renderer.mesh_cache_valid = true

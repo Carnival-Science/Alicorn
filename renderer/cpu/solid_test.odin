@@ -44,3 +44,35 @@ test_solid_surface_mesh_leaves_non_surface_commands_empty :: proc(t: ^testing.T)
 	testing.expect(t, all_empty,
 		"text and geometry commands should not leak into the surface mesh lane")
 }
+
+@(test)
+test_solid_surface_mesh_fingerprint_ignores_unrelated_paint_revision :: proc(t: ^testing.T) {
+	surface := alicorn.paint_surface_command(
+		1, {2, 3, 10, 8}, {0, 0, 80, 60}, {0.2, 0.4, 0.6, 1},
+	)
+	text := alicorn.paint_text_command(
+		2, {4, 16, 20, 12}, {0, 0, 80, 60}, {}, {1, 1, 1, 1},
+	)
+	display := [2]alicorn.Paint_Command{surface, text}
+	initial := Solid_Surface_Mesh_Fingerprint(nil, display[:], 1, 1, 80, 60)
+
+	display[1].bounds.x += 3
+	changed_text, _ := display[1].payload.(alicorn.Text_Paint)
+	changed_text.color = {0.8, 0.2, 0.1, 1}
+	display[1].payload = changed_text
+	unchanged_solid := Solid_Surface_Mesh_Fingerprint(nil, display[:], 1, 1, 80, 60)
+	testing.expect(t, initial == unchanged_solid,
+		"text-only changes should preserve the solid surface mesh fingerprint")
+
+	changed_surface, _ := display[0].payload.(alicorn.Surface_Paint)
+	changed_surface.fill = {0.9, 0.2, 0.1, 1}
+	display[0].payload = changed_surface
+	changed_solid := Solid_Surface_Mesh_Fingerprint(nil, display[:], 1, 1, 80, 60)
+	testing.expect(t, changed_solid != initial,
+		"surface paint changes must invalidate the solid mesh fingerprint")
+
+	shifted := [3]alicorn.Paint_Command{text, surface, display[1]}
+	testing.expect(t,
+		Solid_Surface_Mesh_Fingerprint(nil, shifted[:], 1, 1, 80, 60) != initial,
+		"a changed paint index must invalidate draw-command mapping")
+}

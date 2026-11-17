@@ -706,6 +706,7 @@ start_offscreen_readback :: proc() {
 	composite_text_meshes := state.compositor.text.mesh_rebuild_count
 	composite_text_uploads := state.compositor.text.vertex_upload_count
 	composite_atlas_uploads := state.compositor.text.atlas_upload_count
+	composite_text_translation_uploads := state.compositor.text.translation_upload_count
 	composite_icon_meshes := state.compositor.icons.mesh_rebuild_count
 	composite_icon_uploads := state.compositor.icons.vertex_upload_count
 	composite_icon_atlas_uploads := state.compositor.icons.atlas_page_upload_count
@@ -839,6 +840,40 @@ start_offscreen_readback :: proc() {
 	   state.compositor.surfaces.instance_cache_hits != 1 {
 		fmt.panicf("unchanged mixed paint rebuilt or uploaded retained renderer products")
 	}
+	text_revision_commands := make(
+		[dynamic]alicorn.Paint_Command,
+		len(mixed_display.commands),
+		allocator=context.temp_allocator,
+	)
+	copy(text_revision_commands[:], mixed_display.commands)
+	text_revision_found := false
+	for &command in text_revision_commands {
+		text, is_text := command.payload.(alicorn.Text_Paint)
+		if !is_text { continue }
+		command.translation[0] += 2
+		command.payload = text
+		text_revision_found = true
+		break
+	}
+	if !text_revision_found { fmt.panicf("mixed compositor fixture did not contain text for revision-only update") }
+	text_revision_display := mixed_display
+	text_revision_display.commands = text_revision_commands[:]
+	text_revision_display.revision += 1
+	if result := webgpu_renderer.Compositor_Prepare(
+		&state.compositor, &state.text_runtime, text_revision_display,
+		READBACK_WIDTH, READBACK_HEIGHT, 1, 1,
+	); result != .Ok {
+		fmt.panicf("text-only revision compositor preparation failed: %v", result)
+	}
+	if state.compositor.solid.mesh_rebuild_count != composite_solid_meshes ||
+		state.compositor.solid.vertex_upload_count != composite_solid_uploads ||
+		state.compositor.text.mesh_rebuild_count != composite_text_meshes ||
+		state.compositor.text.vertex_upload_count != composite_text_uploads ||
+		state.compositor.text.atlas_upload_count != composite_atlas_uploads ||
+		state.compositor.text.translation_upload_count != composite_text_translation_uploads+1 {
+		fmt.panicf("text-only paint revision should retain solid and glyph geometry and update only text translation")
+	}
+	fmt.println("[webgpu-feasibility] text-only revision retained solid geometry PASS")
 	geometry_motion_commands := make([dynamic]alicorn.Paint_Command, len(mixed_display.commands), allocator=context.temp_allocator)
 	copy(geometry_motion_commands[:], mixed_display.commands)
 	geometry_motion_found := false
@@ -860,7 +895,7 @@ start_offscreen_readback :: proc() {
 	}
 	if state.compositor.surfaces.mesh_rebuild_count != composite_surface_meshes ||
 		state.compositor.surfaces.vertex_upload_count != composite_surface_uploads ||
-		state.compositor.surfaces.mesh_cache_hits != composite_surface_cache_hits+4 ||
+		state.compositor.surfaces.mesh_cache_hits != composite_surface_cache_hits+6 ||
 		state.compositor.surfaces.instance_upload_count != composite_surface_instance_uploads+1 {
 		fmt.panicf("geometry movement and opacity changes should update instances without rebuilding meshes")
 	}

@@ -418,6 +418,37 @@ does not provide text, image, icon, material/effect, capture, resource-retiremen
 device-recovery, secondary-window, or performance parity. The SDL_GPU
 presenter remains the only full application path.
 
+## Phase 2 retained solid mesh invalidation (Windows, 2026-11-17)
+
+The solid renderer previously keyed its retained mesh to the full display-list
+revision. Since that revision also changes for unrelated text updates, a
+text-only edit could rebuild and upload unchanged solid geometry. The cache now
+fingerprints only surface commands, their display-list indices, target size,
+and scale; Runtime identity remains a separate cache-key check. Including each
+surface command index keeps ordered paint dispatch correct when the command
+list's structure changes.
+
+The CPU regression verifies that changing text bounds and color leaves the
+solid fingerprint unchanged, while changing a surface fill or a surface's
+display-list index invalidates it. The GPU fixture then changes only a text
+command's translation and display revision. It verifies that solid mesh rebuild
+and vertex-upload counts stay fixed, glyph geometry and atlas uploads stay
+fixed, and the text translation buffer receives the update.
+
+Validation on Windows:
+
+- `C:\odin\odin.exe test renderer/cpu -collection:alicorn=.`: all 21 tests
+  passed.
+- `C:\odin\odin.exe check renderer/webgpu -no-entry-point`: passed.
+- `examples/15_webgpu_feasibility/build.ps1 -Odin C:\odin\odin.exe`: built the
+  native fixtures and `js_wasm32` browser fixture.
+- `out/webgpu_feasibility_smoke.exe --backend=d3d12`: passed on an NVIDIA
+  GeForce RTX 2080 SUPER. The text-only revision regression and all existing
+  readback, cache, resource-retirement, and cache-pressure probes passed.
+- The browser artifact builds, but its live readback for this specific cache
+  regression was not re-run in this pass; the Windows browser window capture
+  timed out twice. Do not count this as browser runtime evidence.
+
 ## Phase 2 shared text sampling slice (Windows and browser, 2026-11-15)
 
 `renderer/webgpu/text.odin` consumes real retained `Text_Paint` commands from
