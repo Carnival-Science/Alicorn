@@ -9,8 +9,9 @@ import host "alicorn:host/sdl3"
 // run_webgpu is an opt-in native entry point for dogfooding the shared
 // WebGPU renderer through SDL3. It preserves the ui.run callback model while
 // leaving ui.run on SDL_GPU until the renderer's migration acceptance gates
-// pass. This initial host does not yet provide SDL_GPU's integrated titlebar,
-// native application menu, secondary-window manager, or AccessKit adapter.
+// pass. on_services supplies host capabilities before on_start. This initial
+// host does not yet provide SDL_GPU's integrated titlebar, native application
+// menu, secondary-window manager, or AccessKit adapter.
 run_webgpu :: proc(
 	state: ^$T,
 	render: proc(^T, ^UI),
@@ -27,13 +28,17 @@ run_webgpu :: proc(
 	on_text_change: proc(^T, ^alicorn.Runtime, alicorn.Text_Change) = nil,
 	on_pointer: proc(^T, ^alicorn.Runtime, alicorn.Pointer_Event, Node_ID) = nil,
 	on_text_key: proc(^T, ^alicorn.Runtime, Node_ID, alicorn.Application_Text_Key_Event) -> bool = nil,
+	on_services: proc(^T, UI_Host_Services) = nil,
 ) {
 	run_state := Run_State(T){
 		app=state, render=render, render_overlays=render_overlays,
 		on_initialize=on_initialize, on_start=on_start, on_wake=on_wake, on_stop=on_stop,
 		on_key=on_key, on_text_change=on_text_change, on_pointer=on_pointer,
 		on_text_key=on_text_key,
+		on_services=on_services,
 	}
+	clipboard_backend := Run_SDL3_Clipboard_Backend{service=host.SDL3ClipboardService()}
+	run_state.host_services.clipboard = run_sdl3_clipboard_service(&clipboard_backend)
 	hosted := run_hosted_config(
 		&run_state,
 		width,

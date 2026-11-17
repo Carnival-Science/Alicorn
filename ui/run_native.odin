@@ -26,6 +26,12 @@ run_application :: proc(run_state: ^Run_State($T), title: string, width, height:
 		state := cast(^Run_State(T))data
 		state.on_start(state.app, Application_Waker{data=waker.data, wake=waker.wake})
 	}
+	on_services :: proc(data: rawptr, services: host.Application_Services) {
+		state := cast(^Run_State(T))data
+		backend := cast(^Run_SDL3_Clipboard_Backend)state.host_services.clipboard.data
+		if backend != nil { backend.service = services.clipboard }
+		if state.on_services != nil { state.on_services(state.app, state.host_services) }
+	}
 	woken :: proc(data: rawptr, rt: ^alicorn.Runtime) {
 		state := cast(^Run_State(T))data
 		state.on_wake(state.app, Application_Context(rt))
@@ -65,6 +71,7 @@ run_application :: proc(run_state: ^Run_State($T), title: string, width, height:
 		interaction_update_policy=.Correct_After_Interaction,
 	}
 	if run_state.on_initialize != nil { application.on_initialize = initialize }
+	if run_state.on_services != nil { application.on_services = on_services }
 	if run_state.on_start != nil { application.on_start = start }
 	if run_state.on_wake != nil { application.on_wake = woken }
 	if run_state.on_stop != nil { application.on_stop = stop }
@@ -78,7 +85,8 @@ run_application :: proc(run_state: ^Run_State($T), title: string, width, height:
 // run borrows state until the synchronous native host returns. Optional hooks
 // run on the application thread: on_initialize receives the newly created
 // Runtime before the first description (for theme and resource registration);
-// on_start receives the borrowed worker waker;
+// on_services supplies host capabilities before on_start, which receives the
+// borrowed worker waker;
 // on_wake adopts results and explicitly invalidates through its context;
 // on_stop stops and joins all producers before the host destroys the waker.
 // Rendering uses the same bounded corrective-description policy as host.Run.
@@ -98,12 +106,16 @@ run :: proc(
 	on_text_change: proc(^T, ^alicorn.Runtime, alicorn.Text_Change) = nil,
 	on_pointer: proc(^T, ^alicorn.Runtime, alicorn.Pointer_Event, Node_ID) = nil,
 	on_text_key: proc(^T, ^alicorn.Runtime, Node_ID, alicorn.Application_Text_Key_Event) -> bool = nil,
+	on_services: proc(^T, UI_Host_Services) = nil,
 ) {
 	run_state := Run_State(T){
 		app=state, render=render, render_overlays=render_overlays,
 		on_initialize=on_initialize, on_start=on_start, on_wake=on_wake, on_stop=on_stop,
 		on_key=on_key, on_text_change=on_text_change, on_pointer=on_pointer,
 		on_text_key=on_text_key,
+		on_services=on_services,
 	}
+	clipboard_backend: Run_SDL3_Clipboard_Backend
+	run_state.host_services.clipboard = run_sdl3_clipboard_service(&clipboard_backend)
 	host.Run(run_application(&run_state, title, width, height), smoke=smoke)
 }

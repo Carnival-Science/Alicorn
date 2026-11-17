@@ -3,10 +3,14 @@ package ui
 
 import "core:testing"
 import alicorn "alicorn:runtime"
+import clipboard "alicorn:host/clipboard"
 
 Run_Hosted_Config_Test_App :: struct {
 	waker: Application_Waker,
 	renders, initializations, starts, wakes, stops, keys, pointers: int,
+	service_calls: int,
+	service_available_before_start: bool,
+	service_read_available: bool,
 	text_key_events: int,
 	last_text_key: alicorn.Application_Text_Navigation_Key,
 	generic_text_target: Node_ID,
@@ -29,7 +33,23 @@ run_hosted_config_test_initialize :: proc(app: ^Run_Hosted_Config_Test_App, _rt:
 
 run_hosted_config_test_start :: proc(app: ^Run_Hosted_Config_Test_App, waker: Application_Waker) {
 	app.starts += 1
+	app.service_available_before_start = app.service_calls == 1
 	app.waker = waker
+}
+
+run_hosted_config_test_services :: proc(app: ^Run_Hosted_Config_Test_App, services: UI_Host_Services) {
+	app.service_calls += 1
+	app.service_read_available = services.clipboard.read_text != nil
+}
+
+run_hosted_config_test_clipboard_read :: proc(
+	_data: rawptr,
+	request_id: clipboard.Clipboard_Request_ID,
+	completion_data: rawptr,
+	completion: clipboard.Clipboard_Completion_Proc,
+) -> bool {
+	completion(completion_data, request_id, .Unsupported, "")
+	return true
 }
 
 run_hosted_config_test_wake :: proc(app: ^Run_Hosted_Config_Test_App, ctx: Application_Context) {
@@ -77,6 +97,8 @@ test_shared_ui_run_adapts_to_hosted_runtime :: proc(t: ^testing.T) {
 		render=run_hosted_config_test_render,
 		render_overlays=run_hosted_config_test_render,
 		on_initialize=run_hosted_config_test_initialize,
+		on_services=run_hosted_config_test_services,
+		host_services=UI_Host_Services{clipboard=clipboard.Clipboard_Service{read_text=run_hosted_config_test_clipboard_read}},
 		on_start=run_hosted_config_test_start,
 		on_wake=run_hosted_config_test_wake,
 		on_stop=run_hosted_config_test_stop,
@@ -90,8 +112,9 @@ test_shared_ui_run_adapts_to_hosted_runtime :: proc(t: ^testing.T) {
 	testing.expect(t, alicorn.hosted_runtime_init(&session, config) == .Ok,
 		"the common ui.run state should initialize through the embedding-host Runtime contract")
 	defer alicorn.hosted_runtime_destroy(&session)
-	testing.expect(t, app.initializations == 1 && app.starts == 1,
-		"initialization and start hooks should keep their ui.run ordering")
+	testing.expect(t, app.initializations == 1 && app.starts == 1 && app.service_calls == 1 &&
+		app.service_read_available && app.service_available_before_start,
+		"host services should be delivered after initialization and before the app start hook")
 
 	first := alicorn.hosted_runtime_step(&session, 1)
 	testing.expect(t, first.status == .Ok && first.description_built && first.render_required && app.renders == 2,

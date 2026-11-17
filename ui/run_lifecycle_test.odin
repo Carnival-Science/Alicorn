@@ -2,12 +2,15 @@
 package ui
 
 import "core:fmt"
+import "core:mem"
+import "core:strings"
 import "core:sync"
 import "core:thread"
 import "core:time"
 import "core:testing"
 import alicorn "alicorn:runtime"
 import host "alicorn:native/sdl_gpu"
+import clipboard "alicorn:host/clipboard"
 
 Run_Wake_Test_Queue :: struct {
 	available: sync.Sema,
@@ -38,6 +41,47 @@ Run_Lifecycle_Test_App :: struct {
 	text_key_events: int,
 	text_key_owner: Node_ID,
 	last_text_key: alicorn.Application_Text_Navigation_Key,
+	host_services: UI_Host_Services,
+	service_callbacks: int,
+	last_clipboard_request: clipboard.Clipboard_Request_ID,
+	clipboard_result: clipboard.Clipboard_Result,
+	clipboard_text_matches: bool,
+}
+
+Run_Clipboard_Integration_Backend :: struct {
+	text: string,
+	reads, writes: int,
+}
+
+run_clipboard_integration_get :: proc(data: rawptr, allocator: mem.Allocator) -> (text: string, ok: bool) {
+	backend := cast(^Run_Clipboard_Integration_Backend)data
+	backend.reads += 1
+	cloned, err := strings.clone(backend.text, allocator)
+	return cloned, err == nil
+}
+
+run_clipboard_integration_set :: proc(data: rawptr, text: string) -> bool {
+	backend := cast(^Run_Clipboard_Integration_Backend)data
+	backend.writes += 1
+	backend.text = text
+	return true
+}
+
+run_lifecycle_test_services :: proc(app: ^Run_Lifecycle_Test_App, services: UI_Host_Services) {
+	app.service_callbacks += 1
+	app.host_services = services
+}
+
+run_lifecycle_test_clipboard_completion :: proc(
+	data: rawptr,
+	request_id: clipboard.Clipboard_Request_ID,
+	result: clipboard.Clipboard_Result,
+	text: string,
+) {
+	app := cast(^Run_Lifecycle_Test_App)data
+	app.last_clipboard_request = request_id
+	app.clipboard_result = result
+	app.clipboard_text_matches = text == "copied from SDL3"
 }
 
 run_lifecycle_test_worker :: proc(data: rawptr) {
@@ -183,4 +227,48 @@ test_native_ui_run_forwards_application_owned_text_keys :: proc(t: ^testing.T) {
 	testing.expect(t, application.on_text_key != nil && handled && app.text_key_events == 1 &&
 		app.text_key_owner == Node_ID(42) && app.last_text_key == .Line_Start,
 		"native ui.run must forward the focused owner and normalized text-key event to app state")
+}
+
+@(test)
+test_native_ui_run_injects_sdl3_clipboard_service_before_use :: proc(t: ^testing.T) {
+	app := Run_Lifecycle_Test_App{}
+	backend := Run_Clipboard_Integration_Backend{text="copied from SDL3"}
+	sdl3_clipboard: Run_SDL3_Clipboard_Backend
+	state := Run_State(Run_Lifecycle_Test_App){
+		app=&app,
+		render=run_lifecycle_test_render,
+		on_services=run_lifecycle_test_services,
+		host_services=UI_Host_Services{clipboard=run_sdl3_clipboard_service(&sdl3_clipboard)},
+	}
+	application := run_application(&state, "Clipboard service test", 240, 120)
+	native_services := host.Application_Services{
+		clipboard=host.Clipboard_Service{
+			data=rawptr(&backend),
+			get_text=run_clipboard_integration_get,
+			set_text=run_clipboard_integration_set,
+		},
+	}
+	application.on_services(application.state, native_services)
+	testing.expect(t, app.service_callbacks == 1 && app.host_services.clipboard.read_text != nil &&
+		app.host_services.clipboard.write_text != nil,
+		"the native ui.run service callback must expose the SDL3 clipboard capability")
+	read_accepted := ui_clipboard_read_text(
+		app.host_services.clipboard,
+		clipboard.Clipboard_Request_ID(17),
+		rawptr(&app),
+		run_lifecycle_test_clipboard_completion,
+	)
+	testing.expect(t, read_accepted && backend.reads == 1 && app.clipboard_result == .Success &&
+		app.last_clipboard_request == clipboard.Clipboard_Request_ID(17) && app.clipboard_text_matches,
+		"clipboard reads should complete on the owner thread with the request ID and borrowed UTF-8 text")
+	write_accepted := ui_clipboard_write_text(
+		app.host_services.clipboard,
+		clipboard.Clipboard_Request_ID(18),
+		"written through ui.run",
+		rawptr(&app),
+		run_lifecycle_test_clipboard_completion,
+	)
+	testing.expect(t, write_accepted && backend.writes == 1 && backend.text == "written through ui.run" &&
+		app.clipboard_result == .Success && app.last_clipboard_request == clipboard.Clipboard_Request_ID(18),
+		"clipboard writes should preserve the app request ID and report synchronous native success")
 }

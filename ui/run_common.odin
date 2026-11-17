@@ -11,6 +11,8 @@ Run_State :: struct($T: typeid) {
 	render: proc(^T, ^UI),
 	render_overlays: proc(^T, ^UI),
 	on_initialize: proc(^T, ^alicorn.Runtime),
+	on_services: proc(^T, UI_Host_Services),
+	host_services: UI_Host_Services,
 	on_start: proc(^T, Application_Waker),
 	on_wake: proc(^T, Application_Context),
 	on_stop: proc(^T),
@@ -85,6 +87,7 @@ run_hosted_config :: proc(
 	start :: proc(data: rawptr, waker: alicorn.Hosted_Waker) {
 		state := cast(^Run_State(T))data
 		state.hosted_waker = waker
+		if state.on_services != nil { state.on_services(state.app, state.host_services) }
 		if state.on_start != nil {
 			state.on_start(state.app, Application_Waker{data=rawptr(&state.hosted_waker), wake=run_hosted_wake})
 		}
@@ -132,7 +135,7 @@ run_hosted_config :: proc(
 		render=describe,
 	}
 	if run_state.on_initialize != nil { config.on_initialize = initialize }
-	if run_state.on_start != nil { config.on_start = start }
+	if run_state.on_services != nil || run_state.on_start != nil { config.on_start = start }
 	if run_state.on_wake != nil { config.on_wake = wake }
 	if run_state.on_stop != nil { config.on_stop = stop }
 	if run_state.on_key != nil { config.on_key = key }

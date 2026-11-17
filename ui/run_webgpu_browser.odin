@@ -22,6 +22,8 @@ browser_ui_run: Browser_UI_Run
 // accessibility root with id "alicorn-accessibility". The application state
 // pointer must remain valid until alicorn_browser_shutdown reports completion;
 // browser applications normally keep it in package-global storage.
+// on_services runs before on_start. Browser clipboard capability is currently
+// absent; text-input paste remains available through the configured textarea.
 run :: proc(
 	state: ^$T,
 	render: proc(^T, ^UI),
@@ -38,6 +40,7 @@ run :: proc(
 	on_text_change: proc(^T, ^alicorn.Runtime, alicorn.Text_Change) = nil,
 	on_pointer: proc(^T, ^alicorn.Runtime, alicorn.Pointer_Event, Node_ID) = nil,
 	on_text_key: proc(^T, ^alicorn.Runtime, Node_ID, alicorn.Application_Text_Key_Event) -> bool = nil,
+	on_services: proc(^T, UI_Host_Services) = nil,
 ) {
 	_ = title
 	_ = smoke
@@ -59,6 +62,7 @@ run :: proc(
 		on_text_change=on_text_change,
 		on_text_key=on_text_key,
 		on_pointer=on_pointer,
+		on_services=on_services,
 	}
 	hosted := run_hosted_config(
 		run_state,
