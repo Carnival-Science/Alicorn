@@ -29,6 +29,7 @@ mkdir -p out/web
 cp web/index.html out/web/index.html
 cp "$ODIN_ROOT/core/sys/wasm/js/odin.js" out/web/odin.js
 cp "$ODIN_ROOT/vendor/wgpu/wgpu.js" out/web/wgpu.js
+node "$REPO_ROOT/tools/patch_odin_wgpu_js.js" out/web/wgpu.js
 cp "$REPO_ROOT/host/web/demand_scheduler.js" out/web/alicorn_demand_scheduler.js
 cp "$REPO_ROOT/host/web/accessibility_dom.js" out/web/alicorn_accessibility_dom.js
 cp "$REPO_ROOT/host/web/webgpu_ui_host.js" out/web/alicorn_webgpu_host.js

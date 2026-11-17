@@ -32,6 +32,8 @@ try {
 	$odinRoot=& $Odin root
 	Copy-Item (Join-Path $odinRoot 'core\sys\wasm\js\odin.js') (Join-Path $root 'web\odin.js') -Force
 	Copy-Item (Join-Path $odinRoot 'vendor\wgpu\wgpu.js') (Join-Path $root 'web\wgpu.js') -Force
+	& node (Join-Path $root '..\..\tools\patch_odin_wgpu_js.js') (Join-Path $root 'web\wgpu.js')
+	if ($LASTEXITCODE -ne 0) { throw "Patching the browser WGPU callback bridge failed: $LASTEXITCODE" }
 	Copy-Item (Join-Path $root '..\..\host\web\demand_scheduler.js') (Join-Path $root 'web\alicorn_demand_scheduler.js') -Force
 	Copy-Item (Join-Path $root '..\..\host\web\accessibility_dom.js') (Join-Path $root 'web\alicorn_accessibility_dom.js') -Force
 	Write-Host "Native interactive: $root\out\webgpu_feasibility.exe"

@@ -170,6 +170,31 @@ async completion uses promises/event-loop callbacks; the browser destruction
 callback did arrive in the test. Browser pending-callback shutdown safety,
 resource retirement, and actual recovery remain unproven.
 
+### Odin browser one-shot callback correction (2026-11-16)
+
+The Odin `dev-2026-11-nightly:08539cd` WGPU JS bridge contains eight
+one-shot async callback chains shaped as `.catch(error).then(success)`. A
+rejected promise runs the error handler, then `catch()` converts that rejection
+to a fulfilled promise and the following `then()` also runs the success
+handler. For queue completion this can call Alicorn's queue callback twice and
+free its callback context twice; adapter/device bootstrap and the other affected
+callbacks also receive contradictory outcomes. The local
+`C:\odin\vendor\wgpu\wgpu.js` SHA-256 is
+`B472D1EC21D204D73E52C5F29C5F638E3B308D1F71C288A184D52AB1719390CE`.
+
+`tools/patch_odin_wgpu_js.js` changes those chains to `.then(success, error)`
+on the generated browser copy only. It requires all eight expected patterns
+and fails the build if the installed Odin SDK changes shape, so it neither
+modifies the SDK nor silently accepts a drifted binding. Both browser build
+scripts apply it after copying the upstream file. The regression
+`tools/test_odin_wgpu_js_patch.js` exercises success and rejection and proves
+exactly one callback per outcome. Browser fixture builds now require Node.js
+to apply this small compatibility patch.
+
+This is a local workaround, not an upstream Odin fix. The controlled Promise
+regression does not simulate browser driver loss; genuine loss, callback
+retirement, and resource recovery remain separate Phase 0/3 acceptance work.
+
 ## Reproducible local checks
 
 ```powershell
