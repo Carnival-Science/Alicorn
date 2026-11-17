@@ -1,4 +1,6 @@
-package alicorn_sdl_gpu
+#+build !js
+
+package sdl3_host
 
 import "core:mem"
 import "core:strings"
@@ -6,11 +8,11 @@ import "core:testing"
 
 Clipboard_Test_Backend :: struct {
 	allocator: mem.Allocator,
-	text:      string,
-	readable:  bool,
+	text: string,
+	readable: bool,
 	writeable: bool,
-	reads:     int,
-	writes:    int,
+	reads: int,
+	writes: int,
 }
 
 clipboard_test_get_text :: proc(data: rawptr, allocator: mem.Allocator) -> (text: string, ok: bool) {
@@ -40,8 +42,6 @@ test_clipboard_service_owns_read_copy_and_handles_large_utf8_text :: proc(t: ^te
 
 	bytes := make([]byte, 100*1024, allocator=context.temp_allocator)
 	for i in 0..<len(bytes) { bytes[i] = 'x' }
-	// Include multibyte UTF-8 at both ends to make sure this is copied as bytes,
-	// not truncated or converted through a platform-native wide string.
 	copy(bytes[:3], []byte{0xe3, 0x81, 0x82})
 	copy(bytes[len(bytes)-4:], []byte{0xf0, 0x9f, 0x8c, 0x80})
 	input := string(bytes)
