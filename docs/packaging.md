@@ -78,6 +78,19 @@ or into `Contents/Frameworks/SDL3.dylib` in the macOS bundle and rewrites the
 macOS install name to a bundle-relative `@rpath`. The ordinary development
 commands remain unchanged:
 
+On macOS, shared packaging requires SDL 3.4.18. To avoid Homebrew's moving SDL
+version, build the checksum-pinned runtime and set `ALICORN_SDL3_PREFIX` before
+packaging:
+
+```sh
+brew install cmake pkgconf
+sh tools/setup_macos_sdl3.sh
+export ALICORN_SDL3_PREFIX="$PWD/out/native-package/sdl-3.4.18/shared/prefix"
+```
+
+The package manifest records the pinned source URL and archive checksum as well
+as the hash of the exact dylib that was bundled.
+
 ```powershell
 .\tools\native_hello.ps1
 ```

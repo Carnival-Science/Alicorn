@@ -83,11 +83,17 @@ if [ "$SDL_LINKAGE" = static ]; then
 	# the executable, then remove the now-unneeded dylib load command.
 	SDL_LINK_FLAGS="$SDL_LINK_FLAGS -Wl,-force_load,$PREFIX/lib/libSDL3.a -Wl,-dead_strip_dylibs"
 else
-	command -v brew >/dev/null 2>&1 || { echo 'Shared SDL packaging requires Homebrew SDL3.' >&2; exit 1; }
-	SDL_PREFIX=$(brew --prefix sdl3)
+	SDL_RUNTIME_PROVIDER=homebrew
+	if [ -n "${ALICORN_SDL3_PREFIX:-}" ]; then
+		SDL_PREFIX=$ALICORN_SDL3_PREFIX
+		SDL_RUNTIME_PROVIDER=pinned-source
+	else
+		command -v brew >/dev/null 2>&1 || { echo 'Shared SDL packaging requires Homebrew SDL3 or ALICORN_SDL3_PREFIX.' >&2; exit 1; }
+		SDL_PREFIX=$(brew --prefix sdl3)
+	fi
 	SDL_VERSION=$(PKG_CONFIG_PATH="$SDL_PREFIX/lib/pkgconfig" pkg-config --modversion sdl3)
 	[ "$SDL_VERSION" = "$SDL_REQUIRED_VERSION" ] || {
-		echo "macOS Alicorn requires SDL $SDL_REQUIRED_VERSION; Homebrew reports $SDL_VERSION." >&2
+		echo "macOS Alicorn requires SDL $SDL_REQUIRED_VERSION; selected prefix reports $SDL_VERSION." >&2
 		exit 1
 	}
 	SDL_RUNTIME=$(find "$SDL_PREFIX/lib" -maxdepth 1 -type f -name 'libSDL3*.dylib' | sort | head -n 1)
@@ -123,6 +129,6 @@ case "$OUTPUT" in
 	*) PACKAGE_ARGS+=(--output "$REPO_ROOT/$OUTPUT") ;;
 esac
 if [ -n "$SDL_RUNTIME" ]; then PACKAGE_ARGS+=(--sdl-runtime "$SDL_RUNTIME"); fi
-if [ -n "$SDL_RUNTIME" ]; then PACKAGE_ARGS+=(--sdl-runtime-provider homebrew); fi
+if [ -n "$SDL_RUNTIME" ]; then PACKAGE_ARGS+=(--sdl-runtime-provider "${SDL_RUNTIME_PROVIDER:-unknown}"); fi
 if [ "$SMOKE" -eq 1 ]; then PACKAGE_ARGS+=(--smoke-test); fi
 python3 "${PACKAGE_ARGS[@]}"

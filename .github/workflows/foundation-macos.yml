@@ -23,8 +23,15 @@ jobs:
         shell: bash
         run: sh tools/setup_macos_wgpu_native.sh "$ODIN_ROOT"
 
-      - name: Install SDL3 for the native host contract test
-        run: brew install sdl3
+      - name: Build checksum-pinned SDL3 for native host checks
+        shell: bash
+        run: |
+          brew install cmake pkgconf sdl3
+          sdl_prefix="$RUNNER_TEMP/alicorn-sdl3"
+          sh tools/setup_macos_sdl3.sh "$sdl_prefix"
+          echo "ALICORN_SDL3_PREFIX=$sdl_prefix/prefix" >> "$GITHUB_ENV"
+          echo "ALICORN_EXTRA_LINKER_FLAGS=-L$sdl_prefix/prefix/lib -Wl,-rpath,$sdl_prefix/prefix/lib" >> "$GITHUB_ENV"
+          echo "DYLD_LIBRARY_PATH=$sdl_prefix/prefix/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" >> "$GITHUB_ENV"
 
       - name: Install wasm-ld for Odin js_wasm32 linking
         shell: bash

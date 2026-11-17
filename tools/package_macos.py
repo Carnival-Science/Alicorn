@@ -91,6 +91,9 @@ def sdl_runtime_provenance(
     provenance: dict[str, str] = {"provider": provider}
     if provider == "homebrew":
         provenance["formula"] = "sdl3"
+    elif provider == "pinned-source":
+        provenance["source"] = SDL_SOURCE
+        provenance["sourceSha256"] = SDL_SOURCE_SHA256
     return {
         "sdlRuntime": {
             "inputFilename": path.name,
@@ -476,7 +479,7 @@ def main() -> None:
     parser.add_argument("--sdl-runtime", type=pathlib.Path)
     parser.add_argument(
         "--sdl-runtime-provider",
-        choices=("unknown", "homebrew"),
+        choices=("unknown", "homebrew", "pinned-source"),
         default="unknown",
         help="Declared origin of the shared SDL input; the input hash and runtime version are verified.",
     )
