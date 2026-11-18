@@ -55,6 +55,7 @@ the caller's source location.
 | `ui.checkbox` | Takes `^bool` and adopts only a real activation into application state. |
 | `ui.slider_f32` | Takes `^f32` plus `minimum`, `maximum`, and optional `step`; adopts only user-produced values, not initial range normalization. |
 | `ui.icon`, `ui.icon_button` | Font-independent icon and named icon button helpers. |
+| `ui.positioned_text` | Places one Text label at explicit owner-local `x`, `y` coordinates with `horizontal`, `vertical`, `width`, `height`, `max_width`, `clip`, and `opacity`. Decorative by default; pass `decorative=false` for a Static_Text entity. See [Positioned labels](#positioned-labels). |
 
 Create persistent edit storage with `ui.text_buffer(initial)` and release it
 with `ui.text_buffer_destroy`. The buffer owns its text through an allocator
@@ -82,6 +83,58 @@ with the same `UI`.
 See [Getting Started](getting-started.md) for the first window and the
 [application guide](guide.md) for sizing defaults and the progressive path to
 identity, virtual collections, regions, async wakes, surfaces, and diagnostics.
+
+### Positioned labels
+
+`ui.positioned_text` authors an ordinary `.Text` node whose placement is
+explicit instead of consuming flow space. Coordinates are logical units
+relative to the owner's content box (its bounds inset by padding), so a
+zero-padded visualization owner shares one origin between a full-bleed custom
+surface's retained geometry and its labels:
+
+```odin
+if ui.column(ctx, key="ruler", width=900, height=44, clip=true) {
+	ticks = alicorn.gpu_geometry_surface(ctx, "ruler-ticks",
+		ui.layout_style(width=-1, height=44), dpi_scale)
+	for second in 0 ..= 60 {
+		// The application owns this one time-to-pixel transform and applies it
+		// to both retained ticks and their labels.
+		x := f32(second)/60*900
+		ui.positioned_text(ctx, fmt.tprintf("%ds", second), x, 8,
+			key=u64(second), size=11)
+	}
+}
+```
+
+Placement options are independent of text shaping:
+
+- `horizontal` is `.Start`, `.Center`, or `.End`; it decides whether `x` is
+  the label's leading edge, center, or trailing edge.
+- `vertical` is `.Top`, `.Middle`, `.Bottom`, or `.Baseline`. `.Baseline` uses
+  the shaped text baseline; a child with no retained baseline product falls
+  back to its bottom edge, matching Row baseline alignment for non-text
+  visuals.
+- `width` and `height` are hard boxes; omitting them measures the child.
+  `max_width` bounds wrapping or ellipsis. A supplied width is a measurement
+  input for that child only.
+- `clip=true` intersects the label with its owner's rectangle; `false`
+  inherits the owner's effective clip exactly like a flow child.
+- `opacity` scales every paint command the label emits.
+
+Positioned children are ordinary retained nodes: they reuse text shaping,
+`Paint_Command`, clipping, and the semantic model. Text labels are not
+hit-testable unless they are an explicit text-input target, so decorative
+labels never intercept pointer gestures and never enter tab order.
+`decorative=false` exports the same `Static_Text` entity as `ui.text`.
+
+A positioned child does not contribute to a fit-content owner's measured size.
+Give such an owner a definite width or height (or keep ordinary flow content in
+it); otherwise the owner measures its padding and flow content only.
+
+The lower-level runtime seam is `alicorn.position_child(ui, id,
+alicorn.positioned(x, y, ...))`, which can position any already-described
+direct child, not just text. `.Grid`, `.Split`, adaptive owners, and context
+menus keep their specialized layout policy and do not honor placement.
 
 ### Typed lifecycle and worker wakes
 

@@ -121,6 +121,7 @@ description_hash :: proc(
 	h = hash_mix(h, hash_style_environment(d.style_environment))
 	h = hash_mix(h, hash_accessibility_appearance(accessibility))
 	h = hash_mix(h, u64(d.style_scope_boundary ? 1 : 0))
+	h = hash_mix(h, hash_positioned_placement(d.placement))
 	h = hash_mix(h, u64(d.adaptive_owner ? 1 : 0))
 	h = hash_mix(h, u64(d.adaptive_alternative ? 1 : 0))
 	h = hash_mix(h, u64(transmute(u32)d.adaptive_min_width))
@@ -250,6 +251,7 @@ layout_hash :: proc(d: Description) -> u64 {
 		style_input.max_height = -1
 	}
 	h := hash_mix(hash_style(style_input), u64(d.parent))
+	h = hash_mix(h, hash_positioned_layout(d.placement))
 	for axis in Layout_Axis {
 		h = hash_mix(h, u64(axis in d.layout_boundary_axes ? 1 : 0))
 	}
@@ -518,6 +520,7 @@ copy_node_description :: proc(
 	node.grid_align_x = d.grid_align_x
 	node.grid_align_y = d.grid_align_y
 	node.context_menu_bounds = d.context_menu_bounds
+	node.placement = d.placement
 	node.font = d.font
 	node.text_style = d.text_style
 	node.style_environment = next_style_environment
