@@ -1,4 +1,4 @@
-# Alicorn
+# Alicorn now live [here!](https://github.com/Carnival-Science/Alicorn/tree/master)
 
 Alicorn is an experimental native GUI runtime for [Odin](https://odin-lang.org/).
 Describe a UI with ordinary Odin code; Alicorn retains identity, interaction,
