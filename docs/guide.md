@@ -87,6 +87,16 @@ if ui.column(ctx, padding=12, gap=8) {
 }
 ```
 
+`ui.row`, `ui.column`, `ui.panel`, and other deferred-scope helpers must be
+invoked directly in the block that describes their children. Do not wrap their
+opening calls in procedures or describe children after the invocation block.
+These helpers open an `@(deferred_in_out)` scope that closes at the end of the
+invocation block, not at the end of the enclosing procedure. The compiler accepts
+the wrapped form, but the children then lay out as siblings in the parent and a
+padded fit-content container measures padding only. See the
+[#206 research record](research/issue-206-fit-content-panel.md) for the full
+evidence.
+
 Odin's [deferred procedure attributes](https://odin-lang.org/docs/attributes/)
 close the scope at the end of the surrounding lexical scope. An early `return`,
 `break`, or `continue` still closes it. Keep a scoped call as the direct

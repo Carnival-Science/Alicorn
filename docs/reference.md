@@ -31,9 +31,12 @@ main :: proc() {
 ```
 
 `ui.row`, `ui.column`, `ui.panel`, and `ui.layout` are lexical scopes. Use each directly in
-an `if` condition so Odin closes the scope at the end of that block. Stable
-keys are optional for one-off controls and should be supplied for repeated
-items that can reorder. `ui.run` selects the native host's bounded corrective
+an `if` condition so Odin closes the scope at the end of that block. Describe
+their children in that same block: wrapping the opening call in a procedure or
+describing children after the block leaves them as siblings in the parent, and
+a padded fit-content scope then measures only its padding. Stable keys are
+optional for one-off controls and should be supplied for repeated items that
+can reorder. `ui.run` selects the native host's bounded corrective
 description policy for consumed UI actions; render may run again after an
 interaction, so keep unrelated side effects out of the description.
 

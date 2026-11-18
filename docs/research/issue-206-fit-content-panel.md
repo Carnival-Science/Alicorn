@@ -86,7 +86,7 @@ An empty padded fit-content scope measures `2 * padding`. Directly relevant:
 the layout trace now reports
 
 ```text
-fit-content height has no realized children: padding only (8.000) for ruler
+fit-content container has no realized children: measured height is padding only (8.000) for ruler
 ```
 
 (`runtime/layout_measure.odin`, `layout_measure_content_height`). The

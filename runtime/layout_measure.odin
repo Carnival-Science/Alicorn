@@ -397,13 +397,14 @@ layout_measure_content_height :: proc(rt: ^Runtime, node: ^Node, constraints: La
 	padding := layout_unit_extent(maxf(node.style.padding, 0))
 	total = layout_content_add_units(total, padding)
 	total = layout_content_add_units(total, padding)
-	// A padded fit-content scope with no realized children measures only its
-	// padding. That is correct, but it is also the exact shape of a scoped
-	// helper whose children were described outside the scope (a "dark strip"
-	// with no content). Name the condition so the cause is visible in traces.
+	// A fit-content container with no realized children measures its padding.
+	// This is a valid container state, and it is also the observable result
+	// when a scoped helper's children were described outside the invocation
+	// block (the reported "dark strip"). Report the state without assigning
+	// intent.
 	if realized_children == 0 {
 		record_trace(rt, .Measure, node.id, fmt.tprintf(
-			"fit-content height has no realized children: padding only (%.3f) for %s",
+			"fit-content container has no realized children: measured height is padding only (%.3f) for %s",
 			layout_unit_to_f32(Layout_Unit(total)),
 			node.label,
 		))
