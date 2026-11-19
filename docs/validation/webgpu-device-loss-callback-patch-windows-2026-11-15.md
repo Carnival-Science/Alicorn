@@ -119,3 +119,32 @@ loss, validates recovery or resource recreation, or establishes general
 in-flight shutdown safety. Linux remains unvalidated. The patch has not been
 submitted upstream; the upstream `trunk` request-device path inspected on
 2026-11-15 still lacked core lost-closure registration.
+
+## Induced-removal companion patch (2026-11-19)
+
+The device-loss ladder's third rung reuses this patch and adds a separate,
+test-only patch on top:
+[`wgpu-native-v29.0.1.1-test-remove-d3d12-device.patch`](../../dependencies/patches/wgpu-native-v29.0.1.1-test-remove-d3d12-device.patch),
+SHA-256 `22CBD1A12355A1DA317EAE1BA636283FF9B4E4EEDD26215184FE1BE5366871AF`.
+
+Apply order is the callback patch, then the error-routing patch, then the
+removal patch. The addition contains three things:
+
+- `wgpuDeviceRemoveD3D12ForTesting(WGPUDevice) -> WGPUBool`, which reaches
+  `wgpu-core`'s `Context::device_as_hal::<hal::api::Dx12>` →
+  `wgpu-hal`'s `raw_device()` → `ID3D12Device5::RemoveDevice()`. The symbol is
+  deliberately absent from `ffi/wgpu.h`; the probe resolves it with
+  `core:dynlib`. It is a harness affordance, not a WebGPU C API proposal.
+- A Windows-only `windows` 0.62 dependency and its `Cargo.lock` edge, so the
+  patch can name the D3D12 interface type.
+- A per-device `lost: AtomicBool` set by `dispatch_device_lost` and read by
+  `wgpuSurfaceConfigure`. A resize that races a backend removal used to call
+  `handle_error_fatal` and abort the process; the configure now returns and the
+  normal recovery path owns the outcome. Non-loss configure errors still abort.
+
+The callback patch's one-shot registration is unchanged. The companion patch
+does not add device pointers to any production interface, and it is exercised
+only by `tools/validate_wgpu_native_backend_removal.ps1`. See
+[`webgpu-native-backend-removal-windows-2026-11-19.md`](webgpu-native-backend-removal-windows-2026-11-19.md)
+for the run sequence, timings, and limits.
+

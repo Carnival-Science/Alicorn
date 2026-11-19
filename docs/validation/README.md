@@ -7,6 +7,11 @@ the current project status.
 
 ## Current acceptance and platform limits
 
+- [Induced D3D12 backend device removal (2026-11-19)](webgpu-native-backend-removal-windows-2026-11-19.md)
+  — rung 3 of the device-loss ladder: a test-only wgpu-native export calls
+  `ID3D12Device5::RemoveDevice()` on the live device, the DeviceLost callback
+  fires, and the normal recovery recreates the device and presents a
+  replacement frame. Harness-induced, D3D12-only, not OS/driver loss or TDR.
 - [Issue #165 headless UI replay and native capture](issue-165-2026-11-08.md) —
   public replay harness, History consumer regression, and Windows D3D12 capture;
   records backend-specific screenshot limits.
@@ -39,3 +44,15 @@ the current project status.
   deterministic checks from desktop-session evidence.
 - [Linux NixOS/Mango validation](linux-nixos-mangowc-2026-10-23.md) — the
   recorded native Linux environment and its limitations.
+
+## Physical-session WebGPU runbooks
+
+- [macOS Apple Silicon hardware validation](hardware-validation-macos.md) —
+  physical Metal adapter checks, Retina/mixed-scale steps, the shared-dylib
+  link contract, and the evidence template.
+- [Linux hardware validation](hardware-validation-linux.md) — physical Vulkan
+  adapter checks, Wayland and X11 passes, fractional scaling, and the evidence
+  template.
+- [Windows high-DPI validation](hardware-validation-windows-highdpi.md) — the
+  by-hand per-monitor scale and mixed-scale drag runbook for this machine.
+
