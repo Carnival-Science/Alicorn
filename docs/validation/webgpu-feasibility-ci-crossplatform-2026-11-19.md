@@ -10,8 +10,10 @@ Windows local baseline uses `08539cd`)
 wgpu-native pin: v29.0.1.1, SHA-256 verified by the setup scripts  
 AccessKit pin: `dependencies/odin-accesskit.json` (accesskit-c 0.23.1)
 
-The code under test is `b0adab5`; later commits on this branch change
-documentation and the recorded raw logs only.
+The fixture code under test is `b0adab5`. A follow-up `5773739` scopes the
+macOS shared-wgpu selection so packaged apps keep the static contract; the
+macOS fixture job was re-run and passed on `5773739` with unchanged readback
+and counter results. Later commits change the recorded documentation only.
 
 ## Scope
 
@@ -46,6 +48,9 @@ The macOS and browser workflows are restricted to
 request; only `workflow_dispatch`, toolchain caching, and log artifacts were
 added, so master behavior is unchanged. No workflow pushes or writes to
 `master`.
+
+The macOS matrix job was re-run at `5773739` after the packaging guard
+(44559079918) and passed with the same adapter and counters.
 
 `workflow_dispatch` was exercised explicitly with
 `gh workflow run "WebGPU feasibility (browser)" --ref

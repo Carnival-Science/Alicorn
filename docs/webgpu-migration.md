@@ -2911,7 +2911,9 @@ across adapters; the probe's boolean comparison passes everywhere.
 
 The macOS job needs `-define:WGPU_SHARED=true` because AccessKit and static
 wgpu-native duplicate `rust_eh_personality` under ld64. `tools/common.sh` now
-selects the shared odin dylib and embeds its rpath for macOS native builds.
+selects the shared Odin dylib and embeds its rpath for macOS native builds;
+`tools/build_native_release.sh` opts packaged apps back into the static
+contract so bundles do not embed developer-machine rpaths.
 
 Limits: every CI adapter is software or paravirtualized. There is still no
 hosted hardware-GPU, physical-driver, Wayland, genuine device-loss, Firefox,
