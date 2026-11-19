@@ -43,6 +43,8 @@ Native_Image_Renderer :: struct {
 	uploads: [dynamic]Native_Image_Upload,
 	mesh_valid, upload_pending: bool,
 	mesh_fingerprint: u64,
+	vertices_uploaded: u64,
+	vertex_upload_bytes: u64,
 }
 
 native_image_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUTextureFormat, runtime: ^alicorn.Runtime) -> (renderer: Native_Image_Renderer, ok: bool) {
@@ -243,6 +245,8 @@ native_image_upload_vertices :: proc(renderer: ^Native_Image_Renderer, command: 
 	destination_region := sdl3.GPUBufferRegion{buffer=renderer.vertex_buffer, offset=0, size=sdl3.Uint32(len(renderer.vertices)*size_of(Native_Text_Vertex))}
 	sdl3.UploadToGPUBuffer(copy_pass, source, destination_region, true)
 	sdl3.EndGPUCopyPass(copy_pass)
+	renderer.vertices_uploaded += 1
+	renderer.vertex_upload_bytes += u64(len(renderer.vertices)*size_of(Native_Text_Vertex))
 	return true
 }
 

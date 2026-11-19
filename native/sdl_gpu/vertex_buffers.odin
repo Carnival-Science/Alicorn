@@ -29,6 +29,7 @@ native_vertex_buffer_upload :: proc(
 	upload_pending: bool,
 	vertices_uploaded: ^u64,
 	command: ^sdl3.GPUCommandBuffer,
+	upload_bytes: ^u64 = nil,
 ) -> bool {
 	if !upload_pending { return true }
 	if len(vertices) > vertex_capacity { return false }
@@ -48,6 +49,7 @@ native_vertex_buffer_upload :: proc(
 	sdl3.UploadToGPUBuffer(copy_pass, source, destination_region, true)
 	sdl3.EndGPUCopyPass(copy_pass)
 	vertices_uploaded^ += 1
+	if upload_bytes != nil { upload_bytes^ += u64(len(vertices) * size_of(Native_Text_Vertex)) }
 	return true
 }
 

@@ -6,6 +6,7 @@ import "core:c"
 import "core:fmt"
 import "core:os"
 import "core:sort"
+import "core:strconv"
 import "core:strings"
 import "base:runtime"
 import alicorn "alicorn:runtime"
@@ -268,6 +269,22 @@ sdl3_webgpu_run_timing_requested :: proc() -> bool {
 	return false
 }
 
+// sdl3_webgpu_run_smoke_hold_ns reads an optional idle hold for bounded smoke
+// runs. When nonzero, --smoke exits only after the last presented frame has
+// been idle for that long, so a benchmark can observe an idle window instead of
+// stopping on the first presented frame.
+@(private)
+sdl3_webgpu_run_smoke_hold_ns :: proc() -> u64 {
+	for argument in os.args {
+		if !strings.has_prefix(argument, "--smoke-hold-ms=") { continue }
+		value := strings.trim_prefix(argument, "--smoke-hold-ms=")
+		milliseconds, ok := strconv.parse_u64(value)
+		if !ok || milliseconds > 60_000 { return 0 }
+		return milliseconds * 1_000_000
+	}
+	return 0
+}
+
 @(private)
 sdl3_webgpu_run_loss_injection_requested :: proc() -> bool {
 	for argument in os.args {
@@ -317,12 +334,57 @@ sdl3_webgpu_run_report_timing :: proc(application: ^SDL3_WebGPU_Application) {
 	whole_p50, whole_p95, whole_p99 := sdl3_webgpu_run_timing_percentiles(step_to_present[:count])
 	input_p50, input_p95, input_p99 := sdl3_webgpu_run_timing_percentiles(input_to_submit[:input_count])
 	fmt.printf("[alicorn-webgpu-timing] samples=%d overwritten=%d metric=CPU_wall_time_not_GPU_execution_or_scanout\n", count, overwritten)
-	fmt.printf("[alicorn-webgpu-timing] runtime_step_ns_p50=%d p95=%d p99=%d surface_acquire_ns_p50=%d p95=%d p99=%d renderer_encode_ns_p50=%d p95=%d p99=%d\n",
+	fmt.printf("[alicorn-webgpu-timing] runtime_step_ns_p50=%d runtime_step_ns_p95=%d runtime_step_ns_p99=%d surface_acquire_ns_p50=%d surface_acquire_ns_p95=%d surface_acquire_ns_p99=%d renderer_encode_ns_p50=%d renderer_encode_ns_p95=%d renderer_encode_ns_p99=%d\n",
 		runtime_p50, runtime_p95, runtime_p99, acquire_p50, acquire_p95, acquire_p99,
 		encode_p50, encode_p95, encode_p99)
-	fmt.printf("[alicorn-webgpu-timing] queue_submit_ns_p50=%d p95=%d p99=%d surface_present_call_ns_p50=%d p95=%d p99=%d step_to_present_ns_p50=%d p95=%d p99=%d input_samples=%d input_to_submit_ns_p50=%d p95=%d p99=%d\n",
+	fmt.printf("[alicorn-webgpu-timing] queue_submit_ns_p50=%d queue_submit_ns_p95=%d queue_submit_ns_p99=%d surface_present_call_ns_p50=%d surface_present_call_ns_p95=%d surface_present_call_ns_p99=%d step_to_present_ns_p50=%d step_to_present_ns_p95=%d step_to_present_ns_p99=%d input_samples=%d input_to_submit_ns_p50=%d input_to_submit_ns_p95=%d input_to_submit_ns_p99=%d\n",
 		submit_p50, submit_p95, submit_p99, present_p50, present_p95, present_p99,
 		whole_p50, whole_p95, whole_p99, input_count, input_p50, input_p95, input_p99)
+}
+
+// sdl3_webgpu_run_report_workload prints retained-work counters and host loop
+// activity once at exit. The renderer snapshot is read after the last
+// submission, so it adds no work to the measured frame path.
+@(private)
+sdl3_webgpu_run_report_workload :: proc(
+	application: ^SDL3_WebGPU_Application,
+	presentations, wake_events, steps, no_frame_steps, zero_timeout_iterations: u64,
+	idle_after_last_present_ns: u64,
+) {
+	if application == nil { return }
+	fmt.printf(
+		"[alicorn-webgpu-workload] frames_presented=%d wake_events=%d steps=%d no_frame_steps=%d zero_timeout_iterations=%d idle_after_last_present_ns=%d\n",
+		presentations, wake_events, steps, no_frame_steps, zero_timeout_iterations,
+		idle_after_last_present_ns,
+	)
+	stats, ok := presentation_host.hosted_surface_presenter_renderer_stats(&application.presenter)
+	if !ok { return }
+	fmt.printf(
+		"[alicorn-webgpu-workload] prepared_commands=%d solid_mesh_rebuilds=%d solid_vertex_uploads=%d solid_vertex_upload_bytes=%d solid_transform_uploads=%d solid_transform_upload_bytes=%d solid_viewport_uploads=%d\n",
+		stats.prepared_commands,
+		stats.solid.mesh_rebuilds, stats.solid.vertex_uploads, stats.solid.vertex_upload_bytes,
+		stats.solid.transform_uploads, stats.solid.transform_upload_bytes, stats.solid.viewport_uploads,
+	)
+	fmt.printf(
+		"[alicorn-webgpu-workload] text_mesh_rebuilds=%d text_vertex_uploads=%d text_vertex_upload_bytes=%d text_transform_uploads=%d text_viewport_uploads=%d text_atlas_uploads=%d text_atlas_upload_bytes=%d\n",
+		stats.text.mesh_rebuilds, stats.text.vertex_uploads, stats.text.vertex_upload_bytes,
+		stats.text.transform_uploads, stats.text.viewport_uploads,
+		stats.text.atlas_uploads, stats.text.atlas_upload_bytes,
+	)
+	fmt.printf(
+		"[alicorn-webgpu-workload] icon_mesh_rebuilds=%d icon_mesh_cache_hits=%d icon_vertex_uploads=%d icon_vertex_upload_bytes=%d icon_atlas_uploads=%d icon_atlas_upload_bytes=%d image_mesh_rebuilds=%d image_vertex_uploads=%d image_texture_uploads=%d image_texture_upload_bytes=%d\n",
+		stats.icons.mesh_rebuilds, stats.icons.mesh_cache_hits, stats.icons.vertex_uploads,
+		stats.icons.vertex_upload_bytes, stats.icons.atlas_uploads, stats.icons.atlas_upload_bytes,
+		stats.images.mesh_rebuilds, stats.images.vertex_uploads,
+		stats.images.texture_uploads, stats.images.texture_upload_bytes,
+	)
+	fmt.printf(
+		"[alicorn-webgpu-workload] surface_mesh_rebuilds=%d surface_mesh_cache_hits=%d surface_vertex_uploads=%d surface_vertex_upload_bytes=%d surface_instance_uploads=%d surface_instance_cache_hits=%d surface_viewport_uploads=%d\n",
+		stats.surfaces.mesh_rebuilds, stats.surfaces.mesh_cache_hits,
+		stats.surfaces.vertex_uploads, stats.surfaces.vertex_upload_bytes,
+		stats.surfaces.instance_uploads, stats.surfaces.instance_cache_hits,
+		stats.surfaces.viewport_uploads,
+	)
 }
 
 @(private)
@@ -649,9 +711,29 @@ sdl3_webgpu_run :: proc(
 	defer sdl3_webgpu_run_destroy_application(&application, &state)
 	defer sdl3_webgpu_run_destroy_windows(rawptr(&state))
 	timing_enabled := sdl3_webgpu_run_timing_requested()
+	smoke_hold_ns := sdl3_webgpu_run_smoke_hold_ns()
 	if timing_enabled {
 		if !presentation_host.hosted_surface_presenter_set_timing_enabled(&application.presenter, true) {
 			return .Presenter_Failure
+		}
+	}
+	presentations: u64 = 0
+	wake_events: u64 = 0
+	steps: u64 = 0
+	no_frame_steps: u64 = 0
+	zero_timeout_iterations: u64 = 0
+	last_present_ns: u64 = 0
+	defer {
+		if timing_enabled {
+			exit_ns := u64(sdl3.GetTicksNS())
+			idle_ns: u64
+			if last_present_ns != 0 && exit_ns >= last_present_ns {
+				idle_ns = exit_ns-last_present_ns
+			}
+			sdl3_webgpu_run_report_workload(
+				&application, presentations, wake_events, steps, no_frame_steps,
+				zero_timeout_iterations, idle_ns,
+			)
 		}
 	}
 	defer {
@@ -688,6 +770,8 @@ sdl3_webgpu_run :: proc(
 		}
 		step := sdl3_webgpu_application_step(&application, now_ns)
 		if step.status != .Ok { return .Runtime_Failure }
+		steps += 1
+		if step.presentation == .No_Frame { no_frame_steps += 1 }
 		child_step: SDL3_WebGPU_Application_Step
 		child_stepped := window_manager.child != nil && !window_manager.pending_close
 		if child_stepped {
@@ -705,6 +789,8 @@ sdl3_webgpu_run :: proc(
 		#partial switch step.presentation {
 		case .Ok:
 			did_present = true
+			presentations += 1
+			last_present_ns = now_ns
 			if inject_loss_after_present {
 				inject_loss_after_present = false
 				did_present = false
@@ -731,8 +817,11 @@ sdl3_webgpu_run :: proc(
 		child_smoke_complete := window_manager.child == nil || (
 			child_did_present && !sdl3_webgpu_window_has_in_flight(&window_manager)
 		)
+		smoke_hold_complete := smoke_hold_ns == 0 || (
+			last_present_ns != 0 && now_ns >= last_present_ns && now_ns-last_present_ns >= smoke_hold_ns
+		)
 		if smoke && !state.recovery_active && !state.device_lost && did_present && child_smoke_complete &&
-		   !sdl3_webgpu_application_has_in_flight(&application) {
+		   smoke_hold_complete && !sdl3_webgpu_application_has_in_flight(&application) {
 			return .Ok
 		}
 		if smoke && now_ns-started_ns > 15_000_000_000 { return .Smoke_Timeout }
@@ -745,7 +834,9 @@ sdl3_webgpu_run :: proc(
 				return .Ok
 			case .Failure:
 				return .Event_Failure
-			case .Ignored, .Handled, .Wake:
+			case .Wake:
+				wake_events += 1
+			case .Ignored, .Handled:
 			}
 			if window_manager.child != nil {
 				child_result := sdl3_webgpu_run_dispatch_event(&window_manager.child.application, event)
@@ -754,7 +845,9 @@ sdl3_webgpu_run :: proc(
 					window_manager.pending_close = true
 				case .Failure:
 					return .Event_Failure
-				case .Ignored, .Handled, .Wake:
+				case .Wake:
+					wake_events += 1
+				case .Ignored, .Handled:
 				}
 			}
 		}
@@ -813,7 +906,12 @@ sdl3_webgpu_run :: proc(
 			poll_timeout := int(min(u64(1000), (until_poll+999_999)/1_000_000))
 			if timeout_ms < 0 || poll_timeout < timeout_ms { timeout_ms = poll_timeout }
 		}
-		if timeout_ms == 0 { continue }
+		if smoke && smoke_hold_ns > 0 && last_present_ns != 0 && now_ns >= last_present_ns {
+			remaining := smoke_hold_ns-(now_ns-last_present_ns)
+			hold_timeout := int(min(u64(1000), (remaining+999_999)/1_000_000))
+			if timeout_ms < 0 || hold_timeout < timeout_ms { timeout_ms = hold_timeout }
+		}
+		if timeout_ms == 0 { zero_timeout_iterations += 1; continue }
 		if timeout_ms < 0 {
 			_ = sdl3.WaitEvent(&event)
 		} else if sdl3.WaitEventTimeout(&event, sdl3.Sint32(timeout_ms)) {
@@ -823,7 +921,9 @@ sdl3_webgpu_run :: proc(
 				return .Ok
 			case .Failure:
 				return .Event_Failure
-			case .Ignored, .Handled, .Wake:
+			case .Wake:
+				wake_events += 1
+			case .Ignored, .Handled:
 			}
 			if window_manager.child != nil {
 			child_result := sdl3_webgpu_run_dispatch_event(&window_manager.child.application, event)
@@ -832,7 +932,9 @@ sdl3_webgpu_run :: proc(
 					window_manager.pending_close = true
 				case .Failure:
 					return .Event_Failure
-				case .Ignored, .Handled, .Wake:
+				case .Wake:
+					wake_events += 1
+				case .Ignored, .Handled:
 				}
 			}
 		}

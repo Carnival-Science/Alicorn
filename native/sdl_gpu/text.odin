@@ -73,6 +73,7 @@ Native_Text_Renderer :: struct {
 	mesh_cache_hits: u64,
 	mesh_text_commands: u64,
 	vertex_uploads: u64,
+	vertex_upload_bytes: u64,
 }
 
 native_shader_supported :: proc(supported: sdl3.GPUShaderFormat, format: sdl3.GPUShaderFormat) -> bool {
@@ -578,6 +579,7 @@ native_text_upload_vertices :: proc(renderer: ^Native_Text_Renderer, command: ^s
 	sdl3.UploadToGPUBuffer(copy_pass, source, destination_region, true)
 	sdl3.EndGPUCopyPass(copy_pass)
 	renderer.vertex_uploads += 1
+	renderer.vertex_upload_bytes += u64(len(renderer.vertices) * size_of(Native_Text_Vertex))
 	return true
 }
 

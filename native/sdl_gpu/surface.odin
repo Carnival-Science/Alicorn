@@ -27,6 +27,7 @@ Native_Surface_Renderer :: struct {
 	shape_mask_upload_command: ^sdl3.GPUCommandBuffer,
 	resource_creations: u64,
 	vertex_uploads: u64,
+	vertex_upload_bytes: u64,
 	encodes: u64,
 }
 
@@ -359,6 +360,7 @@ native_surface_upload_vertices :: proc(renderer: ^Native_Surface_Renderer, comma
 	sdl3.UploadToGPUBuffer(copy_pass, source, destination_region, true)
 	sdl3.EndGPUCopyPass(copy_pass)
 	renderer.vertex_uploads += 1
+	renderer.vertex_upload_bytes += u64(len(renderer.vertices) * size_of(Native_Text_Vertex))
 	return true
 }
 

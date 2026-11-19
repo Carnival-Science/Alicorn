@@ -230,6 +230,9 @@ run_application_loop :: proc(
 	last_tick := time.now()
 	last_focus_log := start
 	wait_for_event := false
+	smoke_hold_ns := native_smoke_hold_ns()
+	last_primary_submit: time.Tick
+	last_primary_submit_set := false
 	drag_autoscroll_deadline_ns: u64 = 0
 	swapchain_retry_pending := false
 	primary_drawable_unavailable := false
@@ -691,8 +694,14 @@ run_application_loop :: proc(
 			}
 		}
 		if smoke && time.duration_nanoseconds(time.since(start)) >= 3_000_000_000 {
-			quit_requested = true
-			continue
+			smoke_idle_complete := true
+			if smoke_hold_ns > 0 && last_primary_submit_set {
+				smoke_idle_complete = u64(time.duration_nanoseconds(time.tick_diff(last_primary_submit, time.tick_now()))) >= smoke_hold_ns
+			}
+			if smoke_idle_complete {
+				quit_requested = true
+				continue
+			}
 		}
 		if application_instance.on_tick != nil && time.duration_nanoseconds(time.since(last_tick)) >= 16_666_667 {
 			tick_start := time.now()
@@ -960,9 +969,12 @@ run_application_loop :: proc(
 			}
 			total_encode_elapsed := u64(time.duration_nanoseconds(time.since(encode_start)))
 			native_timing_accumulate(&timing.gpu_encode_ns, &timing.gpu_encode_max_ns, total_encode_elapsed)
+			native_timing_add_sample(&timing.gpu_encode_samples, total_encode_elapsed)
 			submit_start := time.now()
 			fence := sdl3.SubmitGPUCommandBufferAndAcquireFence(command)
-			native_timing_accumulate(&timing.gpu_submit_ns, &timing.gpu_submit_max_ns, u64(time.duration_nanoseconds(time.since(submit_start))) )
+			submit_elapsed := u64(time.duration_nanoseconds(time.since(submit_start)))
+			native_timing_accumulate(&timing.gpu_submit_ns, &timing.gpu_submit_max_ns, submit_elapsed)
+			native_timing_add_sample(&timing.gpu_submit_samples, submit_elapsed)
 			if fence == nil {
 				fail("SDL application submission failed")
 			}
@@ -994,6 +1006,8 @@ run_application_loop :: proc(
 			}
 			submitted += 1
 			timing.gpu_submissions += 1
+			last_primary_submit = time.tick_now()
+			last_primary_submit_set = true
 			if application_submission_pending {
 				rt.stats.gpu_submits += 1
 				native_note_input_submission(&text_events)
@@ -1110,6 +1124,11 @@ run_application_loop :: proc(
 	clear(&in_flight)
 	native_breadcrumb_event(breadcrumbs, "alicorn", "session.ended")
 	elapsed_ns := time.duration_nanoseconds(time.since(start))
+	idle_after_last_submit_ns: u64 = 0
+	if last_primary_submit_set {
+		idle_ns := time.duration_nanoseconds(time.tick_diff(last_primary_submit, time.tick_now()))
+		if idle_ns > 0 { idle_after_last_submit_ns = u64(idle_ns) }
+	}
 	fmt.println(
 		"SDL application PASS",
 		"submissions", submitted,
@@ -1117,6 +1136,18 @@ run_application_loop :: proc(
 		"retired", retired,
 		"max_frames_in_flight", max_in_flight,
 		"wall_ns", elapsed_ns,
+		"idle_after_last_submit_ns", idle_after_last_submit_ns,
+		"smoke_hold_ns", smoke_hold_ns,
+		"application_build_samples", len(timing.build_samples),
+		"application_build_p50_ns", native_timing_percentile(timing.build_samples[:], 0.50),
+		"application_build_p95_ns", native_timing_percentile(timing.build_samples[:], 0.95),
+		"application_build_p99_ns", native_timing_percentile(timing.build_samples[:], 0.99),
+		"renderer_encode_ns_p50", native_timing_percentile(timing.gpu_encode_samples[:], 0.50),
+		"renderer_encode_ns_p95", native_timing_percentile(timing.gpu_encode_samples[:], 0.95),
+		"renderer_encode_ns_p99", native_timing_percentile(timing.gpu_encode_samples[:], 0.99),
+		"queue_submit_ns_p50", native_timing_percentile(timing.gpu_submit_samples[:], 0.50),
+		"queue_submit_ns_p95", native_timing_percentile(timing.gpu_submit_samples[:], 0.95),
+		"queue_submit_ns_p99", native_timing_percentile(timing.gpu_submit_samples[:], 0.99),
 		"motion_samples", timing.motion_samples,
 		"motion_timer_wakes", timing.motion_timer_wakes,
 		"motion_restore_samples", timing.motion_restore_samples,
@@ -1202,5 +1233,28 @@ run_application_loop :: proc(
 		"native_chrome_encode_ns", timing.native_chrome_encode_ns,
 		"gpu_encode_max_ns", timing.gpu_encode_max_ns,
 		"fence_wait_max_ns", timing.fence_wait_max_ns,
+		// Retained renderer work. Solid has no mesh fingerprint or transform
+		// buffer on the SDL_GPU reference path, so its batches and vertex
+		// uploads are the comparable rebuild/upload signal; zero transform
+		// and byte counters are not reported for it.
+		"solid_batches", solid_renderer.batches,
+		"solid_vertex_uploads", solid_renderer.vertices_uploaded,
+		"solid_vertex_upload_bytes", solid_renderer.vertex_upload_bytes,
+		"text_vertex_upload_bytes", text_renderer.vertex_upload_bytes,
+		"text_atlas_uploads", text_renderer.atlas_uploads,
+		"text_atlas_upload_bytes", text_renderer.atlas_upload_bytes,
+		"icon_mesh_rebuilds", solid_renderer.icons.mesh_rebuilds,
+		"icon_mesh_cache_hits", solid_renderer.icons.mesh_cache_hits,
+		"icon_vertex_uploads", solid_renderer.icons.vertices_uploaded,
+		"icon_vertex_upload_bytes", solid_renderer.icons.vertex_upload_bytes,
+		"icon_atlas_uploads", solid_renderer.icons.atlas_uploads,
+		"icon_atlas_upload_bytes", solid_renderer.icons.atlas_upload_bytes,
+		"image_vertex_uploads", solid_renderer.images.vertices_uploaded,
+		"image_vertex_upload_bytes", solid_renderer.images.vertex_upload_bytes,
+		"surface_vertex_uploads", surface_renderer.vertex_uploads,
+		"surface_vertex_upload_bytes", surface_renderer.vertex_upload_bytes,
+		"surface_encodes", surface_renderer.encodes,
+		"application_stabilization_rebuilds", timing.application_stabilization_rebuilds,
+		"application_stabilization_limit_hits", timing.application_stabilization_limit_hits,
 	)
 }

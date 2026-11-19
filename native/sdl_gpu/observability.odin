@@ -73,6 +73,14 @@ Native_Host_Timing :: struct {
 	gpu_submit_max_ns:   u64,
 	fence_wait_max_ns:   u64,
 	frame_samples:       [dynamic; NATIVE_DIAGNOSTIC_FRAME_SAMPLES]u64,
+	// build_samples records each bounded application description pass, so the
+	// diagnostics can report a real per-build CPU distribution instead of only
+	// the accumulated total. The final smoke wait never enters this array.
+	build_samples:       [dynamic; NATIVE_DIAGNOSTIC_FRAME_SAMPLES]u64,
+	// Encode and submit samples describe CPU submission work per primary GPU
+	// submission. They exclude event waits and the final smoke idle window.
+	gpu_encode_samples:  [dynamic; NATIVE_DIAGNOSTIC_FRAME_SAMPLES]u64,
+	gpu_submit_samples:  [dynamic; NATIVE_DIAGNOSTIC_FRAME_SAMPLES]u64,
 }
 
 Native_Text_Event_Telemetry :: struct {
@@ -148,6 +156,23 @@ native_timing_add_frame :: proc(timing: ^Native_Host_Timing, frame_ns: u64) {
 	append(&timing.frame_samples, frame_ns)
 }
 
+// native_timing_add_build records one bounded application description pass.
+// Hosts call it once per build pass, so its percentiles describe description
+// CPU time rather than loop wall time that includes event waits.
+native_timing_add_build :: proc(timing: ^Native_Host_Timing, build_ns: u64) {
+	native_timing_add_sample(&timing.build_samples, build_ns)
+}
+
+native_timing_add_sample :: proc(samples: ^[dynamic; NATIVE_DIAGNOSTIC_FRAME_SAMPLES]u64, value: u64) {
+	if len(samples^) >= NATIVE_DIAGNOSTIC_FRAME_SAMPLES {
+		for i := 1; i < len(samples^); i += 1 {
+			samples^[i-1] = samples^[i]
+		}
+		pop(samples)
+	}
+	append(samples, value)
+}
+
 native_timing_percentile :: proc(samples: []u64, fraction: f64) -> u64 {
 	if len(samples) == 0 { return 0 }
 	ordered := make([]u64, len(samples))
@@ -192,6 +217,22 @@ native_diagnostics_capture_dir_override :: proc(args: []string, default_dir: str
 		}
 	}
 	return
+}
+
+// native_smoke_hold_ns reads an optional idle hold for bounded smoke runs.
+// When nonzero, --smoke still requires the usual startup wait, but exits only
+// after no application primary submission has occurred for the hold duration.
+// Benchmarks use it to observe an idle window; the default remains the fixed
+// three-second smoke window.
+native_smoke_hold_ns :: proc() -> u64 {
+	prefix := "--smoke-hold-ms="
+	for argument in os.args {
+		if len(argument) <= len(prefix) || argument[:len(prefix)] != prefix { continue }
+		milliseconds, ok := strconv.parse_u64(argument[len(prefix):])
+		if !ok || milliseconds > 60_000 { return 0 }
+		return milliseconds * 1_000_000
+	}
+	return 0
 }
 
 native_parse_diagnostics_options :: proc() -> Native_Diagnostics_Options {

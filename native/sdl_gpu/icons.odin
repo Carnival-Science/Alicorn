@@ -28,7 +28,7 @@ Native_Icon_Renderer :: struct {
     draws: [dynamic]Native_Icon_Draw,
     upload_pending, mesh_valid: bool,
     mesh_fingerprint: u64,
-    atlas_uploads, atlas_upload_bytes, vertices_uploaded, mesh_rebuilds, mesh_cache_hits: u64,
+    atlas_uploads, atlas_upload_bytes, vertices_uploaded, vertex_upload_bytes, mesh_rebuilds, mesh_cache_hits: u64,
 }
 
 native_icon_upload_atlases :: proc(renderer: ^Native_Icon_Renderer) -> bool {

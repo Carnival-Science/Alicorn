@@ -288,6 +288,14 @@ WebGPU_Presenter_Can_Encode :: proc(presenter: ^WebGPU_Presenter) -> bool {
 		webgpu_presenter_capacity_available(state.last_submitted, state.completed, state.max_frames_in_flight)
 }
 
+// WebGPU_Presenter_Stats samples the borrowed presenter's retained-work
+// counters between frames. It is read-only and performs no GPU work.
+WebGPU_Presenter_Stats :: proc(presenter: ^WebGPU_Presenter) -> (stats: WebGPU_Renderer_Stats, ok: bool) {
+	state := webgpu_presenter_state(presenter)
+	if state == nil { return }
+	return Compositor_Stats(&state.compositor), true
+}
+
 // Destroy is nonblocking. The host must first cancel an unsubmitted frame and
 // report completion for every submitted token; device and Runtime stay alive
 // until this returns true.

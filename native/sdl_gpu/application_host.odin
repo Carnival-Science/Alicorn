@@ -42,7 +42,9 @@ native_application_build_until_stable :: proc(
 		_ = native_motion_clock_set_current_time(rt)
 		build_start := time.now()
 		_ = application.build(application.state, rt, metrics.logical_width, metrics.logical_height, metrics.display_scale)
-		native_timing_accumulate(&timing.application_build_ns, &timing.application_build_max_ns, u64(time.duration_nanoseconds(time.since(build_start))))
+		build_ns := u64(time.duration_nanoseconds(time.since(build_start)))
+		native_timing_accumulate(&timing.application_build_ns, &timing.application_build_max_ns, build_ns)
+		native_timing_add_build(timing, build_ns)
 		result.passes += 1
 		if application.interaction_update_policy == .Correct_After_Interaction &&
 		   rt.interaction_consumption_sequence != interaction_sequence && !rt.invalidated {

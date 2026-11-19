@@ -352,6 +352,21 @@ hosted_surface_presenter_timing_overwritten :: proc(presenter: ^Hosted_Surface_P
 	return state.timing.overwritten
 }
 
+// Hosted_Surface_Renderer_Stats is the shared presenter's retained-work
+// snapshot for the compositor passes. Counters are cumulative and are read
+// between frames, outside the measured encode/submit stages.
+Hosted_Surface_Renderer_Stats :: webgpu_renderer.WebGPU_Renderer_Stats
+
+// hosted_surface_presenter_renderer_stats samples the presenter's renderer
+// counters without touching the borrowed device, surface, or Runtime.
+hosted_surface_presenter_renderer_stats :: proc(
+	presenter: ^Hosted_Surface_Presenter,
+) -> (stats: Hosted_Surface_Renderer_Stats, ok: bool) {
+	state := hosted_surface_state(presenter)
+	if state == nil { return }
+	return webgpu_renderer.WebGPU_Presenter_Stats(&state.renderer)
+}
+
 @(private)
 hosted_surface_timing_buffer_destroy :: proc(state: ^hosted_surface_presenter_state) {
 	if state == nil || state.timing == nil { return }

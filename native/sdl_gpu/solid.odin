@@ -35,6 +35,7 @@ Native_Solid_Renderer :: struct {
 	upload_pending:  bool,
 	batches:         u64,
 	vertices_uploaded: u64,
+	vertex_upload_bytes: u64,
 }
 
 native_solid_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUTextureFormat, runtime: ^alicorn.Runtime) -> (renderer: Native_Solid_Renderer, ok: bool) {
