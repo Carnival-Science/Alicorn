@@ -178,10 +178,10 @@ applies both patches and runs this regression; its updated hosted result is
 pending. Neither this probe nor explicit-destroy callbacks establish genuine
 driver/OS loss or successful recovery.
 
-### Windows native AccessKit linkage
+### Native AccessKit linkage
 
-When a Windows executable links both the pinned AccessKit C library and Odin's
-default static `wgpu_native.lib`, the link fails because both Rust runtimes
+When a native executable links both the pinned AccessKit C library and Odin's
+default static wgpu-native library, the link fails because both Rust runtimes
 define `rust_eh_personality`. For native WebGPU consumers that also use
 AccessKit, build with `-define:WGPU_SHARED=true` and distribute Odin's matching
 `wgpu_native.dll` beside the executable. The SDL3 runtime DLL must also be
@@ -191,7 +191,16 @@ same shared-library mode. The Unix example builder also selects it for
 `16_native_webgpu_ui` to avoid the same duplicate Rust runtime symbols.
 The native SDL_GPU consumers continue using the existing link mode. This
 workaround was validated for Windows x86-64 with Odin
-`dev-2026-11-nightly:08539cd` and its bundled wgpu-native v29.0.1.1. Other
+`dev-2026-11-nightly:08539cd` and its bundled wgpu-native v29.0.1.1.
+
+On macOS, ld64 rejects the duplicate even for binaries that only import the
+accessibility host indirectly, so `tools/common.sh` selects
+`-define:WGPU_SHARED=true` for every native build made through
+`alicorn_odin_with_linker_flags` and embeds an absolute `-Wl,-rpath` to the
+installed `libwgpu_native.dylib`. `examples/15_webgpu_feasibility/build.sh`
+therefore needs no platform-specific flag. This was exercised by the
+`WebGPU feasibility (macOS arm64)` workflow and the macOS foundation job; the
+dylib remains a runtime dependency for distributed binaries. Other
 platform runtime linkage and redistribution behavior remain unverified.
 
 A related, separate wgpu-core issue is [#9579](https://github.com/gfx-rs/wgpu/issues/9579),

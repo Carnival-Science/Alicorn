@@ -238,11 +238,16 @@ completion.
 ~~~sh
 brew install lld
 export PATH="$(brew --prefix lld)/bin:$PATH"
-sh build.sh
+sh build.sh --native-only
 ./out/webgpu_feasibility_smoke
 ~~~
 
 This uses the same shared Odin renderer with SDL3 and wgpu-native/Metal.
+On macOS, `tools/common.sh` links the shared `libwgpu_native.dylib` instead of
+the static archive because AccessKit and wgpu-native both export Rust's
+`rust_eh_personality`; ld64 rejects that duplicate. The GitHub Actions
+`WebGPU feasibility (macOS arm64)` workflow runs the same readback and resize
+smoke and uploads the adapter and retention counters.
 
 ## Linux x64 native
 
@@ -273,7 +278,11 @@ localhost or HTTPS:
 python -m http.server 8080 --directory web
 ~~~
 
-Open http://localhost:8080/. The browser canvas now creates the same retained
+Build only the browser artifact with `sh build.sh --web-only`; the default
+build also compiles the native targets. CI runs `tools/webgpu_browser_smoke.js`
+against headless Chromium, tries lavapipe and bundled SwiftShader profiles,
+waits for the core/compositor/effects/material readback lines, and saves the
+console log and screenshot. Open http://localhost:8080/. The browser canvas now creates the same retained
 Alicorn Runtime and passes its display list to `WebGPU_Presenter_Encode`; the
 Browser and SDL native surface smokes use that same Runtime composition and
 presenter, obtaining output-scoped views through

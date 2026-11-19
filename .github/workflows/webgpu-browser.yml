@@ -1,0 +1,109 @@
+name: WebGPU feasibility (browser)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/webgpu-phase0-feasibility
+    paths:
+      - 'examples/15_webgpu_feasibility/**'
+      - 'renderer/webgpu/**'
+      - 'host/web/**'
+      - 'tools/patch_odin_wgpu_js.js'
+      - 'tools/webgpu_browser_smoke.js'
+      - 'tools/setup_linux_odin.sh'
+      - 'dependencies/webgpu-toolchain.md'
+      - '.github/workflows/webgpu-browser.yml'
+
+jobs:
+  chromium-headless:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install wasm linker, Vulkan software driver, and static-server runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            lld mesa-vulkan-drivers libvulkan1 vulkan-tools python3
+          wasm-ld --version
+          vulkaninfo --summary | sed -n '1,40p' || true
+
+      - name: Cache pinned Odin SDK
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/alicorn-odin
+          key: alicorn-odin-linux-x64-dev-2026-11
+
+      - name: Install pinned Odin Linux x64 SDK
+        shell: bash
+        run: |
+          odin_root="$RUNNER_TEMP/alicorn-odin"
+          if [ ! -x "$odin_root/odin" ]; then
+            rm -rf "$odin_root"
+            sh tools/setup_linux_odin.sh "$odin_root"
+          fi
+          echo "$odin_root" >> "$GITHUB_PATH"
+          echo "ODIN_ROOT=$odin_root" >> "$GITHUB_ENV"
+          echo "ALICORN_ODIN=$odin_root/odin" >> "$GITHUB_ENV"
+          "$odin_root/odin" version
+
+      - name: Build the browser js_wasm32 fixture
+        shell: sh
+        run: |
+          sh examples/15_webgpu_feasibility/build.sh --web-only
+          sha256sum examples/15_webgpu_feasibility/web/feasibility.wasm
+
+      - name: Install Playwright Chromium
+        run: |
+          npm install --prefix "$RUNNER_TEMP/playwright" playwright@latest
+          "$RUNNER_TEMP/playwright/node_modules/.bin/playwright" --version
+          "$RUNNER_TEMP/playwright/node_modules/.bin/playwright" install --with-deps chromium
+
+      - name: Serve the fixture and run the headless readback matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m http.server 8765 --bind 127.0.0.1 \
+            --directory examples/15_webgpu_feasibility/web >"$RUNNER_TEMP/http.log" 2>&1 &
+          server_pid=$!
+          trap 'kill $server_pid 2>/dev/null || true' EXIT
+          for _ in $(seq 1 50); do
+            if curl --fail --silent http://127.0.0.1:8765/ >/dev/null; then break; fi
+            sleep 0.2
+          done
+          icd_file=$(find /usr/share/vulkan/icd.d -maxdepth 1 -type f -name 'lvp_icd*.json' -print -quit)
+          echo "lavapipe ICD: ${icd_file:-not installed}"
+          export LAVAPIPE_ICD="$icd_file"
+          export WEBGPU_URL="http://127.0.0.1:8765/"
+          export OUT_DIR="$PWD/out/webgpu-browser"
+          export NODE_PATH="$RUNNER_TEMP/playwright/node_modules"
+          node tools/webgpu_browser_smoke.js | tee "$RUNNER_TEMP/webgpu-browser-run.txt"
+          grep -Fq 'PASS via' "$RUNNER_TEMP/webgpu-browser-run.txt"
+          grep -Fq 'browser adapter classification' "$RUNNER_TEMP/webgpu-browser-run.txt"
+
+      - name: Summarize browser adapter and readback result
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Headless Chromium WebGPU fixture"
+            echo
+            echo '```'
+            cat "$RUNNER_TEMP/webgpu-browser-run.txt" 2>/dev/null || true
+            cat out/webgpu-browser/result.txt 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload browser console, screenshot, and run log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: webgpu-browser-chromium
+          path: |
+            ${{ runner.temp }}/webgpu-browser-run.txt
+            ${{ runner.temp }}/http.log
+            out/webgpu-browser/**
+          if-no-files-found: warn
+          retention-days: 7
