@@ -24,8 +24,7 @@ Solid_Draw :: struct {
 	first_vertex: u32,
 	vertex_count: u32,
 	command_index: int,
-	scissor: cpu_renderer.Pixel_Rect,
-	has_scissor: bool,
+	translation_index: u32,
 }
 
 Solid_Renderer :: struct {
@@ -40,17 +39,24 @@ Solid_Renderer :: struct {
 	bind_group: wgpu.BindGroup,
 	vertex_buffer: wgpu.Buffer,
 	vertex_capacity: int,
+	translation_buffer: wgpu.Buffer,
+	translation_capacity: int,
 	vertices: [dynamic]cpu_renderer.Vertex,
+	translations: [dynamic][2]f32,
 	draws: [dynamic]Solid_Draw,
 	mesh_cache_valid: bool,
+	translation_cache_valid: bool,
+	translation_buffer_dirty: bool,
 	mesh_runtime: ^alicorn.Runtime,
 	mesh_fingerprint: u64,
+	translation_fingerprint: u64,
 	mesh_width, mesh_height: u32,
 	mesh_scale_x, mesh_scale_y: f32,
 	viewport_uniform_valid: bool,
 	viewport_width, viewport_height: u32,
-	mesh_rebuild_count, vertex_upload_count, viewport_upload_count: u64,
+	mesh_rebuild_count, vertex_upload_count, translation_upload_count, viewport_upload_count: u64,
 	vertex_upload_bytes: u64,
+	translation_upload_bytes: u64,
 }
 
 Solid_Create :: proc(
@@ -64,6 +70,7 @@ Solid_Create :: proc(
 	renderer.format = format
 	renderer.vertex_capacity = SOLID_INITIAL_VERTEX_CAPACITY
 	renderer.vertices = make([dynamic]cpu_renderer.Vertex, 0, SOLID_INITIAL_VERTEX_CAPACITY)
+	renderer.translations = make([dynamic][2]f32, 0, 1024)
 	renderer.draws = make([dynamic]Solid_Draw, 0, 1024)
 	defer if !ok { Solid_Destroy(&renderer) }
 
@@ -78,12 +85,22 @@ Solid_Create :: proc(
 		{format=.Float32x3, offset=u64(offset_of(cpu_renderer.Vertex, position)), shaderLocation=0},
 		{format=.Float32x4, offset=u64(offset_of(cpu_renderer.Vertex, color)), shaderLocation=1},
 	}
+	translation_attrs := [1]wgpu.VertexAttribute{
+		{format=.Float32x2, offset=0, shaderLocation=2},
+	}
 	vertex_layout := wgpu.VertexBufferLayout{
 		stepMode=.Vertex,
 		arrayStride=u64(size_of(cpu_renderer.Vertex)),
 		attributeCount=uint(len(attrs)),
 		attributes=&attrs[0],
 	}
+	translation_layout := wgpu.VertexBufferLayout{
+		stepMode=.Instance,
+		arrayStride=u64(size_of([2]f32)),
+		attributeCount=uint(len(translation_attrs)),
+		attributes=&translation_attrs[0],
+	}
+	vertex_layouts := [2]wgpu.VertexBufferLayout{vertex_layout, translation_layout}
 	layout_entry := wgpu.BindGroupLayoutEntry{
 		binding=0,
 		visibility={.Vertex},
@@ -124,8 +141,8 @@ Solid_Create :: proc(
 		vertex={
 			module=renderer.shader,
 			entryPoint="vs_main",
-			bufferCount=1,
-			buffers=&vertex_layout,
+			bufferCount=uint(len(vertex_layouts)),
+			buffers=&vertex_layouts[0],
 		},
 		primitive={topology=.TriangleList, frontFace=.CCW, cullMode=.None},
 		multisample={count=1, mask=0xFFFFFFFF},
@@ -181,8 +198,7 @@ Solid_Prepare :: proc(
 		rt, commands, scale_x, scale_y, int(target_width), int(target_height),
 	)
 	mesh_changed := !renderer.mesh_cache_valid || renderer.mesh_runtime != rt ||
-		renderer.mesh_fingerprint != fingerprint || renderer.mesh_width != target_width ||
-		renderer.mesh_height != target_height || renderer.mesh_scale_x != scale_x || renderer.mesh_scale_y != scale_y
+		renderer.mesh_fingerprint != fingerprint || renderer.mesh_scale_x != scale_x || renderer.mesh_scale_y != scale_y
 	if mesh_changed {
 		renderer.mesh_cache_valid = false
 		clear(&renderer.vertices)
@@ -190,8 +206,10 @@ Solid_Prepare :: proc(
 		required_vertices := 0
 		for command in commands {
 			if !alicorn.paint_command_is_surface(command) { continue }
+			mesh_command := command
+			mesh_command.translation = {}
 			count, visible := cpu_renderer.Solid_Surface_Vertex_Count(
-				rt, command, scale_x, scale_y, int(target_width), int(target_height),
+				rt, mesh_command, scale_x, scale_y, int(target_width), int(target_height), unbounded=true,
 			)
 			if visible {
 				if count < 0 || required_vertices > math_bits.INT_MAX-count { return .Resource_Failure }
@@ -204,21 +222,23 @@ Solid_Prepare :: proc(
 		}
 		for command, command_index in commands {
 			if !alicorn.paint_command_is_surface(command) { continue }
+			mesh_command := command
+			mesh_command.translation = {}
 			mesh := cpu_renderer.Append_Surface_Mesh(
-				&renderer.vertices, rt, command, scale_x, scale_y,
-				int(target_width), int(target_height),
+				&renderer.vertices, rt, mesh_command, scale_x, scale_y,
+				int(target_width), int(target_height), unbounded=true,
 			)
 			if mesh.vertex_count <= 0 { continue }
 			if mesh.first_vertex < 0 || mesh.vertex_count > math_bits.INT_MAX-mesh.first_vertex ||
 				u64(mesh.first_vertex+mesh.vertex_count) > 0xFFFFFFFF {
 				return .Resource_Failure
 			}
+			if u64(len(renderer.draws)) >= 0xFFFFFFFF { return .Resource_Failure }
 			append(&renderer.draws, Solid_Draw{
 				first_vertex=u32(mesh.first_vertex),
 				vertex_count=u32(mesh.vertex_count),
 				command_index=command_index,
-				scissor=mesh.scissor,
-				has_scissor=mesh.has_scissor,
+				translation_index=u32(len(renderer.draws)),
 			})
 		}
 		if len(renderer.vertices) != required_vertices { return .Resource_Failure }
@@ -230,10 +250,13 @@ Solid_Prepare :: proc(
 		}
 		renderer.mesh_runtime = rt
 		renderer.mesh_fingerprint = fingerprint
-		renderer.mesh_width, renderer.mesh_height = target_width, target_height
 		renderer.mesh_scale_x, renderer.mesh_scale_y = scale_x, scale_y
 		renderer.mesh_cache_valid = true
 		renderer.mesh_rebuild_count += 1
+	}
+	renderer.mesh_width, renderer.mesh_height = target_width, target_height
+	if !solid_translation_sync(renderer, commands, scale_x, scale_y) {
+		return .Resource_Failure
 	}
 	if !renderer.viewport_uniform_valid || renderer.viewport_width != target_width || renderer.viewport_height != target_height {
 		if !webgpu_view_uniform_write(renderer.queue, renderer.uniform_buffer, target_width, target_height) {
@@ -244,6 +267,43 @@ Solid_Prepare :: proc(
 		renderer.viewport_upload_count += 1
 	}
 	return .Ok
+}
+
+@(private)
+solid_translation_sync :: proc(
+	renderer: ^Solid_Renderer,
+	commands: []alicorn.Paint_Command,
+	scale_x, scale_y: f32,
+) -> bool {
+	if len(renderer.draws) > 0 && !solid_translation_buffer_ensure(renderer, len(renderer.draws)) {
+		return false
+	}
+	clear(&renderer.translations)
+	translation_hash := u64(1469598103934665603)
+	translation_hash = alicorn.hash_mix(translation_hash, u64(len(renderer.draws)))
+	for &draw in renderer.draws {
+		if draw.command_index < 0 || draw.command_index >= len(commands) { return false }
+		command := commands[draw.command_index]
+		translation := [2]f32{command.translation[0]*scale_x, command.translation[1]*scale_y}
+		append(&renderer.translations, translation)
+		translation_hash = alicorn.hash_mix(translation_hash, u64(draw.command_index))
+		translation_hash = alicorn.hash_mix(translation_hash, u64(transmute(u32)translation[0]))
+		translation_hash = alicorn.hash_mix(translation_hash, u64(transmute(u32)translation[1]))
+	}
+	if !renderer.translation_cache_valid || renderer.translation_fingerprint != translation_hash ||
+	   renderer.translation_buffer_dirty {
+		if len(renderer.translations) > 0 {
+			upload_bytes := len(renderer.translations)*size_of([2]f32)
+			wgpu.QueueWriteBuffer(renderer.queue, renderer.translation_buffer, 0,
+				raw_data(renderer.translations[:]), uint(upload_bytes))
+			renderer.translation_upload_count += 1
+			renderer.translation_upload_bytes += u64(upload_bytes)
+		}
+		renderer.translation_fingerprint = translation_hash
+		renderer.translation_cache_valid = true
+		renderer.translation_buffer_dirty = false
+	}
+	return true
 }
 
 // Solid_Draw_Command draws the prepared solid geometry associated with one
@@ -276,23 +336,34 @@ Solid_Draw_Command :: proc(
 		return .Invalid_Input
 	}
 	if len(renderer.vertices) == 0 { return .Ok }
+	if len(renderer.draws) > 0 && (renderer.translation_buffer == nil ||
+	   len(renderer.translations) != len(renderer.draws)) {
+		return .Invalid_Input
+	}
 	wgpu.RenderPassEncoderSetPipeline(pass, renderer.pipeline)
 	if !webgpu_view_bind_group_set(pass, 0, renderer.bind_group, view_slot) { return .Invalid_Input }
 	wgpu.RenderPassEncoderSetVertexBuffer(pass, 0, renderer.vertex_buffer, 0,
 		u64(len(renderer.vertices)*size_of(cpu_renderer.Vertex)))
+	if len(renderer.translations) > 0 {
+		wgpu.RenderPassEncoderSetVertexBuffer(pass, 1, renderer.translation_buffer, 0,
+			u64(len(renderer.translations)*size_of([2]f32)))
+	}
 	for draw in renderer.draws {
 		if draw.command_index != command_index { continue }
-		scissor := draw.scissor
-		if !draw.has_scissor {
-			scissor = cpu_renderer.Pixel_Rect{0, 0, int(target_width), int(target_height)}
-		} else if view_slot != 0 {
+		if draw.translation_index >= u32(len(renderer.translations)) { return .Invalid_Input }
+		scissor_width, scissor_height := int(target_width), int(target_height)
+		if view_slot != 0 {
+			scissor_width, scissor_height = int(mesh_width), int(mesh_height)
+		}
+		scissor := cpu_renderer.Solid_Pixel_Scissor(command, scale_x, scale_y, scissor_width, scissor_height)
+		if view_slot != 0 {
 			scissor = cpu_renderer.Pixel_Rect_Translate_Clip(
 				scissor, capture_origin_px[0], capture_origin_px[1], int(target_width), int(target_height),
 			)
 		}
 		if scissor.w <= 0 || scissor.h <= 0 { continue }
 		wgpu.RenderPassEncoderSetScissorRect(pass, u32(scissor.x), u32(scissor.y), u32(scissor.w), u32(scissor.h))
-		wgpu.RenderPassEncoderDraw(pass, draw.vertex_count, 1, draw.first_vertex, 0)
+		wgpu.RenderPassEncoderDraw(pass, draw.vertex_count, 1, draw.first_vertex, draw.translation_index)
 	}
 	return .Ok
 }
@@ -363,6 +434,7 @@ solid_destroy :: proc(renderer: ^Solid_Renderer, release_gpu: bool) {
 	if renderer == nil { return }
 	if release_gpu {
 		if renderer.vertex_buffer != nil { wgpu.BufferRelease(renderer.vertex_buffer) }
+		if renderer.translation_buffer != nil { wgpu.BufferRelease(renderer.translation_buffer) }
 		if renderer.bind_group != nil { wgpu.BindGroupRelease(renderer.bind_group) }
 		if renderer.pipeline != nil { wgpu.RenderPipelineRelease(renderer.pipeline) }
 		if renderer.shader != nil { wgpu.ShaderModuleRelease(renderer.shader) }
@@ -371,6 +443,7 @@ solid_destroy :: proc(renderer: ^Solid_Renderer, release_gpu: bool) {
 		if renderer.uniform_buffer != nil { wgpu.BufferRelease(renderer.uniform_buffer) }
 	}
 	delete(renderer.vertices)
+	delete(renderer.translations)
 	delete(renderer.draws)
 	renderer^ = {}
 }
@@ -392,5 +465,26 @@ solid_vertex_buffer_ensure :: proc(renderer: ^Solid_Renderer, required_vertices:
 	if renderer.vertex_buffer != nil { wgpu.BufferRelease(renderer.vertex_buffer) }
 	renderer.vertex_buffer = buffer
 	renderer.vertex_capacity = new_capacity
+	return true
+}
+
+solid_translation_buffer_ensure :: proc(renderer: ^Solid_Renderer, required_translations: int) -> bool {
+	if required_translations <= renderer.translation_capacity && renderer.translation_buffer != nil { return true }
+	if required_translations <= 0 || required_translations > math_bits.INT_MAX/size_of([2]f32) { return false }
+	new_capacity := max(renderer.translation_capacity, 64)
+	for new_capacity < required_translations {
+		if new_capacity > math_bits.INT_MAX/2 { new_capacity = required_translations; break }
+		new_capacity *= 2
+	}
+	buffer := wgpu.DeviceCreateBuffer(renderer.device, &wgpu.BufferDescriptor{
+		label="Alicorn WebGPU solid per-draw transforms",
+		usage={.Vertex, .CopyDst},
+		size=u64(new_capacity*size_of([2]f32)),
+	})
+	if buffer == nil { return false }
+	if renderer.translation_buffer != nil { wgpu.BufferRelease(renderer.translation_buffer) }
+	renderer.translation_buffer = buffer
+	renderer.translation_capacity = new_capacity
+	renderer.translation_buffer_dirty = true
 	return true
 }

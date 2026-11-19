@@ -64,6 +64,14 @@ test_solid_surface_mesh_fingerprint_ignores_unrelated_paint_revision :: proc(t: 
 	testing.expect(t, initial == unchanged_solid,
 		"text-only changes should preserve the solid surface mesh fingerprint")
 
+	moved_surface := display[0]
+	moved_surface.translation = {7, -3}
+	moved_surface.clip = {10, 10, 2, 2}
+	display[0] = moved_surface
+	moved_surface_fingerprint := Solid_Surface_Mesh_Fingerprint(nil, display[:], 1, 1, 1024, 768)
+	testing.expect(t, initial == moved_surface_fingerprint,
+		"surface translation, clip, and target resize should not invalidate static geometry")
+
 	changed_surface, _ := display[0].payload.(alicorn.Surface_Paint)
 	changed_surface.fill = {0.9, 0.2, 0.1, 1}
 	display[0].payload = changed_surface
@@ -75,4 +83,29 @@ test_solid_surface_mesh_fingerprint_ignores_unrelated_paint_revision :: proc(t: 
 	testing.expect(t,
 		Solid_Surface_Mesh_Fingerprint(nil, shifted[:], 1, 1, 80, 60) != initial,
 		"a changed paint index must invalidate draw-command mapping")
+}
+
+@(test)
+test_solid_surface_unbounded_mesh_keeps_full_local_geometry :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime({0, 0, 80, 60})
+	defer alicorn.destroy_runtime(&rt)
+	vertices := make([dynamic]Vertex, 0, 12, allocator=context.temp_allocator)
+	defer delete(vertices)
+
+	draw := alicorn.paint_surface_command(
+		1, {2, 3, 10, 8}, {4, 4, 2, 2}, {0.2, 0.4, 0.6, 1},
+	)
+	bounded_count, bounded_visible := Solid_Surface_Vertex_Count(&rt, draw, 1, 1, 8, 8)
+	local_draw := draw
+	local_draw.translation = {}
+	unbounded_count, unbounded_visible := Solid_Surface_Vertex_Count(
+		&rt, local_draw, 1, 1, 8, 8, unbounded=true,
+	)
+	bounded := Append_Surface_Mesh(&vertices, &rt, draw, 1, 1, 8, 8)
+	clear(&vertices)
+	unbounded := Append_Surface_Mesh(&vertices, &rt, local_draw, 1, 1, 8, 8, unbounded=true)
+	testing.expect(t, bounded_visible && unbounded_visible && bounded_count == unbounded_count &&
+		bounded.vertex_count == unbounded.vertex_count && unbounded.vertex_count == 6 &&
+		vertices[0].position == [3]f32{2, 3, 0} && vertices[2].position == [3]f32{12, 11, 0},
+		"the retained local mesh should preserve full surface geometry independently of clip and target bounds")
 }

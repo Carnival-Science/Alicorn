@@ -18,24 +18,29 @@ Solid_Pixel_Bounds :: proc(
 	draw: alicorn.Paint_Command,
 	scale_x, scale_y: f32,
 	target_w, target_h: int,
+	unbounded := false,
 ) -> (x0, y0, x1, y1: int, visible: bool) {
 	left := draw.bounds.x + draw.translation[0]
 	top := draw.bounds.y + draw.translation[1]
 	right := draw.bounds.x + draw.bounds.w + draw.translation[0]
 	bottom := draw.bounds.y + draw.bounds.h + draw.translation[1]
-	if draw.clip.x > left { left = draw.clip.x }
-	if draw.clip.y > top { top = draw.clip.y }
-	if draw.clip.x + draw.clip.w < right { right = draw.clip.x + draw.clip.w }
-	if draw.clip.y + draw.clip.h < bottom { bottom = draw.clip.y + draw.clip.h }
+	if !unbounded {
+		if draw.clip.x > left { left = draw.clip.x }
+		if draw.clip.y > top { top = draw.clip.y }
+		if draw.clip.x + draw.clip.w < right { right = draw.clip.x + draw.clip.w }
+		if draw.clip.y + draw.clip.h < bottom { bottom = draw.clip.y + draw.clip.h }
+	}
 	if right < left { right = left }
 	if bottom < top { bottom = top }
 	x0, y0, x1, y1 = Logical_To_Pixel_Bounds(
 		alicorn.Rect{left, top, right-left, bottom-top}, scale_x, scale_y,
 	)
-	if x0 < 0 { x0 = 0 }
-	if y0 < 0 { y0 = 0 }
-	if x1 > target_w { x1 = target_w }
-	if y1 > target_h { y1 = target_h }
+	if !unbounded {
+		if x0 < 0 { x0 = 0 }
+		if y0 < 0 { y0 = 0 }
+		if x1 > target_w { x1 = target_w }
+		if y1 > target_h { y1 = target_h }
+	}
 	visible = x1 > x0 && y1 > y0
 	return
 }
@@ -147,12 +152,13 @@ Solid_Surface_Vertex_Count :: proc(
 	draw: alicorn.Paint_Command,
 	scale_x, scale_y: f32,
 	target_w, target_h: int,
+	unbounded := false,
 ) -> (count: int, visible: bool) {
 	if !alicorn.paint_command_is_surface(draw) { return }
 	material, surface, shape, _, valid := Solid_Material_For_Command(rt, draw)
 	if !valid { return }
 	visible_command := Solid_Visible_Command(draw, surface, material, scale_x, scale_y, shape)
-	_, _, _, _, visible = Solid_Pixel_Bounds(visible_command, scale_x, scale_y, target_w, target_h)
+	_, _, _, _, visible = Solid_Pixel_Bounds(visible_command, scale_x, scale_y, target_w, target_h, unbounded)
 	if visible {
 		count = Material_Vertex_Count(
 			material, surface.physical_height, shape, surface.stroke, surface.top_edge_gap,
@@ -168,12 +174,15 @@ Append_Surface_Mesh :: proc(
 	draw: alicorn.Paint_Command,
 	scale_x, scale_y: f32,
 	target_w, target_h: int,
+	unbounded := false,
 ) -> (result: Solid_Draw) {
 	if !alicorn.paint_command_is_surface(draw) { return }
 	material, surface, shape, gradient, valid := Solid_Material_For_Command(rt, draw)
 	if !valid { return }
 	visible_command := Solid_Visible_Command(draw, surface, material, scale_x, scale_y, shape)
-	x0, y0, x1, y1, visible := Solid_Pixel_Bounds(visible_command, scale_x, scale_y, target_w, target_h)
+	x0, y0, x1, y1, visible := Solid_Pixel_Bounds(
+		visible_command, scale_x, scale_y, target_w, target_h, unbounded,
+	)
 	if !visible { return }
 	first := len(vertices^)
 	rounded := Shape_Is_Rounded(shape)
@@ -267,7 +276,9 @@ Append_Surface_Mesh :: proc(
 				draw.bounds.w+expand*2,
 				draw.bounds.h+expand*2,
 			}
-			sx0, sy0, sx1, sy1, shadow_visible := Solid_Pixel_Bounds(shadow_command, scale_x, scale_y, target_w, target_h)
+			sx0, sy0, sx1, sy1, shadow_visible := Solid_Pixel_Bounds(
+				shadow_command, scale_x, scale_y, target_w, target_h, unbounded,
+			)
 			if shadow_visible { shadow = alicorn.Rect{f32(sx0), f32(sy0), f32(sx1-sx0), f32(sy1-sy0)} }
 		}
 		stroke := surface.stroke
@@ -292,10 +303,10 @@ Append_Surface_Mesh :: proc(
 	}
 }
 
-// Solid_Surface_Mesh_Fingerprint covers only inputs that affect the generated
-// solid vertex mesh plus each surface's display-list index. Unrelated text or
-// image revisions can then retain solid geometry while command indices remain
-// safe for ordered compositor dispatch.
+// Solid_Surface_Mesh_Fingerprint covers static inputs that affect generated
+// vertices plus each surface's display-list index. Translation and clip are
+// applied per draw, so changes to either retain the geometry while command
+// indices remain safe for ordered compositor dispatch.
 Solid_Surface_Mesh_Fingerprint :: proc(
 	rt: ^alicorn.Runtime,
 	display: []alicorn.Paint_Command,
@@ -305,8 +316,6 @@ Solid_Surface_Mesh_Fingerprint :: proc(
 	hash := u64(1469598103934665603)
 	hash = backdrop_effect_hash_f32(hash, scale_x)
 	hash = backdrop_effect_hash_f32(hash, scale_y)
-	hash = alicorn.hash_mix(hash, u64(target_w))
-	hash = alicorn.hash_mix(hash, u64(target_h))
 	surface_count := 0
 	for command in display {
 		if alicorn.paint_command_is_surface(command) { surface_count += 1 }
@@ -315,7 +324,10 @@ Solid_Surface_Mesh_Fingerprint :: proc(
 	for command, index in display {
 		if !alicorn.paint_command_is_surface(command) { continue }
 		hash = alicorn.hash_mix(hash, u64(index))
-		hash = backdrop_effect_hash_command(hash, command, rt)
+		mesh_command := command
+		mesh_command.translation = {}
+		mesh_command.clip = {}
+		hash = backdrop_effect_hash_command(hash, mesh_command, rt)
 	}
 	return hash if hash != 0 else 1
 }

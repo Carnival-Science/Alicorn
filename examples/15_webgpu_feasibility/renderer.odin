@@ -517,9 +517,10 @@ start_offscreen_readback :: proc() {
 	}
 	mesh_rebuilds := state.solid_renderer.mesh_rebuild_count
 	vertex_uploads := state.solid_renderer.vertex_upload_count
+	translation_uploads := state.solid_renderer.translation_upload_count
 	viewport_uploads := state.solid_renderer.viewport_upload_count
-	if mesh_rebuilds != 1 || vertex_uploads != 1 || viewport_uploads != 1 {
-		fmt.panicf("initial Alicorn solid encode expected one mesh and one vertex/viewport upload")
+	if mesh_rebuilds != 1 || vertex_uploads != 1 || translation_uploads != 1 || viewport_uploads != 1 {
+		fmt.panicf("initial Alicorn solid encode expected one mesh, vertex, transform, and viewport upload")
 	}
 	if result := webgpu_renderer.Solid_Encode(
 		&state.solid_renderer, &state.solid_runtime, display, state.solid_offscreen_view,
@@ -529,12 +530,14 @@ start_offscreen_readback :: proc() {
 	}
 	if state.solid_renderer.mesh_rebuild_count != mesh_rebuilds ||
 		state.solid_renderer.vertex_upload_count != vertex_uploads ||
+		state.solid_renderer.translation_upload_count != translation_uploads ||
 		state.solid_renderer.viewport_upload_count != viewport_uploads {
 		fmt.panicf("unchanged Alicorn paint re-encoded mesh or viewport data")
 	}
-	fmt.printf("[webgpu-feasibility] retained solid cache PASS mesh_rebuilds=%d vertex_uploads=%d vertex_bytes=%d viewport_uploads=%d unchanged_repeat=true\n",
+	fmt.printf("[webgpu-feasibility] retained solid cache PASS mesh_rebuilds=%d vertex_uploads=%d vertex_bytes=%d transform_uploads=%d transform_bytes=%d viewport_uploads=%d unchanged_repeat=true\n",
 		state.solid_renderer.mesh_rebuild_count,state.solid_renderer.vertex_upload_count,
-		state.solid_renderer.vertex_upload_bytes,state.solid_renderer.viewport_upload_count)
+		state.solid_renderer.vertex_upload_bytes,state.solid_renderer.translation_upload_count,
+		state.solid_renderer.translation_upload_bytes,state.solid_renderer.viewport_upload_count)
 	text_display, text_display_ok := alicorn.paint_display_list(&state.text_runtime)
 	if !text_display_ok { fmt.panicf("Alicorn text fixture display list unavailable") }
 	if result := webgpu_renderer.Text_Prepare(
@@ -769,6 +772,72 @@ start_offscreen_readback :: proc() {
 	webgpu_renderer.Text_Commit_Submission(&state.text_renderer, &state.text_runtime)
 	state.compositor_completion_serial = webgpu_renderer.Compositor_Commit_Submission(&state.compositor, &state.text_runtime)
 	if state.compositor_completion_serial == 0 { fmt.panicf("mixed compositor submission did not receive a completion serial") }
+	if result := webgpu_renderer.Solid_Prepare(
+		&state.solid_renderer, &state.solid_runtime, display, READBACK_WIDTH-1, READBACK_HEIGHT-1, 1, 1,
+	); result != .Ok {
+		fmt.panicf("resized solid renderer preparation failed: %v", result)
+	}
+	if result := webgpu_renderer.Solid_Prepare(
+		&state.solid_renderer, &state.solid_runtime, display, READBACK_WIDTH, READBACK_HEIGHT, 1, 1,
+	); result != .Ok {
+		fmt.panicf("restored solid renderer preparation failed: %v", result)
+	}
+	if state.solid_renderer.mesh_rebuild_count != mesh_rebuilds ||
+		state.solid_renderer.vertex_upload_count != vertex_uploads ||
+		state.solid_renderer.translation_upload_count != translation_uploads ||
+		state.solid_renderer.viewport_upload_count != viewport_uploads+2 {
+		fmt.panicf("target resizing should update only the viewport while retaining solid geometry")
+	}
+	fmt.println("[webgpu-feasibility] solid target resize cache PASS mesh_rebuilds=0 vertex_uploads=0 transform_uploads=0 viewport_uploads=2")
+	solid_motion_commands := make([]alicorn.Paint_Command, len(display.commands), allocator=context.temp_allocator)
+	copy(solid_motion_commands, display.commands)
+	solid_motion_found := false
+	for &command in solid_motion_commands {
+		surface, is_surface := command.payload.(alicorn.Surface_Paint)
+		if !is_surface || surface.fill.b < 0.9 || surface.fill.r > 0.1 { continue }
+		command.translation = {5, 5}
+		command.clip = {5, 5, 20, 20}
+		solid_motion_found = true
+		break
+	}
+	if !solid_motion_found { fmt.panicf("solid motion fixture did not find its clipped blue surface") }
+	solid_motion_display := display
+	solid_motion_display.commands = solid_motion_commands
+	solid_motion_display.revision += 1
+	if result := webgpu_renderer.Solid_Prepare(
+		&state.solid_renderer, &state.solid_runtime, solid_motion_display,
+		READBACK_WIDTH, READBACK_HEIGHT, 1, 1,
+	); result != .Ok {
+		fmt.panicf("translated solid surface preparation failed: %v", result)
+	}
+	if state.solid_renderer.mesh_rebuild_count != mesh_rebuilds ||
+		state.solid_renderer.vertex_upload_count != vertex_uploads ||
+		state.solid_renderer.translation_upload_count != translation_uploads+1 {
+		fmt.panicf("surface translation and clip changes should update only the solid transform buffer")
+	}
+	fmt.printf("[webgpu-feasibility] solid translation cache PASS mesh_rebuilds=0 vertex_uploads=0 transform_uploads=1 transform_bytes=%d\n",
+		len(state.solid_renderer.translations)*size_of([2]f32))
+	solid_motion_encoder := wgpu.DeviceCreateCommandEncoder(state.device)
+	if solid_motion_encoder == nil { fmt.panicf("solid motion command encoder creation failed") }
+	if result := webgpu_renderer.Solid_Encode(
+		&state.solid_renderer, &state.solid_runtime, solid_motion_display, state.solid_offscreen_view,
+		READBACK_WIDTH, READBACK_HEIGHT, 1, 1, solid_motion_encoder, true, wgpu.Color{0.04, 0.08, 0.12, 1},
+	); result != .Ok {
+		fmt.panicf("translated solid surface encoding failed: %v", result)
+	}
+	solid_motion_layout := wgpu.TexelCopyBufferLayout{
+		bytesPerRow=READBACK_BYTES_PER_ROW, rowsPerImage=READBACK_HEIGHT,
+		offset=15*READBACK_BUFFER_BYTES,
+	}
+	solid_motion_source := wgpu.TexelCopyTextureInfo{texture=state.solid_offscreen_texture, aspect=.All}
+	solid_motion_destination := wgpu.TexelCopyBufferInfo{layout=solid_motion_layout, buffer=state.readback_buffer}
+	wgpu.CommandEncoderCopyTextureToBuffer(solid_motion_encoder, &solid_motion_source, &solid_motion_destination,
+		&wgpu.Extent3D{width=READBACK_WIDTH, height=READBACK_HEIGHT, depthOrArrayLayers=1})
+	solid_motion_command := wgpu.CommandEncoderFinish(solid_motion_encoder)
+	wgpu.CommandEncoderRelease(solid_motion_encoder)
+	wgpu.QueueSubmit(state.queue, {solid_motion_command})
+	wgpu.CommandBufferRelease(solid_motion_command)
+	fmt.println("[webgpu-feasibility] solid instance transform submitted PASS translation=5,5 clip=5,5,20,20 readback_slot=15")
 	run_backdrop_effect_probe()
 	if result := webgpu_renderer.Text_Prepare(
 		&state.text_renderer, &state.text_runtime, text_display,
@@ -1941,6 +2010,9 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		display_blend_pixel:=offscreen_pixel(pixels,24,24,READBACK_BUFFER_BYTES)
 		display_clip_x_pixel:=offscreen_pixel(pixels,40,24,READBACK_BUFFER_BYTES)
 		display_clip_y_pixel:=offscreen_pixel(pixels,24,40,READBACK_BUFFER_BYTES)
+		solid_motion_parent_pixel := offscreen_pixel(pixels, 2, 2, 15*READBACK_BUFFER_BYTES)
+		solid_motion_child_pixel := offscreen_pixel(pixels, 10, 10, 15*READBACK_BUFFER_BYTES)
+		solid_motion_clip_pixel := offscreen_pixel(pixels, 30, 30, 15*READBACK_BUFFER_BYTES)
 		text_visible := false
 		for y in 0..<READBACK_HEIGHT {
 			for x in 0..<READBACK_WIDTH {
@@ -2149,6 +2221,9 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 		display_blend_ok:=offscreen_pixel_near(display_blend_pixel,[4]u8{66,5,136,255},4)
 		display_clip_x_ok:=offscreen_pixel_near(display_clip_x_pixel,clear_expected)
 		display_clip_y_ok:=offscreen_pixel_near(display_clip_y_pixel,clear_expected)
+		solid_motion_ok := offscreen_pixel_near(solid_motion_parent_pixel, [4]u8{133, 10, 15, 255}, 2) &&
+			offscreen_pixel_near(solid_motion_child_pixel, [4]u8{66, 5, 135, 255}, 3) &&
+			offscreen_pixel_near(solid_motion_clip_pixel, [4]u8{133, 10, 15, 255}, 2)
 		composite_overlay_ok := offscreen_pixel_near(composite_overlay_pixel, [4]u8{204, 26, 26, 255}, 1) && composite_overlay_uniform
 		image_red_ok := offscreen_pixel_near(composite_image_red_pixel, [4]u8{255, 0, 0, 255})
 		image_blend_ok := offscreen_pixel_near(composite_image_blend_pixel, [4]u8{127, 0, 128, 255}, 3)
@@ -2199,7 +2274,7 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 			glyph_ok && clip_ok && outside_clip_ok && rounded_ok && rounded_corner_ok && last_row_ok
 		compositor_readback_ok := display_blend_ok && display_clip_x_ok && display_clip_y_ok && text_visible &&
 			composite_overlay_ok && composite_text_visible && composite_icon_visible && composite_icon_clip &&
-			composite_second_icon_visible && image_red_ok && image_blend_ok && image_blue_ok && image_clip_ok &&
+			composite_second_icon_visible && image_red_ok && image_blend_ok && image_blue_ok && image_clip_ok && solid_motion_ok &&
 			cropped_capture_matches && second_cropped_capture_matches
 		effects_readback_ok := backdrop_blur_mixed_ok && backdrop_clip_ok && backdrop_prefix_change_ok &&
 			backdrop_changed_clip_ok && backdrop_resized_pixel_ok && backdrop_fallback_matches_normal &&
@@ -2212,10 +2287,10 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 			READBACK_BYTES_PER_ROW-READBACK_WIDTH*READBACK_BYTES_PER_PIXEL, len(pixels),
 			clear_ok, solid_ok, checker_ok, patch_ok, partial_buffer_ok, uniform_ok, blend_ok, glyph_ok,
 			clip_ok, outside_clip_ok, rounded_ok, rounded_corner_ok, last_row_ok)
-		fmt.printf("[webgpu-feasibility] async RGBA8 readback compositor %s display_blend=%v clip_x=%v clip_y=%v text=%v overlay_order=%v offset_text=%v icon=%v icon_clip=%v atlas_switch=%v image_red=%v image_alpha=%v image_blue=%v image_clip=%v crop_a=%v crop_b=%v\n",
+		fmt.printf("[webgpu-feasibility] async RGBA8 readback compositor %s display_blend=%v clip_x=%v clip_y=%v text=%v overlay_order=%v offset_text=%v icon=%v icon_clip=%v atlas_switch=%v image_red=%v image_alpha=%v image_blue=%v image_clip=%v solid_motion=%v crop_a=%v crop_b=%v\n",
 			"PASS" if compositor_readback_ok else "FAIL", display_blend_ok, display_clip_x_ok, display_clip_y_ok, text_visible, composite_overlay_ok,
 			composite_text_visible, composite_icon_visible, composite_icon_clip, composite_second_icon_visible,
-			image_red_ok, image_blend_ok, image_blue_ok, image_clip_ok, cropped_capture_matches,
+			image_red_ok, image_blend_ok, image_blue_ok, image_clip_ok, solid_motion_ok, cropped_capture_matches,
 			second_cropped_capture_matches)
 		fmt.printf("[webgpu-feasibility] async RGBA8 readback effects %s backdrop=%v backdrop_clip=%v prefix_reuse=%v prefix_invalidation=%v resized=%v fallback=%v geometry_rect=%v segment=%v circle=%v marker=%v geometry_clip=%v waveform=%v gradient=%v raised=%v raised_bevel=%v recessed=%v recessed_bevel=%v\n",
 			"PASS" if effects_readback_ok else "FAIL", backdrop_blur_mixed_ok, backdrop_clip_ok, backdrop_prefix_change_ok, backdrop_changed_clip_ok,

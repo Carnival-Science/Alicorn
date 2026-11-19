@@ -2760,3 +2760,45 @@ This tests policy routing, not a physical GPU reset, driver callback ordering,
 or successful OS-initiated loss recovery. Synthetic callback evidence and
 intentional-destroy evidence remain separately labeled in the native recovery
 report.
+
+### Solid surface translation and clip retention (Windows, 2026-11-17)
+
+The WebGPU solid renderer now keeps surface geometry in local physical-pixel
+coordinates and supplies translation through a compact per-draw instance
+buffer. Clip rectangles are applied as draw scissors, including when a prepared
+full-display mesh is rendered into a cropped capture. The mesh fingerprint no
+longer includes translation, clip, or target dimensions; surface content,
+ordering, and display scale still invalidate the retained mesh. This keeps
+surface motion, clip changes, and target resizing out of solid vertex rebuilds
+while preserving the existing paint order and runtime-owned source data.
+
+Validation on Windows x64 with Odin `dev-2026-11-nightly:08539cd`:
+
+- `odin test renderer/cpu` passed all 22 tests, including local unbounded
+  geometry and fingerprint stability for translation, clip, and target-size
+  changes.
+- `odin check renderer/webgpu -no-entry-point` passed.
+- `examples/15_webgpu_feasibility/build.ps1 -Odin C:\odin\odin.exe` built the
+  native fixtures and shared `js_wasm32` renderer fixture.
+- The full feasibility readback smoke passed on the NVIDIA GeForce RTX 2080
+  SUPER with both D3D12 and Vulkan. It verifies that translated and clipped
+  surfaces produce the expected pixels, target resizing uploads viewport data
+  without rebuilding vertices, and both cropped captures remain pixel-equal
+  to their corresponding regions of the full render.
+- The retained solid cache reports one initial vertex upload (648 bytes) and
+  one 24-byte transform upload; a later translation-plus-clip update performs
+  zero mesh rebuilds and zero vertex uploads and re-uploads only the 24-byte
+  transform buffer. The renderer's translation channel is independently
+  checked for no upload on an unchanged repeat.
+- `tools/test.ps1`, `tools/check.ps1`, and the Node WebGPU host, scheduler,
+  patch, and accessibility-DOM tests passed. These counters come from a fresh
+  rebuild and rerun on the committed fixture head rather than the earlier
+  diagnostic pass.
+- `git diff --check` passed.
+
+The browser target compiled, but a live browser run was not performed in this
+environment because no Chrome or Edge executable was available on `PATH` or in
+the standard Windows install locations. Browser GPU execution of the new
+transform and crop path, macOS/Linux native validation, and performance timing
+remain outstanding. This is a retained-renderer optimization and test slice;
+it does not complete the SDL_GPU removal or any later migration phase gate.

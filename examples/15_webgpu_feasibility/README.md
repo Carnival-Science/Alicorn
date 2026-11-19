@@ -83,6 +83,15 @@ This exercises queued origin isolation and translated/clipped scissors without
 rebuilding retained meshes. Both crop comparisons passed the Windows D3D12
 smoke and the later live browser replay.
 
+Solid surfaces now retain local-coordinate geometry and upload each command's
+physical-pixel translation through a compact instance buffer; clips become
+draw-time scissors. Moving or clipping a surface keeps its mesh-rebuild and
+vertex-upload counters at zero and uploads only the transform data, and target
+resizing updates only the viewport uniform. A sixteenth readback target renders
+the same prepared scene after one surface moves into a smaller clip. Readback
+checks that surface's color inside the new clip and the parent surface outside
+it.
+
 The fixture also creates a second production `WebGPU_Compositor` and renders a
 backdrop-effect marker into an offscreen target. It captures the paint prefix
 to renderer-owned sampleable textures, runs both shared-mesh Gaussian passes,
