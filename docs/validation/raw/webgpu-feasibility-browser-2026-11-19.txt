@@ -1,0 +1,84 @@
+# Raw browser console capture: examples/15_webgpu_feasibility
+# Date: 2026-11-19 (console timestamps around 13:46-13:47 UTC)
+# Repository: C:\Users\saman\.codex\worktrees\alicorn-webgpu-migration\alicorn
+# Branch: codex/webgpu-phase0-feasibility
+# Head: ecc8f19208acdd3292514df21f7a2c49afe40be7
+# Last code-changing commit: 40afdff (later commits change documentation only)
+# Staged artifact: examples/15_webgpu_feasibility/web/feasibility.wasm
+#   bytes=5458441
+#   sha256=3a3ff70667de15811c16a44389e746dd57416c7d2f04934cb4b57a3680d225e8
+# Server: node 24.18.0 static server, http://127.0.0.1:8766/
+# Browser UA: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+#   (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36
+# navigator.userAgentData: Chrome 143, Chromium 143, platform Windows, mobile false
+#
+# Page status after load:
+# Settled: demand-driven idle (3 frame requests; 1 initialization wake frames).
+# Resize, click, or type to exercise the retained host.
+#
+# Console capture (seq, type, source, text):
+[1] error http://127.0.0.1:8766/favicon.ico: Failed to load resource: the server responded with a status of 404 (Not Found)
+[2] log http://127.0.0.1:8766/:44: [webgpu-feasibility] requested backend=Undefined
+[3] warning http://127.0.0.1:8766/wgpu.js:2438: The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127
+[4] info http://127.0.0.1:8766/:44: [webgpu-feasibility] callback dispatch status=1
+[5] log http://127.0.0.1:8766/:44: [webgpu-feasibility] adapter callback status=Success adapter_present=true
+[6] info http://127.0.0.1:8766/:44: [webgpu-feasibility] browser adapter classification fallback=false vendor=nvidia architecture=turing device=(redacted) description=(redacted)
+[7] log http://127.0.0.1:8766/:44: [webgpu-feasibility] adapter info backend=WebGPU type=Unknown vendor=nvidia architecture=turing device= description=
+[8] log http://127.0.0.1:8766/:44: [webgpu-feasibility] surface capabilities query begin
+[9] log http://127.0.0.1:8766/:44: [webgpu-feasibility] surface capabilities query status=Success formats=1 alpha_modes=2
+[10] log http://127.0.0.1:8766/:44: [webgpu-feasibility] device request submit
+[11] info http://127.0.0.1:8766/:44: [webgpu-feasibility] requestDevice bridge invoked
+[12] info http://127.0.0.1:8766/:44: [webgpu-feasibility] browser device promise resolved
+[13] info http://127.0.0.1:8766/:44: [webgpu-feasibility] callback dispatch status=1
+[14] log http://127.0.0.1:8766/:44: [webgpu-feasibility] device callback status=Success device_present=true message=
+[15] log http://127.0.0.1:8766/:44: [webgpu-feasibility] text runtime built
+[16] log http://127.0.0.1:8766/:44: [webgpu-feasibility] Hosted_Runtime, browser input, and canvas presenter connected
+[17] log http://127.0.0.1:8766/:44: [webgpu-feasibility] retained solid cache PASS mesh_rebuilds=1 vertex_uploads=1 vertex_bytes=648 transform_uploads=1 transform_bytes=24 viewport_uploads=1 unchanged_repeat=true
+[18] log http://127.0.0.1:8766/:44: [webgpu-feasibility] mixed paint-order compositor PASS commands=15 solid_meshes=1 text_meshes=1 icon_meshes=1 icon_vertex_uploads=1 icon_atlas_pages=2 icon_atlas_bytes=1572864 image_meshes=1 image_vertex_uploads=1 image_texture_uploads=2 image_texture_bytes=128 custom_surface_meshes=2 custom_surface_vertex_uploads=2 custom_surface_vertices=72 instance_uploads=1
+[19] log http://127.0.0.1:8766/:44: [webgpu-feasibility] solid target resize cache PASS mesh_rebuilds=0 vertex_uploads=0 transform_uploads=0 viewport_uploads=2
+[20] log http://127.0.0.1:8766/:44: [webgpu-feasibility] solid translation cache PASS mesh_rebuilds=0 vertex_uploads=0 transform_uploads=1 transform_bytes=24
+[21] log http://127.0.0.1:8766/:44: [webgpu-feasibility] solid instance transform submitted PASS translation=5,5 clip=5,5,20,20 readback_slot=15
+[22] log http://127.0.0.1:8766/:44: [webgpu-feasibility] backdrop initial frame capture=1 filters=1/1 composite=1 texture_bytes=68040 cache_budget=50331648
+[23] log http://127.0.0.1:8766/:44: [webgpu-feasibility] backdrop resize retirement queued old=36x36 old_bytes=25920 new=40x40 retired=1 retire_after=3
+[24] log http://127.0.0.1:8766/:44: [webgpu-feasibility] multiple backdrop markers encoded in retained paint order; pixel comparison queued
+[25] log http://127.0.0.1:8766/:44: [webgpu-feasibility] backdrop WebGPU prefix cache PASS capture=3 filters=3/3 composite=6 cache_hits=2 mesh_rebuilds=2 texture_bytes=100040 cache_budget=50331648 resize_retired=1 budget_fallback_bytes=52013000
+[26] log http://127.0.0.1:8766/:44: [webgpu-feasibility] text-only revision retained solid geometry PASS
+[27] log http://127.0.0.1:8766/:44: [webgpu-feasibility] custom geometry motion readback submitted instance_translation=true opacity=0.5 readback_slot=4
+[28] log http://127.0.0.1:8766/:44: [webgpu-feasibility] custom geometry instance cache PASS translation_and_opacity_changes=1 mesh_rebuilds=0 vertex_uploads=0
+[29] log http://127.0.0.1:8766/:44: [webgpu-feasibility] per-resource geometry cache PASS static_mesh_reused=true waveform_rebuilt=true instance_uploads_unchanged=true old_buffer_retired_after=2
+[30] log http://127.0.0.1:8766/:44: [webgpu-feasibility] retained text cache PASS mesh_rebuilds=1 vertex_uploads=1 atlas_uploads=1 atlas_bytes=1048576 atlas_page_creates=1 prepare_buffer_creates=0 translation_uploads=2 viewport_uploads=1 unchanged_repeat=true
+[31] log http://127.0.0.1:8766/:44: [webgpu-feasibility] text motion cache PASS translated_command_only=true glyph_mesh_uploads=0 atlas_uploads=0 atlas_page_creates=0
+[32] log http://127.0.0.1:8766/:44: [webgpu-feasibility] image retained cache PASS unchanged_texture_uploads=0 geometry_edit_reuses_pixels=true released_inflight=true stale_draw_removed=true retirement_waits_for_queue=true
+[33] info http://127.0.0.1:8766/:44: [webgpu-feasibility] callback dispatch status=1
+[34] log http://127.0.0.1:8766/:44: [webgpu-feasibility] backdrop resized texture retirement PASS submitted=5 completed=8 retired=0 resident=74120 active=74120
+[35] log http://127.0.0.1:8766/:44: [webgpu-feasibility] image resource retirement PASS submitted_serial=2 completed_serial=2 retired=0 resident_bytes=64 releases=1
+[36] log http://127.0.0.1:8766/:44: [webgpu-feasibility] custom geometry buffer retirement PASS submitted_serial=2 completed_serial=2 retired=0 active_bytes=10752 resident_bytes=10752 retirements=1 releases=1
+[37] log http://127.0.0.1:8766/:44: [webgpu-feasibility] queue work done status=Success message=
+[38] info http://127.0.0.1:8766/:44: [webgpu-feasibility] callback dispatch status=1
+[39] log http://127.0.0.1:8766/:44: [webgpu-feasibility] multiple backdrop prefix pixels PASS differing_inside_later_clip=288
+[40] log http://127.0.0.1:8766/:44: [webgpu-feasibility] backdrop over-budget fallback PASS every RGBA pixel matches plain paint
+[41] log http://127.0.0.1:8766/:44: [webgpu-feasibility] async RGBA8 readback core PASS texture=63x64 row_pitch=256 padding_per_row=4 bytes=262144 clear=true solid=true checker=true partial_texture=true partial_buffer=true uniform=true blend=true glyph=true clip=true outside_clip=true rounded=true rounded_corner=true last_row=true
+[42] log http://127.0.0.1:8766/:44: [webgpu-feasibility] async RGBA8 readback compositor PASS display_blend=true clip_x=true clip_y=true text=true overlay_order=true offset_text=true icon=true icon_clip=true atlas_switch=true image_red=true image_alpha=true image_blue=true image_clip=true solid_motion=true crop_a=true crop_b=true
+[43] log http://127.0.0.1:8766/:44: [webgpu-feasibility] async RGBA8 readback effects PASS backdrop=true backdrop_clip=true prefix_reuse=true prefix_invalidation=true resized=true fallback=true geometry_rect=true segment=true circle=true marker=true geometry_clip=true waveform=true gradient=true raised=true raised_bevel=true recessed=true recessed_bevel=true
+[44] log http://127.0.0.1:8766/:44: [webgpu-feasibility] rounded accessibility-material readback PASS variant=true face=true bevel=true corner=true reduced_transparency_shadow=true
+[45] log http://127.0.0.1:8766/:44: [webgpu-feasibility] custom geometry translation/opacity pixel PASS moved_pixel=[137, 28, 30, 255] original_pixel=[20, 31, 46, 255]
+[46] info http://127.0.0.1:8766/:44: [webgpu-feasibility] callback dispatch status=1
+[47] info http://127.0.0.1:8766/:44: [webgpu-feasibility] callback dispatch status=1
+#
+# Follow-up interaction:
+# - Clicked #resize twice. The canvas changed from 1662x934 css/device pixels
+#   (DPR 1) to 1305x734 on the second click. The footer reported
+#   "Surface resized; shared Alicorn renderer frame scheduled." and then returned
+#   to "Settled: demand-driven idle (9 frame requests; 1 initialization wake
+#   frames)." No new console error or warning followed.
+# - Clicking page controls through the accessibility projection was blocked by
+#   the overlay hit test ("body is on top"); no input evidence is claimed from
+#   this run.
+#
+# Page diagnostics element after load (same text as console lines 6, 41-45):
+# [webgpu-feasibility] browser adapter classification fallback=false vendor=nvidia architecture=turing device=(redacted) description=(redacted)
+# [webgpu-feasibility] async RGBA8 readback core PASS ...
+# [webgpu-feasibility] async RGBA8 readback compositor PASS ... solid_motion=true crop_a=true crop_b=true
+# [webgpu-feasibility] async RGBA8 readback effects PASS ... fallback=true ... waveform=true gradient=true raised=true raised_bevel=true recessed=true recessed_bevel=true
+# [webgpu-feasibility] rounded accessibility-material readback PASS ...
+# [webgpu-feasibility] custom geometry translation/opacity pixel PASS moved_pixel=[137, 28, 30, 255] original_pixel=[20, 31, 46, 255]

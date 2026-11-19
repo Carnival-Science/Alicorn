@@ -90,7 +90,9 @@ vertex-upload counters at zero and uploads only the transform data, and target
 resizing updates only the viewport uniform. A sixteenth readback target renders
 the same prepared scene after one surface moves into a smaller clip. Readback
 checks that surface's color inside the new clip and the parent surface outside
-it.
+it. The 2026-11-19 live browser run passed the same transform and crop
+readbacks (`solid_motion=true`, `crop_a=true`, `crop_b=true`); see
+`docs/validation/webgpu-feasibility-browser-windows-2026-11-19.md`.
 
 The fixture also creates a second production `WebGPU_Compositor` and renders a
 backdrop-effect marker into an offscreen target. It captures the paint prefix
@@ -326,9 +328,10 @@ count as runtime evidence. The backdrop-effect readback passed in Windows
 D3D12 and Vulkan runs and a live browser replay. It covers two overlapping
 markers in paint order, unchanged-prefix reuse, changed-prefix invalidation,
 in-flight resize retirement, and pixel-exact over-budget direct fallback. The
-browser status did not identify the adapter's hardware/software acceleration
-class, so that run is correctness evidence rather than a performance
-measurement. The fixture does not validate fallback-font chains, device
+2026-11-19 browser run reported `fallback=false` plus vendor/architecture
+metadata, but those privacy-limited values do not prove physical acceleration;
+the run is correctness evidence rather than a performance measurement. The
+fixture does not validate fallback-font chains, device
 recreation, secondary windows, application-window presentation, or production
 performance. The mixed paint list is fixture-only; it covers solid surfaces,
 text, icons, images, materials, and custom geometry.
