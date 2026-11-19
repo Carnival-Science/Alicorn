@@ -234,11 +234,10 @@ renderer:
 | WebGPU D3D12 | 10,000 | 37 | 1,145 | 627 | 27 | 3,024 | 2,804,736 | 95 / 1,406,104 |
 
 The virtual list realizes the same visible range at both sizes. WebGPU's solid
-mesh rebuild count differs (5 vs 2) because the scroll offset steps through
-different visible geometry; it remains bounded and independent of item count.
-SDL_GPU's text-atlas byte total is full-page uploads; WebGPU uploads dirty atlas
-regions. The byte totals are therefore not directly comparable, while the
-upload *counts* and runtime work are.
+mesh rebuild count differs (5 vs 2) but remains bounded and independent of item
+count. SDL_GPU's text-atlas byte total is full-page uploads; WebGPU's total
+reflects smaller dirty-region uploads. The byte totals are therefore not
+directly comparable, while the upload *counts* and runtime work are.
 
 ## Expectations
 
