@@ -10,6 +10,10 @@ the current project status.
 - [Issue #165 headless UI replay and native capture](issue-165-2026-11-08.md) —
   public replay harness, History consumer regression, and Windows D3D12 capture;
   records backend-specific screenshot limits.
+- [WebGPU feasibility CI matrix](webgpu-feasibility-ci-crossplatform-2026-11-19.md)
+  — macOS arm64 Metal, Linux lavapipe, and headless Chromium SwiftShader runs
+  of the shared fixture, with adapter identity, counter parity, and explicit
+  software-adapter limits.
 - [v0.2.1 release validation](release-v0.2.1.md) — complete v0.2.0-to-v0.2.1
   history, CI, local checks, release scope, and platform-validation boundaries.
 - [Odin dev-2026-11 migration](odin-dev-2026-11.md) — Windows validation for

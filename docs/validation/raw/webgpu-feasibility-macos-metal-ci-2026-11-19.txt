@@ -1,0 +1,68 @@
+# Raw native fixture capture: examples/15_webgpu_feasibility (macOS arm64)
+# Date: 2026-11-19
+# CI: GitHub Actions run 44550779287 (WebGPU feasibility (macOS arm64)), job macos-arm64-metal
+# Runner: macos-latest (arm64)
+# Repository head: b0adab5455fe696ad61f3d243394381dd330a7f8
+# Branch: codex/webgpu-phase0-feasibility
+# Compiler: Odin dev-2026-11-nightly:9a69916 (setup_macos_odin.sh pin)
+# wgpu-native: v29.0.1.1 dylib (hash-verified setup_macos_wgpu_native.sh),
+#   linked with -define:WGPU_SHARED=true because AccessKit and static
+#   wgpu-native duplicate rust_eh_personality under ld64
+# SDL3: checksum-pinned 3.4.18 build (setup_macos_sdl3.sh)
+# Adapter: backend=Metal type=IntegratedGPU device=Apple Paravirtual device
+# Binary: out/webgpu_feasibility_smoke
+#
+# --- readback smoke ---
+[webgpu-feasibility] requested backend=Undefined
+[webgpu-feasibility] adapter callback status=Success adapter_present=true
+[webgpu-feasibility] adapter info backend=Metal type=IntegratedGPU vendor= architecture= device=Apple Paravirtual device description=
+[webgpu-feasibility] surface capabilities query begin
+[webgpu-feasibility] surface capabilities query status=Success formats=4 alpha_modes=2
+[webgpu-feasibility] device request submit
+[webgpu-feasibility] device callback status=Success device_present=true message=
+[webgpu-feasibility] text runtime built
+[webgpu-feasibility] retained solid cache PASS mesh_rebuilds=1 vertex_uploads=1 vertex_bytes=648 transform_uploads=1 transform_bytes=24 viewport_uploads=1 unchanged_repeat=true
+[webgpu-feasibility] mixed paint-order compositor PASS commands=15 solid_meshes=1 text_meshes=1 icon_meshes=1 icon_vertex_uploads=1 icon_atlas_pages=2 icon_atlas_bytes=1572864 image_meshes=1 image_vertex_uploads=1 image_texture_uploads=2 image_texture_bytes=128 custom_surface_meshes=2 custom_surface_vertex_uploads=2 custom_surface_vertices=72 instance_uploads=1
+[webgpu-feasibility] solid target resize cache PASS mesh_rebuilds=0 vertex_uploads=0 transform_uploads=0 viewport_uploads=2
+[webgpu-feasibility] solid translation cache PASS mesh_rebuilds=0 vertex_uploads=0 transform_uploads=1 transform_bytes=24
+[webgpu-feasibility] solid instance transform submitted PASS translation=5,5 clip=5,5,20,20 readback_slot=15
+[webgpu-feasibility] backdrop initial frame capture=1 filters=1/1 composite=1 texture_bytes=68040 cache_budget=50331648
+[webgpu-feasibility] backdrop resize retirement queued old=36x36 old_bytes=25920 new=40x40 retired=1 retire_after=3
+[webgpu-feasibility] multiple backdrop markers encoded in retained paint order; pixel comparison queued
+[webgpu-feasibility] backdrop WebGPU prefix cache PASS capture=3 filters=3/3 composite=6 cache_hits=2 mesh_rebuilds=2 texture_bytes=100040 cache_budget=50331648 resize_retired=1 budget_fallback_bytes=52013000
+[webgpu-feasibility] text-only revision retained solid geometry PASS
+[webgpu-feasibility] custom geometry motion readback submitted instance_translation=true opacity=0.5 readback_slot=4
+[webgpu-feasibility] custom geometry instance cache PASS translation_and_opacity_changes=1 mesh_rebuilds=0 vertex_uploads=0
+[webgpu-feasibility] per-resource geometry cache PASS static_mesh_reused=true waveform_rebuilt=true instance_uploads_unchanged=true old_buffer_retired_after=2
+[webgpu-feasibility] retained text cache PASS mesh_rebuilds=1 vertex_uploads=1 atlas_uploads=1 atlas_bytes=1048576 atlas_page_creates=1 prepare_buffer_creates=0 translation_uploads=2 viewport_uploads=1 unchanged_repeat=true
+[webgpu-feasibility] text motion cache PASS translated_command_only=true glyph_mesh_uploads=0 atlas_uploads=0 atlas_page_creates=0
+[webgpu-feasibility] image retained cache PASS unchanged_texture_uploads=0 geometry_edit_reuses_pixels=true released_inflight=true stale_draw_removed=true retirement_waits_for_queue=true
+[webgpu-feasibility] multiple backdrop prefix pixels PASS differing_inside_later_clip=288
+[webgpu-feasibility] backdrop over-budget fallback PASS every RGBA pixel matches plain paint
+[webgpu-feasibility] async RGBA8 readback core PASS texture=63x64 row_pitch=256 padding_per_row=4 bytes=262144 clear=true solid=true checker=true partial_texture=true partial_buffer=true uniform=true blend=true glyph=true clip=true outside_clip=true rounded=true rounded_corner=true last_row=true
+[webgpu-feasibility] async RGBA8 readback compositor PASS display_blend=true clip_x=true clip_y=true text=true overlay_order=true offset_text=true icon=true icon_clip=true atlas_switch=true image_red=true image_alpha=true image_blue=true image_clip=true solid_motion=true crop_a=true crop_b=true
+[webgpu-feasibility] async RGBA8 readback effects PASS backdrop=true backdrop_clip=true prefix_reuse=true prefix_invalidation=true resized=true fallback=true geometry_rect=true segment=true circle=true marker=true geometry_clip=true waveform=true gradient=true raised=true raised_bevel=true recessed=true recessed_bevel=true
+[webgpu-feasibility] rounded accessibility-material readback PASS variant=true face=true bevel=true corner=true reduced_transparency_shadow=true
+[webgpu-feasibility] custom geometry translation/opacity pixel PASS moved_pixel=[137, 28, 29, 255] original_pixel=[20, 31, 46, 255]
+[webgpu-feasibility] backdrop resized texture retirement PASS submitted=5 completed=8 retired=0 resident=74120 active=74120
+[webgpu-feasibility] image resource retirement PASS submitted_serial=2 completed_serial=2 retired=0 resident_bytes=64 releases=1
+[webgpu-feasibility] custom geometry buffer retirement PASS submitted_serial=2 completed_serial=2 retired=0 active_bytes=10752 resident_bytes=10752 retirements=1 releases=1
+[webgpu-feasibility] cache pressure batch submitted first_width=100 count=120 serial=3
+[webgpu-feasibility] cache pressure in-flight protection PASS result=Resource_Failure first_batch_resources=120 first_batch_serials=true partial_second_resources=107 evictions_before=0 evictions_after=0 resident_bytes=66957312 budget_bytes=67108864
+[webgpu-feasibility] queue work done status=Success message=
+[webgpu-feasibility] cache pressure first batch completed serial=3 resident_bytes=66957312
+[webgpu-feasibility] cache pressure batch submitted first_width=220 count=120 serial=4
+[webgpu-feasibility] cache pressure bound/LRU PASS status=Success message= submitted=4 completed=4 batch_resources=120 resident_bytes=66948096 budget_bytes=67108864 active_bytes=66948096 evictions=15 oldest_first_batch_evicted=true newest_first_batch_retained=true retired=0
+
+# --- resize smoke log lines ---
+[webgpu-feasibility] solid target resize cache PASS mesh_rebuilds=0 vertex_uploads=0 transform_uploads=0 viewport_uploads=2
+[webgpu-feasibility] backdrop resize retirement queued old=36x36 old_bytes=25920 new=40x40 retired=1 retire_after=3
+[webgpu-feasibility] backdrop WebGPU prefix cache PASS capture=3 filters=3/3 composite=6 cache_hits=2 mesh_rebuilds=2 texture_bytes=100040 cache_budget=50331648 resize_retired=1 budget_fallback_bytes=52013000
+[webgpu-feasibility] async RGBA8 readback effects PASS backdrop=true backdrop_clip=true prefix_reuse=true prefix_invalidation=true resized=true fallback=true geometry_rect=true segment=true circle=true marker=true geometry_clip=true waveform=true gradient=true raised=true raised_bevel=true recessed=true recessed_bevel=true
+[webgpu-feasibility] backdrop resized texture retirement PASS submitted=5 completed=8 retired=0 resident=74120 active=74120
+[webgpu-feasibility] requesting resize during animation to 800x450
+[webgpu-feasibility] resize during animation applied at 800x450
+[webgpu-feasibility] during-animation SurfacePresent submitted at 800x450
+[webgpu-feasibility] requesting resize after animation to 720x405
+[webgpu-feasibility] resize after animation applied at 720x405
+[webgpu-feasibility] post-animation SurfacePresent submitted at 720x405
