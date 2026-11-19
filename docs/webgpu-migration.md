@@ -2920,3 +2920,88 @@ hosted hardware-GPU, physical-driver, Wayland, genuine device-loss, Firefox,
 Safari, or performance evidence. The first macOS arm64 scheduling attempt never
 acquired a runner; the rerun passed. Details and raw logs are in
 `docs/validation/webgpu-feasibility-ci-crossplatform-2026-11-19.md`.
+
+### Regression protection for the migration branch (2026-11-19)
+
+Four small guards keep the validated configurations from silently diverging
+while the branch is unmerged:
+
+- **Device-loss probe link contract.** `tools/validate_wgpu_native_device_loss_macos.sh`
+  previously invoked `odin build` directly and omitted the standalone AccessKit
+  collections, so the macOS foundation job failed with
+  `Unknown library collection: 'accesskit'`. It now builds through
+  `alicorn_odin_with_linker_flags`, patches both the pinned
+  `libwgpu_native.a` and `libwgpu_native.dylib`, and links the shared dylib
+  (the same contract the fixture uses, since AccessKit + static wgpu-native
+  duplicate `rust_eh_personality`). It refuses the static packaging opt-out
+  with an explicit message. The `webgpu-macos.yml` job runs the script with
+  `--build-only` (five probe configurations compile; no Rust rebuild and no
+  probe execution), while `foundation-macos.yml` continues to run the full
+  patched probe. CI therefore exercises the build path on every relevant push
+  and the patched callback path in the foundation job.
+- **Static/shared wgpu pairing.** The macOS WebGPU job now builds the native
+  fixture with shared wgpu-native and a packaged app through
+  `tools/build_native_release.sh` (static wgpu-native) in the same job.
+  `build_native_release.sh` additionally fails fast if the built package
+  executable carries an `LC_RPATH` other than `@executable_path`,
+  `@loader_path`, or a system path, catching a leaked developer-machine rpath
+  before `package_macos.py` bundles it. The Windows fixture build script now
+  documents the same split (static default, `WGPU_SHARED=true` plus
+  `wgpu_native.dll` for AccessKit consumers).
+- **Weekly gate.** `webgpu-macos.yml`, `webgpu-linux.yml`, and
+  `webgpu-browser.yml` also run on a Monday 04:17 UTC cron in addition to
+  branch pushes and `workflow_dispatch`. The matrix costs roughly six runner
+  minutes. These become master gates when `codex/webgpu-phase0-feasibility`
+  lands; they are deliberately not enabled for master yet.
+- **UIA focus action.** See the next section.
+
+### UIA `IsKeyboardFocusable` for native buttons (Windows, 2026-11-19)
+
+The interactive validation recorded UIA reporting `IsKeyboardFocusable=false`
+for buttons that Tab and Shift+Tab genuinely focus and Space activates. The
+mapping chain was alicorn semantics → odin-accesskit → AccessKit's UIA adapter:
+
+- AccessKit's UIA adapter maps `UIA_IsKeyboardFocusablePropertyId` to
+  `NodeRef::is_focusable()`, which is
+  `supports_action(Action::Focus) || is_focused_in_tree()`.
+- The pinned example in `odin-accesskit` adds both `Action::Focus` and
+  `Action::Click` to its button precisely so this property is true.
+- Alicorn's `semantic_description_defaults` emitted only `.Press` for buttons
+  (and `.Select` for tabs); only text fields emitted `.Focus`. The adapter was
+  correct; alicorn under-described the control.
+
+`runtime/semantics.odin` now adds `.Focus` for every enabled `d.focusable`
+control before the built-in kind switch. Disabled controls stay Focus-free,
+matching their retained `node.focusable == false`. The regression test
+`test_focusable_controls_advertise_the_focus_action` checks both the action set
+and that the advertised Focus action routes through `semantic_action_request`.
+`tools/validate_native_webgpu_ui.ps1` now records a
+`buttons report IsKeyboardFocusable` PASS/FAIL row instead of only dumping the
+tree.
+
+The consumer-side finding is tracked in
+[Carnival-Science/Alicorn#208](https://github.com/Carnival-Science/Alicorn/issues/208)
+and closes with this branch. The separate intermittent `verify-uia.ps1`
+window-selection failure is documented upstream in
+[samanshaiza004/odin-accesskit#1](https://github.com/samanshaiza004/odin-accesskit/issues/1).
+That issue records the `EnumWindows` sequence (application, console, and
+default IME windows) proving the property failure was the dependency's example
+check selecting the wrong window, not an Alicorn regression.
+
+Validation on Windows x64 with Odin `dev-2026-11-nightly:08539cd`, the NVIDIA
+GeForce RTX 2080 SUPER, and shared wgpu-native/AccessKit:
+
+- `odin test runtime -collection:alicorn=.` passed all 364 tests (including the
+  new focus-action regression); `host/sdl3/accessibility` passed all 22 tests.
+- The rebuilt `examples/16_native_webgpu_ui` passed the full UIA harness on
+  D3D12 and Vulkan with the new row:
+  `buttons=[Increment,Queue application wake,Open auxiliary window] notFocusable=[]`.
+  `Invoke`, `Value`, and `Text` patterns were unchanged.
+- Post-fix initial trees are recorded in
+  `docs/validation/raw/native-webgpu-ui-uia-focus-d3d12-2026-11-19.txt` and
+  `...-vulkan-...txt`; logs in the matching `...-run-...` files.
+
+The shared `host/sdl3/accessibility` projection is used by both the SDL_GPU and
+WebGPU hosts, so the fix is renderer-independent; no SDL_GPU-specific UIA run
+was needed to change the value. The project still lacks Narrator/NVDA speech
+validation.
