@@ -239,6 +239,23 @@ try {
     $treeLines = Dump-UiaTree $mainRoot $treePath
     Record 'UIA tree dump' ($(if ($treeLines -gt 5) { 'PASS' } else { 'FAIL' })) "$treeLines elements -> $treePath"
 
+    # AccessKit's UIA adapter derives IsKeyboardFocusable from the AccessKit
+    # Focus action. Every button that Tab can reach must therefore report it,
+    # or assistive technology is told the control cannot take focus.
+    $buttonCondition = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+        [System.Windows.Automation.ControlType]::Button)
+    $buttons = $mainRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants, $buttonCondition)
+    $buttonNames = New-Object System.Collections.Generic.List[string]
+    $notFocusable = New-Object System.Collections.Generic.List[string]
+    foreach ($buttonElement in $buttons) {
+        $buttonNames.Add($buttonElement.Current.Name)
+        if (-not $buttonElement.Current.IsKeyboardFocusable) { $notFocusable.Add($buttonElement.Current.Name) }
+    }
+    $focusableOk = $buttons.Count -gt 0 -and $notFocusable.Count -eq 0
+    Record 'buttons report IsKeyboardFocusable' ($(if ($focusableOk) { 'PASS' } else { 'FAIL' })) `
+        ("buttons=[{0}] notFocusable=[{1}]" -f ($buttonNames -join ','), ($notFocusable -join ','))
+
     $edit = Find-ElementByName $mainRoot 'Try native text input' ([System.Windows.Automation.ControlType]::Edit)
     Record 'text field exposed' ($(if ($null -ne $edit) { 'PASS' } else { 'FAIL' })) "name='Try native text input'"
 

@@ -5,6 +5,7 @@ import "core:testing"
 
 Semantic_Augment_Selected_ID :: Semantic_ID{namespace=0x53454D414E544943, value=1}
 Semantic_Augment_Disabled_ID :: Semantic_ID{namespace=0x53454D414E544943, value=2}
+Semantic_Augment_Focusable_ID :: Semantic_ID{namespace=0x53454D414E544943, value=3}
 
 @(test)
 test_semantic_augment_preserves_control_contract_and_only_adds_metadata :: proc(t: ^testing.T) {
@@ -45,4 +46,34 @@ test_semantic_augment_preserves_control_contract_and_only_adds_metadata :: proc(
 		semantic_states_has(disabled.states, .Disabled) && !semantic_actions_has(disabled.actions, .Press) &&
 		!semantic_action_request(&rt, Semantic_Augment_Disabled_ID, .Press),
 		"augmentation must preserve a disabled Button's state, avoid advertising Press, and reject its semantic request")
+}
+
+@(test)
+test_focusable_controls_advertise_the_focus_action :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 260, 120})
+	defer destroy_runtime(&rt)
+	ui, build := begin_frame(&rt)
+	if !build { testing.expect(t, false, "focus-action fixture should build"); return }
+	container_begin(&ui, .Root, key=key_string("semantic-focus-action-root"), style=layout_style(.Column, width=260, height=120))
+	focusable_visual, _ := button_begin(&ui, "Focusable action", key_string("focusable"),
+		style=layout_style(width=160, height=32))
+	bind_focusable := semantic_bind(&ui, Semantic_Augment_Focusable_ID)
+	button_end(&ui)
+	_, _ = button_begin(&ui, "Disabled action", key_string("focusable-disabled"),
+		style=layout_style(width=160, height=32), state=Button_State{disabled=true})
+	bind_disabled := semantic_bind(&ui, Semantic_Augment_Disabled_ID)
+	button_end(&ui)
+	container_end(&ui)
+	end_frame(&ui)
+
+	focusable, focusable_found := semantic_node_lookup(&rt, Semantic_Augment_Focusable_ID)
+	testing.expect(t, bind_focusable && bind_disabled && focusable_found,
+		"the focus-action fixture should bind both buttons")
+	testing.expect(t, semantic_actions_has(focusable.actions, .Press) && semantic_actions_has(focusable.actions, .Focus),
+		"a keyboard-focusable Button must advertise Focus as well as Press; AccessKit's UIA adapter derives IsKeyboardFocusable from the Focus action")
+	testing.expect(t, semantic_action_request(&rt, Semantic_Augment_Focusable_ID, .Focus) && rt.focused == focusable_visual,
+		"the advertised Focus action must route to keyboard focus on the realized control")
+	disabled, disabled_found := semantic_node_lookup(&rt, Semantic_Augment_Disabled_ID)
+	testing.expect(t, disabled_found && !semantic_actions_has(disabled.actions, .Focus),
+		"a disabled Button cannot take keyboard focus, so it must not advertise Focus")
 }

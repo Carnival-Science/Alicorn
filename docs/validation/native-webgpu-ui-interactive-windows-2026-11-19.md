@@ -114,6 +114,17 @@ button. Both backends behaved identically. Assistive technology that gates
 navigation on `IsKeyboardFocusable` may therefore skip controls that the
 application can still focus by keyboard.
 
+Follow-up (resolved after this run): AccessKit's UIA adapter derives
+`IsKeyboardFocusable` from the AccessKit `Focus` action (or current tree focus).
+Alicorn's default control semantics advertised `Press` for buttons and `Select`
+for tabs but not `Focus`, so the adapter correctly reported false. Buttons now
+advertise `Focus` whenever the runtime can focus them. A rebuilt fixture passed
+the same harness on both backends with
+`buttons=[Increment,Queue application wake,Open auxiliary window] notFocusable=[]`;
+the post-fix trees are in
+`docs/validation/raw/native-webgpu-ui-uia-focus-{d3d12,vulkan}-2026-11-19.txt`.
+See `docs/webgpu-migration.md` for the full chain.
+
 ## Regression checks
 
 `tools/test.ps1` aborted in the pinned AccessKit dependency's native UIA example

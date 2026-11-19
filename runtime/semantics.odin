@@ -1130,6 +1130,11 @@ semantic_description_defaults :: proc(d: ^Description, semantic: ^Semantic_Descr
 	states := Semantic_States{}
 	actions := Semantic_Actions{}
 	if d.disabled { states = semantic_states_add(states, .Disabled) }
+	// AccessKit's UIA adapter reports IsKeyboardFocusable from the node's
+	// Focus action (or its current tree focus). Any control the runtime can
+	// focus from the keyboard must advertise Focus, or assistive technology
+	// is told that a Tab-reachable control cannot take focus.
+	if d.focusable && !d.disabled { actions = semantic_actions_add(actions, .Focus) }
 	#partial switch d.kind {
 	case .Button:
 		semantic.role = .Button
