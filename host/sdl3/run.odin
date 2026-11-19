@@ -217,6 +217,7 @@ sdl3_webgpu_run_device_lost_callback :: proc "c" (
 	state := cast(^SDL3_WebGPU_Run_State)userdata1
 	if state == nil || state.closing { return }
 	context = runtime.default_context()
+	sdl3_webgpu_run_test_trace_loss(reason, _message)
 	state.device_lost = true
 	state.device_loss_reported = true
 	state.device_loss_reason = reason
@@ -566,6 +567,7 @@ sdl3_webgpu_run_recovery_step :: proc(
 		state.recovery_active = false
 		state.device_lost = false
 		presentation_host.webgpu_recovery_succeed(&state.recovery_policy)
+		sdl3_webgpu_run_test_trace("replacement device and presenters reattached")
 		fmt.println("[alicorn-webgpu] WebGPU device recovered; retained application state preserved")
 		return false
 	}
@@ -746,6 +748,8 @@ sdl3_webgpu_run :: proc(
 	did_present := false
 	child_did_present := false
 	inject_loss_after_present := sdl3_webgpu_run_loss_injection_requested()
+	remove_d3d12_device_after_present := sdl3_webgpu_run_d3d12_removal_requested()
+	expect_post_recovery_present := false
 	for {
 		now_ns := u64(sdl3.GetTicksNS())
 		state.last_now_ns = now_ns
@@ -782,7 +786,9 @@ sdl3_webgpu_run :: proc(
 				child_did_present = true
 			case .Invalid_Input, .Resource_Failure, .Render_Failure,
 			     .Surface_Acquire_Failure, .Present_Failure:
-				return .Presenter_Failure
+				// A loss discovered inside the child step owns recovery; do not
+				// turn the expected presentation fallout into a host failure.
+				if !(state.device_lost && state.recovery_active) { return .Presenter_Failure }
 			case .Suspended, .Retry_Later, .No_Frame, .Reconfigure_Required, .Hidden:
 			}
 		}
@@ -791,6 +797,10 @@ sdl3_webgpu_run :: proc(
 			did_present = true
 			presentations += 1
 			last_present_ns = now_ns
+			if expect_post_recovery_present {
+				expect_post_recovery_present = false
+				sdl3_webgpu_run_test_trace("post-recovery frame presented")
+			}
 			if inject_loss_after_present {
 				inject_loss_after_present = false
 				did_present = false
@@ -806,9 +816,25 @@ sdl3_webgpu_run :: proc(
 					nil,
 				)
 			}
+			if remove_d3d12_device_after_present {
+				remove_d3d12_device_after_present = false
+				did_present = false
+				child_did_present = false
+				expect_post_recovery_present = true
+				fmt.println(
+					"[alicorn-webgpu] test injection: removing the live D3D12 backend device with ID3D12Device5::RemoveDevice; harness-induced backend removal, not an OS or driver-initiated loss",
+				)
+				sdl3_webgpu_run_test_mark_removal_request()
+				if !sdl3_webgpu_run_remove_d3d12_device_for_testing(&state) {
+					fmt.eprintln("[alicorn-webgpu] test injection: backend device removal failed")
+					return .Device_Lost
+				}
+			}
 		case .Invalid_Input, .Resource_Failure, .Render_Failure,
 		     .Surface_Acquire_Failure, .Present_Failure:
-			return .Presenter_Failure
+			// Likewise for the primary presenter: if the backend loss surfaced
+			// during this step, recovery (not the host loop) owns the outcome.
+			if !(state.device_lost && state.recovery_active) { return .Presenter_Failure }
 		case .Suspended, .Retry_Later, .No_Frame, .Reconfigure_Required, .Hidden:
 			// A minimized surface or temporary acquisition failure is retried
 			// under the coordinator's bounded deadline.

@@ -229,6 +229,9 @@ hosted_surface_presenter_resize :: proc(
 	state.configuration.height = u32(pixel_height)
 	state.scale_x = f32(pixel_width) / f32(logical_width)
 	state.scale_y = f32(pixel_height) / f32(logical_height)
+	// A resize racing a backend removal must not configure a surface against
+	// the lost parent device; recovery recreates the surface instead.
+	if state.device_lost { return .Ok }
 	wgpu.SurfaceConfigure(state.surface, &state.configuration)
 	if status := alicorn.hosted_runtime_set_renderable(state.hosted, state.visible); status != .Ok {
 		return .Invalid_Input
@@ -408,6 +411,11 @@ hosted_surface_present_pending :: proc(
 		return .Retry_Later
 	case .Outdated, .Lost:
 		if surface_texture.texture != nil { wgpu.TextureRelease(surface_texture.texture) }
+		// Acquisition can be the operation that discovers a backend loss; the
+		// DeviceLost callback has already marked this presenter. Reconfiguring
+		// here would configure a surface against the lost parent device, so let
+		// the host's recovery drain own it instead.
+		if state.device_lost { return .Surface_Acquire_Failure }
 		wgpu.SurfaceConfigure(state.surface, &state.configuration)
 		if state.wake != nil { state.wake(state.wake_data) }
 		return .Reconfigure_Required
