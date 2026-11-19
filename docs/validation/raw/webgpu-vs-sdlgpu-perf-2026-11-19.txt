@@ -1,0 +1,57 @@
+﻿# WebGPU vs SDL_GPU app-level perf, Windows, 2026-11-19
+harness: tools/bench_webgpu_vs_sdlgpu.ps1 -Runs 5
+executable: examples/16_native_webgpu_ui, 720x480 logical, DPR 1.0
+
+values are ns unless stated; SDL_GPU totals are divided by primary submissions
+## cold-sdl-gpu
+  frames median=1 min=1 max=1 n=5
+  app_build_ns median=3858300 min=3808000 max=5152000 n=5
+  encode_ns median=2051800 min=1928700 max=2146100 n=5
+  submit_ns median=574900 min=546000 max=580800 n=5
+  first_submit_ns median=11484100 min=11442700 max=12997900 n=5
+  text_mesh_rebuilds median=1 min=1 max=1 n=5
+  text_mesh_cache_hits median=0 min=0 max=0 n=5
+  text_vertex_uploads median=1 min=1 max=1 n=5
+
+## cold-webgpu-d3d12
+  frames median=1 min=1 max=1 n=5
+  app_build_ns median=4124100 min=3687000 max=4315400 n=5
+  encode_ns median=1222300 min=1184200 max=1332900 n=5
+  submit_ns median=1533300 min=1494800 max=1650900 n=5
+  present_ns median=244500 min=238700 max=291800 n=5
+  step_to_present_p50_ns median=7098100 min=6950500 max=7434600 n=5
+
+## cold-webgpu-vulkan
+  frames median=1 min=1 max=1 n=5
+  app_build_ns median=3903100 min=3682600 max=4209700 n=5
+  encode_ns median=1110400 min=1061400 max=1495300 n=5
+  submit_ns median=100700 min=94800 max=125800 n=5
+  present_ns median=84900 min=61200 max=93700 n=5
+  step_to_present_p50_ns median=5551100 min=5032600 max=5746700 n=5
+
+## motion-sdl-gpu
+  frames median=37 min=36 max=37 n=5
+  app_build_ns median=110567.567567568 min=103583.783783784 max=113897.222222222 n=5
+  encode_ns median=124483.783783784 min=114116.216216216 max=139308.333333333 n=5
+  submit_ns median=170475.675675676 min=153727.027027027 max=203077.777777778 n=5
+  first_submit_ns median=12043300 min=11136300 max=13002700 n=5
+  text_mesh_rebuilds median=1 min=1 max=1 n=5
+  text_mesh_cache_hits median=36 min=35 max=36 n=5
+  text_vertex_uploads median=1 min=1 max=1 n=5
+
+## motion-webgpu-d3d12
+  frames median=45 min=45 max=46 n=5
+  app_build_ns median=7600 min=6400 max=9200 n=5
+  encode_ns median=113300 min=96300 max=120600 n=5
+  submit_ns median=72000 min=56800 max=73700 n=5
+  present_ns median=89700 min=80700 max=91100 n=5
+  step_to_present_p50_ns median=305700 min=255800 max=318400 n=5
+
+## motion-webgpu-vulkan
+  frames median=42 min=42 max=42 n=5
+  app_build_ns median=7500 min=6600 max=8100 n=5
+  encode_ns median=60500 min=56500 max=66000 n=5
+  submit_ns median=48400 min=42000 max=49800 n=5
+  present_ns median=22800 min=19600 max=24600 n=5
+  step_to_present_p50_ns median=167300 min=144700 max=174800 n=5
+
