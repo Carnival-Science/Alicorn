@@ -1,5 +1,13 @@
 #!/bin/sh
 
+# Link-configuration note: tools/common.sh selects the shared wgpu-native
+# dylib on macOS because AccessKit and static wgpu-native duplicate
+# rust_eh_personality under ld64. On Windows the static archive is the default
+# and UI/host consumers opt into WGPU_SHARED=true plus wgpu_native.dll. The
+# shared build/test selection and the static packaging opt-out
+# (tools/build_native_release.sh) are both exercised by
+# .github/workflows/webgpu-macos.yml; see docs/webgpu-migration.md.
+
 set -eu
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)

@@ -1,3 +1,11 @@
+# Windows link-configuration note: the native fixtures build against Odin's
+# static wgpu-native unless a variant passes -define:WGPU_SHARED=true. Hosts
+# that also link AccessKit must use the shared wgpu_native.dll: AccessKit and
+# static wgpu-native each ship a Rust runtime defining rust_eh_personality,
+# which the MSVC linker rejects. Keep the WGPU_SHARED=true variants paired with
+# the wgpu_native.dll copy below. Validated configurations are recorded in
+# docs/webgpu-migration.md ("Native AccessKit extraction and WebGPU host
+# integration" and "Cross-platform CI feasibility matrix").
 param([string]$Odin='C:\odin\odin.exe')
 $ErrorActionPreference='Stop'
 $root=$PSScriptRoot

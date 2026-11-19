@@ -1,4 +1,9 @@
 #!/bin/bash
+# Packaging path for macOS. This script deliberately selects the static
+# wgpu-native contract (ALICORN_DARWIN_STATIC_WGPU=1): bundled apps must not
+# depend on the developer-machine rpath that the shared build/test selection
+# adds. Native fixtures keep building against the shared dylib; see
+# .github/workflows/webgpu-macos.yml, which exercises both halves together.
 set -eu
 
 usage() {
@@ -115,6 +120,22 @@ else
 fi
 ALICORN_SKIP_SDL3_PREFIX_LINKER_FLAGS=1 alicorn_odin_with_linker_flags "$ODIN" "$LINK_FLAGS" \
 	build "$APP_PACKAGE" "-collection:alicorn=$REPO_ROOT" "-out:$BUILT" -o:speed
+
+# Fail fast if the shared build/test selection leaks its developer-machine
+# rpath into a package. tools/package_macos.py audits the finished bundle too;
+# checking here names the packaging contract before bundling begins.
+if command -v otool >/dev/null 2>&1; then
+	unexpected_rpaths=$(otool -l "$BUILT" | awk '
+		$1 == "cmd" && $2 == "LC_RPATH" { expecting = 1; next }
+		expecting && $1 == "path" { print $2; expecting = 0 }
+	' | grep -Ev '^(@executable_path|@loader_path|/usr/lib|/System/Library)(/|$)' || true)
+	if [ -n "$unexpected_rpaths" ]; then
+		echo 'Packaged executable embeds an unexpected LC_RPATH:' >&2
+		printf '%s\n' "$unexpected_rpaths" >&2
+		echo 'Packaging must keep ALICORN_DARWIN_STATIC_WGPU=1 and avoid developer-machine rpaths.' >&2
+		exit 1
+	fi
+fi
 
 PACKAGE_ARGS=(
 	"$SCRIPT_DIR/package_macos.py"
