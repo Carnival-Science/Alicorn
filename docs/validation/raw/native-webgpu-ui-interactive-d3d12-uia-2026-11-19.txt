@@ -1,0 +1,41 @@
+﻿# d3d12 UIA trees (Windows UIAutomation client, ControlView-walked RawView)
+
+## Initial main window
+ControlType.Window name='Alicorn' class='SDL_app' id='' enabled=True keyboardFocusable=True offscreen=False patterns=[]
+ControlType.Text name='Native WebGPU UI' class='' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[]
+ControlType.Text name='The retained runtime and surface presenter are shared with the browser host.' class='' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[]
+ControlType.Button name='Increment' class='' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[Invoke]
+ControlType.Text name='Button activations: 0' class='' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[]
+ControlType.Button name='Queue application wake' class='' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[Invoke]
+ControlType.Text name='Application wake callbacks: 0' class='' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[]
+ControlType.Edit name='Try native text input' class='' id='' enabled=True keyboardFocusable=True offscreen=False patterns=[Value,Text]
+ControlType.Button name='Open auxiliary window' class='' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[Invoke]
+
+## After text input / control activation
+ControlType.Window name='Alicorn' class='SDL_app' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[]
+ControlType.Text name='Native WebGPU UI' class='' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[]
+ControlType.Text name='The retained runtime and surface presenter are shared with the browser host.' class='' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[]
+ControlType.Button name='Increment' class='' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[Invoke]
+ControlType.Text name='Button activations: 0' class='' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[]
+ControlType.Button name='Queue application wake' class='' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[Invoke]
+ControlType.Text name='Application wake callbacks: 0' class='' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[]
+ControlType.Edit name='Try native text input' class='' id='' enabled=True keyboardFocusable=True offscreen=False patterns=[Value,Text]
+ControlType.Button name='Open auxiliary window' class='' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[Invoke]
+
+## Auxiliary window after resize
+ControlType.Window name='Alicorn' class='SDL_app' id='' enabled=True keyboardFocusable=True offscreen=False patterns=[]
+ControlType.Text name='Independent retained surface' class='' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[]
+ControlType.Text name='This window has its own focus, input state, and Runtime on the shared WebGPU device.' class='' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[]
+ControlType.Button name='Close auxiliary window' class='' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[Invoke]
+
+## Final main window
+ControlType.Window name='Alicorn' class='SDL_app' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[]
+ControlType.Text name='Native WebGPU UI' class='' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[]
+ControlType.Text name='The retained runtime and surface presenter are shared with the browser host.' class='' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[]
+ControlType.Button name='Increment' class='' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[Invoke]
+ControlType.Text name='Button activations: 1' class='' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[]
+ControlType.Button name='Queue application wake' class='' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[Invoke]
+ControlType.Text name='Application wake callbacks: 1' class='' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[]
+ControlType.Edit name='Try native text input' class='' id='' enabled=True keyboardFocusable=True offscreen=False patterns=[Value,Text]
+ControlType.Button name='Open auxiliary window' class='' id='' enabled=True keyboardFocusable=True offscreen=False patterns=[Invoke]
+ControlType.Text name='Auxiliary window request accepted' class='' id='' enabled=True keyboardFocusable=False offscreen=False patterns=[]
