@@ -2,6 +2,10 @@ name: WebGPU feasibility (macOS arm64)
 
 on:
   workflow_dispatch:
+  # Weekly regression gate for the unmerged WebGPU migration branch. These
+  # jobs become master gates once codex/webgpu-phase0-feasibility lands.
+  schedule:
+    - cron: '17 4 * * 1'
   push:
     branches:
       - codex/webgpu-phase0-feasibility
@@ -10,8 +14,10 @@ on:
       - 'renderer/webgpu/**'
       - 'host/sdl3/**'
       - 'host/presentation/**'
+      - 'tools/build_native_release.sh'
       - 'tools/common.sh'
       - 'tools/accesskit.sh'
+      - 'tools/validate_wgpu_native_device_loss_macos.sh'
       - 'tools/setup_macos_odin.sh'
       - 'tools/setup_macos_wgpu_native.sh'
       - 'tools/setup_macos_sdl3.sh'
@@ -64,9 +70,25 @@ jobs:
           echo "ALICORN_SDL3_PREFIX=$sdl_prefix/prefix" >> "$GITHUB_ENV"
           echo "DYLD_LIBRARY_PATH=$sdl_prefix/prefix/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" >> "$GITHUB_ENV"
 
+      # Paired link-contract guard:
+      #   * native fixtures build against the shared wgpu-native dylib, because
+      #     AccessKit + static wgpu-native duplicate rust_eh_personality;
+      #   * packaged apps keep the static wgpu-native contract and must not
+      #     embed a developer-machine LC_RPATH (build_native_release.sh fails
+      #     fast on that).
+      # Both builds run here so a change to one selection cannot silently
+      # break the other.
       - name: Build the native fixture with shared wgpu-native
         shell: sh
         run: sh examples/15_webgpu_feasibility/build.sh --native-only
+
+      - name: Build device-loss probes (build-only; no Rust rebuild or execution)
+        shell: sh
+        run: sh tools/validate_wgpu_native_device_loss_macos.sh --build-only
+
+      - name: Build a packaged app with static wgpu-native
+        shell: sh
+        run: sh tools/build_native_release.sh --odin "$(command -v odin)" --sdl-linkage shared --output out/native-package/macos-static-wgpu
 
       - name: Run Metal readback and surface-resize smoke
         shell: bash

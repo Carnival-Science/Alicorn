@@ -2,6 +2,10 @@ name: WebGPU feasibility (Linux)
 
 on:
   workflow_dispatch:
+  # Weekly regression gate for the unmerged WebGPU migration branch. These
+  # jobs become master gates once codex/webgpu-phase0-feasibility lands.
+  schedule:
+    - cron: '17 4 * * 1'
   push:
   pull_request:
 
