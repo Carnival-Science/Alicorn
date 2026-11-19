@@ -43,6 +43,11 @@ SDL_URL='https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3
 SDL_SHA='9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3'
 SDL_REQUIRED_VERSION=3.4.18
 mkdir -p "$SDL_ROOT"
+# Packages must not embed developer-machine rpaths and keep the static link
+# contract. The shared wgpu-native selection is for build/test consumers that
+# also link AccessKit; the packaged 01_hello does not import wgpu.
+ALICORN_DARWIN_STATIC_WGPU=1
+export ALICORN_DARWIN_STATIC_WGPU
 ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
 ACCESSKIT_ROOT="$REPO_ROOT/.deps/accesskit/accesskit-c-0.23.1"
 ACCESSKIT_BINDING_ROOT=$(alicorn_accesskit_binding_root)

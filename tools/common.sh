@@ -69,7 +69,7 @@ alicorn_odin_with_linker_flags() {
 	alicorn_odin_executable=$1
 	alicorn_linker_flags=$2
 	shift 2
-	if [ "$(uname -s)" = Darwin ]; then
+	if [ "$(uname -s)" = Darwin ] && [ -z "${ALICORN_DARWIN_STATIC_WGPU:-}" ]; then
 		alicorn_has_wgpu_shared=0
 		for alicorn_argument in "$@"; do
 			case "$alicorn_argument" in

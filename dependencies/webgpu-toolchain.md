@@ -195,13 +195,18 @@ workaround was validated for Windows x86-64 with Odin
 
 On macOS, ld64 rejects the duplicate even for binaries that only import the
 accessibility host indirectly, so `tools/common.sh` selects
-`-define:WGPU_SHARED=true` for every native build made through
+`-define:WGPU_SHARED=true` for native builds made through
 `alicorn_odin_with_linker_flags` and embeds an absolute `-Wl,-rpath` to the
 installed `libwgpu_native.dylib`. `examples/15_webgpu_feasibility/build.sh`
-therefore needs no platform-specific flag. This was exercised by the
-`WebGPU feasibility (macOS arm64)` workflow and the macOS foundation job; the
-dylib remains a runtime dependency for distributed binaries. Other
-platform runtime linkage and redistribution behavior remain unverified.
+therefore needs no platform-specific flag. `tools/build_native_release.sh`
+exports `ALICORN_DARWIN_STATIC_WGPU=1` to opt packaged apps back into the
+static contract because their binaries must not embed developer-machine
+rpaths; the packaged `01_hello` does not import wgpu. The shared selection was
+exercised by the `WebGPU feasibility (macOS arm64)` workflow and the macOS
+foundation job; the dylib remains a runtime dependency for development
+binaries. Packaging a WebGPU consumer would need the dylib bundled and its
+rpath rewritten, which is not implemented. Other platform runtime linkage and
+redistribution behavior remain unverified.
 
 A related, separate wgpu-core issue is [#9579](https://github.com/gfx-rs/wgpu/issues/9579),
 which remains open as of 2026-11-15. In the pinned v29.0.1 source, explicit

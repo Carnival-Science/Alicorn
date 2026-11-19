@@ -74,7 +74,9 @@ static wgpu-native library each contain a Rust runtime defining
 selects `-define:WGPU_SHARED=true` on macOS and embeds an absolute
 `-Wl,-rpath` to `libwgpu_native.dylib`; this mirrors the existing Windows and
 Unix example policy. The fixture then links and runs without
-`DYLD_LIBRARY_PATH` tricks.
+`DYLD_LIBRARY_PATH` tricks. `tools/build_native_release.sh` sets
+`ALICORN_DARWIN_STATIC_WGPU=1` so packaged apps keep the static contract and do
+not embed developer-machine rpaths.
 
 Adapter and surface:
 
@@ -255,6 +257,15 @@ Two backend-visible differences are recorded rather than smoothed over:
 - **The fixture is not a production workload.** This matrix validates the
   shared renderer and host boundary on additional operating systems; it does
   not instrument Punks/Scratchpad or a shipping application.
+- **The broader macOS foundation job still fails later, for a separate
+  reason.** With the shared link, its native checks and the fixture smoke now
+  pass; `tools/validate_wgpu_native_device_loss_macos.sh` then builds the
+  fixture directly with `odin build` and no AccessKit collections, so Odin
+  reports `Unknown library collection: 'accesskit'`. That script predates the
+  standalone AccessKit pin (the toolchain notes already list its hosted result
+  as pending) and is not part of the fixture matrix jobs. It needs the
+  AccessKit arguments and a patched dylib before the foundation job can be
+  green end to end.
 
 ## Reproduction
 
