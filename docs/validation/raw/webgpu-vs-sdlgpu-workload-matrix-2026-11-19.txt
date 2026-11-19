@@ -1,0 +1,217 @@
+﻿# Matched-description workload matrix raw summary (Windows, 2026-11-19)
+
+Commit: base ab98ce55eeae651d808520f00c6b1a18190df05d plus this slice
+Odin: dev-2026-11-nightly:08539cd
+GPU: NVIDIA GeForce RTX 2080 SUPER, driver 595.97, Windows 10 22H2 10.0.19045
+SDL3: 3.4.20; SDL_GPU backend: Direct3D 12; WebGPU: D3D12 and Vulkan
+
+Command:
+  .\tools\bench_webgpu_vs_sdlgpu.ps1 -Odin C:\odin\odin.exe -Matrix -MatrixRuns 5 -Frames 32 -IdleHoldMs 1200 -OutputDir .\out\webgpu-phase0\matrix-2026-11-19
+
+All times are host CPU wall time, not GPU execution. See
+docs/validation/webgpu-vs-sdlgpu-workload-matrix-windows-2026-11-19.md.
+
+## Harness summary
+
+# Matched-description workload matrix
+
+Runs per scenario: 5; frames: 32; idle hold: 1200 ms.
+All timing values are host CPU wall time, not GPU execution time.
+
+## Per-scenario medians
+
+| Scenario | Renderer | Submits | Describe | Wake | Build p50/p95/p99 us | Encode p50/p95/p99 us | Submit p50 us | Idle ms |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| identical | sdl-gpu | 32 | 32 | 31 | 25.0/47.4/51.5 | 37.8/78.0/945.3 | 148.1 | 2,209 |
+| identical | webgpu-d3d12 | 32 | 32 | 31 | 25.5/49.9/52.5 | 61.7/139.3/146.6 | 55.3 | 1,200 |
+| identical | webgpu-vulkan | 32 | 32 | 31 | 27.4/47.6/50.5 | 51.0/97.6/103.2 | 42.1 | 1,200 |
+| transform | sdl-gpu | 36 | 1 | 0 | 4,043.0/4,043.0/4,043.0 | 38.6/63.1/903.9 | 147.4 | 2,383 |
+| transform | webgpu-d3d12 | 47 | 1 | 0 | 6.5/12.7/17.5 | 102.5/176.7/507.8 | 72.6 | 1,200 |
+| transform | webgpu-vulkan | 43 | 1 | 0 | 6.8/11.4/17.8 | 56.1/138.8/215.2 | 51.2 | 1,200 |
+| color | sdl-gpu | 32 | 32 | 31 | 28.8/50.5/51.0 | 39.8/76.8/1,016.9 | 157.2 | 2,207 |
+| color | webgpu-d3d12 | 32 | 32 | 31 | 27.9/57.4/59.9 | 97.6/188.1/241.9 | 61.9 | 1,200 |
+| color | webgpu-vulkan | 32 | 32 | 31 | 26.8/52.2/56.5 | 52.0/130.4/241.0 | 40.5 | 1,200 |
+| layout | sdl-gpu | 32 | 32 | 31 | 34.7/60.7/67.1 | 33.9/64.8/884.5 | 137.9 | 2,207 |
+| layout | webgpu-d3d12 | 32 | 32 | 31 | 40.8/68.9/71.9 | 97.3/181.0/190.9 | 60.0 | 1,200 |
+| layout | webgpu-vulkan | 32 | 32 | 31 | 40.6/75.9/92.8 | 54.5/142.7/184.7 | 40.9 | 1,200 |
+| scroll-1000 | sdl-gpu | 32 | 33 | 31 | 93.5/168.8/179.0 | 106.6/815.4/2,223.2 | 156.1 | 2,208 |
+| scroll-1000 | webgpu-d3d12 | 33 | 33 | 31 | 77.3/138.0/192.7 | 151.0/273.6/304.3 | 50.0 | 1,200 |
+| scroll-1000 | webgpu-vulkan | 33 | 33 | 31 | 86.9/144.2/199.4 | 113.3/242.7/274.3 | 38.5 | 1,200 |
+| scroll-10000 | sdl-gpu | 32 | 33 | 31 | 86.8/188.2/215.6 | 106.1/746.0/1,946.9 | 148.7 | 2,208 |
+| scroll-10000 | webgpu-d3d12 | 33 | 33 | 31 | 86.0/143.5/152.1 | 150.6/260.7/290.1 | 62.0 | 1,200 |
+| scroll-10000 | webgpu-vulkan | 33 | 33 | 31 | 85.6/154.8/174.4 | 114.4/222.1/242.9 | 41.5 | 1,200 |
+| multiwindow | sdl-gpu | 29 | 2 | 1 | 44.1/44.1/44.1 | 30.9/49.6/965.5 | 139.9 | 2,383 |
+| multiwindow | webgpu-d3d12 | 94 | 1 | 1 | 4.6/8.4/13.9 | 103.0/139.8/178.6 | 62.8 | 1,200 |
+| multiwindow | webgpu-vulkan | 67 | 1 | 1 | 4.1/10.1/28.4 | 41.9/118.6/244.5 | 44.5 | 1,200 |
+| settled | sdl-gpu | 1 | 1 | 0 | 3,948.8/3,948.8/3,948.8 | 1,831.7/1,831.7/1,831.7 | 571.3 | 2,989 |
+| settled | webgpu-d3d12 | 1 | 1 | 0 | 4,003.7/4,003.7/4,003.7 | 1,125.4/1,125.4/1,125.4 | 1,654.1 | 1,200 |
+| settled | webgpu-vulkan | 1 | 1 | 0 | 4,113.3/4,113.3/4,113.3 | 1,184.9/1,184.9/1,184.9 | 117.2 | 1,200 |
+
+## Expectations
+
+| Scenario | Renderer | Expectation | Result | Evidence |
+| --- | --- | --- | --- | --- |
+| identical | sdl-gpu | every planned frame is presented | PASS | submissions=32 expected=32 |
+| identical | sdl-gpu | description passes stay within the bounded frame budget | PASS | describe_calls=32 planned=32 (at most one bounded stabilization pass) |
+| identical | sdl-gpu | exactly one application wake per additional frame | PASS | wake_deliveries=31 expected=31 |
+| identical | webgpu-d3d12 | every planned frame is presented | PASS | submissions=32 expected=32 |
+| identical | webgpu-d3d12 | description passes stay within the bounded frame budget | PASS | describe_calls=32 planned=32 (at most one bounded stabilization pass) |
+| identical | webgpu-d3d12 | exactly one application wake per additional frame | PASS | wake_deliveries=31 expected=31 |
+| identical | webgpu-vulkan | every planned frame is presented | PASS | submissions=32 expected=32 |
+| identical | webgpu-vulkan | description passes stay within the bounded frame budget | PASS | describe_calls=32 planned=32 (at most one bounded stabilization pass) |
+| identical | webgpu-vulkan | exactly one application wake per additional frame | PASS | wake_deliveries=31 expected=31 |
+| identical | all | SDL_GPU and WebGPU receive the same description count | PASS | describe_calls=32 |
+| identical | sdl-gpu | identical text geometry is not rebuilt or re-uploaded | PASS | text_rebuilds=1 text_vertex_uploads=1 |
+| identical | sdl-gpu | identical icon/image/surface geometry is not re-uploaded | PASS | icon=0 image=0 surface=0 surface_encodes=0 |
+| identical | sdl-gpu | identical solid geometry is not re-uploaded | FAIL | solid_vertex_uploads=32 (SDL_GPU reference re-uploads solid geometry per submitted frame) |
+| identical | webgpu-d3d12 | identical text geometry is not rebuilt or re-uploaded | PASS | text_rebuilds=1 text_vertex_uploads=1 |
+| identical | webgpu-d3d12 | identical icon/image/surface geometry is not re-uploaded | PASS | icon=0 image=0 surface=0 surface_encodes= |
+| identical | webgpu-d3d12 | identical solid geometry is not rebuilt or re-uploaded | PASS | solid_mesh_rebuilds=1 solid_vertex_uploads=1 |
+| identical | webgpu-vulkan | identical text geometry is not rebuilt or re-uploaded | PASS | text_rebuilds=1 text_vertex_uploads=1 |
+| identical | webgpu-vulkan | identical icon/image/surface geometry is not re-uploaded | PASS | icon=0 image=0 surface=0 surface_encodes= |
+| identical | webgpu-vulkan | identical solid geometry is not rebuilt or re-uploaded | PASS | solid_mesh_rebuilds=1 solid_vertex_uploads=1 |
+| identical | sdl-gpu | identical text cache used for repeated descriptions | PASS | text_mesh_cache_hits=31 |
+| transform | sdl-gpu | retained motion presents frames without a description | PASS | describe_calls=1 submissions=36 |
+| transform | sdl-gpu | retained motion delivers no application wakes | PASS | wake_deliveries=0 |
+| transform | webgpu-d3d12 | retained motion presents frames without a description | PASS | describe_calls=1 submissions=47 |
+| transform | webgpu-d3d12 | retained motion delivers no application wakes | PASS | wake_deliveries=0 |
+| transform | webgpu-vulkan | retained motion presents frames without a description | PASS | describe_calls=1 submissions=43 |
+| transform | webgpu-vulkan | retained motion delivers no application wakes | PASS | wake_deliveries=0 |
+| transform | all | SDL_GPU and WebGPU receive the same description count | PASS | describe_calls=1 |
+| transform | sdl-gpu | transform-only motion keeps text geometry retained | PASS | text_mesh_rebuilds=1 |
+| transform | sdl-gpu | transform-only motion avoids solid geometry re-upload | FAIL | solid_vertex_uploads=36 across 36 presented frames (no SDL_GPU transform buffer) |
+| transform | webgpu-d3d12 | transform-only motion keeps text geometry retained | PASS | text_mesh_rebuilds=1 |
+| transform | webgpu-d3d12 | transform-only motion updates transforms without geometry rebuilds | PASS | solid_transform_uploads=47 solid_mesh_rebuilds=1 solid_vertex_uploads=1 text_transform_uploads=47 |
+| transform | webgpu-vulkan | transform-only motion keeps text geometry retained | PASS | text_mesh_rebuilds=1 |
+| transform | webgpu-vulkan | transform-only motion updates transforms without geometry rebuilds | PASS | solid_transform_uploads=43 solid_mesh_rebuilds=1 solid_vertex_uploads=1 text_transform_uploads=43 |
+| color | sdl-gpu | every planned frame is presented | PASS | submissions=32 expected=32 |
+| color | sdl-gpu | description passes stay within the bounded frame budget | PASS | describe_calls=32 planned=32 (at most one bounded stabilization pass) |
+| color | sdl-gpu | exactly one application wake per additional frame | PASS | wake_deliveries=31 expected=31 |
+| color | webgpu-d3d12 | every planned frame is presented | PASS | submissions=32 expected=32 |
+| color | webgpu-d3d12 | description passes stay within the bounded frame budget | PASS | describe_calls=32 planned=32 (at most one bounded stabilization pass) |
+| color | webgpu-d3d12 | exactly one application wake per additional frame | PASS | wake_deliveries=31 expected=31 |
+| color | webgpu-vulkan | every planned frame is presented | PASS | submissions=32 expected=32 |
+| color | webgpu-vulkan | description passes stay within the bounded frame budget | PASS | describe_calls=32 planned=32 (at most one bounded stabilization pass) |
+| color | webgpu-vulkan | exactly one application wake per additional frame | PASS | wake_deliveries=31 expected=31 |
+| color | all | SDL_GPU and WebGPU receive the same description count | PASS | describe_calls=32 |
+| color | sdl-gpu | color animation leaves text/icon/image/surface geometry untouched | PASS | text=1 icon=1 image= surface_uploads=0 |
+| color | sdl-gpu | color animation updates the changed solid content | PASS | solid_vertex_uploads=32 |
+| color | webgpu-d3d12 | color animation leaves text/icon/image/surface geometry untouched | PASS | text=1 icon=1 image=1 surface_uploads=0 |
+| color | webgpu-d3d12 | color animation updates the changed solid content | PASS | solid_vertex_uploads=32 |
+| color | webgpu-vulkan | color animation leaves text/icon/image/surface geometry untouched | PASS | text=1 icon=1 image=1 surface_uploads=0 |
+| color | webgpu-vulkan | color animation updates the changed solid content | PASS | solid_vertex_uploads=32 |
+| layout | sdl-gpu | every planned frame is presented | PASS | submissions=32 expected=32 |
+| layout | sdl-gpu | description passes stay within the bounded frame budget | PASS | describe_calls=32 planned=32 (at most one bounded stabilization pass) |
+| layout | sdl-gpu | exactly one application wake per additional frame | PASS | wake_deliveries=31 expected=31 |
+| layout | webgpu-d3d12 | every planned frame is presented | PASS | submissions=32 expected=32 |
+| layout | webgpu-d3d12 | description passes stay within the bounded frame budget | PASS | describe_calls=32 planned=32 (at most one bounded stabilization pass) |
+| layout | webgpu-d3d12 | exactly one application wake per additional frame | PASS | wake_deliveries=31 expected=31 |
+| layout | webgpu-vulkan | every planned frame is presented | PASS | submissions=32 expected=32 |
+| layout | webgpu-vulkan | description passes stay within the bounded frame budget | PASS | describe_calls=32 planned=32 (at most one bounded stabilization pass) |
+| layout | webgpu-vulkan | exactly one application wake per additional frame | PASS | wake_deliveries=31 expected=31 |
+| layout | all | SDL_GPU and WebGPU receive the same description count | PASS | describe_calls=32 |
+| layout | sdl-gpu | localized layout change keeps text/icon/image/surface geometry retained | PASS | text=1 icon=1 image= surface_uploads=0 |
+| layout | sdl-gpu | localized layout change creates no retained-node churn | PASS | nodes_created=13 |
+| layout | sdl-gpu | layout visits stay bounded per changed frame | PASS | layout_nodes_visited=552 threshold=768 |
+| layout | sdl-gpu | localized layout updates the changed solid content | PASS | solid_vertex_uploads=32 |
+| layout | webgpu-d3d12 | localized layout change keeps text/icon/image/surface geometry retained | PASS | text=1 icon=1 image=1 surface_uploads=0 |
+| layout | webgpu-d3d12 | localized layout change creates no retained-node churn | PASS | nodes_created=13 |
+| layout | webgpu-d3d12 | layout visits stay bounded per changed frame | PASS | layout_nodes_visited=552 threshold=768 |
+| layout | webgpu-d3d12 | localized layout updates the changed solid content | PASS | solid_vertex_uploads=32 |
+| layout | webgpu-vulkan | localized layout change keeps text/icon/image/surface geometry retained | PASS | text=1 icon=1 image=1 surface_uploads=0 |
+| layout | webgpu-vulkan | localized layout change creates no retained-node churn | PASS | nodes_created=13 |
+| layout | webgpu-vulkan | layout visits stay bounded per changed frame | PASS | layout_nodes_visited=552 threshold=768 |
+| layout | webgpu-vulkan | localized layout updates the changed solid content | PASS | solid_vertex_uploads=32 |
+| scroll-1000 | sdl-gpu | every planned frame is presented | PASS | submissions=32 expected=32 |
+| scroll-1000 | sdl-gpu | description passes stay within the bounded frame budget | PASS | describe_calls=33 planned=32 (at most one bounded stabilization pass) |
+| scroll-1000 | sdl-gpu | exactly one application wake per additional frame | PASS | wake_deliveries=31 expected=31 |
+| scroll-1000 | webgpu-d3d12 | every planned frame is presented | PASS | submissions=33 expected=32 |
+| scroll-1000 | webgpu-d3d12 | description passes stay within the bounded frame budget | PASS | describe_calls=33 planned=32 (at most one bounded stabilization pass) |
+| scroll-1000 | webgpu-d3d12 | exactly one application wake per additional frame | PASS | wake_deliveries=31 expected=31 |
+| scroll-1000 | webgpu-vulkan | every planned frame is presented | PASS | submissions=33 expected=32 |
+| scroll-1000 | webgpu-vulkan | description passes stay within the bounded frame budget | PASS | describe_calls=33 planned=32 (at most one bounded stabilization pass) |
+| scroll-1000 | webgpu-vulkan | exactly one application wake per additional frame | PASS | wake_deliveries=31 expected=31 |
+| scroll-1000 | all | SDL_GPU and WebGPU receive the same description count | PASS | describe_calls=33 |
+| scroll-1000 | all | scroll work is measured per collection size | PASS | sdl-gpu(nodes=37 commands=627 shapes=27) webgpu-d3d12(nodes=37 commands=627 shapes=27) webgpu-vulkan(nodes=37 commands=627 shapes=27) |
+| scroll-10000 | sdl-gpu | every planned frame is presented | PASS | submissions=32 expected=32 |
+| scroll-10000 | sdl-gpu | description passes stay within the bounded frame budget | PASS | describe_calls=33 planned=32 (at most one bounded stabilization pass) |
+| scroll-10000 | sdl-gpu | exactly one application wake per additional frame | PASS | wake_deliveries=31 expected=31 |
+| scroll-10000 | webgpu-d3d12 | every planned frame is presented | PASS | submissions=33 expected=32 |
+| scroll-10000 | webgpu-d3d12 | description passes stay within the bounded frame budget | PASS | describe_calls=33 planned=32 (at most one bounded stabilization pass) |
+| scroll-10000 | webgpu-d3d12 | exactly one application wake per additional frame | PASS | wake_deliveries=31 expected=31 |
+| scroll-10000 | webgpu-vulkan | every planned frame is presented | PASS | submissions=33 expected=32 |
+| scroll-10000 | webgpu-vulkan | description passes stay within the bounded frame budget | PASS | describe_calls=33 planned=32 (at most one bounded stabilization pass) |
+| scroll-10000 | webgpu-vulkan | exactly one application wake per additional frame | PASS | wake_deliveries=31 expected=31 |
+| scroll-10000 | all | SDL_GPU and WebGPU receive the same description count | PASS | describe_calls=33 |
+| scroll-10000 | all | scroll work is measured per collection size | PASS | sdl-gpu(nodes=37 commands=627 shapes=27) webgpu-d3d12(nodes=37 commands=627 shapes=27) webgpu-vulkan(nodes=37 commands=627 shapes=27) |
+| multiwindow | sdl-gpu | motion descriptions are confined to host startup | PASS | describe_calls=2 description_span_ns=145133900 |
+| multiwindow | sdl-gpu | only the scheduled auxiliary-close wake is delivered | PASS | wake_deliveries=1 |
+| multiwindow | sdl-gpu | primary presents retained motion frames | PASS | submissions=29 |
+| multiwindow | webgpu-d3d12 | motion descriptions are confined to host startup | PASS | describe_calls=1 description_span_ns=0 |
+| multiwindow | webgpu-d3d12 | only the scheduled auxiliary-close wake is delivered | PASS | wake_deliveries=1 |
+| multiwindow | webgpu-d3d12 | primary presents retained motion frames | PASS | submissions=94 |
+| multiwindow | webgpu-vulkan | motion descriptions are confined to host startup | PASS | describe_calls=1 description_span_ns=0 |
+| multiwindow | webgpu-vulkan | only the scheduled auxiliary-close wake is delivered | PASS | wake_deliveries=1 |
+| multiwindow | webgpu-vulkan | primary presents retained motion frames | PASS | submissions=67 |
+| multiwindow | all | SDL_GPU and WebGPU receive the same retained scene | PASS | describe_calls=SDL:2 WebGPU:1 (SDL startup resize may add one pre-motion pass) |
+| multiwindow | sdl-gpu | auxiliary window describes once independently | PASS | aux_describe_calls=1 |
+| multiwindow | sdl-gpu | auxiliary window receives no application wakes | PASS | aux_wake_deliveries=0 |
+| multiwindow | sdl-gpu | primary window descriptions stay confined to startup | PASS | describe_calls=2 |
+| multiwindow | webgpu-d3d12 | auxiliary window describes once independently | PASS | aux_describe_calls=1 |
+| multiwindow | webgpu-d3d12 | auxiliary window receives no application wakes | PASS | aux_wake_deliveries=0 |
+| multiwindow | webgpu-d3d12 | primary window descriptions stay confined to startup | PASS | describe_calls=1 |
+| multiwindow | webgpu-vulkan | auxiliary window describes once independently | PASS | aux_describe_calls=1 |
+| multiwindow | webgpu-vulkan | auxiliary window receives no application wakes | PASS | aux_wake_deliveries=0 |
+| multiwindow | webgpu-vulkan | primary window descriptions stay confined to startup | PASS | describe_calls=1 |
+| settled | sdl-gpu | retained presentation presents the settled frame once | PASS | submissions=1 |
+| settled | sdl-gpu | settled interface delivers no application wakes | PASS | wake_deliveries=0 |
+| settled | webgpu-d3d12 | retained presentation presents the settled frame once | PASS | submissions=1 |
+| settled | webgpu-d3d12 | settled interface delivers no application wakes | PASS | wake_deliveries=0 |
+| settled | webgpu-vulkan | retained presentation presents the settled frame once | PASS | submissions=1 |
+| settled | webgpu-vulkan | settled interface delivers no application wakes | PASS | wake_deliveries=0 |
+| settled | all | SDL_GPU and WebGPU receive the same description count | PASS | describe_calls=1 |
+| settled | sdl-gpu | settled interface requests no additional frames | PASS | submissions=1 expected=1 |
+| settled | sdl-gpu | settled interface delivers no additional application wakes | PASS | wake_deliveries=0 |
+| settled | sdl-gpu | idle observation window is at least one second | PASS | idle_after_last_frame_ns=2989426800 |
+| settled | webgpu-d3d12 | settled interface requests no additional frames | PASS | submissions=1 expected=1 |
+| settled | webgpu-d3d12 | settled interface delivers no additional application wakes | PASS | wake_deliveries=0 |
+| settled | webgpu-d3d12 | idle observation window is at least one second | PASS | idle_after_last_frame_ns=1200023900 |
+| settled | webgpu-vulkan | settled interface requests no additional frames | PASS | submissions=1 expected=1 |
+| settled | webgpu-vulkan | settled interface delivers no additional application wakes | PASS | wake_deliveries=0 |
+| settled | webgpu-vulkan | idle observation window is at least one second | PASS | idle_after_last_frame_ns=1200023400 |
+| scroll | sdl-gpu | scroll work stays bounded from scroll-1000 to scroll-10000 | PASS | commands scroll-1000=627 scroll-10000=627; nodes scroll-1000=37 scroll-10000=37 |
+| scroll | webgpu-d3d12 | scroll work stays bounded from scroll-1000 to scroll-10000 | PASS | commands scroll-1000=627 scroll-10000=627; nodes scroll-1000=37 scroll-10000=37 |
+| scroll | webgpu-vulkan | scroll work stays bounded from scroll-1000 to scroll-10000 | PASS | commands scroll-1000=627 scroll-10000=627; nodes scroll-1000=37 scroll-10000=37 |
+
+Expectation failures: 2
+- identical / sdl-gpu: identical solid geometry is not re-uploaded (solid_vertex_uploads=32 (SDL_GPU reference re-uploads solid geometry per submitted frame))
+- transform / sdl-gpu: transform-only motion avoids solid geometry re-upload (solid_vertex_uploads=36 across 36 presented frames (no SDL_GPU transform buffer))
+
+
+## Retained-work counter medians
+
+color sdl-gpu runs=5 solid_mesh_rebuilds=n/a solid_vertex_uploads=32 solid_vertex_upload_bytes=34560 solid_transform_uploads=n/a solid_transform_upload_bytes=n/a text_mesh_rebuilds=1 text_mesh_cache_hits=31 text_vertex_uploads=1 text_vertex_upload_bytes=31320 text_transform_uploads=n/a text_atlas_uploads=1 text_atlas_upload_bytes=4194304 icon_mesh_rebuilds=1 icon_mesh_cache_hits=31 icon_vertex_uploads=0 icon_atlas_uploads=2 icon_atlas_upload_bytes=1572864 image_mesh_rebuilds=n/a image_vertex_uploads=0 image_texture_uploads=n/a surface_mesh_rebuilds=n/a surface_vertex_uploads=0 surface_instance_uploads=n/a surface_encodes=0 runtime_nodes_created=11 runtime_layout_visits=21 runtime_paint_visits=42 runtime_display_commands=39 runtime_text_shapes=3 persistent_alloc_calls=417 scratch_alloc_calls=13882 aux_describe_calls=n/a aux_wake_deliveries=n/a
+color webgpu-d3d12 runs=5 solid_mesh_rebuilds=32 solid_vertex_uploads=32 solid_vertex_upload_bytes=34560 solid_transform_uploads=1 solid_transform_upload_bytes=40 text_mesh_rebuilds=1 text_mesh_cache_hits=n/a text_vertex_uploads=1 text_vertex_upload_bytes=38280 text_transform_uploads=1 text_atlas_uploads=3 text_atlas_upload_bytes=1102816 icon_mesh_rebuilds=1 icon_mesh_cache_hits=31 icon_vertex_uploads=0 icon_atlas_uploads=0 icon_atlas_upload_bytes=0 image_mesh_rebuilds=1 image_vertex_uploads=0 image_texture_uploads=0 surface_mesh_rebuilds=0 surface_vertex_uploads=0 surface_instance_uploads=0 surface_encodes=n/a runtime_nodes_created=11 runtime_layout_visits=21 runtime_paint_visits=42 runtime_display_commands=39 runtime_text_shapes=3 persistent_alloc_calls=417 scratch_alloc_calls=13882 aux_describe_calls=n/a aux_wake_deliveries=n/a
+color webgpu-vulkan runs=5 solid_mesh_rebuilds=32 solid_vertex_uploads=32 solid_vertex_upload_bytes=34560 solid_transform_uploads=1 solid_transform_upload_bytes=40 text_mesh_rebuilds=1 text_mesh_cache_hits=n/a text_vertex_uploads=1 text_vertex_upload_bytes=38280 text_transform_uploads=1 text_atlas_uploads=3 text_atlas_upload_bytes=1102816 icon_mesh_rebuilds=1 icon_mesh_cache_hits=31 icon_vertex_uploads=0 icon_atlas_uploads=0 icon_atlas_upload_bytes=0 image_mesh_rebuilds=1 image_vertex_uploads=0 image_texture_uploads=0 surface_mesh_rebuilds=0 surface_vertex_uploads=0 surface_instance_uploads=0 surface_encodes=n/a runtime_nodes_created=11 runtime_layout_visits=21 runtime_paint_visits=42 runtime_display_commands=39 runtime_text_shapes=3 persistent_alloc_calls=417 scratch_alloc_calls=13882 aux_describe_calls=n/a aux_wake_deliveries=n/a
+identical sdl-gpu runs=5 solid_mesh_rebuilds=n/a solid_vertex_uploads=32 solid_vertex_upload_bytes=34560 solid_transform_uploads=n/a solid_transform_upload_bytes=n/a text_mesh_rebuilds=1 text_mesh_cache_hits=31 text_vertex_uploads=1 text_vertex_upload_bytes=31320 text_transform_uploads=n/a text_atlas_uploads=1 text_atlas_upload_bytes=4194304 icon_mesh_rebuilds=1 icon_mesh_cache_hits=31 icon_vertex_uploads=0 icon_atlas_uploads=2 icon_atlas_upload_bytes=1572864 image_mesh_rebuilds=n/a image_vertex_uploads=0 image_texture_uploads=n/a surface_mesh_rebuilds=n/a surface_vertex_uploads=0 surface_instance_uploads=n/a surface_encodes=0 runtime_nodes_created=11 runtime_layout_visits=21 runtime_paint_visits=11 runtime_display_commands=8 runtime_text_shapes=3 persistent_alloc_calls=323 scratch_alloc_calls=13882 aux_describe_calls=n/a aux_wake_deliveries=n/a
+identical webgpu-d3d12 runs=5 solid_mesh_rebuilds=1 solid_vertex_uploads=1 solid_vertex_upload_bytes=1080 solid_transform_uploads=1 solid_transform_upload_bytes=40 text_mesh_rebuilds=1 text_mesh_cache_hits=n/a text_vertex_uploads=1 text_vertex_upload_bytes=38280 text_transform_uploads=1 text_atlas_uploads=3 text_atlas_upload_bytes=1102816 icon_mesh_rebuilds=1 icon_mesh_cache_hits=31 icon_vertex_uploads=0 icon_atlas_uploads=0 icon_atlas_upload_bytes=0 image_mesh_rebuilds=1 image_vertex_uploads=0 image_texture_uploads=0 surface_mesh_rebuilds=0 surface_vertex_uploads=0 surface_instance_uploads=0 surface_encodes=n/a runtime_nodes_created=11 runtime_layout_visits=21 runtime_paint_visits=11 runtime_display_commands=8 runtime_text_shapes=3 persistent_alloc_calls=323 scratch_alloc_calls=13882 aux_describe_calls=n/a aux_wake_deliveries=n/a
+identical webgpu-vulkan runs=5 solid_mesh_rebuilds=1 solid_vertex_uploads=1 solid_vertex_upload_bytes=1080 solid_transform_uploads=1 solid_transform_upload_bytes=40 text_mesh_rebuilds=1 text_mesh_cache_hits=n/a text_vertex_uploads=1 text_vertex_upload_bytes=38280 text_transform_uploads=1 text_atlas_uploads=3 text_atlas_upload_bytes=1102816 icon_mesh_rebuilds=1 icon_mesh_cache_hits=31 icon_vertex_uploads=0 icon_atlas_uploads=0 icon_atlas_upload_bytes=0 image_mesh_rebuilds=1 image_vertex_uploads=0 image_texture_uploads=0 surface_mesh_rebuilds=0 surface_vertex_uploads=0 surface_instance_uploads=0 surface_encodes=n/a runtime_nodes_created=11 runtime_layout_visits=21 runtime_paint_visits=11 runtime_display_commands=8 runtime_text_shapes=3 persistent_alloc_calls=323 scratch_alloc_calls=13882 aux_describe_calls=n/a aux_wake_deliveries=n/a
+layout sdl-gpu runs=5 solid_mesh_rebuilds=n/a solid_vertex_uploads=32 solid_vertex_upload_bytes=41472 solid_transform_uploads=n/a solid_transform_upload_bytes=n/a text_mesh_rebuilds=1 text_mesh_cache_hits=31 text_vertex_uploads=1 text_vertex_upload_bytes=31320 text_transform_uploads=n/a text_atlas_uploads=1 text_atlas_upload_bytes=4194304 icon_mesh_rebuilds=1 icon_mesh_cache_hits=31 icon_vertex_uploads=0 icon_atlas_uploads=2 icon_atlas_upload_bytes=1572864 image_mesh_rebuilds=n/a image_vertex_uploads=0 image_texture_uploads=n/a surface_mesh_rebuilds=n/a surface_vertex_uploads=0 surface_instance_uploads=n/a surface_encodes=0 runtime_nodes_created=13 runtime_layout_visits=552 runtime_paint_visits=44 runtime_display_commands=40 runtime_text_shapes=3 persistent_alloc_calls=627 scratch_alloc_calls=14260 aux_describe_calls=n/a aux_wake_deliveries=n/a
+layout webgpu-d3d12 runs=5 solid_mesh_rebuilds=32 solid_vertex_uploads=32 solid_vertex_upload_bytes=41472 solid_transform_uploads=1 solid_transform_upload_bytes=48 text_mesh_rebuilds=1 text_mesh_cache_hits=n/a text_vertex_uploads=1 text_vertex_upload_bytes=38280 text_transform_uploads=1 text_atlas_uploads=3 text_atlas_upload_bytes=1102816 icon_mesh_rebuilds=1 icon_mesh_cache_hits=31 icon_vertex_uploads=0 icon_atlas_uploads=0 icon_atlas_upload_bytes=0 image_mesh_rebuilds=1 image_vertex_uploads=0 image_texture_uploads=0 surface_mesh_rebuilds=0 surface_vertex_uploads=0 surface_instance_uploads=0 surface_encodes=n/a runtime_nodes_created=13 runtime_layout_visits=552 runtime_paint_visits=44 runtime_display_commands=40 runtime_text_shapes=3 persistent_alloc_calls=627 scratch_alloc_calls=14260 aux_describe_calls=n/a aux_wake_deliveries=n/a
+layout webgpu-vulkan runs=5 solid_mesh_rebuilds=32 solid_vertex_uploads=32 solid_vertex_upload_bytes=41472 solid_transform_uploads=1 solid_transform_upload_bytes=48 text_mesh_rebuilds=1 text_mesh_cache_hits=n/a text_vertex_uploads=1 text_vertex_upload_bytes=38280 text_transform_uploads=1 text_atlas_uploads=3 text_atlas_upload_bytes=1102816 icon_mesh_rebuilds=1 icon_mesh_cache_hits=31 icon_vertex_uploads=0 icon_atlas_uploads=0 icon_atlas_upload_bytes=0 image_mesh_rebuilds=1 image_vertex_uploads=0 image_texture_uploads=0 surface_mesh_rebuilds=0 surface_vertex_uploads=0 surface_instance_uploads=0 surface_encodes=n/a runtime_nodes_created=13 runtime_layout_visits=552 runtime_paint_visits=44 runtime_display_commands=40 runtime_text_shapes=3 persistent_alloc_calls=627 scratch_alloc_calls=14260 aux_describe_calls=n/a aux_wake_deliveries=n/a
+multiwindow sdl-gpu runs=5 solid_mesh_rebuilds=n/a solid_vertex_uploads=29 solid_vertex_upload_bytes=31320 solid_transform_uploads=n/a solid_transform_upload_bytes=n/a text_mesh_rebuilds=1 text_mesh_cache_hits=28 text_vertex_uploads=1 text_vertex_upload_bytes=31320 text_transform_uploads=n/a text_atlas_uploads=1 text_atlas_upload_bytes=4194304 icon_mesh_rebuilds=1 icon_mesh_cache_hits=28 icon_vertex_uploads=0 icon_atlas_uploads=2 icon_atlas_upload_bytes=1572864 image_mesh_rebuilds=n/a image_vertex_uploads=0 image_texture_uploads=n/a surface_mesh_rebuilds=n/a surface_vertex_uploads=0 surface_instance_uploads=n/a surface_encodes=0 runtime_nodes_created=11 runtime_layout_visits=21 runtime_paint_visits=11 runtime_display_commands=232 runtime_text_shapes=3 persistent_alloc_calls=260 scratch_alloc_calls=13522 aux_describe_calls=1 aux_wake_deliveries=0
+multiwindow webgpu-d3d12 runs=5 solid_mesh_rebuilds=1 solid_vertex_uploads=1 solid_vertex_upload_bytes=1080 solid_transform_uploads=94 solid_transform_upload_bytes=3760 text_mesh_rebuilds=1 text_mesh_cache_hits=n/a text_vertex_uploads=1 text_vertex_upload_bytes=38280 text_transform_uploads=94 text_atlas_uploads=3 text_atlas_upload_bytes=1102816 icon_mesh_rebuilds=1 icon_mesh_cache_hits=93 icon_vertex_uploads=0 icon_atlas_uploads=0 icon_atlas_upload_bytes=0 image_mesh_rebuilds=1 image_vertex_uploads=0 image_texture_uploads=0 surface_mesh_rebuilds=0 surface_vertex_uploads=0 surface_instance_uploads=0 surface_encodes=n/a runtime_nodes_created=11 runtime_layout_visits=21 runtime_paint_visits=11 runtime_display_commands=752 runtime_text_shapes=3 persistent_alloc_calls=451 scratch_alloc_calls=13510 aux_describe_calls=1 aux_wake_deliveries=0
+multiwindow webgpu-vulkan runs=5 solid_mesh_rebuilds=1 solid_vertex_uploads=1 solid_vertex_upload_bytes=1080 solid_transform_uploads=67 solid_transform_upload_bytes=2680 text_mesh_rebuilds=1 text_mesh_cache_hits=n/a text_vertex_uploads=1 text_vertex_upload_bytes=38280 text_transform_uploads=67 text_atlas_uploads=3 text_atlas_upload_bytes=1102816 icon_mesh_rebuilds=1 icon_mesh_cache_hits=66 icon_vertex_uploads=0 icon_atlas_uploads=0 icon_atlas_upload_bytes=0 image_mesh_rebuilds=1 image_vertex_uploads=0 image_texture_uploads=0 surface_mesh_rebuilds=0 surface_vertex_uploads=0 surface_instance_uploads=0 surface_encodes=n/a runtime_nodes_created=11 runtime_layout_visits=21 runtime_paint_visits=11 runtime_display_commands=536 runtime_text_shapes=3 persistent_alloc_calls=370 scratch_alloc_calls=13510 aux_describe_calls=1 aux_wake_deliveries=0
+scroll-1000 sdl-gpu runs=5 solid_mesh_rebuilds=n/a solid_vertex_uploads=32 solid_vertex_upload_bytes=48384 solid_transform_uploads=n/a solid_transform_upload_bytes=n/a text_mesh_rebuilds=32 text_mesh_cache_hits=0 text_vertex_uploads=32 text_vertex_upload_bytes=2294784 text_transform_uploads=n/a text_atlas_uploads=8 text_atlas_upload_bytes=33554432 icon_mesh_rebuilds=1 icon_mesh_cache_hits=31 icon_vertex_uploads=0 icon_atlas_uploads=2 icon_atlas_upload_bytes=1572864 image_mesh_rebuilds=n/a image_vertex_uploads=0 image_texture_uploads=n/a surface_mesh_rebuilds=n/a surface_vertex_uploads=0 surface_instance_uploads=n/a surface_encodes=0 runtime_nodes_created=37 runtime_layout_visits=1145 runtime_paint_visits=364 runtime_display_commands=627 runtime_text_shapes=27 persistent_alloc_calls=1772 scratch_alloc_calls=15574 aux_describe_calls=n/a aux_wake_deliveries=n/a
+scroll-1000 webgpu-d3d12 runs=5 solid_mesh_rebuilds=5 solid_vertex_uploads=5 solid_vertex_upload_bytes=7560 solid_transform_uploads=1 solid_transform_upload_bytes=56 text_mesh_rebuilds=32 text_mesh_cache_hits=n/a text_vertex_uploads=32 text_vertex_upload_bytes=2804736 text_transform_uploads=1 text_atlas_uploads=95 text_atlas_upload_bytes=1406104 icon_mesh_rebuilds=1 icon_mesh_cache_hits=32 icon_vertex_uploads=0 icon_atlas_uploads=0 icon_atlas_upload_bytes=0 image_mesh_rebuilds=1 image_vertex_uploads=0 image_texture_uploads=0 surface_mesh_rebuilds=0 surface_vertex_uploads=0 surface_instance_uploads=0 surface_encodes=n/a runtime_nodes_created=37 runtime_layout_visits=1145 runtime_paint_visits=364 runtime_display_commands=627 runtime_text_shapes=27 persistent_alloc_calls=1773 scratch_alloc_calls=15574 aux_describe_calls=n/a aux_wake_deliveries=n/a
+scroll-1000 webgpu-vulkan runs=5 solid_mesh_rebuilds=5 solid_vertex_uploads=5 solid_vertex_upload_bytes=7560 solid_transform_uploads=1 solid_transform_upload_bytes=56 text_mesh_rebuilds=32 text_mesh_cache_hits=n/a text_vertex_uploads=32 text_vertex_upload_bytes=2804736 text_transform_uploads=1 text_atlas_uploads=95 text_atlas_upload_bytes=1406104 icon_mesh_rebuilds=1 icon_mesh_cache_hits=32 icon_vertex_uploads=0 icon_atlas_uploads=0 icon_atlas_upload_bytes=0 image_mesh_rebuilds=1 image_vertex_uploads=0 image_texture_uploads=0 surface_mesh_rebuilds=0 surface_vertex_uploads=0 surface_instance_uploads=0 surface_encodes=n/a runtime_nodes_created=37 runtime_layout_visits=1145 runtime_paint_visits=364 runtime_display_commands=627 runtime_text_shapes=27 persistent_alloc_calls=1773 scratch_alloc_calls=15574 aux_describe_calls=n/a aux_wake_deliveries=n/a
+scroll-10000 sdl-gpu runs=5 solid_mesh_rebuilds=n/a solid_vertex_uploads=32 solid_vertex_upload_bytes=48384 solid_transform_uploads=n/a solid_transform_upload_bytes=n/a text_mesh_rebuilds=32 text_mesh_cache_hits=0 text_vertex_uploads=32 text_vertex_upload_bytes=2294784 text_transform_uploads=n/a text_atlas_uploads=8 text_atlas_upload_bytes=33554432 icon_mesh_rebuilds=1 icon_mesh_cache_hits=31 icon_vertex_uploads=0 icon_atlas_uploads=2 icon_atlas_upload_bytes=1572864 image_mesh_rebuilds=n/a image_vertex_uploads=0 image_texture_uploads=n/a surface_mesh_rebuilds=n/a surface_vertex_uploads=0 surface_instance_uploads=n/a surface_encodes=0 runtime_nodes_created=37 runtime_layout_visits=1145 runtime_paint_visits=364 runtime_display_commands=627 runtime_text_shapes=27 persistent_alloc_calls=1772 scratch_alloc_calls=15574 aux_describe_calls=n/a aux_wake_deliveries=n/a
+scroll-10000 webgpu-d3d12 runs=5 solid_mesh_rebuilds=2 solid_vertex_uploads=2 solid_vertex_upload_bytes=3024 solid_transform_uploads=1 solid_transform_upload_bytes=56 text_mesh_rebuilds=32 text_mesh_cache_hits=n/a text_vertex_uploads=32 text_vertex_upload_bytes=2804736 text_transform_uploads=1 text_atlas_uploads=95 text_atlas_upload_bytes=1406104 icon_mesh_rebuilds=1 icon_mesh_cache_hits=32 icon_vertex_uploads=0 icon_atlas_uploads=0 icon_atlas_upload_bytes=0 image_mesh_rebuilds=1 image_vertex_uploads=0 image_texture_uploads=0 surface_mesh_rebuilds=0 surface_vertex_uploads=0 surface_instance_uploads=0 surface_encodes=n/a runtime_nodes_created=37 runtime_layout_visits=1145 runtime_paint_visits=364 runtime_display_commands=627 runtime_text_shapes=27 persistent_alloc_calls=1773 scratch_alloc_calls=15574 aux_describe_calls=n/a aux_wake_deliveries=n/a
+scroll-10000 webgpu-vulkan runs=5 solid_mesh_rebuilds=2 solid_vertex_uploads=2 solid_vertex_upload_bytes=3024 solid_transform_uploads=1 solid_transform_upload_bytes=56 text_mesh_rebuilds=32 text_mesh_cache_hits=n/a text_vertex_uploads=32 text_vertex_upload_bytes=2804736 text_transform_uploads=1 text_atlas_uploads=95 text_atlas_upload_bytes=1406104 icon_mesh_rebuilds=1 icon_mesh_cache_hits=32 icon_vertex_uploads=0 icon_atlas_uploads=0 icon_atlas_upload_bytes=0 image_mesh_rebuilds=1 image_vertex_uploads=0 image_texture_uploads=0 surface_mesh_rebuilds=0 surface_vertex_uploads=0 surface_instance_uploads=0 surface_encodes=n/a runtime_nodes_created=37 runtime_layout_visits=1145 runtime_paint_visits=364 runtime_display_commands=627 runtime_text_shapes=27 persistent_alloc_calls=1773 scratch_alloc_calls=15574 aux_describe_calls=n/a aux_wake_deliveries=n/a
+settled sdl-gpu runs=5 solid_mesh_rebuilds=n/a solid_vertex_uploads=1 solid_vertex_upload_bytes=1080 solid_transform_uploads=n/a solid_transform_upload_bytes=n/a text_mesh_rebuilds=1 text_mesh_cache_hits=0 text_vertex_uploads=1 text_vertex_upload_bytes=31320 text_transform_uploads=n/a text_atlas_uploads=1 text_atlas_upload_bytes=4194304 icon_mesh_rebuilds=1 icon_mesh_cache_hits=0 icon_vertex_uploads=0 icon_atlas_uploads=2 icon_atlas_upload_bytes=1572864 image_mesh_rebuilds=n/a image_vertex_uploads=0 image_texture_uploads=n/a surface_mesh_rebuilds=n/a surface_vertex_uploads=0 surface_instance_uploads=n/a surface_encodes=0 runtime_nodes_created=11 runtime_layout_visits=21 runtime_paint_visits=11 runtime_display_commands=8 runtime_text_shapes=3 persistent_alloc_calls=167 scratch_alloc_calls=13510 aux_describe_calls=n/a aux_wake_deliveries=n/a
+settled webgpu-d3d12 runs=5 solid_mesh_rebuilds=1 solid_vertex_uploads=1 solid_vertex_upload_bytes=1080 solid_transform_uploads=1 solid_transform_upload_bytes=40 text_mesh_rebuilds=1 text_mesh_cache_hits=n/a text_vertex_uploads=1 text_vertex_upload_bytes=38280 text_transform_uploads=1 text_atlas_uploads=3 text_atlas_upload_bytes=1102816 icon_mesh_rebuilds=1 icon_mesh_cache_hits=0 icon_vertex_uploads=0 icon_atlas_uploads=0 icon_atlas_upload_bytes=0 image_mesh_rebuilds=1 image_vertex_uploads=0 image_texture_uploads=0 surface_mesh_rebuilds=0 surface_vertex_uploads=0 surface_instance_uploads=0 surface_encodes=n/a runtime_nodes_created=11 runtime_layout_visits=21 runtime_paint_visits=11 runtime_display_commands=8 runtime_text_shapes=3 persistent_alloc_calls=167 scratch_alloc_calls=13510 aux_describe_calls=n/a aux_wake_deliveries=n/a
+settled webgpu-vulkan runs=5 solid_mesh_rebuilds=1 solid_vertex_uploads=1 solid_vertex_upload_bytes=1080 solid_transform_uploads=1 solid_transform_upload_bytes=40 text_mesh_rebuilds=1 text_mesh_cache_hits=n/a text_vertex_uploads=1 text_vertex_upload_bytes=38280 text_transform_uploads=1 text_atlas_uploads=3 text_atlas_upload_bytes=1102816 icon_mesh_rebuilds=1 icon_mesh_cache_hits=0 icon_vertex_uploads=0 icon_atlas_uploads=0 icon_atlas_upload_bytes=0 image_mesh_rebuilds=1 image_vertex_uploads=0 image_texture_uploads=0 surface_mesh_rebuilds=0 surface_vertex_uploads=0 surface_instance_uploads=0 surface_encodes=n/a runtime_nodes_created=11 runtime_layout_visits=21 runtime_paint_visits=11 runtime_display_commands=8 runtime_text_shapes=3 persistent_alloc_calls=167 scratch_alloc_calls=13510 aux_describe_calls=n/a aux_wake_deliveries=n/a
+transform sdl-gpu runs=5 solid_mesh_rebuilds=n/a solid_vertex_uploads=36 solid_vertex_upload_bytes=38880 solid_transform_uploads=n/a solid_transform_upload_bytes=n/a text_mesh_rebuilds=1 text_mesh_cache_hits=35 text_vertex_uploads=1 text_vertex_upload_bytes=31320 text_transform_uploads=n/a text_atlas_uploads=1 text_atlas_upload_bytes=4194304 icon_mesh_rebuilds=1 icon_mesh_cache_hits=35 icon_vertex_uploads=0 icon_atlas_uploads=2 icon_atlas_upload_bytes=1572864 image_mesh_rebuilds=n/a image_vertex_uploads=0 image_texture_uploads=n/a surface_mesh_rebuilds=n/a surface_vertex_uploads=0 surface_instance_uploads=n/a surface_encodes=0 runtime_nodes_created=11 runtime_layout_visits=21 runtime_paint_visits=11 runtime_display_commands=288 runtime_text_shapes=3 persistent_alloc_calls=277 scratch_alloc_calls=13510 aux_describe_calls=n/a aux_wake_deliveries=n/a
+transform webgpu-d3d12 runs=5 solid_mesh_rebuilds=1 solid_vertex_uploads=1 solid_vertex_upload_bytes=1080 solid_transform_uploads=47 solid_transform_upload_bytes=1880 text_mesh_rebuilds=1 text_mesh_cache_hits=n/a text_vertex_uploads=1 text_vertex_upload_bytes=38280 text_transform_uploads=47 text_atlas_uploads=3 text_atlas_upload_bytes=1102816 icon_mesh_rebuilds=1 icon_mesh_cache_hits=46 icon_vertex_uploads=0 icon_atlas_uploads=0 icon_atlas_upload_bytes=0 image_mesh_rebuilds=1 image_vertex_uploads=0 image_texture_uploads=0 surface_mesh_rebuilds=0 surface_vertex_uploads=0 surface_instance_uploads=0 surface_encodes=n/a runtime_nodes_created=11 runtime_layout_visits=21 runtime_paint_visits=11 runtime_display_commands=376 runtime_text_shapes=3 persistent_alloc_calls=310 scratch_alloc_calls=13510 aux_describe_calls=n/a aux_wake_deliveries=n/a
+transform webgpu-vulkan runs=5 solid_mesh_rebuilds=1 solid_vertex_uploads=1 solid_vertex_upload_bytes=1080 solid_transform_uploads=43 solid_transform_upload_bytes=1720 text_mesh_rebuilds=1 text_mesh_cache_hits=n/a text_vertex_uploads=1 text_vertex_upload_bytes=38280 text_transform_uploads=43 text_atlas_uploads=3 text_atlas_upload_bytes=1102816 icon_mesh_rebuilds=1 icon_mesh_cache_hits=42 icon_vertex_uploads=0 icon_atlas_uploads=0 icon_atlas_upload_bytes=0 image_mesh_rebuilds=1 image_vertex_uploads=0 image_texture_uploads=0 surface_mesh_rebuilds=0 surface_vertex_uploads=0 surface_instance_uploads=0 surface_encodes=n/a runtime_nodes_created=11 runtime_layout_visits=21 runtime_paint_visits=11 runtime_display_commands=344 runtime_text_shapes=3 persistent_alloc_calls=298 scratch_alloc_calls=13510 aux_describe_calls=n/a aux_wake_deliveries=n/a
+

@@ -11,6 +11,15 @@ application code, UI description, window size (720×480 logical, display scale
 1.0), theme, and event loop are identical; only the renderer and its submission
 path differ.
 
+> **Superseded motion caveat (2026-11-19).** The retained-motion section below
+> compared workloads that were not matched: the SDL_GPU loop re-described while
+> the WebGPU path presented retained frames. The later
+> [matched-description workload matrix](webgpu-vs-sdlgpu-workload-matrix-windows-2026-11-19.md)
+> drives the same retained-motion scene through both renderers and shows both
+> describe once and present retained frames. Use that record for motion and
+> retained-work questions; the stage timings below remain valid for the cold
+> scene.
+
 ## Workloads
 
 Both workloads come from `examples/16_native_webgpu_ui` and run through its
@@ -97,13 +106,14 @@ comparison and is included only to identify the boundary.
 | Runtime step to presented p50 (µs) | — | 305.7 (255.8) | 167.3 (144.7) |
 | Text mesh rebuilds / cache hits / vertex uploads | 1 / 36 / 1 | — | — |
 
-The app-build row is **not** an equivalent measurement: the WebGPU hosted
-motion path presented retained frames without re-running the application
-description on every motion frame (Runtime step p50 7.6 µs across 45 samples),
-while the SDL_GPU loop rebuilt the application description for every submitted
-motion frame (accumulated build time divided by 37 submissions). Renderer
-encode and submit are directly normalized per frame, but see the boundary
-differences above.
+The app-build row is **not** an equivalent measurement. The original run
+inferred a per-frame SDL_GPU description rebuild by dividing accumulated build
+time by submissions, but it did not count description passes on either side.
+The matched matrix now counts them: with the same retained-motion declaration,
+both SDL_GPU and WebGPU described once and presented retained frames. Treat the
+app-build row below as an accumulated-total normalization only; the matched
+record supersedes the workload-mismatch claim. Renderer encode and submit are
+directly normalized per frame, but see the boundary differences above.
 
 ## Confounders
 
@@ -116,9 +126,10 @@ differences above.
 - SDL_GPU's encode total includes hidden DevTools/inspector draw attempts that
   the WebGPU presenter does not run. The WebGPU numbers are the app display
   list only.
-- The two paths produced different motion-frame counts (45/42 vs 37), and the
-  WebGPU path did not rebuild the description per motion frame. Per-frame
-  values are normalized, but the work behind each frame was not identical.
+- The two paths produced different motion-frame counts (45/42 vs 37). The
+  matched matrix later counted description passes and found one on each path;
+  the earlier "WebGPU did not rebuild per motion frame" inference is withdrawn.
+  Per-frame values are normalized, but pacing and renderer work still differ.
 - Five runs per configuration on an interactive, non-idle desktop cannot
   characterize variance. The cold SDL_GPU app-build maximum (5.152 ms) shows
   startup variance.
@@ -138,4 +149,7 @@ differences above.
 This fills the missing same-workload, same-machine app-level CPU comparison
 for one fixture. It does not establish performance parity or a WebGPU win, and
 it does not close the production-application or GPU-execution parts of the
-Phase 0 performance gap.
+Phase 0 performance gap. The
+[matched-description workload matrix](webgpu-vs-sdlgpu-workload-matrix-windows-2026-11-19.md)
+extends it with asserted description sequences, retained-work counters, motion,
+multi-window, scroll, and idle evidence.

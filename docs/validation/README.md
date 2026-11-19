@@ -14,6 +14,11 @@ the current project status.
   — macOS arm64 Metal, Linux lavapipe, and headless Chromium SwiftShader runs
   of the shared fixture, with adapter identity, counter parity, and explicit
   software-adapter limits.
+- [WebGPU vs SDL_GPU matched-description workload matrix](webgpu-vs-sdlgpu-workload-matrix-windows-2026-11-19.md)
+  — one scene driven through both renderers with asserted description counts:
+  identical, transform, color, localized layout, 1k/10k scroll, multi-window,
+  and settled idle. Records 131 expectations (129 PASS, 2 FAIL), CPU
+  p50/p95/p99, retained-work counters, and the SDL_GPU solid re-upload finding.
 - [v0.2.1 release validation](release-v0.2.1.md) — complete v0.2.0-to-v0.2.1
   history, CI, local checks, release scope, and platform-validation boundaries.
 - [Odin dev-2026-11 migration](odin-dev-2026-11.md) — Windows validation for
