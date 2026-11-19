@@ -60,7 +60,7 @@ For matching the tested toolchain, the output should identify
 ## 2. Clone and check the project
 
 ```text
-git clone https://github.com/samanshaiza004/alicorn.git
+git clone https://github.com/Carnival-Science/Alicorn.git
 cd alicorn
 ```
 

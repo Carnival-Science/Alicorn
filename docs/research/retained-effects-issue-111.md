@@ -1,6 +1,6 @@
 # Bounded retained effects — issue #111
 
-2026-11-03 research; status update 2026-11-04. Read [issue #111](https://github.com/samanshaiza004/alicorn/issues/111) directly. The original note below records the pre-implementation decision and source review; the implementation outcome now lives in the [validation report](../validation/issue-111-retained-effects.md). Upstream wiki and `main` links below are rolling references observed on 2026-11-03; validate against the actual SDL revision used by the implementation.
+2026-11-03 research; status update 2026-11-04. Read [issue #111](https://github.com/Carnival-Science/Alicorn/issues/111) directly. The original note below records the pre-implementation decision and source review; the implementation outcome now lives in the [validation report](../validation/issue-111-retained-effects.md). Upstream wiki and `main` links below are rolling references observed on 2026-11-03; validate against the actual SDL revision used by the implementation.
 
 **Original recommendation:** GO for a small, explicitly enabled probe; NO-GO for shipping a general effects layer on synthetic evidence alone. Start with one isolated paint boundary and retained identity composition, then an alpha-mask shadow. Treat backdrop blur as a separate, more expensive input-capture problem. This was a pre-implementation recommendation, not the current shipping decision.
 

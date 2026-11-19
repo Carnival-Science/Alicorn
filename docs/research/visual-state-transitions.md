@@ -3,9 +3,9 @@
 Prototype, 2026-11-09. The Button hover-fill slice is implemented on
 `codex/visual-state-transitions`; see the validation notes below. The original
 proposal reviewed source at [Alicorn `0fc31ca`](https://github.com/samanshaiza004/alicorn/commit/0fc31ca75c0c666a9be4d766fd91a96acbc14c26).
-This remains a bounded prototype under [#91](https://github.com/samanshaiza004/alicorn/issues/91),
-with the property and authoring contracts in [#138](https://github.com/samanshaiza004/alicorn/issues/138)
-and [#141](https://github.com/samanshaiza004/alicorn/issues/141). Use the existing
+This remains a bounded prototype under [#91](https://github.com/Carnival-Science/Alicorn/issues/91),
+with the property and authoring contracts in [#138](https://github.com/Carnival-Science/Alicorn/issues/138)
+and [#141](https://github.com/Carnival-Science/Alicorn/issues/141). Use the existing
 [Control Gallery](../../examples/08_control_gallery/main.odin) for the first demonstration.
 
 ## Recommendation
@@ -182,7 +182,7 @@ interpolate compatible analytic paint parameters as values with bounded
 outsets. Preserve immutable material registrations and Reduced Transparency.
 An exact CSS shadow with independently authored offset and blur requires
 its own typed paint representation. [Clip and hit policy](../reference.md#L1232-L1237),
-[analytic material](../../runtime/material.odin#L10-L24), [property roadmap](https://github.com/samanshaiza004/alicorn/issues/138)
+[analytic material](../../runtime/material.odin#L10-L24), [property roadmap](https://github.com/Carnival-Science/Alicorn/issues/138)
 
 ## Primary precedents
 

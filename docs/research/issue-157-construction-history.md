@@ -208,7 +208,7 @@ Each code link pins the SHA named in its label/text; line anchors refer to that
 snapshot, not the moving working tree. Commit links refer to the corresponding
 primary git diff.
 
-[issue]: https://github.com/samanshaiza004/alicorn/issues/157
+[issue]: https://github.com/Carnival-Science/Alicorn/issues/157
 [windows-history]: https://github.com/samanshaiza004/alicorn/blob/37f6322/docs/benchmarks/performance-locality-windows-2026-10-28.md#L11-L48
 [mac-history]: https://github.com/samanshaiza004/alicorn/blob/37f6322/docs/benchmarks/retained-locality.md#L72-L105
 [exact-raw]: https://github.com/samanshaiza004/alicorn/blob/37f6322/docs/benchmarks/raw/performance-audit-windows-2026-10-28-master-3d2c89e.txt#L19-L21

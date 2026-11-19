@@ -4,7 +4,7 @@
 
 ## Research and decision
 
-Issue [#110](https://github.com/samanshaiza004/alicorn/issues/110) asks for a small renderer-neutral visual vocabulary that lowers into Alicorn's existing retained paint stream, plus explicitly opted-in nonrectangular pointer targeting. It rules out a mandatory SDF renderer, a canvas or SVG editor, arbitrary shader graphs, and duplicating the backend comparison in [#104](https://github.com/samanshaiza004/alicorn/issues/104).
+Issue [#110](https://github.com/Carnival-Science/Alicorn/issues/110) asks for a small renderer-neutral visual vocabulary that lowers into Alicorn's existing retained paint stream, plus explicitly opted-in nonrectangular pointer targeting. It rules out a mandatory SDF renderer, a canvas or SVG editor, arbitrary shader graphs, and duplicating the backend comparison in [#104](https://github.com/Carnival-Science/Alicorn/issues/104).
 
 PanGui's [September 2026 update](https://pangui.io/blog/07-progress-update-september/) describes both shape drawing and SVG meshes, and uses shapes in instrument-cluster gauges. That is useful evidence that compact controls and gauges benefit from richer geometry. Alicorn's narrower prototype keeps its single semantic/layout tree and uses its existing `Geometry_Paint` path as the escape hatch for arbitrary geometry.
 

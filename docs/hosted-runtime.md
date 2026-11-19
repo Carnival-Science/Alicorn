@@ -319,8 +319,8 @@ their behavior matches, particularly Audacity's specialized numeric selection
 fields. Audio and DSP callbacks must never enter this UI API.
 
 The fixture is separate from plugin editor child-window attachment in
-[#121](https://github.com/samanshaiza004/alicorn/issues/121) and renderer
+[#121](https://github.com/Carnival-Science/Alicorn/issues/121) and renderer
 neutral frame boundaries in
-[#162](https://github.com/samanshaiza004/alicorn/issues/162). See the
+[#162](https://github.com/Carnival-Science/Alicorn/issues/162). See the
 [#196 source and ownership research](research/issue-196-host-loop-integration.md)
 for the existing SDL lifecycle map and platform risks.

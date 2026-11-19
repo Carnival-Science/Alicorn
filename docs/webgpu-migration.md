@@ -30,24 +30,24 @@ uploads remain renderer-specific.
 
 ## Existing issue alignment (2026-11-15)
 
-- Open [#163](https://github.com/samanshaiza004/alicorn/issues/163) contains an
+- Open [#163](https://github.com/Carnival-Science/Alicorn/issues/163) contains an
   earlier bounded-browser research plan whose boundary explicitly says not to
   replace SDL_GPU. This owner-directed migration supersedes that restriction.
   Its browser input, accessibility, text/IME and capability-limit questions
   remain relevant; this migration tracker is authoritative for renderer scope
   and phase gates.
-- [#162](https://github.com/samanshaiza004/alicorn/issues/162) is closed with
+- [#162](https://github.com/Carnival-Science/Alicorn/issues/162) is closed with
   the host-owned SDL_GPU presenter boundary now on `master`. That validates the
   current external-frame seam, but does not prove that a WebGPU renderer
   consumes Alicorn's production paint stream. Preserve its borrowed-paint-list,
   synchronous owner-thread consumption, host-owned target/encoder/submission,
   and GPU-resource lifetime rules in the WebGPU presenter.
-- [#196](https://github.com/samanshaiza004/alicorn/issues/196) establishes a
+- [#196](https://github.com/Carnival-Science/Alicorn/issues/196) establishes a
   separate host-loop contract. Standalone and externally driven hosts share
   Runtime and renderer state across nonblocking steps; callbacks and Runtime
   mutation stay on the owner thread. Do not conflate loop ownership with #162's
   renderer/frame boundary.
-- Open [#204](https://github.com/samanshaiza004/alicorn/issues/204) describes
+- Open [#204](https://github.com/Carnival-Science/Alicorn/issues/204) describes
   failure recovery after acquiring an SDL_GPU swapchain texture. It remains a
   risk for the temporary reference path while SDL_GPU is retained; it does not
   dictate the WebGPU frame transaction. Keep its host/renderer recovery
@@ -606,7 +606,7 @@ driver/OS-initiated device loss and recovery.
 
 ## Renderer cache direction from Alicorn #164 (2026-11-15)
 
-Alicorn [#164](https://github.com/samanshaiza004/alicorn/issues/164) closed
+Alicorn [#164](https://github.com/Carnival-Science/Alicorn/issues/164) closed
 with a useful renderer finding: the existing retained geometry surface already
 expresses the two-waveform Punks-style workload, preserves ordinary slider
 input/accessibility, clips and retained blur, and keeps GPU ownership in the

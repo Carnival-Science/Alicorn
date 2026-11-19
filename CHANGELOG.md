@@ -32,7 +32,7 @@ Alicorn remains an experimental native GUI runtime for Odin. This release
 collects the merged runtime, authoring, native-host, rendering-test, build, and
 performance work after v0.2.0.
 
-Compare: [v0.2.0...v0.2.1](https://github.com/samanshaiza004/alicorn/compare/v0.2.0...v0.2.1)
+Compare: [v0.2.0...v0.2.1](https://github.com/Carnival-Science/Alicorn/compare/v0.2.0...v0.2.1)
 
 ### Highlights
 
@@ -133,14 +133,14 @@ Compare: [v0.2.0...v0.2.1](https://github.com/samanshaiza004/alicorn/compare/v0.
 
 ### Performance and measurement
 
-- PR [#159](https://github.com/samanshaiza004/alicorn/pull/159) replaces five
+- PR [#159](https://github.com/Carnival-Science/Alicorn/pull/159) replaces five
   eagerly formatted invalidation reasons with structured events and lazy,
   cached formatting. On the Apple M1 comparison, median end-frame CPU fell
   21.5% for 10,000 containers, 15.6% for 10,000 short-text nodes, and 24.6%
   for the 100-panel form; approximately 30,000 persistent allocation calls
   were removed per 10,000-node workload. The exact trace text and event order
   remain covered by regressions.
-- PR [#160](https://github.com/samanshaiza004/alicorn/pull/160) completes
+- PR [#160](https://github.com/Carnival-Science/Alicorn/pull/160) completes
   bounded construction-cost attribution. Remaining retained measurement and
   geometry costs were accepted based on the recorded workload evidence rather
   than prompting a speculative allocator or data-layout rewrite.
@@ -158,7 +158,7 @@ Compare: [v0.2.0...v0.2.1](https://github.com/samanshaiza004/alicorn/compare/v0.
 
 ### Validation
 
-- PR [#161](https://github.com/samanshaiza004/alicorn/pull/161) passed its
+- PR [#161](https://github.com/Carnival-Science/Alicorn/pull/161) passed its
   Windows D3D12 and macOS Metal CPU/GPU comparison suites: 156 targeted cases,
   32 generated scenes, and a permanent minimized clip/translation regression
   on each backend, at 2/255 per-channel tolerance. The CPU renderer is test
@@ -221,14 +221,14 @@ Compare: [v0.2.0...v0.2.1](https://github.com/samanshaiza004/alicorn/compare/v0.
 
 ### Merged pull requests
 
-- [#159 — Defer layout trace formatting until inspection](https://github.com/samanshaiza004/alicorn/pull/159)
-- [#160 — Complete Issue #157 construction attribution](https://github.com/samanshaiza004/alicorn/pull/160)
-- [#161 — Add a bounded CPU paint reference for #90](https://github.com/samanshaiza004/alicorn/pull/161)
-- [#176 — Refine the connected-tab close affordance](https://github.com/samanshaiza004/alicorn/pull/176)
-- [#178 — Retained Gaussian backdrop effects](https://github.com/samanshaiza004/alicorn/pull/178)
-- [#185 — Headless application test harness](https://github.com/samanshaiza004/alicorn/pull/185)
-- [#186 — Full-application test harness callbacks](https://github.com/samanshaiza004/alicorn/pull/186)
-- [#188 — Retained Button hover-fill transitions](https://github.com/samanshaiza004/alicorn/pull/188)
+- [#159 — Defer layout trace formatting until inspection](https://github.com/Carnival-Science/Alicorn/pull/159)
+- [#160 — Complete Issue #157 construction attribution](https://github.com/Carnival-Science/Alicorn/pull/160)
+- [#161 — Add a bounded CPU paint reference for #90](https://github.com/Carnival-Science/Alicorn/pull/161)
+- [#176 — Refine the connected-tab close affordance](https://github.com/Carnival-Science/Alicorn/pull/176)
+- [#178 — Retained Gaussian backdrop effects](https://github.com/Carnival-Science/Alicorn/pull/178)
+- [#185 — Headless application test harness](https://github.com/Carnival-Science/Alicorn/pull/185)
+- [#186 — Full-application test harness callbacks](https://github.com/Carnival-Science/Alicorn/pull/186)
+- [#188 — Retained Button hover-fill transitions](https://github.com/Carnival-Science/Alicorn/pull/188)
 
 ### Complete commit ledger
 
@@ -342,7 +342,7 @@ that model and adds a simpler authoring surface, more capable layout and
 controls, native accessibility on Windows and macOS, and reusable native-app
 packaging tools.
 
-This changelog summarizes the changes from [v0.1.0 to v0.2.0](https://github.com/samanshaiza004/alicorn/compare/v0.1.0...v0.2.0).
+This changelog summarizes the changes from [v0.1.0 to v0.2.0](https://github.com/Carnival-Science/Alicorn/compare/v0.1.0...v0.2.0).
 It groups related fixes and features instead of repeating merge commits.
 
 ### Highlights
