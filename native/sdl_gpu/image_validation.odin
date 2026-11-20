@@ -3,6 +3,7 @@ package alicorn_sdl_gpu
 import "core:fmt"
 import "core:math"
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 import "vendor:sdl3"
 
 image_validation_qoi :: [27]u8{
@@ -67,7 +68,7 @@ native_image_readback_case :: proc(
 	draw := display[0]
 	bounds := draw.bounds
 	bounds.x += draw.translation[0]; bounds.y += draw.translation[1]
-	left, top, right, bottom := logical_to_pixel_bounds(alicorn.rect_intersection(bounds, draw.clip), scale, scale)
+	left, top, right, bottom := cpu_renderer.Logical_To_Pixel_Bounds(alicorn.rect_intersection(bounds, draw.clip), scale, scale)
 	blend_alpha := (f32(source_rgba[3])/255)*draw.opacity
 	background_channels := [4]f32{background.r, background.g, background.b, background.a}
 	for y in 0..<int(height) {

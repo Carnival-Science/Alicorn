@@ -1,0 +1,58 @@
+﻿backend=d3d12 executable=C:\Users\saman\.codex\worktrees\alicorn-webgpu-migration\alicorn\out\webgpu-phase0\interactive-2026-11-19\native_webgpu_ui.exe pid=166972
+[PASS] main window created: hwnd=459540 title='Alicorn · Native Renderer Probe' class=SDL_app
+[PASS] window focus: foreground=True
+[PASS] UIA tree dump: 9 elements -> .\out\webgpu-phase0\interactive-2026-11-19\run-d3d12\d3d12-uia-initial.txt
+[PASS] text field exposed: name='Try native text input'
+[PASS] ValuePattern: value='Type here'
+[PASS] TextPattern: text='Type here'
+[PASS] UIA SetFocus on text field: focused=True
+[PASS] physical clear (Ctrl+A, Backspace): value=''
+[PASS] physical keyboard text input: value='Native input ok'
+[PASS] unicode codepoint input (SendInput, not IME composition): sent=2/2 value='Native input oké' appended='é'
+[PASS] Tab keyboard navigation: order=ControlType.Button:Open auxiliary window -> ControlType.Button:Increment -> ControlType.Button:Queue application wake -> ControlType.Edit:Try native text input -> ControlType.Button:Open auxiliary window -> ControlType.Button:Increment -> ControlType.Button:Queue application wake -> ControlType.Edit:Try native text input
+[PASS] Shift+Tab reverse navigation: focused='Queue application wake'
+[PASS] UIA Invoke (Increment) updates status: expected Button activations: 1
+[PASS] UIA Invoke (wake) delivers wake callback: expected Application wake callbacks: 1
+[PASS] auxiliary window open: keyboard Space after Tab (reachedOpen=True)
+[PASS] auxiliary window title: title='Alicorn auxiliary window'
+[PASS] auxiliary UIA tree dump: 4 elements -> .\out\webgpu-phase0\interactive-2026-11-19\run-d3d12\d3d12-uia-auxiliary.txt
+[PASS] auxiliary close control exposed: name='Close auxiliary window'
+[PASS] auxiliary window resize: before=576x359 after=760x420
+[PASS] auxiliary screenshot: .\out\webgpu-phase0\interactive-2026-11-19\run-d3d12\d3d12-auxiliary.png
+[PASS] auxiliary window close: hwnd=1376990 destroyed=True
+[PASS] main window screenshot: .\out\webgpu-phase0\interactive-2026-11-19\run-d3d12\d3d12-main.png
+[PASS] primary state preserved after auxiliary lifecycle: value='Native input ok'
+[PASS] final UIA tree dump: 10 elements -> .\out\webgpu-phase0\interactive-2026-11-19\run-d3d12\d3d12-uia-final.txt
+[UNTESTED] clipboard shortcuts: no clipboard control in examples/16; native text editing has no clipboard path
+[UNTESTED] IME composition: Unicode WM_CHAR delivery tested; no IME composition session was driven
+[PASS] window close and process exit: exited=True code=0
+
+SUMMARY
+PASS     main window created -- hwnd=459540 title='Alicorn · Native Renderer Probe' class=SDL_app
+PASS     window focus -- foreground=True
+PASS     UIA tree dump -- 9 elements -> .\out\webgpu-phase0\interactive-2026-11-19\run-d3d12\d3d12-uia-initial.txt
+PASS     text field exposed -- name='Try native text input'
+PASS     ValuePattern -- value='Type here'
+PASS     TextPattern -- text='Type here'
+PASS     UIA SetFocus on text field -- focused=True
+PASS     physical clear (Ctrl+A, Backspace) -- value=''
+PASS     physical keyboard text input -- value='Native input ok'
+PASS     unicode codepoint input (SendInput, not IME composition) -- sent=2/2 value='Native input oké' appended='é'
+PASS     Tab keyboard navigation -- order=ControlType.Button:Open auxiliary window -> ControlType.Button:Increment -> ControlType.Button:Queue application wake -> ControlType.Edit:Try native text input -> ControlType.Button:Open auxiliary window -> ControlType.Button:Increment -> ControlType.Button:Queue application wake -> ControlType.Edit:Try native text input
+PASS     Shift+Tab reverse navigation -- focused='Queue application wake'
+PASS     UIA Invoke (Increment) updates status -- expected Button activations: 1
+PASS     UIA Invoke (wake) delivers wake callback -- expected Application wake callbacks: 1
+PASS     auxiliary window open -- keyboard Space after Tab (reachedOpen=True)
+PASS     auxiliary window title -- title='Alicorn auxiliary window'
+PASS     auxiliary UIA tree dump -- 4 elements -> .\out\webgpu-phase0\interactive-2026-11-19\run-d3d12\d3d12-uia-auxiliary.txt
+PASS     auxiliary close control exposed -- name='Close auxiliary window'
+PASS     auxiliary window resize -- before=576x359 after=760x420
+PASS     auxiliary screenshot -- .\out\webgpu-phase0\interactive-2026-11-19\run-d3d12\d3d12-auxiliary.png
+PASS     auxiliary window close -- hwnd=1376990 destroyed=True
+PASS     main window screenshot -- .\out\webgpu-phase0\interactive-2026-11-19\run-d3d12\d3d12-main.png
+PASS     primary state preserved after auxiliary lifecycle -- value='Native input ok'
+PASS     final UIA tree dump -- 10 elements -> .\out\webgpu-phase0\interactive-2026-11-19\run-d3d12\d3d12-uia-final.txt
+UNTESTED clipboard shortcuts -- no clipboard control in examples/16; native text editing has no clipboard path
+UNTESTED IME composition -- Unicode WM_CHAR delivery tested; no IME composition session was driven
+PASS     window close and process exit -- exited=True code=0
+failures=0

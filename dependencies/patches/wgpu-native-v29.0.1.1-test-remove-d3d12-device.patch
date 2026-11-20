@@ -1,0 +1,122 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 3e218bb..9beb771 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -1184,6 +1184,7 @@ dependencies = [
+  "wgpu-core",
+  "wgpu-hal",
+  "wgpu-types",
++ "windows",
+ ]
+ 
+ [[package]]
+diff --git a/Cargo.toml b/Cargo.toml
+index dde9a8c..4c99cb0 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -110,6 +110,10 @@ hal = { workspace = true, features = ["renderdoc"] }
+ 
+ [target.'cfg(windows)'.dependencies]
+ hal = { workspace = true, features = ["dx12", "renderdoc"] }
++# TEST-ONLY: reaches the D3D12 device behind a wgpu device so the Alicorn
++# device-loss ladder can call ID3D12Device5::RemoveDevice. Not used by any
++# production code path; see the paired src/lib.rs patch hunk.
++windows = { version = "0.62", features = ["Win32_Graphics_Direct3D12"] }
+ 
+ [dependencies.wgt]
+ workspace = true
+diff --git a/src/lib.rs b/src/lib.rs
+index b4b1f51..b2e91e9 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -180,6 +180,9 @@ pub struct WGPUDeviceImpl {
+     id: id::DeviceId,
+     queue: Arc<QueueId>,
+     error_sink: ErrorSink,
++    /// Set by the device-lost dispatch path; read by API entry points that can
++    /// race a backend removal (for example a swapchain reconfigure).
++    lost: atomic::AtomicBool,
+ }
+ impl Drop for WGPUDeviceImpl {
+     fn drop(&mut self) {
+@@ -564,6 +567,10 @@ fn dispatch_device_lost(
+         (sink.device_lost_handler.take(), sink.device.upgrade())
+     };
+ 
++    if let Some(device) = device.as_ref() {
++        device.lost.store(true, atomic::Ordering::Release);
++    }
++
+     let Some(handler) = handler else {
+         return;
+     };
+@@ -900,6 +907,7 @@ pub unsafe extern "C" fn wgpuAdapterRequestDevice(
+                         id: queue_id,
+                     }),
+                     error_sink: error_sink.clone(),
++                    lost: atomic::AtomicBool::new(false),
+                 }
+             });
+             let device_lost_sink = device_impl.error_sink.clone();
+@@ -2723,6 +2731,43 @@ pub unsafe extern "C" fn wgpuDeviceGetNativeMetalDevice(device: native::WGPUDevi
+     }
+ }
+ 
++/// TEST-ONLY, NOT PART OF THE WEBGPU C API.
++///
++/// Forces the native D3D12 device behind a wgpu device into a removed state by
++/// calling `ID3D12Device5::RemoveDevice`. Returns whether the removal call was
++/// issued. This exists only for Alicorn's induced-backend-removal validation
++/// (the third rung of its device-loss ladder) and must not be used by
++/// production code: it deliberately corrupts a live device.
++///
++/// Deliberately absent from `ffi/wgpu.h`; callers resolve the symbol by name.
++#[no_mangle]
++pub unsafe extern "C" fn wgpuDeviceRemoveD3D12ForTesting(
++    device: native::WGPUDevice,
++) -> native::WGPUBool {
++    #[cfg(all(windows, feature = "dx12"))]
++    {
++        use windows::core::Interface as _;
++
++        let device = device.as_ref().expect("invalid device");
++        let Some(hal_device) = device.context.device_as_hal::<hal::api::Dx12>(device.id) else {
++            return false as native::WGPUBool;
++        };
++        let Ok(device5) = hal_device
++            .raw_device()
++            .cast::<windows::Win32::Graphics::Direct3D12::ID3D12Device5>()
++        else {
++            return false as native::WGPUBool;
++        };
++        device5.RemoveDevice();
++        true as native::WGPUBool
++    }
++    #[cfg(not(all(windows, feature = "dx12")))]
++    {
++        let _ = device;
++        false as native::WGPUBool
++    }
++}
++
+ #[no_mangle]
+ pub unsafe extern "C" fn wgpuDeviceHasFeature(
+     device: native::WGPUDevice,
+@@ -4088,7 +4133,16 @@ pub unsafe extern "C" fn wgpuSurfaceConfigure(
+     ));
+ 
+     match context.surface_configure(surface.id, device.id, &surface_config) {
+-        Some(cause) => handle_error_fatal(cause, "wgpuSurfaceConfigure"),
++        Some(cause) => {
++            // A device loss can surface while reconfiguring a swapchain that
++            // still belongs to the lost device. The DeviceLost callback has
++            // already taken ownership of recovery, so aborting the process
++            // here would make a resize racing a backend removal fatal.
++            if device.lost.load(atomic::Ordering::Acquire) {
++                return;
++            }
++            handle_error_fatal(cause, "wgpuSurfaceConfigure")
++        }
+         None => {
+             let mut surface_data_guard = surface.data.lock();
+             *surface_data_guard = Some(SurfaceData {

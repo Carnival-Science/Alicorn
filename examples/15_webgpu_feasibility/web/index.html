@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Alicorn WebGPU feasibility</title>
+<style>
+html,body{height:100%;margin:0;background:#101319;color:#dfe6e8;font:14px system-ui}
+body{display:grid;grid-template-rows:1fr auto}
+canvas{width:min(100vw,calc((100vh - 40px)*16/9));height:auto;aspect-ratio:16/9;display:block;margin:auto;touch-action:none}
+#wgpu-text-input{position:fixed;left:0;top:0;width:1px;height:1px;box-sizing:border-box;padding:0;border:0;resize:none;overflow:hidden;opacity:0;color:transparent;background:transparent;caret-color:transparent;font:1px/1px monospace;white-space:pre;pointer-events:none;z-index:1}
+#footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;background:#191f25;color:#abb8bd}
+#diagnostics{font:11px ui-monospace,monospace;color:#91c8a3;margin-top:3px;overflow-wrap:anywhere;white-space:pre-wrap;max-height:54px;overflow:auto}
+#resize{border:1px solid #45505a;border-radius:4px;background:#242d35;color:#dfe6e8;padding:5px 9px;cursor:pointer}
+</style></head>
+<body>
+<canvas id="wgpu-canvas" tabindex="0" aria-label="Alicorn WebGPU hosted runtime example"></canvas>
+<textarea id="wgpu-text-input" tabindex="-1" aria-label="Alicorn text entry" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+<div id="alicorn-accessibility"></div>
+<div id="footer"><div><div id="status">Starting the shared Alicorn retained WebGPU renderer…</div><div id="diagnostics" role="status" aria-live="polite">GPU readback probes pending.</div></div><button id="resize" type="button">Resize surface</button></div>
+<script src="./odin.js"></script><script src="./wgpu.js"></script><script src="./alicorn_demand_scheduler.js"></script><script src="./alicorn_accessibility_dom.js"></script>
+<script>
+(async()=>{
+ const status=document.querySelector("#status");
+ const diagnostics=document.querySelector("#diagnostics");
+ const recentDiagnostics=[];
+ const pinnedDiagnostics={adapter:"",readbackCore:"",readbackCompositor:"",readbackEffects:"",material:""};
+ for(const level of ["log","info","warn","error"]){
+  const original=console[level].bind(console);
+  console[level]=(...args)=>{
+   const line=args.map(value=>String(value)).join(" ");
+   if(line.startsWith("[webgpu-feasibility]")||level==="error"){
+    const diagnostic=line.startsWith("[webgpu-feasibility]")?line:"[browser console.error] "+line;
+    if(line.startsWith("[webgpu-feasibility] browser adapter classification ")) pinnedDiagnostics.adapter=line;
+    if(line.startsWith("[webgpu-feasibility] async RGBA8 readback core ")) pinnedDiagnostics.readbackCore=line;
+    if(line.startsWith("[webgpu-feasibility] async RGBA8 readback compositor ")) pinnedDiagnostics.readbackCompositor=line;
+    if(line.startsWith("[webgpu-feasibility] async RGBA8 readback effects ")) pinnedDiagnostics.readbackEffects=line;
+    if(line.startsWith("[webgpu-feasibility] rounded accessibility-material readback ")) pinnedDiagnostics.material=line;
+    recentDiagnostics.push(diagnostic);
+    if(recentDiagnostics.length>64) recentDiagnostics.shift();
+    const pinned=[pinnedDiagnostics.adapter,pinnedDiagnostics.readbackCore,pinnedDiagnostics.readbackCompositor,pinnedDiagnostics.readbackEffects,pinnedDiagnostics.material].filter(Boolean);
+    const visible=[...pinned,...recentDiagnostics.slice(-4)].filter((item,index,all)=>all.indexOf(item)===index);
+    diagnostics.textContent=visible.join("\n");
+   }
+   original(...args);
+  };
+ }
+ window.addEventListener("error",event=>{
+  const message=event.message||String(event.error||"unknown error");
+  const location=event.filename?" at "+event.filename+":"+event.lineno+":"+event.colno:"";
+  const stack=event.error&&event.error.stack?String(event.error.stack):"";
+  status.textContent="Browser runtime error: "+message+location;
+  console.error("[browser uncaught error] "+message+location+(stack?"\n"+stack:""));
+ });
+ window.addEventListener("unhandledrejection",event=>{
+  const reason=event.reason&&event.reason.stack?String(event.reason.stack):String(event.reason||"unknown rejection");
+  status.textContent="Browser async error: "+String(event.reason&&event.reason.message||event.reason||"unknown rejection");
+  console.error("[browser unhandled rejection] "+reason);
+ });
+ const memoryInterface=new odin.WasmMemoryInterface();
+ memoryInterface.setIntSize(4);
+ const wgpuInterface=new odin.WebGPUInterface(memoryInterface);
+ const wgpuImports=wgpuInterface.getInterface();
+ // Odin's current JS bridge calls genericGetAdapterInfo without its info
+ // object. Keep the workaround inside this feasibility host, not the installed
+ // compiler SDK, and capture the exact selected adapter's fallback signal.
+ wgpuImports.wgpuAdapterGetInfo=(adapterIdx,infoPtr)=>{
+  const adapter=wgpuInterface.adapters.get(adapterIdx);
+  const info=adapter.info||{};
+  const fallback=typeof info.isFallbackAdapter==="boolean"?(info.isFallbackAdapter?"true":"false"):"unknown";
+  console.info("[webgpu-feasibility] browser adapter classification fallback="+fallback+" vendor="+(info.vendor||"(redacted)")+" architecture="+(info.architecture||"(redacted)")+" device="+(info.device||"(redacted)")+" description="+(info.description||"(redacted)"));
+  return wgpuInterface.genericGetAdapterInfo(infoPtr,{
+   vendor:info.vendor||"",architecture:info.architecture||"",device:info.device||"",description:info.description||"",
+   subGroupMinSize:info.subgroupMinSize||0,subGroupMaxSize:info.subgroupMaxSize||0,
+  });
+ };
+ const requestDeviceBridge=wgpuImports.wgpuAdapterRequestDevice;
+ wgpuImports.wgpuAdapterRequestDevice=(...args)=>{
+  console.info("[webgpu-feasibility] requestDevice bridge invoked");
+  return requestDeviceBridge(...args);
+ };
+ let gpuErrorLogged=false;
+ const createDevice=wgpuInterface.devices.create.bind(wgpuInterface.devices);
+ wgpuInterface.devices.create=device=>{
+  console.info("[webgpu-feasibility] browser device promise resolved");
+  device.addEventListener("uncapturederror",event=>{
+   if(!gpuErrorLogged){gpuErrorLogged=true;console.error("[webgpu-feasibility] uncaptured GPU error: "+event.error.message)}
+  });
+  return createDevice(device);
+ };
+ const imports={...odin.setupDefaultImports(memoryInterface,null,memoryInterface.memory),wgpu:wgpuImports};
+ const response=await fetch("./feasibility.wasm",{cache:"no-store"});
+ if(!response.ok) throw new Error("WASM request failed: "+response.status);
+ const {instance}=await WebAssembly.instantiate(await response.arrayBuffer(),imports);
+ const exports=instance.exports;
+ memoryInterface.setExports(exports);
+ if(exports.memory) memoryInterface.setMemory(exports.memory);
+ const context=exports.default_context_ptr();
+ let previous=0,animationActive=false,initializationWaitFrames=0;
+ const scheduler=new window.AlicornDemandScheduler({
+  visible:!document.hidden,
+  runFrame:timestampNs=>{
+   const timestamp=Number(timestampNs)/1e6;
+   const initState=exports.webgpu_init_state(context);
+   if(initState===0){
+    initializationWaitFrames++;
+    previous=0;
+    status.textContent="Waiting for WebGPU initialization; async callbacks wake the renderer without frame polling.";
+    return {hasMoreWork:false,nextWakeNs:0n,notifyIdle:false};
+   }
+   if(initState<0){
+    previous=0;
+    status.textContent="The WebGPU device was lost; this feasibility fixture does not recreate devices.";
+    return {hasMoreWork:false,nextWakeNs:0n,notifyIdle:false};
+   }
+   const dt=previous===0?0:Math.min((timestamp-previous)/1000,0.05);
+   previous=timestamp;
+   animationActive=!!exports.step(dt,timestampNs,context);
+   const nextWakeNs=exports.browser_host_next_wake_ns(context);
+   if(animationActive){
+    status.textContent="Visual work is pending; requestAnimationFrame is scheduled for motion or surface recovery.";
+    return {hasMoreWork:true,nextWakeNs};
+   }
+   return {hasMoreWork:false,nextWakeNs};
+  },
+  onIdle:stats=>{
+   status.textContent="Settled: demand-driven idle ("+stats.framesRequested+" frame requests; "+initializationWaitFrames+" initialization wake frames). Resize, click, or type to exercise the retained host.";
+  },
+  onError:error=>{
+   status.textContent="Browser runtime error: "+String(error&&error.message||error);
+   console.error("[webgpu-feasibility] scheduled frame failed",error);
+  },
+ });
+ window.__alicornDemandScheduler=scheduler;
+ const dispatchCallback=wgpuInterface.callCallback.bind(wgpuInterface);
+ wgpuInterface.callCallback=(callback,args)=>{
+  console.info("[webgpu-feasibility] callback dispatch status="+args[0]);
+  try{dispatchCallback(callback,args)}finally{scheduler.wake()}
+ };
+ exports._start();
+ scheduler.wake();
+ window.addEventListener("resize",()=>{exports.webgpu_resize(context);previous=0;scheduler.wake()});
+ document.querySelector("#resize").addEventListener("click",()=>{
+  const canvas=document.querySelector("#wgpu-canvas");
+  canvas.style.width=canvas.dataset.compact==="true"?"":"min(68vw,calc((100vh - 40px)*16/9))";
+  canvas.dataset.compact=canvas.dataset.compact==="true"?"false":"true";
+  exports.webgpu_resize(context);previous=0;scheduler.wake();
+  status.textContent="Surface resized; shared Alicorn renderer frame scheduled.";
+ });
+ document.querySelector("#wgpu-canvas").addEventListener("pointerdown",()=>{
+  exports.webgpu_restart(context);previous=0;scheduler.wake();
+ });
+ document.addEventListener("visibilitychange",()=>{
+  if(document.hidden) previous=0;
+  scheduler.setVisible(!document.hidden);
+ });
+ window.addEventListener("pagehide",()=>{scheduler.dispose();exports.browser_host_shutdown(context)},{once:true});
+})().catch(error=>{
+ document.querySelector("#status").textContent="WebGPU fixture failed: "+error;
+ console.error(error);
+});
+</script></body></html>

@@ -9,6 +9,7 @@ import "core:slice"
 import "core:strings"
 import "core:time"
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 import "vendor:sdl3"
 
 EFFECT_PROBE_WIDTH :: 384
@@ -17,6 +18,15 @@ EFFECT_PROBE_BUDGET :: 16*1024*1024
 EFFECT_PROBE_BACKGROUND :: sdl3.FColor{0.08,0.12,0.18,0.4}
 
 Effect_Probe_Timing :: struct { encode_ns, submit_wait_ns: i64, render_passes: int }
+
+// Samples are sorted before this nearest-rank percentile helper is called.
+effect_probe_percentile :: proc(samples: []i64, fraction: f64) -> i64 {
+    if len(samples) == 0 { return 0 }
+    index := int(math.ceil(f64(len(samples))*fraction))-1
+    if index < 0 { index = 0 }
+    if index >= len(samples) { index = len(samples)-1 }
+    return samples[index]
+}
 
 // This fixture contains only Surface/Text commands. Count actual populated
 // renderer runs, including clip culling, without adding production telemetry.
@@ -211,7 +221,7 @@ effect_probe_reference :: proc(plan: Native_Effect_Plan, source, actual: []u8, o
         } } }
     }
     clip := plan.output_clip
-    x0,y0,x1,y1 := logical_to_pixel_bounds(clip,plan.scale,plan.scale)
+    x0,y0,x1,y1 := cpu_renderer.Logical_To_Pixel_Bounds(clip,plan.scale,plan.scale)
     ox,oy := int(math.round(plan.source_bounds.x*plan.scale)),int(math.round(plan.source_bounds.y*plan.scale))
     background := [4]f32{0.08,0.12,0.18,0.4}
     worst := 0
@@ -460,7 +470,13 @@ effect_probe_device :: proc(driver: cstring) -> bool {
             } else { encodes[i-1]=timing.encode_ns; waits[i-1]=timing.submit_wait_ns; warm_render_passes=timing.render_passes }
         }
         slice.sort(encodes[:]); slice.sort(waits[:])
-        fmt.println("effects_warm","mode",mode,"samples",40,"encode_p95_ns",encodes[37],"submit_wait_p95_ns",waits[37],
+        fmt.println("effects_warm","mode",mode,"samples",len(encodes),
+            "encode_p50_ns",effect_probe_percentile(encodes[:],0.50),
+            "encode_p95_ns",effect_probe_percentile(encodes[:],0.95),
+            "encode_p99_ns",effect_probe_percentile(encodes[:],0.99),
+            "submit_wait_p50_ns",effect_probe_percentile(waits[:],0.50),
+            "submit_wait_p95_ns",effect_probe_percentile(waits[:],0.95),
+            "submit_wait_p99_ns",effect_probe_percentile(waits[:],0.99),
             "render_passes",warm_render_passes,"allocations",cache.allocations-before_allocations,"filter_passes",cache.filter_passes-before_passes,
             "live_bytes",cache.live_bytes,"peak_bytes",cache.peak_bytes,"effect_upload_bytes_total",cache.vertex_upload_bytes)
     }

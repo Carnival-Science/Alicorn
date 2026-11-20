@@ -106,6 +106,7 @@ draw_display_list :: proc(
 		solid_renderer.icons.vertex_transfer, solid_renderer.icons.vertices[:],
 		solid_renderer.icons.vertex_capacity, solid_renderer.icons.upload_pending,
 		&solid_renderer.icons.vertices_uploaded, command,
+		&solid_renderer.icons.vertex_upload_bytes,
 	) { return false }
 	if !native_image_sync(&solid_renderer.images, command, render_display) { return false }
 	if !native_image_build(&solid_renderer.images, render_display, logical_to_pixel_x, logical_to_pixel_y, swap_w, swap_h) { return false }
@@ -130,6 +131,7 @@ draw_display_list :: proc(
 			solid_renderer.device, solid_renderer.vertex_buffer, solid_renderer.vertex_transfer,
 			solid_renderer.vertices[:], solid_renderer.vertex_capacity, solid_renderer.upload_pending,
 			&solid_renderer.vertices_uploaded, command,
+			&solid_renderer.vertex_upload_bytes,
 		) { return false }
 	}
 	// Retained geometry stays in application-content logical units. Apply the

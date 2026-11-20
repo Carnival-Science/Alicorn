@@ -28,7 +28,7 @@ All listed push-triggered workflows completed successfully on the exact tested r
 - [Alicorn foundation](https://github.com/samanshaiza004/alicorn/actions/runs/40426133668)
 - [Icon asset reproducibility](https://github.com/samanshaiza004/alicorn/actions/runs/40426132136)
 
-Issue [#102](https://github.com/samanshaiza004/alicorn/issues/102) was closed after this acceptance passed.
+Issue [#102](https://github.com/Carnival-Science/Alicorn/issues/102) was closed after this acceptance passed.
 
 ## Scope
 

@@ -1,6 +1,6 @@
 # Per-corner surface validation
 
-Validation for [issue #118](https://github.com/samanshaiza004/alicorn/issues/118)
+Validation for [issue #118](https://github.com/Carnival-Science/Alicorn/issues/118)
 after dogfooding the public surface-shape API in Scratchpad and the custom
 segmented-control example.
 

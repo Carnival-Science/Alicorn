@@ -82,6 +82,11 @@ packages record the pinned SDL source URL and checksum; Homebrew formula updates
 do not change the release input. The ordinary development commands remain
 unchanged:
 
+On macOS, packaging builds the checksum-pinned SDL 3.4.20 source itself
+(`tools/macos_sdl.sh`), so Homebrew formula updates do not change the release
+input. The package manifest records the pinned source URL and archive checksum
+as well as the hash of the exact dylib that was bundled.
+
 ```powershell
 .\tools\native_hello.ps1
 ```

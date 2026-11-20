@@ -90,6 +90,9 @@ def sdl_runtime_provenance(
     provenance: dict[str, str] = {"provider": provider}
     if provider == "homebrew":
         provenance["formula"] = "sdl3"
+    elif provider == "pinned-source":
+        provenance["source"] = SDL_SOURCE
+        provenance["sourceSha256"] = SDL_SOURCE_SHA256
     return {
         "sdlRuntime": {
             "inputFilename": path.name,

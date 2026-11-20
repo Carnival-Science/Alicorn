@@ -29,15 +29,27 @@ Hosted_Scroll_Proc :: proc(state: rawptr, rt: ^Runtime, event: Scroll_Event)
 Hosted_Scroll_Capture_Proc :: proc(state: rawptr, rt: ^Runtime, event: Scroll_Event, target: Node_ID) -> bool
 Hosted_Drag_Proc :: proc(state: rawptr, rt: ^Runtime, event: Drag_Event)
 Hosted_Text_Change_Proc :: proc(state: rawptr, rt: ^Runtime, change: Text_Change)
+Hosted_Text_Key_Proc :: proc(
+	state: rawptr,
+	rt: ^Runtime,
+	owner: Node_ID,
+	event: Application_Text_Key_Event,
+) -> bool
 
 // Hosted_Key_Event carries one host-normalized key transition. key_code is
-// deliberately opaque to Runtime; the host owns platform mapping and IME
-// precedence, while application callbacks interpret their own shortcuts.
+// opaque to Runtime: Alicorn never interprets SDL, wx, or platform key
+// constants, and an external host's numeric key space cannot preempt text or
+// interaction scopes. A host that has translated a key into Alicorn's
+// Application_Key vocabulary passes that value to
+// hosted_runtime_application_key. The opaque event still reaches on_key so the
+// application retains its own shortcut policy.
 Hosted_Key_Event :: struct {
 	key_code: u32,
 	pressed: bool,
 	repeat: bool,
 	modifiers: Input_Modifiers,
+	text_input_focused: bool,
+	composition_active: bool,
 }
 
 Hosted_Key_Proc :: proc(state: rawptr, rt: ^Runtime, focused_owner: Node_ID, event: Hosted_Key_Event) -> bool
@@ -60,7 +72,60 @@ Hosted_Text_Input_Proc :: proc(
 	event: Hosted_Text_Input_Event,
 )
 
-// Hosted_Runtime_Config describes one native surface. It owns one retained
+// Hosted_Window_Description requests one host-owned secondary surface. The
+// host copies the description and services the request at an event-loop safe
+// point. The caller retains ownership of config.state and all callback data
+// until on_stop has run (or on_open_failed runs before callbacks start).
+Hosted_Window_Open_Failed_Proc :: proc(state: rawptr)
+Hosted_Window_Description :: struct {
+	title: string,
+	width, height: int,
+	always_on_top: bool,
+	config: Hosted_Runtime_Config,
+	on_open_failed: Hosted_Window_Open_Failed_Proc,
+}
+
+Hosted_Window_Open_Proc :: proc(data: rawptr, description: Hosted_Window_Description) -> bool
+Hosted_Window_Close_Proc :: proc(data: rawptr)
+Hosted_Window_Topmost_Proc :: proc(data: rawptr, always_on_top: bool) -> bool
+Hosted_Window_Set_Title_Proc :: proc(data: rawptr, title: string) -> bool
+
+// Hosted_Window_Service is optional and borrowed for the Hosted_Runtime
+// lifetime. Calls are owner-thread-only. open reports whether the request was
+// accepted, not whether asynchronous native window creation succeeded. Browser
+// hosts and headless fixtures may leave it empty; native implementations defer
+// creation and teardown until their event loop reaches a safe point.
+Hosted_Window_Service :: struct {
+	data: rawptr,
+	open: Hosted_Window_Open_Proc,
+	close: Hosted_Window_Close_Proc,
+	set_always_on_top: Hosted_Window_Topmost_Proc,
+	set_title: Hosted_Window_Set_Title_Proc,
+}
+
+Hosted_Host_Services :: struct {
+	windows: Hosted_Window_Service,
+}
+
+Hosted_Host_Services_Proc :: proc(state: rawptr, services: Hosted_Host_Services)
+
+hosted_window_open :: proc(service: Hosted_Window_Service, description: Hosted_Window_Description) -> bool {
+	return service.open != nil && service.open(service.data, description)
+}
+
+hosted_window_close :: proc(service: Hosted_Window_Service) {
+	if service.close != nil { service.close(service.data) }
+}
+
+hosted_window_set_always_on_top :: proc(service: Hosted_Window_Service, always_on_top: bool) -> bool {
+	return service.set_always_on_top != nil && service.set_always_on_top(service.data, always_on_top)
+}
+
+hosted_window_set_title :: proc(service: Hosted_Window_Service, title: string) -> bool {
+	return service.set_title != nil && service.set_title(service.data, title)
+}
+
+// Hosted_Runtime_Config describes one host-owned surface. It owns one retained
 // Runtime for every control rendered into that surface. Renderer and native
 // window ownership stay with the embedding host.
 Hosted_Runtime_Config :: struct {
@@ -77,6 +142,8 @@ Hosted_Runtime_Config :: struct {
 	render: Hosted_Render_Proc,
 	render_overlays: Hosted_Render_Proc,
 	on_initialize: Hosted_Initialize_Proc,
+	on_host_services: Hosted_Host_Services_Proc,
+	host_services: Hosted_Host_Services,
 	on_start: Hosted_Start_Proc,
 	on_wake: Hosted_Wake_Proc,
 	on_scheduled_wake: Hosted_Scheduled_Wake_Proc,
@@ -88,6 +155,7 @@ Hosted_Runtime_Config :: struct {
 	on_text_change: Hosted_Text_Change_Proc,
 	on_text_input: Hosted_Text_Input_Proc,
 	on_key: Hosted_Key_Proc,
+	on_text_key: Hosted_Text_Key_Proc,
 }
 
 Hosted_Runtime :: struct {
@@ -142,6 +210,7 @@ Hosted_Runtime_State :: struct {
 	on_scroll_capture: Hosted_Scroll_Capture_Proc,
 	on_scroll: Hosted_Scroll_Proc,
 	on_text_change: Hosted_Text_Change_Proc,
+	on_text_key: Hosted_Text_Key_Proc,
 	on_text_input: Hosted_Text_Input_Proc,
 	on_key: Hosted_Key_Proc,
 	logical_width, logical_height: int,
@@ -202,6 +271,7 @@ hosted_runtime_init :: proc(host: ^Hosted_Runtime, config: Hosted_Runtime_Config
 		on_scroll_capture=config.on_scroll_capture,
 		on_scroll=config.on_scroll,
 		on_text_change=config.on_text_change,
+		on_text_key=config.on_text_key,
 		on_text_input=config.on_text_input,
 		on_key=config.on_key,
 		logical_width=config.logical_width,
@@ -228,6 +298,7 @@ hosted_runtime_init :: proc(host: ^Hosted_Runtime, config: Hosted_Runtime_Config
 	wake_control.active = true
 	state.wake_control = wake_control
 	host.state = state
+	if config.on_host_services != nil { config.on_host_services(config.state, config.host_services) }
 	if config.on_initialize != nil { config.on_initialize(config.state, &state.runtime) }
 	if config.on_start != nil { config.on_start(config.state, Hosted_Waker{control=wake_control}) }
 	return .Ok
@@ -377,6 +448,19 @@ hosted_runtime_set_renderable :: proc(host: ^Hosted_Runtime, renderable: bool) -
 	return .Ok
 }
 
+// hosted_runtime_request_presentation wakes retained paint after a host-side
+// renderer or surface is replaced. It does not invalidate or rebuild the UI
+// description.
+hosted_runtime_request_presentation :: proc(
+	host: ^Hosted_Runtime,
+	reason := "hosted renderer needs retained presentation",
+) -> Hosted_Runtime_Status {
+	state, status := hosted_runtime_get_state(host)
+	if status != .Ok { return status }
+	request_presentation(&state.runtime, reason)
+	return .Ok
+}
+
 // hosted_runtime_resize adopts logical and drawable dimensions together.
 // Pixel size may be zero while minimized; in that case the last device scale
 // is retained until the host reports a drawable size again.
@@ -430,12 +514,40 @@ hosted_runtime_pointer :: proc(host: ^Hosted_Runtime, event: Pointer_Event) -> (
 }
 
 // hosted_runtime_key delivers a native key transition to the app callback on
-// the owning UI thread. The host retains platform policy: it decides whether
-// the event belongs to IME, a text owner, focus traversal, activation, or an
-// application shortcut, and calls the matching runtime helper as needed.
+// the owning UI thread. key_code remains opaque: Runtime does not interpret
+// host key constants, so an external host's own numeric values can never
+// trigger Alicorn text-field or interaction-scope preemption. The host retains
+// platform policy and calls hosted_runtime_application_key when it has
+// translated a key into the Application_Key vocabulary.
 hosted_runtime_key :: proc(host: ^Hosted_Runtime, event: Hosted_Key_Event) -> (handled: bool, status: Hosted_Runtime_Status) {
 	state, access_status := hosted_runtime_get_state(host)
 	if access_status != .Ok { return false, access_status }
+	if state.on_key == nil { return false, .Ok }
+	focused_owner := focused_node(&state.runtime)
+	handled = state.on_key(state.app_state, &state.runtime, focused_owner, event)
+	if handled { invalidate_root(&state.runtime, "hosted application key callback") }
+	return handled, .Ok
+}
+
+// hosted_runtime_application_key delivers one key the host has explicitly
+// mapped to Alicorn's Application_Key vocabulary. The typed key enables the
+// shared interaction-scope preemption policy and the text-field/IME guard;
+// the accompanying Hosted_Key_Event still reaches on_key for application
+// shortcuts, with its key_code remaining opaque. Hosts that have not adopted
+// Application_Key must use hosted_runtime_key instead.
+hosted_runtime_application_key :: proc(
+	host: ^Hosted_Runtime,
+	key: Application_Key,
+	event: Hosted_Key_Event,
+) -> (handled: bool, status: Hosted_Runtime_Status) {
+	state, access_status := hosted_runtime_get_state(host)
+	if access_status != .Ok { return false, access_status }
+	if event.pressed {
+		if event.text_input_focused && !application_key_can_preempt_text_field(key, event.composition_active) {
+			return false, .Ok
+		}
+		if interaction_scope_dispatch_key(&state.runtime, key, event.composition_active) { return true, .Ok }
+	}
 	if state.on_key == nil { return false, .Ok }
 	focused_owner := focused_node(&state.runtime)
 	handled = state.on_key(state.app_state, &state.runtime, focused_owner, event)
@@ -452,7 +564,10 @@ hosted_runtime_scroll :: proc(host: ^Hosted_Runtime, event: Scroll_Event) -> (ha
 		if target != 0 { handled = state.on_scroll_capture(state.app_state, &state.runtime, event, target) }
 	}
 	if !handled { handled = process_scroll(&state.runtime, event) }
-	if !handled && state.on_scroll != nil { state.on_scroll(state.app_state, &state.runtime, event) }
+	if !handled && state.on_scroll != nil {
+		state.on_scroll(state.app_state, &state.runtime, event)
+		handled = true
+	}
 	cause_end(&state.runtime, cause)
 	return handled, .Ok
 }
@@ -576,6 +691,46 @@ hosted_runtime_text_command :: proc(host: ^Hosted_Runtime, owner: Node_ID, comma
 	return change, .Ok
 }
 
+// hosted_runtime_text_key routes a host-normalized navigation or deletion key
+// first to an application-owned text target and then through Alicorn's shared
+// Text_Field policy. Hosts must pass composition_active so active IME input
+// retains its keys. The result reports whether the owner consumed the event.
+hosted_runtime_text_key :: proc(
+	host: ^Hosted_Runtime,
+	event: Application_Text_Key_Event,
+	composition_active := false,
+) -> (result: Application_Text_Field_Key_Result, status: Hosted_Runtime_Status) {
+	state, access_status := hosted_runtime_get_state(host)
+	if access_status != .Ok { return .Unhandled, access_status }
+	if composition_active { return .Unhandled, .Ok }
+	if application_dispatch_text_key(
+		&state.runtime,
+		state.app_state,
+		state.on_text_key,
+		event,
+	) {
+		#partial switch event.key {
+		case .Backspace, .Delete, .Delete_Word_Backward, .Delete_Word_Forward,
+		     .Delete_Line_Backward, .Delete_Line_Forward:
+			return .Edit, .Ok
+		case:
+			return .Navigation, .Ok
+		}
+	}
+	owner := focused_node(&state.runtime)
+	route_result, change := application_route_text_field_key(&state.runtime, owner, event)
+	result = route_result
+	if route_result == .Edit {
+		application_dispatch_text_change(&state.runtime, state.app_state, state.on_text_change, change)
+	}
+	return result, .Ok
+}
+
+// hosted_runtime_accessibility_action routes an advertised semantic action.
+// When the action becomes an application-owned domain event, on_wake is called
+// on the owner thread so the application can drain and adopt that event before
+// the next description. Realized Press/Focus actions remain runtime-owned and
+// do not invoke the application callback.
 hosted_runtime_accessibility_action :: proc(
 	host: ^Hosted_Runtime,
 	id: Semantic_ID,
@@ -586,7 +741,25 @@ hosted_runtime_accessibility_action :: proc(
 ) -> (handled: bool, status: Hosted_Runtime_Status) {
 	state, access_status := hosted_runtime_get_state(host)
 	if access_status != .Ok { return false, access_status }
-	return semantic_action_request(&state.runtime, id, action, text_value, numeric_value, has_numeric_value), .Ok
+	pending_before := len(state.runtime.semantic_requests)-state.runtime.semantic_request_read_index
+	handled = semantic_action_request(&state.runtime, id, action, text_value, numeric_value, has_numeric_value)
+	if handled && state.on_wake != nil &&
+	   len(state.runtime.semantic_requests)-state.runtime.semantic_request_read_index > pending_before {
+		_ = hosted_runtime_deliver_semantic_requests(host)
+	}
+	return handled, .Ok
+}
+
+// hosted_runtime_deliver_semantic_requests invokes the application callback
+// when app-owned semantic requests are pending. Hosts call it after draining
+// platform accessibility actions into Runtime; the callback owns the request
+// policy and should drain events with semantic_request_pop.
+hosted_runtime_deliver_semantic_requests :: proc(host: ^Hosted_Runtime) -> Hosted_Runtime_Status {
+	state, status := hosted_runtime_get_state(host)
+	if status != .Ok { return status }
+	pending := len(state.runtime.semantic_requests)-state.runtime.semantic_request_read_index
+	if pending > 0 && state.on_wake != nil { state.on_wake(state.app_state, &state.runtime) }
+	return .Ok
 }
 
 hosted_runtime_display_commands :: proc(host: ^Hosted_Runtime) -> ([]Paint_Command, Hosted_Runtime_Status) {

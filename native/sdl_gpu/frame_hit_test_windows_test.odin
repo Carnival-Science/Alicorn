@@ -7,6 +7,7 @@ import "core:sync"
 import "core:encoding/json"
 import win "core:sys/windows"
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 import "vendor:sdl3"
 
 Win32_Split_Chrome_Test_State :: struct {
@@ -41,17 +42,17 @@ test_integrated_titlebar_split_grab_target_uses_finalized_hit_bounds_and_header_
 			header=split.id,
 			regions={{node=divider_id, kind=.Interactive}, {node=split.id, kind=.Window_Drag}},
 		}
-		chrome_height_pixels := i32(native_pixel_edge(32, scale))
+		chrome_height_pixels := i32(cpu_renderer.Pixel_Edge(32, scale))
 		geometry := win32_menu_resolve_chrome_geometry(&rt, win32_split_chrome_test_layout(&fixture, &rt),
 			win.RECT{left=0, top=0, right=800, bottom=win.LONG(chrome_height_pixels)}, scale)
-		x0, y0, x1, y1 := logical_to_pixel_bounds(divider.hit_bounds, scale, scale)
+		x0, y0, x1, y1 := cpu_renderer.Logical_To_Pixel_Bounds(divider.hit_bounds, scale, scale)
 		expected := win32_rect_intersection(win.RECT{win.LONG(x0), win.LONG(y0), win.LONG(x1), win.LONG(y1)}, geometry.header)
 		testing.expect(t, geometry.region_count == 2 && geometry.regions[0].bounds == expected &&
-			expected.right-expected.left > win.LONG(native_pixel_edge(divider.bounds.w, scale)) &&
+			expected.right-expected.left > win.LONG(cpu_renderer.Pixel_Edge(divider.bounds.w, scale)) &&
 			expected.top == 0 && expected.bottom == win.LONG(chrome_height_pixels),
 			"the native header snapshot must use the finalized split grab target and clip away its body extent")
-		x := i32(native_pixel_edge(divider.bounds.x-2, scale))
-		y := i32(native_pixel_edge(12, scale))
+		x := i32(cpu_renderer.Pixel_Edge(divider.bounds.x-2, scale))
+		y := i32(cpu_renderer.Pixel_Edge(12, scale))
 		testing.expect(t, win32_integrated_frame_hit_test(x, y, 800, 480, chrome_height_pixels,
 			0, 0, true, nil, nil, geometry.regions[:geometry.region_count], true) == win.LRESULT(win.HTCLIENT),
 			"the titlebar must route a splitter grab outside its visual rule to Alicorn rather than the window manager")
@@ -248,10 +249,10 @@ test_caption_band_normalizes_maximized_dwm_offsets_and_shares_hit_bounds :: proc
 	densities := [2]f32{1,2}
 	for dpi in dpis {
 		scale := f32(dpi)/96
-		width := i32(native_pixel_edge(1200, scale))
-		height := i32(native_pixel_edge(32, scale))
-		edge := i32(native_pixel_edge(8, scale))
-		raw := win.RECT{win.LONG(width-i32(native_pixel_edge(138,scale))-edge), -win.LONG(edge), win.LONG(width-edge), win.LONG(height-edge)}
+		width := i32(cpu_renderer.Pixel_Edge(1200, scale))
+		height := i32(cpu_renderer.Pixel_Edge(32, scale))
+		edge := i32(cpu_renderer.Pixel_Edge(8, scale))
+		raw := win.RECT{win.LONG(width-i32(cpu_renderer.Pixel_Edge(138,scale))-edge), -win.LONG(edge), win.LONG(width-edge), win.LONG(height-edge)}
 		for maximized in states {
 			controls := win32_caption_layout_controls(raw, true, width, height, dpi, maximized)
 			for control, i in controls {
@@ -262,7 +263,7 @@ test_caption_band_normalizes_maximized_dwm_offsets_and_shares_hit_bounds :: proc
 				testing.expect_value(t, win32_integrated_frame_hit_test(x,y,width,800,height,edge,edge,maximized,controls[:],nil), control.hit_test)
 				for density in densities {
 					visual := win32_chrome_rect_to_window(control.bounds,density)
-					x0,y0,x1,y1 := logical_to_pixel_bounds(visual,density,density)
+					x0,y0,x1,y1 := cpu_renderer.Logical_To_Pixel_Bounds(visual,density,density)
 					testing.expect(t, x0 == int(control.bounds.left) && y0 == int(control.bounds.top) && x1 == int(control.bounds.right) && y1 == int(control.bounds.bottom),
 						"paint must round-trip to canonical physical hit geometry independently of SDL density")
 				}

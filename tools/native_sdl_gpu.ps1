@@ -23,6 +23,7 @@ param(
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\common.ps1"
 $Odin = Resolve-AlicornOdin -Requested $Odin
+$RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
 
 New-Item -ItemType Directory -Force -Path 'out' | Out-Null
 $AccessKit = Get-AlicornAccessKit
@@ -36,6 +37,7 @@ if ($GpuCanvasValidation) {
     $Executable = '.\out\alicorn_semantic_virtualization.exe'
 }
 $BuildArguments = @('build', $Entry)
+$BuildArguments += "-collection:alicorn=$RepoRoot"
 if ($Speed) {
     $BuildArguments += '-o:speed'
 } else {

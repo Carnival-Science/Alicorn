@@ -14,7 +14,7 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & $Odin build tests -out:out\alicorn_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $Odin build native\sdl_gpu_entry @($AccessKit.CompilerArguments) -out:out\alicorn_sdl_gpu.exe
+& $Odin build native\sdl_gpu_entry "-collection:alicorn=$RepoRoot" @($AccessKit.CompilerArguments) -out:out\alicorn_sdl_gpu.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 # Native tests and the text-input contract executable link SDL3 even when they
@@ -40,14 +40,26 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & $Odin test runtime
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $Odin test host\sdl3 "-collection:alicorn=$RepoRoot" @($AccessKit.CompilerArguments) -out:out\alicorn_sdl3_host_tests.exe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $Odin test host\sdl3\input "-collection:alicorn=$RepoRoot" -out:out\alicorn_sdl3_input_tests.exe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $Odin test host\sdl3\clipboard "-collection:alicorn=$RepoRoot" -out:out\alicorn_sdl3_clipboard_tests.exe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $Odin test host\web "-collection:alicorn=$RepoRoot" -out:out\alicorn_web_host_tests.exe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin test tests\fixtures\accessibility_contract "-collection:alicorn=$RepoRoot" `
 	@($AccessKit.CompilerArguments) -out:out\accessibility_contract_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin test ui "-collection:alicorn=$RepoRoot" @($AccessKit.CompilerArguments) -out:out\alicorn_ui_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& "$PSScriptRoot\check_web_ui_package.ps1" -Odin $Odin
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin test testui "-collection:alicorn=$RepoRoot" -out:out\alicorn_testui_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin test theme
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $Odin test renderer\cpu -out:out\alicorn_cpu_renderer_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin build tools\theme -out:out\alicorn_theme.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -64,9 +76,9 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & .\out\alicorn_theme.exe check theme\testdata\invalid.json
 if ($LASTEXITCODE -eq 0) { throw "Theme CLI accepted an unsupported length unit." }
-& $Odin test native\sdl_gpu @($AccessKit.CompilerArguments) -out:out\alicorn_native_tests.exe
+& $Odin test native\sdl_gpu "-collection:alicorn=$RepoRoot" @($AccessKit.CompilerArguments) -out:out\alicorn_native_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-& $Odin test native\scroll_capture_tests @($AccessKit.CompilerArguments) -out:out\alicorn_scroll_capture_tests.exe
+& $Odin test native\scroll_capture_tests "-collection:alicorn=$RepoRoot" @($AccessKit.CompilerArguments) -out:out\alicorn_scroll_capture_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 & .\out\alicorn_tests.exe

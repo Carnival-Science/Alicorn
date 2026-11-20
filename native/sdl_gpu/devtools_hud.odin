@@ -1,6 +1,7 @@
 package alicorn_sdl_gpu
 
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 import "vendor:sdl3"
 
 // The devtools HUD is rendered by the native host after the application display
@@ -323,7 +324,7 @@ native_hud_draw_quad :: proc(renderer: ^Native_Solid_Renderer, x, y, width, heig
 	// The HUD appends after application render commands already reference this
 	// buffer, so it may use spare capacity but must not replace the GPU buffer.
 	if width <= 0 || height <= 0 || len(renderer.vertices)+6 > renderer.vertex_capacity { return }
-	native_solid_append_quad(&renderer.vertices, x, y, x+width, y+height, color)
+	cpu_renderer.Append_Quad(&renderer.vertices, x, y, x+width, y+height, color)
 }
 
 native_hud_draw_text :: proc(renderer: ^Native_Solid_Renderer, value: string, x, y, pixel_scale: int, color: [4]f32, clip_right: int) {

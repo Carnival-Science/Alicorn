@@ -291,6 +291,52 @@ presentation_output_snapshot :: proc(rt: ^Runtime, id: Presentation_Output_ID) -
 	return snapshot, .Ok
 }
 
+// paint_display_list_for_output returns the commands belonging to one
+// published output root, plus Runtime-wide transient overlays (owner zero),
+// in their original paint order. The command slice uses Runtime scratch
+// storage and is valid only until the next Runtime mutation or frame
+// operation. Consume it synchronously on the owning thread.
+//
+// An output can have an older revision than another output while still being
+// current: its retained subtree is unchanged, and filtering excludes the
+// other output's newer commands. Shared overlays invalidate all outputs and
+// therefore always match each published output revision.
+paint_display_list_for_output :: proc(
+	rt: ^Runtime,
+	id: Presentation_Output_ID,
+) -> (view: Paint_Display_List_View, status: Presentation_Output_Status) {
+	if rt == nil { return {}, .Invalid_Runtime }
+	if rt.frame_open { return {}, .Not_Published }
+	index := presentation_output_find(rt, id)
+	if index < 0 { return {}, .Invalid_Output }
+	output := rt.presentation_outputs[index]
+	if output.root == 0 { return {}, .Output_Not_Bound }
+	if output.dirty { return {}, .Not_Published }
+	if !presentation_output_root_is_described(rt, output.root) { return {}, .Output_Not_Bound }
+
+	command_count := 0
+	for command in rt.display {
+		if command.owner == 0 || presentation_output_node_in_root(rt, command.owner, output.root) {
+			command_count += 1
+		}
+	}
+	commands := make([]Paint_Command, command_count, allocator=rt.scratch_allocator)
+	write_index := 0
+	for command in rt.display {
+		if command.owner != 0 && !presentation_output_node_in_root(rt, command.owner, output.root) {
+			continue
+		}
+		commands[write_index] = command
+		write_index += 1
+	}
+	view = Paint_Display_List_View{
+		commands=commands,
+		revision=output.revision,
+		output=id,
+	}
+	return view, .Ok
+}
+
 // presentation_output_frame_submission_succeeded acknowledges exactly the
 // published revision submitted for this output. A delayed acknowledgement
 // cannot clear work created by a newer update.

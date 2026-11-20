@@ -207,10 +207,11 @@ line_break_class :: proc(r: rune) -> Line_Break_Class {
 
 @(private="file")
 init_lb_table :: proc() {
-	// Allocate from the runtime heap, NOT from `context.allocator`.
+	// Allocate from the platform default heap, NOT from the caller's
+	// scoped context allocator. Persistent table data must survive the caller.
 	// The data lives for the process lifetime; using context.allocator
 	// would let test-scoped tracking allocators flag it as a leak.
-	context.allocator = runtime.heap_allocator()
+	context.allocator = runtime.default_allocator()
 	tmp := make([dynamic]Range, 0, 4096)
 	for line in strings.split_lines_iterator(&LB_DATA_LINES) {
 		// Skip blanks and comments.

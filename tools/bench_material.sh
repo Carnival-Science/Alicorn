@@ -8,5 +8,5 @@ mkdir -p "$ROOT/out"
 ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" build "$ROOT/benchmarks/native_material" -o:speed -out:"$ROOT/out/alicorn_material_benchmark"
 "$ROOT/out/alicorn_material_benchmark"
-alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" build "$ROOT/benchmarks/native_material_budget" -o:speed -out:"$ROOT/out/alicorn_material_budget"
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" build "$ROOT/benchmarks/native_material_budget" "-collection:alicorn=$REPO_ROOT" -o:speed -out:"$ROOT/out/alicorn_material_budget"
 "$ROOT/out/alicorn_material_budget"

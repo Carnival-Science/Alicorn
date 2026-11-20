@@ -23,5 +23,5 @@ mkdir -p "$OUT_DIR"
 
 ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
-	build native/sdl_gpu_entry "-out:$OUT_DIR/alicorn_sdl_gpu"
+	build native/sdl_gpu_entry "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_sdl_gpu"
 "$OUT_DIR/alicorn_sdl_gpu" "$@"

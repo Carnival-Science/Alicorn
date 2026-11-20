@@ -1,6 +1,6 @@
 # Issue #146 progress: motion diagnostics and Punks dogfood
 
-**Status:** Evidence update only. Issue [#146](https://github.com/samanshaiza004/alicorn/issues/146) remains open.
+**Status:** Evidence update only. Issue [#146](https://github.com/Carnival-Science/Alicorn/issues/146) remains open.
 
 Date: 2026-10-30 (local time)
 

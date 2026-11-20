@@ -1,0 +1,74 @@
+# Raw headless-Chromium WebGPU capture: examples/15_webgpu_feasibility
+# Date: 2026-11-19
+# CI: GitHub Actions run 44550779291 (WebGPU feasibility (browser)), job chromium-headless
+# Runner: ubuntu-26.04
+# Repository head: b0adab5455fe696ad61f3d243394381dd330a7f8
+# Branch: codex/webgpu-phase0-feasibility
+# Staged artifact: examples/15_webgpu_feasibility/web/feasibility.wasm
+#   bytes=5458441
+#   sha256=5340526cc7da6e7dec3438dcf0c28007a7b2a6d27324249b7cc2c31fd6f0c604
+# Server: python3 http.server, http://127.0.0.1:8765/
+# Browser: Playwright 1.65.1 Chromium revision 1255, headless
+# Launch profile: chromium-angle-swiftshader
+# Flags: --no-sandbox --disable-gpu-sandbox --disable-dev-shm-usage
+#   --ignore-gpu-blocklist --enable-unsafe-webgpu --enable-unsafe-swiftshader
+#   --enable-features=Vulkan --disable-vulkan-surface --use-angle=swiftshader
+#   --use-webgpu-adapter=swiftshader
+# VK_ICD_FILENAMES=<playwright chromium>/vk_swiftshader_icd.json
+# Adapter: fallback=true vendor=google architecture=swiftshader
+# Attempts: lavapipe-vulkan and chromium-swiftshader-vulkan reached the page but
+#   reported "The WebGPU device was lost"; the ANGLE/SwiftShader profile passed.
+#
+# Chromium WebGPU feasibility capture (2026-11-19T15:06:05.166Z)
+# URL: http://127.0.0.1:8765/
+# Profile: chromium-angle-swiftshader
+# Args: --no-sandbox --disable-gpu-sandbox --disable-dev-shm-usage --ignore-gpu-blocklist --enable-unsafe-webgpu --enable-unsafe-swiftshader --enable-features=Vulkan --disable-vulkan-surface --use-angle=swiftshader --use-webgpu-adapter=swiftshader
+# Env: {"VK_ICD_FILENAMES":"/home/runner/.cache/ms-playwright/chromium-1255/chrome-linux64/vk_swiftshader_icd.json"}
+# Status: Settled: demand-driven idle (5 frame requests; 2 initialization wake frames). Resize, click, or type to exercise the retained host.
+# Elapsed: 669 ms
+# Missing markers: (none)
+
+[log] [webgpu-feasibility] requested backend=Undefined
+[info] [webgpu-feasibility] callback dispatch status=1
+[log] [webgpu-feasibility] adapter callback status=Success adapter_present=true
+[info] [webgpu-feasibility] browser adapter classification fallback=true vendor=google architecture=swiftshader device=(redacted) description=(redacted)
+[log] [webgpu-feasibility] adapter info backend=WebGPU type=Unknown vendor=google architecture=swiftshader device= description=
+[log] [webgpu-feasibility] surface capabilities query begin
+[log] [webgpu-feasibility] surface capabilities query status=Success formats=1 alpha_modes=2
+[log] [webgpu-feasibility] device request submit
+[info] [webgpu-feasibility] requestDevice bridge invoked
+[info] [webgpu-feasibility] browser device promise resolved
+[info] [webgpu-feasibility] callback dispatch status=1
+[log] [webgpu-feasibility] device callback status=Success device_present=true message=
+[log] [webgpu-feasibility] text runtime built
+[log] [webgpu-feasibility] Hosted_Runtime, browser input, and canvas presenter connected
+[log] [webgpu-feasibility] retained solid cache PASS mesh_rebuilds=1 vertex_uploads=1 vertex_bytes=648 transform_uploads=1 transform_bytes=24 viewport_uploads=1 unchanged_repeat=true
+[log] [webgpu-feasibility] mixed paint-order compositor PASS commands=15 solid_meshes=1 text_meshes=1 icon_meshes=1 icon_vertex_uploads=1 icon_atlas_pages=2 icon_atlas_bytes=1572864 image_meshes=1 image_vertex_uploads=1 image_texture_uploads=2 image_texture_bytes=128 custom_surface_meshes=2 custom_surface_vertex_uploads=2 custom_surface_vertices=72 instance_uploads=1
+[log] [webgpu-feasibility] solid target resize cache PASS mesh_rebuilds=0 vertex_uploads=0 transform_uploads=0 viewport_uploads=2
+[log] [webgpu-feasibility] solid translation cache PASS mesh_rebuilds=0 vertex_uploads=0 transform_uploads=1 transform_bytes=24
+[log] [webgpu-feasibility] solid instance transform submitted PASS translation=5,5 clip=5,5,20,20 readback_slot=15
+[log] [webgpu-feasibility] backdrop initial frame capture=1 filters=1/1 composite=1 texture_bytes=68040 cache_budget=50331648
+[log] [webgpu-feasibility] backdrop resize retirement queued old=36x36 old_bytes=25920 new=40x40 retired=1 retire_after=3
+[log] [webgpu-feasibility] multiple backdrop markers encoded in retained paint order; pixel comparison queued
+[log] [webgpu-feasibility] backdrop WebGPU prefix cache PASS capture=3 filters=3/3 composite=6 cache_hits=2 mesh_rebuilds=2 texture_bytes=100040 cache_budget=50331648 resize_retired=1 budget_fallback_bytes=52013000
+[log] [webgpu-feasibility] text-only revision retained solid geometry PASS
+[log] [webgpu-feasibility] custom geometry motion readback submitted instance_translation=true opacity=0.5 readback_slot=4
+[log] [webgpu-feasibility] custom geometry instance cache PASS translation_and_opacity_changes=1 mesh_rebuilds=0 vertex_uploads=0
+[log] [webgpu-feasibility] per-resource geometry cache PASS static_mesh_reused=true waveform_rebuilt=true instance_uploads_unchanged=true old_buffer_retired_after=2
+[log] [webgpu-feasibility] retained text cache PASS mesh_rebuilds=1 vertex_uploads=1 atlas_uploads=1 atlas_bytes=1048576 atlas_page_creates=1 prepare_buffer_creates=0 translation_uploads=2 viewport_uploads=1 unchanged_repeat=true
+[log] [webgpu-feasibility] text motion cache PASS translated_command_only=true glyph_mesh_uploads=0 atlas_uploads=0 atlas_page_creates=0
+[log] [webgpu-feasibility] image retained cache PASS unchanged_texture_uploads=0 geometry_edit_reuses_pixels=true released_inflight=true stale_draw_removed=true retirement_waits_for_queue=true
+[info] [webgpu-feasibility] callback dispatch status=1
+[log] [webgpu-feasibility] backdrop resized texture retirement PASS submitted=5 completed=8 retired=0 resident=74120 active=74120
+[log] [webgpu-feasibility] image resource retirement PASS submitted_serial=2 completed_serial=2 retired=0 resident_bytes=64 releases=1
+[log] [webgpu-feasibility] custom geometry buffer retirement PASS submitted_serial=2 completed_serial=2 retired=0 active_bytes=10752 resident_bytes=10752 retirements=1 releases=1
+[log] [webgpu-feasibility] queue work done status=Success message=
+[info] [webgpu-feasibility] callback dispatch status=1
+[log] [webgpu-feasibility] multiple backdrop prefix pixels PASS differing_inside_later_clip=287
+[log] [webgpu-feasibility] backdrop over-budget fallback PASS every RGBA pixel matches plain paint
+[log] [webgpu-feasibility] async RGBA8 readback core PASS texture=63x64 row_pitch=256 padding_per_row=4 bytes=262144 clear=true solid=true checker=true partial_texture=true partial_buffer=true uniform=true blend=true glyph=true clip=true outside_clip=true rounded=true rounded_corner=true last_row=true
+[log] [webgpu-feasibility] async RGBA8 readback compositor PASS display_blend=true clip_x=true clip_y=true text=true overlay_order=true offset_text=true icon=true icon_clip=true atlas_switch=true image_red=true image_alpha=true image_blue=true image_clip=true solid_motion=true crop_a=true crop_b=true
+[log] [webgpu-feasibility] async RGBA8 readback effects PASS backdrop=true backdrop_clip=true prefix_reuse=true prefix_invalidation=true resized=true fallback=true geometry_rect=true segment=true circle=true marker=true geometry_clip=true waveform=true gradient=true raised=true raised_bevel=true recessed=true recessed_bevel=true
+[log] [webgpu-feasibility] rounded accessibility-material readback PASS variant=true face=true bevel=true corner=true reduced_transparency_shadow=true
+[log] [webgpu-feasibility] custom geometry translation/opacity pixel PASS moved_pixel=[138, 28, 29, 255] original_pixel=[20, 31, 46, 255]
+[info] [webgpu-feasibility] callback dispatch status=1

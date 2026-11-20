@@ -6,6 +6,7 @@ import "core:fmt"
 import "core:os"
 import win "core:sys/windows"
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 import "vendor:sdl3"
 
 // Synthetic captures provide their own DPI, density, and maximized state.
@@ -25,9 +26,9 @@ native_caption_capture_case :: proc(
 	dpi: u32, density: f32, windows_11: bool, case_index: int,
 ) -> bool {
 	scale := f32(dpi)/96
-	width := i32(native_pixel_edge(560 if case_index != 8 else 200,scale))
-	height := i32(native_pixel_edge(32,scale))
-	edge := i32(native_pixel_edge(8,scale))
+	width := i32(cpu_renderer.Pixel_Edge(560 if case_index != 8 else 200,scale))
+	height := i32(cpu_renderer.Pixel_Edge(32,scale))
+	edge := i32(cpu_renderer.Pixel_Edge(8,scale))
 	menus := [2]Application_Menu{{label="File"},{label="Edit"}}
 	app := Application{menus=menus[:],window_decorations=.Integrated_Title_Bar}
 	menu := Native_Menu_Runtime{application=&app,
@@ -47,7 +48,7 @@ native_caption_capture_case :: proc(
 	if case_index == 7 { state.high_contrast = true; state.caption_hovered = 2 }
 	menu.platform_data = rawptr(&state)
 	defer win32_caption_destroy_masks(&state)
-	raw := win.RECT{win.LONG(width-i32(native_pixel_edge(138,scale))-edge),-win.LONG(edge),win.LONG(width-edge),win.LONG(height-edge)}
+	raw := win.RECT{win.LONG(width-i32(cpu_renderer.Pixel_Edge(138,scale))-edge),-win.LONG(edge),win.LONG(width-edge),win.LONG(height-edge)}
 	state.caption_controls = win32_caption_layout_controls(raw,true,width,height,dpi,state.maximized)
 	if !native_caption_validation_refresh_text(&state,text.runtime) { return false }
 	win32_menu_layout_label_bounds(&state)

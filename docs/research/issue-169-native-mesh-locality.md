@@ -1,6 +1,6 @@
 # Native mesh locality — issue #169
 
-Research and implementation note, 2026-11-13. See [issue #169](https://github.com/samanshaiza004/alicorn/issues/169) and its [#168 baseline requirement](https://github.com/samanshaiza004/alicorn/issues/168).
+Research and implementation note, 2026-11-13. See [issue #169](https://github.com/Carnival-Science/Alicorn/issues/169) and its [#168 baseline requirement](https://github.com/Carnival-Science/Alicorn/issues/168).
 
 ## Finding
 

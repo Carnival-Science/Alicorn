@@ -8,6 +8,7 @@ import "core:c"
 import "core:strings"
 import "core:time"
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 import "vendor:sdl3"
 
 RESIZE_STRESS_ITERATIONS :: 300
@@ -29,26 +30,9 @@ validate_pointer_coordinates :: proc() {
 	}
 }
 
-native_pixel_edge :: proc(logical_edge, scale: f32) -> int {
-	pixel := logical_edge*scale
-	// Alicorn finalizes shared absolute edges to the nearest device pixel.
-	// Repeat that rounding here instead of truncating a float round-trip that
-	// can land just below its intended integer edge.
-	if pixel < 0 { return -int(math.floor(-pixel+0.5)) }
-	return int(math.floor(pixel+0.5))
-}
-
-logical_to_pixel_bounds :: proc(bounds: alicorn.Rect, scale_x, scale_y: f32) -> (x0, y0, x1, y1: int) {
-	x0 = native_pixel_edge(bounds.x, scale_x)
-	y0 = native_pixel_edge(bounds.y, scale_y)
-	x1 = native_pixel_edge(bounds.x+bounds.w, scale_x)
-	y1 = native_pixel_edge(bounds.y+bounds.h, scale_y)
-	return
-}
-
 validate_pixel_transform :: proc() {
 	// This guards the compositor boundary independently of SDL window state.
-	x0, y0, x1, y1 := logical_to_pixel_bounds(alicorn.Rect{10, 20, 100, 50}, 2, 2)
+	x0, y0, x1, y1 := cpu_renderer.Logical_To_Pixel_Bounds(alicorn.Rect{10, 20, 100, 50}, 2, 2)
 	if x0 != 20 || y0 != 40 || x1 != 220 || y1 != 140 {
 		fail("logical compositor bounds did not scale exactly once")
 	}
@@ -59,7 +43,7 @@ validate_pixel_transform :: proc() {
 	for scale in scales {
 		for pixel_edge in -17..<128 {
 			logical_edge := f32(pixel_edge)/scale
-			if native_pixel_edge(logical_edge, scale) != pixel_edge {
+			if cpu_renderer.Pixel_Edge(logical_edge, scale) != pixel_edge {
 				fail("fractional-scale pixel edge changed during logical round-trip")
 			}
 		}
@@ -72,16 +56,16 @@ validate_text_pixel_snapping :: proc() {
 	// fourth quarter-pixel bucket into the next pixel.
 	fractions := [4]f32{0.12, 0.26, 0.51, 0.76}
 	for fractional, expected_bucket in fractions {
-		pixel_x, bucket := native_text_snap_x(10 + fractional)
+		pixel_x, bucket := cpu_renderer.Snap_Text_X(10 + fractional)
 		if pixel_x != 10 || bucket != u8(expected_bucket) {
 			fail("text X phase was not quantized to the expected Runa bucket")
 		}
 	}
-	pixel_x, bucket := native_text_snap_x(10.90)
+	pixel_x, bucket := cpu_renderer.Snap_Text_X(10.90)
 	if pixel_x != 11 || bucket != 0 {
 		fail("text X phase did not carry the rounded fourth bucket")
 	}
-	if native_text_snap_y(20.49) != 20 || native_text_snap_y(20.50) != 21 {
+	if cpu_renderer.Snap_Text_Y(20.49) != 20 || cpu_renderer.Snap_Text_Y(20.50) != 21 {
 		fail("text Y origin was not snapped to physical pixels")
 	}
 }
@@ -170,7 +154,7 @@ native_text_readback_probe :: proc(
 		}
 	}
 	if text_found {
-		x0, y0, x1, y1 := logical_to_pixel_bounds(text_bounds, 1, 1)
+		x0, y0, x1, y1 := cpu_renderer.Logical_To_Pixel_Bounds(text_bounds, 1, 1)
 		if x0 < 0 { x0 = 0 }
 		if y0 < 0 { y0 = 0 }
 		if x1 > int(width) { x1 = int(width) }

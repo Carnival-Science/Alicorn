@@ -3,7 +3,14 @@ package alicorn_sdl_gpu
 import "core:testing"
 import "core:fmt"
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 import "vendor:sdl3"
+
+@(test)
+test_backend_neutral_vertex_keeps_nine_float_layout :: proc(t: ^testing.T) {
+	testing.expect(t, size_of(cpu_renderer.Vertex) == 36,
+		"the shared CPU vertex must retain the 36-byte position/color/UV layout consumed by the current GPU pipeline")
+}
 
 gradient_test_color_near :: proc(a, b: [4]f32) -> bool {
 	for i in 0..<4 {
@@ -19,13 +26,13 @@ test_two_stop_gradient_keeps_rect_geometry_and_interpolates_existing_vertex_colo
 	start := alicorn.Color{0.2, 0.4, 0.6, 0.5}
 	end := alicorn.Color{0.8, 0.2, 0.1, 0.5}
 	gradient := alicorn.Surface_Gradient{axis=.Horizontal, end=end}
-	native_solid_append_material_surface(
+	cpu_renderer.Append_Material_Surface(
 		&vertices, {10, 20, 80, 40}, {10, 20, 80, 40}, start,
 		alicorn.STYLE_MATERIAL_FLAT, 0, 0.4, gradient=gradient,
 	)
 	start_vertex := [4]f32{0.2, 0.4, 0.6, 0.2}
 	end_vertex := [4]f32{0.8, 0.2, 0.1, 0.2}
-	testing.expect(t, len(vertices) == 6 && native_solid_material_vertex_count(alicorn.STYLE_MATERIAL_FLAT, 0) == 6,
+	testing.expect(t, len(vertices) == 6 && cpu_renderer.Material_Vertex_Count(alicorn.STYLE_MATERIAL_FLAT, 0) == 6,
 		"a rectangular gradient should reuse the solid surface's six-vertex geometry and draw slot")
 	if len(vertices) == 6 {
 		testing.expect(t, gradient_test_color_near(vertices[0].color, start_vertex) &&
@@ -35,17 +42,17 @@ test_two_stop_gradient_keeps_rect_geometry_and_interpolates_existing_vertex_colo
 			gradient_test_color_near(vertices[5].color, start_vertex),
 			"horizontal stops should occupy the original left and right bounds and apply command opacity once")
 	}
-	horizontal_midpoint := native_solid_gradient_color_at(start, end, .Horizontal, {10, 20, 80, 40}, 50, 40, 0.4, 1.0/80.0)
+	horizontal_midpoint := cpu_renderer.Gradient_Color_At(start, end, .Horizontal, {10, 20, 80, 40}, 50, 40, 0.4, 1.0/80.0)
 	testing.expect(t, gradient_test_color_near(horizontal_midpoint, [4]f32{0.5, 0.3, 0.35, 0.2}),
 		"horizontal interpolation should use linear-sRGB midpoint channels and shared alpha times opacity")
 
 	clear(&vertices)
 	vertical := alicorn.Surface_Gradient{axis=.Vertical, end=end}
-	native_solid_append_gradient_quad(&vertices, {10, 20, 80, 40}, start, vertical, 0.4)
+	cpu_renderer.Append_Gradient_Quad(&vertices, {10, 20, 80, 40}, start, vertical, 0.4)
 	testing.expect(t, len(vertices) == 6 && gradient_test_color_near(vertices[0].color, start_vertex) &&
 		gradient_test_color_near(vertices[2].color, end_vertex),
 		"vertical gradients should place the two stops at the top and bottom edges")
-	vertical_midpoint := native_solid_gradient_color_at(start, end, .Vertical, {10, 20, 80, 40}, 50, 40, 0.4, 1.0/40.0)
+	vertical_midpoint := cpu_renderer.Gradient_Color_At(start, end, .Vertical, {10, 20, 80, 40}, 50, 40, 0.4, 1.0/40.0)
 	testing.expect(t, gradient_test_color_near(vertical_midpoint, [4]f32{0.5, 0.3, 0.35, 0.2}),
 		"vertical interpolation should share the same linear-sRGB midpoint contract")
 }
@@ -58,15 +65,15 @@ test_rounded_gradient_preserves_contour_antialias_and_solid_stroke :: proc(t: ^t
 	start := alicorn.Color{0.1, 0.2, 0.7, 0.6}
 	end := alicorn.Color{0.7, 0.6, 0.1, 0.6}
 	stroke := alicorn.Paint_Stroke{color={0.9, 0.3, 0.2, 1}, width=2}
-	native_solid_append_rounded_material_surface(
+	cpu_renderer.Append_Rounded_Material_Surface(
 		&vertices, {10, 20, 80, 40}, {10, 20, 80, 40}, start,
 		alicorn.STYLE_MATERIAL_FLAT, 0, 0.5, shape, stroke, .Inside,
 		alicorn.Surface_Gradient{axis=.Vertical, end=end},
 	)
-	fill_vertices := NATIVE_ROUNDED_FILL_VERTICES
-	expected_total := fill_vertices + NATIVE_ROUNDED_RING_VERTICES*3
+	fill_vertices := cpu_renderer.ROUNDED_FILL_VERTICES
+	expected_total := fill_vertices + cpu_renderer.ROUNDED_RING_VERTICES*3
 	testing.expect(t, fill_vertices == 324 && len(vertices) == expected_total &&
-		native_solid_material_vertex_count(alicorn.STYLE_MATERIAL_FLAT, 0, shape, stroke) == expected_total,
+		cpu_renderer.Material_Vertex_Count(alicorn.STYLE_MATERIAL_FLAT, 0, shape, stroke) == expected_total,
 		"rounded gradients should preserve the per-corner contour, antialias fringe, and independent stroke geometry budget")
 	if len(vertices) > fill_vertices {
 		stroke_color := [4]f32{0.9, 0.3, 0.2, 0.5}
@@ -75,7 +82,7 @@ test_rounded_gradient_preserves_contour_antialias_and_solid_stroke :: proc(t: ^t
 	}
 
 	clear(&vertices)
-	native_solid_append_gradient_quad(&vertices, {0, 0, 0, 20}, start,
+	cpu_renderer.Append_Gradient_Quad(&vertices, {0, 0, 0, 20}, start,
 		alicorn.Surface_Gradient{axis=.Horizontal, end=end}, 1)
 	testing.expect(t, len(vertices) == 0, "zero-area gradients should not emit vertices")
 }
@@ -84,7 +91,7 @@ test_rounded_gradient_preserves_contour_antialias_and_solid_stroke :: proc(t: ^t
 test_flat_material_stays_one_quad :: proc(t: ^testing.T) {
 	vertices := make([dynamic]Native_Text_Vertex, 0, 128, allocator=context.temp_allocator)
 	defer delete(vertices)
-	native_solid_append_material_surface(
+	cpu_renderer.Append_Material_Surface(
 		&vertices,
 		alicorn.Rect{10, 20, 100, 40},
 		alicorn.Rect{10, 20, 100, 40},
@@ -94,7 +101,7 @@ test_flat_material_stays_one_quad :: proc(t: ^testing.T) {
 		1,
 	)
 	testing.expect(t, len(vertices) == 6, "flat materials should emit exactly the existing solid quad")
-	testing.expect(t, native_solid_material_vertex_count(alicorn.STYLE_MATERIAL_FLAT, 0) == 6,
+	testing.expect(t, cpu_renderer.Material_Vertex_Count(alicorn.STYLE_MATERIAL_FLAT, 0) == 6,
 		"flat surfaces should reserve no material geometry")
 }
 
@@ -108,10 +115,10 @@ test_rectangular_surface_stroke_respects_placement :: proc(t: ^testing.T) {
 		vertices := make([dynamic]Native_Text_Vertex, 0, 40, allocator=context.temp_allocator)
 		defer delete(vertices)
 		stroke := alicorn.Paint_Stroke{color=border, width=2}
-		native_solid_append_material_surface(
+		cpu_renderer.Append_Material_Surface(
 			&vertices, base, base, fill, alicorn.STYLE_MATERIAL_FLAT, 0, 1, stroke, placement,
 		)
-		testing.expect(t, len(vertices) == 30 && native_solid_material_vertex_count(alicorn.STYLE_MATERIAL_FLAT, 0, stroke=stroke) == 30,
+		testing.expect(t, len(vertices) == 30 && cpu_renderer.Material_Vertex_Count(alicorn.STYLE_MATERIAL_FLAT, 0, stroke=stroke) == 30,
 			"a rectangular border should emit four bounded quads in addition to the surface fill")
 		if len(vertices) != 30 { continue }
 		expected_left, expected_top, expected_right, expected_bottom := f32(10), f32(20), f32(110), f32(22)
@@ -163,8 +170,8 @@ test_stroke_culling_accounts_for_nonuniform_dpi_scale :: proc(t: ^testing.T) {
 		stroke=alicorn.Paint_Stroke{color={1, 0, 0, 1}, width=1},
 	}
 	draw.stroke_placement = .Outside
-	visible := native_solid_visible_command(draw, surface, alicorn.STYLE_MATERIAL_FLAT, 1, 2)
-	_, _, _, _, intersects := native_solid_pixel_bounds(visible, 1, 2, 100, 120)
+	visible := cpu_renderer.Solid_Visible_Command(draw, surface, alicorn.STYLE_MATERIAL_FLAT, 1, 2)
+	_, _, _, _, intersects := cpu_renderer.Solid_Pixel_Bounds(visible, 1, 2, 100, 120)
 	testing.expect(t, intersects,
 		"a stroke scaled uniformly to the larger pixel scale should not be culled at the lower-scaled axis")
 }
@@ -191,7 +198,7 @@ test_rounded_surface_antialias_fringe_participates_in_culling :: proc(t: ^testin
 	defer delete(renderer.vertices)
 	defer delete(renderer.draws)
 	testing.expect(t, native_solid_build(&renderer, display[:], 1, 1, 100, 60) &&
-		len(renderer.draws) == 1 && renderer.draws[0].vertex_count == NATIVE_ROUNDED_FILL_VERTICES,
+		len(renderer.draws) == 1 && renderer.draws[0].vertex_count == cpu_renderer.ROUNDED_FILL_VERTICES,
 		"a rounded surface just outside the viewport should remain visible when its antialias fringe crosses the clip")
 }
 
@@ -201,13 +208,13 @@ test_rounded_material_uses_bounded_contours_and_scaled_tangents :: proc(t: ^test
 	fill := alicorn.Color{0.7, 0.6, 0.5, 1}
 	flat_vertices := make([dynamic]Native_Text_Vertex, 0, 512, allocator=context.temp_allocator)
 	defer delete(flat_vertices)
-	native_solid_append_rounded_material_surface(
+	cpu_renderer.Append_Rounded_Material_Surface(
 		&flat_vertices, {10, 20, 60, 32}, {10, 20, 60, 32}, fill,
 		alicorn.STYLE_MATERIAL_FLAT, 0, 1, shape,
 	)
-	testing.expect(t, len(flat_vertices) == NATIVE_ROUNDED_FILL_VERTICES && len(flat_vertices) == 324,
+	testing.expect(t, len(flat_vertices) == cpu_renderer.ROUNDED_FILL_VERTICES && len(flat_vertices) == 324,
 		"flat rounded surfaces should use a fixed 36-point contour with all four arc endpoints and a one-pixel antialias fringe")
-	if len(flat_vertices) == NATIVE_ROUNDED_FILL_VERTICES {
+	if len(flat_vertices) == cpu_renderer.ROUNDED_FILL_VERTICES {
 		min_x := flat_vertices[0].position[0]
 		max_x := min_x
 		for vertex in flat_vertices {
@@ -224,8 +231,8 @@ test_rounded_material_uses_bounded_contours_and_scaled_tangents :: proc(t: ^test
 	}
 	material_vertices := make([dynamic]Native_Text_Vertex, 0, 2048, allocator=context.temp_allocator)
 	defer delete(material_vertices)
-	expected := native_solid_material_vertex_count(material, 1, shape)
-	native_solid_append_rounded_material_surface(
+	expected := cpu_renderer.Material_Vertex_Count(material, 1, shape)
+	cpu_renderer.Append_Rounded_Material_Surface(
 		&material_vertices, {10, 20, 60, 32}, {6, 16, 68, 40}, fill,
 		material, 1, 1, shape,
 	)
@@ -238,7 +245,7 @@ test_rounded_material_uses_bounded_contours_and_scaled_tangents :: proc(t: ^test
 	for scale in ([4]f32{1, 1.25, 1.5, 2}) {
 		scaled := shape
 		scaled.corner_radius *= scale
-		testing.expect(t, native_solid_material_vertex_count(material, 1, scaled) == expected,
+		testing.expect(t, cpu_renderer.Material_Vertex_Count(material, 1, scaled) == expected,
 			"DPI changes contour coordinates without changing the published vertex bound")
 	}
 }
@@ -248,8 +255,8 @@ test_per_corner_rounding_uses_each_radius_and_keeps_flat_fast_path :: proc(t: ^t
 	zero_shape := alicorn.surface_shape_rounded_corners({})
 	shape := alicorn.surface_shape_rounded_corners({top_left=3, top_right=8, bottom_right=13, bottom_left=5})
 	fill := alicorn.Color{0.7, 0.6, 0.5, 1}
-	testing.expect(t, native_solid_material_vertex_count(alicorn.STYLE_MATERIAL_FLAT, 0, zero_shape) == 6 &&
-		native_solid_material_vertex_count(alicorn.STYLE_MATERIAL_FLAT, 0, shape) == NATIVE_ROUNDED_FILL_VERTICES,
+	testing.expect(t, cpu_renderer.Material_Vertex_Count(alicorn.STYLE_MATERIAL_FLAT, 0, zero_shape) == 6 &&
+		cpu_renderer.Material_Vertex_Count(alicorn.STYLE_MATERIAL_FLAT, 0, shape) == cpu_renderer.ROUNDED_FILL_VERTICES,
 		"zero radii should keep the six-vertex rectangle fast path and any rounded corner should use bounded contour tessellation")
 	for mask in 0..<16 {
 		radii := alicorn.Surface_Corner_Radii{
@@ -259,14 +266,14 @@ test_per_corner_rounding_uses_each_radius_and_keeps_flat_fast_path :: proc(t: ^t
 			bottom_left=4 if (mask & 8) != 0 else 0,
 		}
 		pattern := alicorn.surface_shape_rounded_corners(radii)
-		expected_count := 6 if mask == 0 else NATIVE_ROUNDED_FILL_VERTICES
-		testing.expect(t, native_solid_material_vertex_count(alicorn.STYLE_MATERIAL_FLAT, 0, pattern) == expected_count,
+		expected_count := 6 if mask == 0 else cpu_renderer.ROUNDED_FILL_VERTICES
+		testing.expect(t, cpu_renderer.Material_Vertex_Count(alicorn.STYLE_MATERIAL_FLAT, 0, pattern) == expected_count,
 			"all sixteen zero-or-rounded corner patterns should select a deterministic bounded geometry path")
 	}
 
 	vertices := make([dynamic]Native_Text_Vertex, 0, 1024, allocator=context.temp_allocator)
 	defer delete(vertices)
-	native_solid_append_rounded_material_surface(
+	cpu_renderer.Append_Rounded_Material_Surface(
 		&vertices, {10, 20, 60, 32}, {10, 20, 60, 32}, alicorn.Color{0.7, 0.6, 0.5, 1},
 		alicorn.STYLE_MATERIAL_FLAT, 0, 1, shape,
 	)
@@ -281,7 +288,7 @@ test_per_corner_rounding_uses_each_radius_and_keeps_flat_fast_path :: proc(t: ^t
 	tr_start, tr_end := point_at(vertices[:], 9), point_at(vertices[:], 17)
 	br_start, br_end := point_at(vertices[:], 18), point_at(vertices[:], 26)
 	bl_start, bl_end := point_at(vertices[:], 27), point_at(vertices[:], 35)
-	testing.expect(t, len(vertices) == NATIVE_ROUNDED_FILL_VERTICES &&
+	testing.expect(t, len(vertices) == cpu_renderer.ROUNDED_FILL_VERTICES &&
 		point_matches(tl_start, [2]f32{10, 23}) && point_matches(tl_end, [2]f32{13, 20}) &&
 		point_matches(tr_start, [2]f32{62, 20}) && point_matches(tr_end, [2]f32{70, 28}) &&
 		point_matches(br_start, [2]f32{70, 39}) && point_matches(br_end, [2]f32{57, 52}) &&
@@ -292,8 +299,8 @@ test_per_corner_rounding_uses_each_radius_and_keeps_flat_fast_path :: proc(t: ^t
 	material := alicorn.Style_Material{kind=.Analytic_Relief, bevel_width=2, bevel_strength=0.5, inner_shadow_strength=0.3}
 	full_vertices := make([dynamic]Native_Text_Vertex, 0, 2048, allocator=context.temp_allocator)
 	defer delete(full_vertices)
-	expected := native_solid_material_vertex_count(material, 1, shape, stroke)
-	native_solid_append_rounded_material_surface(
+	expected := cpu_renderer.Material_Vertex_Count(material, 1, shape, stroke)
+	cpu_renderer.Append_Rounded_Material_Surface(
 		&full_vertices, {10, 20, 60, 32}, {10, 20, 60, 32}, alicorn.Color{0.7, 0.6, 0.5, 1},
 		material, 1, 1, shape, stroke, .Outside,
 	)
@@ -311,9 +318,9 @@ test_per_corner_rounding_uses_each_radius_and_keeps_flat_fast_path :: proc(t: ^t
 	}
 	renderer := Native_Solid_Renderer{
 		runtime=&rt,
-		vertices=make([dynamic]Native_Text_Vertex, 0, NATIVE_ROUNDED_FILL_VERTICES, allocator=context.temp_allocator),
+		vertices=make([dynamic]Native_Text_Vertex, 0, cpu_renderer.ROUNDED_FILL_VERTICES, allocator=context.temp_allocator),
 		draws=make([dynamic]Native_Solid_Draw, 0, 1, allocator=context.temp_allocator),
-		vertex_capacity=NATIVE_ROUNDED_FILL_VERTICES,
+		vertex_capacity=cpu_renderer.ROUNDED_FILL_VERTICES,
 	}
 	defer delete(renderer.vertices)
 	defer delete(renderer.draws)
@@ -321,13 +328,13 @@ test_per_corner_rounding_uses_each_radius_and_keeps_flat_fast_path :: proc(t: ^t
 		target_width := sdl3.Uint32(int(100*scale))
 		target_height := sdl3.Uint32(int(80*scale))
 		built := native_solid_build(&renderer, display[:], scale, scale, target_width, target_height)
-		clip_x0 := native_pixel_edge(12, scale)
-		clip_y0 := native_pixel_edge(23, scale)
-		clip_x1 := native_pixel_edge(52, scale)
-		clip_y1 := native_pixel_edge(41, scale)
-		expected_base_x := f32(native_pixel_edge(10, scale))
-		expected_base_y := f32(native_pixel_edge(20, scale))
-		testing.expect(t, built && len(renderer.draws) == 1 && renderer.draws[0].vertex_count == NATIVE_ROUNDED_FILL_VERTICES &&
+		clip_x0 := cpu_renderer.Pixel_Edge(12, scale)
+		clip_y0 := cpu_renderer.Pixel_Edge(23, scale)
+		clip_x1 := cpu_renderer.Pixel_Edge(52, scale)
+		clip_y1 := cpu_renderer.Pixel_Edge(41, scale)
+		expected_base_x := f32(cpu_renderer.Pixel_Edge(10, scale))
+		expected_base_y := f32(cpu_renderer.Pixel_Edge(20, scale))
+		testing.expect(t, built && len(renderer.draws) == 1 && renderer.draws[0].vertex_count == cpu_renderer.ROUNDED_FILL_VERTICES &&
 			abs(renderer.vertices[1].position[0]-expected_base_x) < 0.001 &&
 			abs(renderer.vertices[1].position[1]-(expected_base_y+3*scale)) < 0.001 &&
 			abs(renderer.vertices[1].color[3]-0.35) < 0.001 &&
@@ -362,7 +369,7 @@ test_rounded_surface_clips_by_scissor_without_rounding_the_clip_edge :: proc(t: 
 		"the parent clip should become a rectangular GPU scissor independent of the rounded contour")
 	max_x := f32(0)
 	for vertex in renderer.vertices { max_x = max(max_x, vertex.position[0]) }
-	testing.expect(t, max_x > 20 && draw.vertex_count == NATIVE_ROUNDED_FILL_VERTICES,
+	testing.expect(t, max_x > 20 && draw.vertex_count == cpu_renderer.ROUNDED_FILL_VERTICES,
 		"the original shape mesh must extend beyond the clip so clipping cannot introduce a false curved edge")
 
 	clear(&renderer.vertices)
@@ -384,7 +391,7 @@ test_analytic_relief_emits_only_bounded_local_geometry :: proc(t: ^testing.T) {
 	}
 	vertices := make([dynamic]Native_Text_Vertex, 0, 128, allocator=context.temp_allocator)
 	defer delete(vertices)
-	native_solid_append_material_surface(
+	cpu_renderer.Append_Material_Surface(
 		&vertices,
 		alicorn.Rect{20, 30, 80, 40},
 		alicorn.Rect{16, 26, 88, 48},
@@ -393,14 +400,14 @@ test_analytic_relief_emits_only_bounded_local_geometry :: proc(t: ^testing.T) {
 		1,
 		1,
 	)
-	expected := native_solid_material_vertex_count(material, 1)
+	expected := cpu_renderer.Material_Vertex_Count(material, 1)
 	testing.expect(t, len(vertices) == expected && expected == 66,
 		"analytic relief should emit one fill, two shadow layers, four bevel edges, and four inner-shadow edges")
 	testing.expect(t, vertices[0].position[0] == 16 && vertices[0].position[1] == 26,
 		"first shadow layer should use the caller-clipped shadow bounds")
-	flat_height_count := native_solid_material_vertex_count(material, 0)
+	flat_height_count := cpu_renderer.Material_Vertex_Count(material, 0)
 	testing.expect(t, flat_height_count == 6, "zero optical height should use the flat rendering path")
-	recessed_vertex_count := native_solid_material_vertex_count(material, -1)
+	recessed_vertex_count := cpu_renderer.Material_Vertex_Count(material, -1)
 	testing.expect(t, recessed_vertex_count == 54,
 		"recessed surfaces should use inner shading and bevel but should not cast an outer shadow")
 }
@@ -412,7 +419,7 @@ test_analytic_relief_has_directional_signed_and_height_scaled_shading :: proc(t:
 	vertices := make([dynamic]Native_Text_Vertex, 0, 128, allocator=context.temp_allocator)
 	defer delete(vertices)
 
-	native_solid_append_material_surface(&vertices, {10, 20, 80, 40}, {10, 20, 80, 40}, fill, material, 1, 1)
+	cpu_renderer.Append_Material_Surface(&vertices, {10, 20, 80, 40}, {10, 20, 80, 40}, fill, material, 1, 1)
 	raised := make([]Native_Text_Vertex, len(vertices), allocator=context.temp_allocator)
 	defer delete(raised, context.temp_allocator)
 	copy(raised, vertices[:])
@@ -427,7 +434,7 @@ test_analytic_relief_has_directional_signed_and_height_scaled_shading :: proc(t:
 	}
 
 	clear(&vertices)
-	native_solid_append_material_surface(&vertices, {10, 20, 80, 40}, {10, 20, 80, 40}, fill, material, -1, 1)
+	cpu_renderer.Append_Material_Surface(&vertices, {10, 20, 80, 40}, {10, 20, 80, 40}, fill, material, -1, 1)
 	testing.expect(t, vertices[6].color[0] < base && vertices[18].color[0] > base,
 		"negative physical height should reverse the bevel response for a recess")
 	for vertex, i in vertices {
@@ -436,7 +443,7 @@ test_analytic_relief_has_directional_signed_and_height_scaled_shading :: proc(t:
 	}
 
 	clear(&vertices)
-	native_solid_append_material_surface(&vertices, {10, 20, 80, 40}, {10, 20, 80, 40}, fill, material, 0.5, 1)
+	cpu_renderer.Append_Material_Surface(&vertices, {10, 20, 80, 40}, {10, 20, 80, 40}, fill, material, 0.5, 1)
 	half_response := vertices[6].color[0] - base
 	full_response := raised[6].color[0] - base
 	testing.expect(t, abs(half_response*2-full_response) < 0.0001,
@@ -450,13 +457,13 @@ test_flat_and_zero_height_take_the_direct_quad_path :: proc(t: ^testing.T) {
 		vertices := make([dynamic]Native_Text_Vertex, 0, 16, allocator=context.temp_allocator)
 		defer delete(vertices)
 		if variant == 0 {
-			native_solid_append_material_surface(&vertices, {5, 7, 30, 22}, {1, 2, 38, 30}, {0.3, 0.4, 0.5, 1}, alicorn.STYLE_MATERIAL_FLAT, 0, 1)
+			cpu_renderer.Append_Material_Surface(&vertices, {5, 7, 30, 22}, {1, 2, 38, 30}, {0.3, 0.4, 0.5, 1}, alicorn.STYLE_MATERIAL_FLAT, 0, 1)
 		} else {
-			native_solid_append_material_surface(&vertices, {5, 7, 30, 22}, {1, 2, 38, 30}, {0.3, 0.4, 0.5, 1}, material, 0, 1)
+			cpu_renderer.Append_Material_Surface(&vertices, {5, 7, 30, 22}, {1, 2, 38, 30}, {0.3, 0.4, 0.5, 1}, material, 0, 1)
 		}
 		expected := make([dynamic]Native_Text_Vertex, 0, 16, allocator=context.temp_allocator)
 		defer delete(expected)
-		native_solid_append_quad(&expected, 5, 7, 35, 29, [4]f32{0.3, 0.4, 0.5, 1})
+		cpu_renderer.Append_Quad(&expected, 5, 7, 35, 29, [4]f32{0.3, 0.4, 0.5, 1})
 		testing.expect(t, len(vertices) == 6 && len(expected) == 6,
 			"flat and zero-height surfaces must emit exactly one ordinary quad")
 		for i := 0; i < 6; i += 1 {
@@ -508,7 +515,7 @@ native_solid_stroked_path_stays_within_bounds :: proc(points: [][2]f32) -> bool 
 	vertices := make([dynamic]Native_Text_Vertex, 0, 256, allocator=context.temp_allocator)
 	defer delete(vertices)
 	stroke := alicorn.Paint_Stroke{color={1, 1, 1, 1}, width=4}
-	native_solid_append_stroked_path(&vertices, points, stroke, 1)
+	cpu_renderer.Append_Stroked_Path(&vertices, points, stroke, 1)
 	if len(vertices) == 0 { return false }
 	min_x, max_x := points[0][0], points[0][0]
 	min_y, max_y := points[0][1], points[0][1]
@@ -516,7 +523,7 @@ native_solid_stroked_path_stays_within_bounds :: proc(points: [][2]f32) -> bool 
 		min_x, max_x = min(min_x, point[0]), max(max_x, point[0])
 		min_y, max_y = min(min_y, point[1]), max(max_y, point[1])
 	}
-	margin := stroke.width*0.5 + NATIVE_VECTOR_ANTIALIAS_FRINGE
+	margin := stroke.width*0.5 + cpu_renderer.VECTOR_ANTIALIAS_FRINGE
 	for vertex in vertices {
 		if vertex.position[0] < min_x-margin || vertex.position[0] > max_x+margin ||
 		   vertex.position[1] < min_y-margin || vertex.position[1] > max_y+margin {

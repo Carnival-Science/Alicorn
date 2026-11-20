@@ -1,0 +1,92 @@
+#!/bin/sh
+
+# Link-configuration note: tools/common.sh selects the shared wgpu-native
+# dylib on macOS because AccessKit and static wgpu-native duplicate
+# rust_eh_personality under ld64. On Windows the static archive is the default
+# and UI/host consumers opt into WGPU_SHARED=true plus wgpu_native.dll. The
+# shared build/test selection and the static packaging opt-out
+# (tools/build_native_release.sh) are both exercised by
+# .github/workflows/webgpu-macos.yml; see docs/webgpu-migration.md.
+
+set -eu
+
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd -P)
+REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/../.." && pwd -P)
+. "$REPO_ROOT/tools/common.sh"
+
+ODIN_ARG=
+NATIVE_ONLY=0
+WEB_ONLY=0
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+		--odin)
+			if [ "$#" -lt 2 ]; then
+				echo "Usage: $0 [--odin PATH] [--native-only|--web-only]" >&2
+				exit 2
+			fi
+			ODIN_ARG=$2
+			shift 2
+			;;
+		--native-only)
+			NATIVE_ONLY=1
+			shift
+			;;
+		--web-only)
+			WEB_ONLY=1
+			shift
+			;;
+		*)
+			echo "Usage: $0 [--odin PATH] [--native-only|--web-only]" >&2
+			exit 2
+			;;
+	esac
+done
+if [ "$NATIVE_ONLY" -eq 1 ] && [ "$WEB_ONLY" -eq 1 ]; then
+	echo '--native-only and --web-only are mutually exclusive.' >&2
+	exit 2
+fi
+ODIN=$(alicorn_resolve_odin "$ODIN_ARG")
+
+cd "$SCRIPT_DIR"
+mkdir -p out web
+
+if [ "$WEB_ONLY" -eq 0 ]; then
+ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
+echo 'Building interactive native fixture'
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" build . -collection:alicorn="$REPO_ROOT" -out:out/webgpu_feasibility
+echo 'Building native asynchronous-readback smoke fixture'
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" build . -collection:alicorn="$REPO_ROOT" -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -out:out/webgpu_feasibility_smoke
+echo 'Building native host-owned presenter smoke fixture'
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" build . -collection:alicorn="$REPO_ROOT" -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -define:FEASIBILITY_TEST_WEBGPU_PRESENTER=true -out:out/webgpu_feasibility_presenter_smoke
+echo 'Building native SDL surface presenter smoke fixture'
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" build . -collection:alicorn="$REPO_ROOT" -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -define:FEASIBILITY_TEST_SURFACE_PRESENTER=true -out:out/webgpu_feasibility_surface_presenter
+echo 'Building native surface-resize smoke fixture'
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" build . -collection:alicorn="$REPO_ROOT" -define:FEASIBILITY_TEST_QUIT_AFTER_READBACK=true -define:FEASIBILITY_TEST_RESIZE=true -out:out/webgpu_feasibility_resize_smoke
+echo 'Building native SDL3 Hosted_Runtime surface smoke fixture'
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" build . -collection:alicorn="$REPO_ROOT" -define:WGPU_SHARED=true -define:FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER=true -define:FEASIBILITY_TEST_NATIVE_HOSTED_SMOKE=true -out:out/native_hosted_feasibility
+echo 'Building native shared-device multi-surface lifecycle smoke fixture'
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" build . -collection:alicorn="$REPO_ROOT" -define:WGPU_SHARED=true -define:FEASIBILITY_TEST_NATIVE_HOSTED_PRESENTER=true -define:FEASIBILITY_TEST_NATIVE_HOSTED_SMOKE=true -define:FEASIBILITY_TEST_NATIVE_MULTI_SURFACE=true -out:out/native_multi_surface_feasibility
+printf 'Native interactive: %s/out/webgpu_feasibility\n' "$SCRIPT_DIR"
+printf 'Native readback smoke: %s/out/webgpu_feasibility_smoke\n' "$SCRIPT_DIR"
+printf 'Native host-owned presenter smoke: %s/out/webgpu_feasibility_presenter_smoke\n' "$SCRIPT_DIR"
+printf 'Native SDL surface presenter smoke: %s/out/webgpu_feasibility_surface_presenter\n' "$SCRIPT_DIR"
+printf 'Native resize smoke: %s/out/webgpu_feasibility_resize_smoke\n' "$SCRIPT_DIR"
+printf 'Native Hosted_Runtime presenter smoke: %s/out/native_hosted_feasibility\n' "$SCRIPT_DIR"
+printf 'Native shared-device multi-surface smoke: %s/out/native_multi_surface_feasibility\n' "$SCRIPT_DIR"
+fi
+
+if [ "$NATIVE_ONLY" -eq 0 ]; then
+if ! command -v wasm-ld >/dev/null 2>&1; then
+	echo 'The js_wasm32 build requires wasm-ld. On macOS install it with `brew install lld` and add `$(brew --prefix lld)/bin` to PATH.' >&2
+	exit 1
+fi
+echo 'Building browser js_wasm32 fixture'
+"$ODIN" build . -collection:alicorn=../.. -target:js_wasm32 -o:size -define:FEASIBILITY_TEST_WEB_CANVAS_PRESENTER=true -out:web/feasibility.wasm -extra-linker-flags:--export-table
+ODIN_ROOT=$("$ODIN" root)
+cp "$ODIN_ROOT/core/sys/wasm/js/odin.js" web/odin.js
+cp "$ODIN_ROOT/vendor/wgpu/wgpu.js" web/wgpu.js
+node "$REPO_ROOT/tools/patch_odin_wgpu_js.js" web/wgpu.js
+cp "$REPO_ROOT/host/web/demand_scheduler.js" web/alicorn_demand_scheduler.js
+cp "$REPO_ROOT/host/web/accessibility_dom.js" web/alicorn_accessibility_dom.js
+printf 'Browser shared-renderer fixture: serve %s/web on localhost and open /index.html\n' "$SCRIPT_DIR"
+fi

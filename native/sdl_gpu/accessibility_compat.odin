@@ -1,0 +1,20 @@
+package alicorn_sdl_gpu
+
+import sdl_accessibility "alicorn:host/sdl3/accessibility"
+
+// Keep existing SDL_GPU call sites stable while platform accessibility moves
+// out of the renderer package.
+Native_Host_Event_Waker :: sdl_accessibility.Native_Host_Event_Waker
+native_host_event_wake :: sdl_accessibility.native_host_event_wake
+
+Native_Accessibility_Counters :: sdl_accessibility.Native_Accessibility_Counters
+Native_Accessibility_Host :: sdl_accessibility.Native_Accessibility_Host
+native_accessibility_host_init :: sdl_accessibility.native_accessibility_host_init
+native_accessibility_host_destroy :: sdl_accessibility.native_accessibility_host_destroy
+native_accessibility_host_shutdown :: sdl_accessibility.native_accessibility_host_shutdown
+native_accessibility_drain_actions :: sdl_accessibility.native_accessibility_drain_actions
+native_accessibility_take_counters :: sdl_accessibility.native_accessibility_take_counters
+native_accessibility_focus_changed :: sdl_accessibility.native_accessibility_focus_changed
+native_accessibility_prepare_platform :: sdl_accessibility.native_accessibility_prepare_platform
+native_accessibility_adapter_init :: sdl_accessibility.native_accessibility_adapter_init
+native_accessibility_sync :: sdl_accessibility.native_accessibility_sync

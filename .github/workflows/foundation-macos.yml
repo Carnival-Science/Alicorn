@@ -19,6 +19,10 @@ jobs:
           echo "ODIN_ROOT=$odin_root" >> "$GITHUB_ENV"
           echo "ALICORN_ODIN=$odin_root/odin" >> "$GITHUB_ENV"
 
+      - name: Install hash-verified wgpu-native for the pinned Odin bindings
+        shell: bash
+        run: sh tools/setup_macos_wgpu_native.sh "$ODIN_ROOT"
+
       - name: Install SDL build tools
         run: brew install cmake
 
@@ -30,6 +34,13 @@ jobs:
           alicorn_build_pinned_macos_sdl shared "$RUNNER_TEMP/alicorn-sdl"
           echo "ALICORN_SDL_LINK_FLAGS=-L$ALICORN_MACOS_SDL_PREFIX/lib -Wl,-rpath,$ALICORN_MACOS_SDL_PREFIX/lib" >> "$GITHUB_ENV"
           echo "DYLD_LIBRARY_PATH=$ALICORN_MACOS_SDL_PREFIX/lib" >> "$GITHUB_ENV"
+
+      - name: Install wasm-ld for Odin js_wasm32 linking
+        shell: bash
+        run: |
+          brew install lld llvm
+          echo "$(brew --prefix lld)/bin" >> "$GITHUB_PATH"
+          wasm-ld --version
 
       - name: Report Odin installation
         shell: sh
@@ -48,6 +59,17 @@ jobs:
       - name: Validate source-over blending through Metal readback
         shell: sh
         run: sh tools/validate_blending.sh
+
+      - name: Build WebGPU feasibility fixture and smoke Metal readback plus surface resize
+        shell: sh
+        run: |
+          sh examples/15_webgpu_feasibility/build.sh
+          ./examples/15_webgpu_feasibility/out/webgpu_feasibility_smoke
+          ./examples/15_webgpu_feasibility/out/webgpu_feasibility_resize_smoke
+
+      - name: Validate patched wgpu-native device-destroy callbacks through Metal
+        shell: sh
+        run: sh tools/validate_wgpu_native_device_loss_macos.sh
 
       - name: Validate bounded retained-effects experiment through Metal readback
         shell: bash
@@ -93,7 +115,7 @@ jobs:
           ODIN=$(alicorn_resolve_odin)
           ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
           alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
-            test native/sdl_gpu \
+            test native/sdl_gpu "-collection:alicorn=$REPO_ROOT" \
             -define:ODIN_TEST_NAMES=test_secondary_window_wakers_remain_live_until_application_stop \
             -sanitize:thread
 

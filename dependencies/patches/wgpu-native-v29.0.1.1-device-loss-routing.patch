@@ -1,0 +1,37 @@
+From e048aa828b4c3d0528474f8756a460dbce878c76 Mon Sep 17 00:00:00 2001
+Subject: [PATCH] route submit and surface acquisition errors through error sink
+
+Adapted from gfx-rs/wgpu-native PR #641 for the pinned v29.0.1.1 source.
+
+diff --git a/src/lib.rs b/src/lib.rs
+index ba92673..0000000 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -3112,4 +3112,4 @@ pub unsafe extern "C" fn wgpuQueueSubmit(
+-    let (queue_id, context) = {
++    let (queue_id, context, error_sink) = {
+         let queue = queue.as_ref().expect("invalid queue");
+-        (queue.queue.id, &queue.queue.context)
++        (queue.queue.id, &queue.queue.context, &queue.error_sink)
+     };
+@@ -3126,3 +3126,3 @@ pub unsafe extern "C" fn wgpuQueueSubmit(
+     if let Err(cause) = context.queue_submit(queue_id, &command_buffers) {
+-        handle_error_fatal(cause.1, "wgpuQueueSubmit");
++        handle_error(error_sink, cause.1, None, "wgpuQueueSubmit");
+     }
+@@ -4245,5 +4245,14 @@ pub unsafe extern "C" fn wgpuSurfaceGetCurrentTexture(
+                 None => std::ptr::null_mut(),
+             };
+         }
+-        Err(cause) => handle_error_fatal(cause, "wgpuSurfaceGetCurrentTexture"),
++        Err(cause) => {
++            handle_error(
++                &surface_data.error_sink,
++                cause,
++                None,
++                "wgpuSurfaceGetCurrentTexture",
++            );
++            surface_texture.status = native::WGPUSurfaceGetCurrentTextureStatus_Error;
++            surface_texture.texture = std::ptr::null_mut();
++        }
+     };

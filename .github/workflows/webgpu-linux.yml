@@ -1,0 +1,201 @@
+name: WebGPU feasibility (Linux)
+
+on:
+  workflow_dispatch:
+  # Weekly regression gate for the unmerged WebGPU migration branch. These
+  # jobs become master gates once codex/webgpu-phase0-feasibility lands.
+  schedule:
+    - cron: '17 4 * * 1'
+  push:
+    branches:
+      - master
+      - codex/webgpu-phase0-feasibility
+    paths:
+      - 'examples/15_webgpu_feasibility/**'
+      - 'examples/16_native_webgpu_ui/**'
+      - 'examples/17_browser_webgpu_ui/**'
+      - 'renderer/**'
+      - 'host/clipboard/**'
+      - 'host/sdl3/**'
+      - 'host/web/**'
+      - 'host/presentation/**'
+      - 'runtime/**'
+      - 'ui/**'
+      - 'native/**'
+      - 'tools/patch_odin_wgpu_js.js'
+      - 'tools/test_web_scheduler.js'
+      - 'tools/test_webgpu_ui_host.js'
+      - 'tools/test_accessibility_dom.js'
+      - 'tools/test_odin_wgpu_js_patch.js'
+      - 'tools/test_sdl_gpu_without_wgpu_native.ps1'
+      - 'tools/webgpu_browser_smoke.js'
+      - 'tools/setup_linux_odin.sh'
+      - 'tools/setup_linux_wgpu_native.sh'
+      - 'tools/setup_macos_odin.sh'
+      - 'tools/setup_macos_wgpu_native.sh'
+      - 'tools/macos_sdl.sh'
+      - 'tools/build_native_release.sh'
+      - 'tools/validate_wgpu_native_device_loss_macos.sh'
+      - 'tools/common.sh'
+      - 'tools/accesskit.sh'
+      - 'dependencies/odin-accesskit.json'
+      - 'dependencies/patches/**'
+      - 'dependencies/webgpu-toolchain.md'
+      - '.github/workflows/webgpu-linux.yml'
+  pull_request:
+    paths:
+      - 'examples/15_webgpu_feasibility/**'
+      - 'examples/16_native_webgpu_ui/**'
+      - 'examples/17_browser_webgpu_ui/**'
+      - 'renderer/**'
+      - 'host/clipboard/**'
+      - 'host/sdl3/**'
+      - 'host/web/**'
+      - 'host/presentation/**'
+      - 'runtime/**'
+      - 'ui/**'
+      - 'native/**'
+      - 'tools/patch_odin_wgpu_js.js'
+      - 'tools/test_web_scheduler.js'
+      - 'tools/test_webgpu_ui_host.js'
+      - 'tools/test_accessibility_dom.js'
+      - 'tools/test_odin_wgpu_js_patch.js'
+      - 'tools/test_sdl_gpu_without_wgpu_native.ps1'
+      - 'tools/webgpu_browser_smoke.js'
+      - 'tools/setup_linux_odin.sh'
+      - 'tools/setup_linux_wgpu_native.sh'
+      - 'tools/setup_macos_odin.sh'
+      - 'tools/setup_macos_wgpu_native.sh'
+      - 'tools/macos_sdl.sh'
+      - 'tools/build_native_release.sh'
+      - 'tools/validate_wgpu_native_device_loss_macos.sh'
+      - 'tools/common.sh'
+      - 'tools/accesskit.sh'
+      - 'dependencies/odin-accesskit.json'
+      - 'dependencies/patches/**'
+      - 'dependencies/webgpu-toolchain.md'
+      - '.github/workflows/webgpu-linux.yml'
+
+jobs:
+  linux-x64-lavapipe:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SDL3, Vulkan software driver, X11, and WASM linker
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libsdl3-dev libvulkan-dev mesa-vulkan-drivers \
+            xvfb xauth lld pkg-config
+          pkg-config --modversion sdl3
+          wasm-ld --version
+
+      - name: Verify demand-driven browser scheduler
+        run: node tools/test_web_scheduler.js
+
+      - name: Verify browser WebGPU host lifecycle
+        run: node tools/test_webgpu_ui_host.js
+
+      - name: Verify browser accessibility focus projection
+        run: node tools/test_accessibility_dom.js
+
+      - name: Verify Odin WebGPU promise callback bridge patch
+        run: node tools/test_odin_wgpu_js_patch.js
+
+      - name: Cache pinned Odin SDK and wgpu-native
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/alicorn-odin
+          key: alicorn-odin-linux-x64-dev-2026-11-wgpu-v29.0.1.1
+
+      - name: Cache AccessKit C release
+        uses: actions/cache@v4
+        with:
+          path: .deps/accesskit
+          key: accesskit-c-0.23.1-Linux-x64
+
+      - name: Install pinned Odin Linux x64 SDK
+        shell: bash
+        run: |
+          odin_root="$RUNNER_TEMP/alicorn-odin"
+          if [ ! -x "$odin_root/odin" ]; then
+            rm -rf "$odin_root"
+            sh tools/setup_linux_odin.sh "$odin_root"
+          fi
+          echo "$odin_root" >> "$GITHUB_PATH"
+          echo "ODIN_ROOT=$odin_root" >> "$GITHUB_ENV"
+          echo "ALICORN_ODIN=$odin_root/odin" >> "$GITHUB_ENV"
+          "$odin_root/odin" version
+
+      - name: Validate browser host key policy on Linux
+        run: mkdir -p out && odin test host/web -collection:alicorn=. -out:out/alicorn_web_host_tests
+
+      - name: Install hash-verified wgpu-native for pinned Odin bindings
+        shell: sh
+        run: sh tools/setup_linux_wgpu_native.sh "$ODIN_ROOT"
+
+      - name: Validate SDL3 native host input mapping on Linux
+        shell: sh
+        run: |
+          set -eu
+          REPO_ROOT=$PWD
+          . tools/common.sh
+          ODIN=$(alicorn_resolve_odin "$ALICORN_ODIN")
+          ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
+          mkdir -p out
+          alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+            test host/sdl3 -collection:alicorn="$REPO_ROOT" -out:out/alicorn_sdl3_host_tests
+
+      - name: Compile the shared Alicorn UI package for browser WASM
+        shell: sh
+        run: sh tools/check_web_ui_package.sh --odin "$ALICORN_ODIN"
+
+      - name: Build native and browser fixture, then smoke Vulkan through X11
+        shell: bash
+        run: |
+          set -euo pipefail
+          icd_file=$(find /usr/share/vulkan/icd.d -maxdepth 1 -type f -name 'lvp_icd*.json' -print -quit)
+          if [ -z "$icd_file" ]; then
+            echo 'Mesa lavapipe ICD was not installed.' >&2
+            exit 1
+          fi
+          export VK_ICD_FILENAMES="$icd_file"
+          export SDL_VIDEO_DRIVER=x11
+          export ALICORN_ODIN
+          sh examples/15_webgpu_feasibility/build.sh --odin "$ALICORN_ODIN"
+          readback_log="$RUNNER_TEMP/webgpu-linux-readback.txt"
+          xvfb-run -a -s '-screen 0 1280x800x24' ./examples/15_webgpu_feasibility/out/webgpu_feasibility_smoke 2>&1 | tee "$readback_log"
+          grep -Fq 'adapter info backend=Vulkan' "$readback_log"
+          grep -Fq 'vendor=llvmpipe' "$readback_log"
+          grep -Fq 'async RGBA8 readback core PASS' "$readback_log"
+          grep -Fq 'async RGBA8 readback compositor PASS' "$readback_log"
+          grep -Fq 'async RGBA8 readback effects PASS' "$readback_log"
+          resize_log="$RUNNER_TEMP/webgpu-linux-resize.txt"
+          xvfb-run -a -s '-screen 0 1280x800x24' ./examples/15_webgpu_feasibility/out/webgpu_feasibility_resize_smoke 2>&1 | tee "$resize_log"
+          grep -Fq 'SurfacePresent submitted at 800x450' "$resize_log"
+          grep -Fq 'SurfacePresent submitted at 720x405' "$resize_log"
+
+      - name: Summarize adapter and retention counters
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## Linux x64 lavapipe fixture"
+            echo
+            echo '```'
+            grep -E 'adapter info|async RGBA8 readback (core|compositor|effects)|rounded accessibility-material|retirement PASS|cache PASS|queue work done' \
+              "$RUNNER_TEMP/webgpu-linux-readback.txt" 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Linux logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: webgpu-linux-x64-lavapipe
+          path: |
+            ${{ runner.temp }}/webgpu-linux-readback.txt
+            ${{ runner.temp }}/webgpu-linux-resize.txt
+          if-no-files-found: warn
+          retention-days: 7

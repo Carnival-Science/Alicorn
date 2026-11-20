@@ -16,7 +16,9 @@ try {
         throw "Valid SDL3.dll not found at '$SDL3'."
     }
     Copy-Item -LiteralPath $SDL3 -Destination out\SDL3.dll -Force
-    & $Odin build native\point_marker_validation_entry @($AccessKit.CompilerArguments) `
+    # native/sdl_gpu now imports alicorn:host/sdl3; the collection is required
+    # even though this fixture has no WebGPU dependency.
+    & $Odin build native\point_marker_validation_entry "-collection:alicorn=$RepoRoot" @($AccessKit.CompilerArguments) `
         -o:speed -out:out\alicorn_point_marker_validation.exe
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     & .\out\alicorn_point_marker_validation.exe "--driver=$Driver"

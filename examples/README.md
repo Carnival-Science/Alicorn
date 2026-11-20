@@ -25,6 +25,8 @@ Install Odin and the native prerequisites from
 | 12 | [Custom Segmented Control](12_custom_segmented_control/main.odin) | A third-party control that owns its complete visual presentation while public Button owners provide hit testing, focus, semantics, and activation |
 | 13 | [Surface Gradients](13_surface_gradients/main.odin) | Theme-resolved horizontal and vertical two-stop semantic surface fills with rounded geometry and clipping |
 | 14 | [Shape Primitives](14_shape_primitives/main.odin) | Bounded circle, arc, and cubic Bezier surfaces plus opt-in circular Button hit geometry |
+| 16 | [Native WebGPU UI](16_native_webgpu_ui/main.odin) | Opt-in `webgpu.run` (`alicorn:ui/webgpu`) using SDL3 input and the shared Hosted_Runtime/WebGPU surface presenter, with an app-owned wake callback probe |
+| 17 | [Browser WebGPU UI](17_browser_webgpu_ui/main.odin) | `ui.run` on `js_wasm32` with async WebGPU bootstrap, browser input, and demand-driven frames |
 
 Run a lesson from the repository root. The runner resolves Odin and native
 linker dependencies, builds the selected program, and launches it:

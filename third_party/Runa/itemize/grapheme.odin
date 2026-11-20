@@ -97,7 +97,7 @@ incb_class :: proc(r: rune) -> InCB {
 
 @(private="file")
 init_incb_table :: proc() {
-	context.allocator = runtime.heap_allocator()
+	context.allocator = runtime.default_allocator()
 	tmp := make([dynamic]InCB_Range, 0, 512)
 	data := INCB_DATA
 	for line in strings.split_lines_iterator(&data) {
@@ -177,7 +177,7 @@ has_emoji_presentation :: proc(r: rune) -> bool {
 
 @(private="file")
 init_gcb_table :: proc() {
-	context.allocator = runtime.heap_allocator()
+	context.allocator = runtime.default_allocator()
 	tmp := make([dynamic]GCB_Range, 0, 1024)
 	emoji_presentation_tmp := make([dynamic]Emoji_Presentation_Range, 0, 128)
 

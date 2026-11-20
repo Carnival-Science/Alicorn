@@ -20,7 +20,7 @@ All five hosted checks passed on the validated source baseline:
 The release-preparation documentation commit `629efa0c46de19cd46bb07d3cae567b7cd6959f0`
 also passed all five hosted checks. The final release documentation changes do
 not alter executable sources; their exact commit checks are available from the
-repository's [Actions page](https://github.com/samanshaiza004/alicorn/actions).
+repository's [Actions page](https://github.com/Carnival-Science/Alicorn/actions).
 The foundation jobs include native unit/contract suites, example builds, and
 GPU readback validation on their hosted backends. Package checks do not imply
 physical desktop acceptance on every OS, driver, or device.

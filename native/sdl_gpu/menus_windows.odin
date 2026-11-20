@@ -9,6 +9,7 @@ import "core:c"
 import "core:fmt"
 import sdl3 "vendor:sdl3"
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 
 foreign import dwmapi "system:Dwmapi.lib"
 foreign dwmapi {
@@ -399,7 +400,7 @@ win32_menu_update_caption_button_bounds :: proc(state: ^Win32_Menu_State, client
 	)
 	button_width := i32(bounds.right-bounds.left)
 	if bounds.right <= bounds.left || bounds.bottom <= bounds.top ||
-		button_width > i32(native_pixel_edge(320, f32(state.dpi)/96)) { return false }
+		button_width > i32(cpu_renderer.Pixel_Edge(320, f32(state.dpi)/96)) { return false }
 	if bounds.left < 0 || bounds.left >= win.LONG(client_width_pixels) { return false }
 	state.caption_button_bounds = bounds
 	state.caption_button_bounds_valid = true
@@ -486,7 +487,7 @@ win32_menu_layout_labels :: proc(state: ^Win32_Menu_State) {
 	client_width := i32(client.right-client.left)
 	caption_h := i32(win.GetSystemMetricsForDpi(win.SM_CYCAPTION, state.dpi))
 	frame_y := i32(win.GetSystemMetricsForDpi(win.SM_CYSIZEFRAME, state.dpi)+win.GetSystemMetricsForDpi(win.SM_CXPADDEDBORDER, state.dpi))
-	state.chrome_height_pixels = max(caption_h+frame_y, i32(native_pixel_edge(32, scale)))
+	state.chrome_height_pixels = max(caption_h+frame_y, i32(cpu_renderer.Pixel_Edge(32, scale)))
 	state.chrome_height = f32(state.chrome_height_pixels)/state.pixels_per_unit
 	state.menu.content_inset_top = state.chrome_height if !win32_menu_application_owns_chrome(state) else 0
 	_ = win32_menu_update_caption_button_bounds(state, client_width)
@@ -497,13 +498,13 @@ win32_menu_layout_labels :: proc(state: ^Win32_Menu_State) {
 
 win32_menu_layout_label_bounds :: proc(state: ^Win32_Menu_State) {
 	scale := f32(state.dpi if state.dpi != 0 else 96)/96
-	usable_right := max(i32(state.caption_controls[0].bounds.left)-i32(native_pixel_edge(8, scale)), 0)
-	left := i32(native_pixel_edge(8, scale))
+	usable_right := max(i32(state.caption_controls[0].bounds.left)-i32(cpu_renderer.Pixel_Edge(8, scale)), 0)
+	left := i32(cpu_renderer.Pixel_Edge(8, scale))
 	if title_run := native_text_host_run(state.text_renderer, state.title.host_node);
 	   title_run != nil && state.title_text != "" {
-		title_width := i32(native_pixel_edge(title_run.width, state.pixels_per_unit)+native_pixel_edge(16, scale))
+		title_width := i32(cpu_renderer.Pixel_Edge(title_run.width, state.pixels_per_unit)+cpu_renderer.Pixel_Edge(16, scale))
 		state.title.bounds = win.RECT{left=win.LONG(min(left, usable_right)), top=0, right=win.LONG(min(left+title_width, usable_right)), bottom=win.LONG(state.chrome_height_pixels)}
-		left += title_width+i32(native_pixel_edge(8, scale))
+		left += title_width+i32(cpu_renderer.Pixel_Edge(8, scale))
 	} else {
 		state.title.bounds = win.RECT{}
 	}
@@ -517,7 +518,7 @@ win32_menu_layout_label_bounds :: proc(state: ^Win32_Menu_State) {
 		if left >= usable_right { continue }
 		run := native_text_host_run(state.text_renderer, label.host_node)
 		if run == nil { continue }
-		width := i32(native_pixel_edge(run.width, state.pixels_per_unit)+native_pixel_edge(24, scale))
+		width := i32(cpu_renderer.Pixel_Edge(run.width, state.pixels_per_unit)+cpu_renderer.Pixel_Edge(24, scale))
 		label.bounds = win.RECT{left=win.LONG(left), top=0, right=win.LONG(min(left+width, usable_right)), bottom=win.LONG(state.chrome_height_pixels)}
 		left += width
 	}
@@ -557,15 +558,15 @@ win32_menu_sync_window_chrome_metrics :: proc(
 	client_width := i32(client.right-client.left)
 	client_height := i32(client.bottom-client.top)
 	density := state.pixels_per_unit if state.pixels_per_unit > 0 else 1
-	content_start_pixels := i32(native_pixel_edge(8, f32(state.dpi if state.dpi != 0 else 96)/96))
+	content_start_pixels := i32(cpu_renderer.Pixel_Edge(8, f32(state.dpi if state.dpi != 0 else 96)/96))
 	for label in state.labels {
 		if label.bounds.right > label.bounds.left {
 			content_start_pixels = max(content_start_pixels, i32(label.bounds.right)+
-				i32(native_pixel_edge(8, f32(state.dpi if state.dpi != 0 else 96)/96)))
+				i32(cpu_renderer.Pixel_Edge(8, f32(state.dpi if state.dpi != 0 else 96)/96)))
 		}
 	}
 	content_end_pixels := max(i32(state.caption_controls[0].bounds.left)-
-		i32(native_pixel_edge(8, f32(state.dpi if state.dpi != 0 else 96)/96)), 0)
+		i32(cpu_renderer.Pixel_Edge(8, f32(state.dpi if state.dpi != 0 else 96)/96)), 0)
 	content_start_pixels = min(content_start_pixels, content_end_pixels)
 	next := Window_Chrome_Metrics{
 		header=alicorn.Rect{0, 0, f32(client_width)/density, min(f32(state.chrome_height_pixels)/density, f32(client_height)/density)},
@@ -616,7 +617,7 @@ win32_menu_resolve_chrome_geometry :: proc(
 	geometry := Win32_Chrome_Geometry{application_owned=true}
 	header, header_ok := alicorn.node_info(rt, layout.header)
 	if header_ok && header.active {
-		x0, y0, x1, y1 := logical_to_pixel_bounds(header.bounds, density, density)
+		x0, y0, x1, y1 := cpu_renderer.Logical_To_Pixel_Bounds(header.bounds, density, density)
 		retained_header := win.RECT{win.LONG(x0), win.LONG(y0), win.LONG(x1), win.LONG(y1)}
 		geometry.header = win32_rect_intersection(retained_header, native_header)
 	}
@@ -629,7 +630,7 @@ win32_menu_resolve_chrome_geometry :: proc(
 		if !ok || !node.active { continue }
 		region_bounds := node.bounds
 		if region.kind == .Interactive && node.kind == .Split_Handle { region_bounds = node.hit_bounds }
-		x0, y0, x1, y1 := logical_to_pixel_bounds(region_bounds, density, density)
+		x0, y0, x1, y1 := cpu_renderer.Logical_To_Pixel_Bounds(region_bounds, density, density)
 		bounds := win32_rect_intersection(
 			win.RECT{win.LONG(x0), win.LONG(y0), win.LONG(x1), win.LONG(y1)},
 			geometry.header,
@@ -907,7 +908,7 @@ win32_menu_append_text :: proc(
 	run := native_text_host_run(state.text_renderer, label.host_node)
 	if run == nil || label.bounds.right <= label.bounds.left { return }
 	bounds := label.bounds
-	inset := win.LONG(native_pixel_edge(padding, f32(state.dpi if state.dpi != 0 else 96)/96))
+	inset := win.LONG(cpu_renderer.Pixel_Edge(padding, f32(state.dpi if state.dpi != 0 else 96)/96))
 	bounds.left = min(bounds.left+inset, bounds.right)
 	bounds.right = max(bounds.right-inset, bounds.left)
 	clip := win32_chrome_rect_to_window(bounds, state.pixels_per_unit)
@@ -974,7 +975,7 @@ win32_menu_popup_anchor :: proc(state: ^Win32_Menu_State, index: int) -> win.POI
 	if state == nil || index < 0 || index >= len(state.labels) { return {} }
 	if win32_menu_labels_hidden(state) {
 		scale := f32(state.dpi if state.dpi != 0 else 96)/96
-		return win.POINT{win.LONG(native_pixel_edge(8, scale)), win.LONG(state.chrome_height_pixels)}
+		return win.POINT{win.LONG(cpu_renderer.Pixel_Edge(8, scale)), win.LONG(state.chrome_height_pixels)}
 	}
 	return win.POINT{state.labels[index].bounds.left, state.labels[index].bounds.bottom}
 }

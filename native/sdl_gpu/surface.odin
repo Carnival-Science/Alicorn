@@ -1,13 +1,13 @@
 package alicorn_sdl_gpu
 
-import "core:math"
 import "core:c"
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 import "vendor:sdl3"
 
 MAX_SURFACE_VERTICES :: alicorn.GPU_SURFACE_MAX_VERTICES
-NATIVE_SURFACE_MARKER_MASK_SIZE :: 32
-NATIVE_SURFACE_MARKER_MASK_SAMPLES :: 8
+NATIVE_SURFACE_MARKER_MASK_SIZE :: cpu_renderer.GPU_SURFACE_MARKER_MASK_SIZE
+NATIVE_SURFACE_MARKER_MASK_SAMPLES :: cpu_renderer.GPU_SURFACE_MARKER_MASK_SAMPLES
 
 Native_Surface_Renderer :: struct {
 	device: ^sdl3.GPUDevice,
@@ -27,6 +27,7 @@ Native_Surface_Renderer :: struct {
 	shape_mask_upload_command: ^sdl3.GPUCommandBuffer,
 	resource_creations: u64,
 	vertex_uploads: u64,
+	vertex_upload_bytes: u64,
 	encodes: u64,
 }
 
@@ -43,50 +44,19 @@ native_surface_color_from :: proc(color: alicorn.Color) -> [4]f32 {
 }
 
 native_surface_vertex :: proc(x, y: f32, color: [4]f32) -> Native_Text_Vertex {
-	return Native_Text_Vertex{[3]f32{x, y, 0}, color, [2]f32{0.5, 0.5}}
+	return cpu_renderer.Vertex{[3]f32{x, y, 0}, color, [2]f32{0.5, 0.5}}
 }
 
 native_surface_vertex_uv :: proc(x, y: f32, color: [4]f32, u, v: f32) -> Native_Text_Vertex {
-	return Native_Text_Vertex{[3]f32{x, y, 0}, color, [2]f32{u, v}}
+	return cpu_renderer.Vertex{[3]f32{x, y, 0}, color, [2]f32{u, v}}
 }
 
 native_surface_append_segment :: proc(vertices: ^[dynamic]Native_Text_Vertex, ax, ay, bx, by, scale_x, scale_y, thickness: f32, color: [4]f32) -> bool {
-	dx := bx - ax
-	dy := by - ay
-	length := math.sqrt(dx*dx + dy*dy)
-	if length <= 0.001 { return true }
-	half := thickness * 0.5
-	nx := -dy / length * half
-	ny := dx / length * half
-	if len(vertices^) + 6 > MAX_SURFACE_VERTICES { return false }
-	append(vertices,
-		native_surface_vertex((ax-nx)*scale_x, (ay-ny)*scale_y, color),
-		native_surface_vertex((bx-nx)*scale_x, (by-ny)*scale_y, color),
-		native_surface_vertex((bx+nx)*scale_x, (by+ny)*scale_y, color),
-		native_surface_vertex((ax-nx)*scale_x, (ay-ny)*scale_y, color),
-		native_surface_vertex((bx+nx)*scale_x, (by+ny)*scale_y, color),
-		native_surface_vertex((ax+nx)*scale_x, (ay+ny)*scale_y, color),
-	)
-	return true
+	return cpu_renderer.GPU_Surface_Append_Segment(vertices, ax, ay, bx, by, scale_x, scale_y, thickness, color)
 }
 
 native_surface_append_circle :: proc(vertices: ^[dynamic]Native_Text_Vertex, cx, cy, scale_x, scale_y, radius: f32, color: [4]f32) -> bool {
-	vertex_count := alicorn.GPU_SURFACE_CIRCLE_SEGMENTS * 3
-	if len(vertices^) + vertex_count > MAX_SURFACE_VERTICES { return false }
-	for i in 0..<alicorn.GPU_SURFACE_CIRCLE_SEGMENTS {
-		a0 := f32(i) * 6.283185307179586 / f32(alicorn.GPU_SURFACE_CIRCLE_SEGMENTS)
-		a1 := f32(i+1) * 6.283185307179586 / f32(alicorn.GPU_SURFACE_CIRCLE_SEGMENTS)
-		x0 := cx + math.cos(a0)*radius
-		y0 := cy + math.sin(a0)*radius
-		x1 := cx + math.cos(a1)*radius
-		y1 := cy + math.sin(a1)*radius
-		append(vertices,
-			native_surface_vertex(cx*scale_x, cy*scale_y, color),
-			native_surface_vertex(x0*scale_x, y0*scale_y, color),
-			native_surface_vertex(x1*scale_x, y1*scale_y, color),
-		)
-	}
-	return true
+	return cpu_renderer.GPU_Surface_Append_Circle(vertices, cx, cy, scale_x, scale_y, radius, color)
 }
 
 native_surface_append_rectangle :: proc(
@@ -94,20 +64,7 @@ native_surface_append_rectangle :: proc(
 	x, y, width, height, scale_x, scale_y: f32,
 	color: [4]f32,
 ) -> bool {
-	if len(vertices^) + alicorn.GPU_SURFACE_RECTANGLE_VERTICES > MAX_SURFACE_VERTICES { return false }
-	x0 := x * scale_x
-	y0 := y * scale_y
-	x1 := (x + width) * scale_x
-	y1 := (y + height) * scale_y
-	top_left := native_surface_vertex(x0, y0, color)
-	top_right := native_surface_vertex(x1, y0, color)
-	bottom_right := native_surface_vertex(x1, y1, color)
-	bottom_left := native_surface_vertex(x0, y1, color)
-	append(vertices,
-		top_left, top_right, bottom_right,
-		top_left, bottom_right, bottom_left,
-	)
-	return true
+	return cpu_renderer.GPU_Surface_Append_Rectangle(vertices, x, y, width, height, scale_x, scale_y, color)
 }
 
 native_surface_append_point_marker :: proc(
@@ -115,19 +72,7 @@ native_surface_append_point_marker :: proc(
 	cx, cy, scale_x, scale_y, diameter: f32,
 	color: [4]f32,
 ) -> bool {
-	if len(vertices^) + alicorn.GPU_SURFACE_POINT_MARKER_VERTICES > MAX_SURFACE_VERTICES { return false }
-	half := diameter * 0.5
-	x0, y0 := (cx-half)*scale_x, (cy-half)*scale_y
-	x1, y1 := (cx+half)*scale_x, (cy+half)*scale_y
-	top_left := native_surface_vertex_uv(x0, y0, color, 0, 0)
-	top_right := native_surface_vertex_uv(x1, y0, color, 1, 0)
-	bottom_right := native_surface_vertex_uv(x1, y1, color, 1, 1)
-	bottom_left := native_surface_vertex_uv(x0, y1, color, 0, 1)
-	append(vertices,
-		top_left, top_right, bottom_right,
-		top_left, bottom_right, bottom_left,
-	)
-	return true
+	return cpu_renderer.GPU_Surface_Append_Point_Marker(vertices, cx, cy, scale_x, scale_y, diameter, color)
 }
 
 native_surface_append_geometry :: proc(
@@ -140,69 +85,13 @@ native_surface_append_geometry :: proc(
 	point_markers: []alicorn.GPU_Surface_Point_Marker,
 	opacity: f32 = 1,
 ) -> bool {
-	for rectangle in rectangles {
-		color := rectangle.color
-		color.a *= opacity
-		if !native_surface_append_rectangle(
-			vertices,
-			bounds.x+rectangle.bounds.x,
-			bounds.y+rectangle.bounds.y,
-			rectangle.bounds.w,
-			rectangle.bounds.h,
-			scale_x,
-			scale_y,
-			native_surface_color_from(color),
-		) {
-			return false
-		}
-	}
-	for segment in segments {
-		ax := bounds.x + segment.start.x
-		ay := bounds.y + segment.start.y
-		bx := bounds.x + segment.end.x
-		by := bounds.y + segment.end.y
-		color := segment.color
-		color.a *= opacity
-		if !native_surface_append_segment(vertices, ax, ay, bx, by, scale_x, scale_y, segment.thickness, native_surface_color_from(color)) {
-			return false
-		}
-	}
-	for circle in circles {
-		cx := bounds.x + circle.center.x
-		cy := bounds.y + circle.center.y
-		color := circle.color
-		color.a *= opacity
-		if !native_surface_append_circle(vertices, cx, cy, scale_x, scale_y, circle.radius, native_surface_color_from(color)) {
-			return false
-		}
-	}
-	for marker in point_markers {
-		cx := bounds.x + marker.center.x
-		cy := bounds.y + marker.center.y
-		color := marker.color
-		color.a *= opacity
-		if !native_surface_append_point_marker(
-			vertices, cx, cy, scale_x, scale_y, marker.diameter, native_surface_color_from(color),
-		) {
-			return false
-		}
-	}
-	return true
+	return cpu_renderer.GPU_Surface_Append_Primitives(
+		vertices, bounds, scale_x, scale_y, rectangles, segments, circles, point_markers, opacity,
+	)
 }
 
 native_surface_marker_mask_alpha :: proc(x, y: int) -> u8 {
-	inside := 0
-	for sample_y in 0..<NATIVE_SURFACE_MARKER_MASK_SAMPLES {
-		local_y := ((f32(y) + (f32(sample_y)+0.5)/f32(NATIVE_SURFACE_MARKER_MASK_SAMPLES)) /
-			f32(NATIVE_SURFACE_MARKER_MASK_SIZE))*2 - 1
-		for sample_x in 0..<NATIVE_SURFACE_MARKER_MASK_SAMPLES {
-			local_x := ((f32(x) + (f32(sample_x)+0.5)/f32(NATIVE_SURFACE_MARKER_MASK_SAMPLES)) /
-				f32(NATIVE_SURFACE_MARKER_MASK_SIZE))*2 - 1
-			if local_x*local_x + local_y*local_y <= 1 { inside += 1 }
-		}
-	}
-	sample_count := NATIVE_SURFACE_MARKER_MASK_SAMPLES * NATIVE_SURFACE_MARKER_MASK_SAMPLES
-	return cast(u8)(inside * 255 / sample_count)
+	return cpu_renderer.GPU_Surface_Marker_Mask_Alpha(x, y)
 }
 
 // The shared surface shader multiplies sampled RGBA by vertex color. Keeping
@@ -443,36 +332,14 @@ native_surface_rebuild_mesh :: proc(renderer: ^Native_Surface_Renderer, command:
 	h = native_surface_mix(h, u64(len(payload.point_markers)))
 	h = native_surface_mix(h, u64(transmute(u32)scale_x))
 	h = native_surface_mix(h, u64(transmute(u32)scale_y))
-	h = native_surface_mix(h, native_text_hash_rect(h, command.bounds))
-	h = native_surface_mix(h, native_text_hash_rect(h, command.clip))
+	h = native_surface_mix(h, cpu_renderer.Hash_Rect(h, command.bounds))
+	h = native_surface_mix(h, cpu_renderer.Hash_Rect(h, command.clip))
 	h = native_surface_mix(h, u64(transmute(u32)command.opacity))
 	h = native_surface_mix(h, u64(transmute(u32)command.translation[0]))
 	h = native_surface_mix(h, u64(transmute(u32)command.translation[1]))
 	if renderer.mesh_valid && renderer.mesh_fingerprint == h { return true }
 	clear(&renderer.vertices)
-	bounds := command.bounds
-	bounds.x += command.translation[0]
-	bounds.y += command.translation[1]
-	if len(payload.rectangles) > 0 || len(payload.segments) > 0 || len(payload.circles) > 0 || len(payload.point_markers) > 0 {
-		if !native_surface_append_geometry(&renderer.vertices, bounds, scale_x, scale_y, payload.rectangles, payload.segments, payload.circles, payload.point_markers, command.opacity) {
-			return false
-		}
-	}
-	if len(payload.samples) > 1 {
-		line_color := native_surface_color(0.30, 0.88, 0.96, 1)
-		line_color[3] *= command.opacity
-		for i := 0; i+1 < len(payload.samples); i += 1 {
-			a := payload.samples[i]
-			b := payload.samples[i+1]
-			if a < 0 { a = 0 }; if a > 1 { a = 1 }
-			if b < 0 { b = 0 }; if b > 1 { b = 1 }
-			x0 := bounds.x + bounds.w * f32(i) / f32(len(payload.samples)-1)
-			x1 := bounds.x + bounds.w * f32(i+1) / f32(len(payload.samples)-1)
-			y0 := bounds.y + bounds.h * (1-a)
-			y1 := bounds.y + bounds.h * (1-b)
-			if !native_surface_append_segment(&renderer.vertices, x0, y0, x1, y1, scale_x, scale_y, 2, line_color) { return false }
-		}
-	}
+	if !cpu_renderer.GPU_Surface_Append_Payload(&renderer.vertices, command, payload, scale_x, scale_y) { return false }
 	renderer.mesh_fingerprint = h
 	renderer.mesh_valid = true
 	renderer.vertex_upload_pending = len(renderer.vertices) > 0
@@ -493,6 +360,7 @@ native_surface_upload_vertices :: proc(renderer: ^Native_Surface_Renderer, comma
 	sdl3.UploadToGPUBuffer(copy_pass, source, destination_region, true)
 	sdl3.EndGPUCopyPass(copy_pass)
 	renderer.vertex_uploads += 1
+	renderer.vertex_upload_bytes += u64(len(renderer.vertices) * size_of(Native_Text_Vertex))
 	return true
 }
 
@@ -553,7 +421,7 @@ native_surface_render_command :: proc(
 	bottom_bounds := bounds.y + bounds.h
 	bottom := bottom_clip if bottom_clip < bottom_bounds else bottom_bounds
 	clip = alicorn.Rect{left, top, right-left, bottom-top}
-	x0, y0, x1, y1 := logical_to_pixel_bounds(clip, scale_x, scale_y)
+	x0, y0, x1, y1 := cpu_renderer.Logical_To_Pixel_Bounds(clip, scale_x, scale_y)
 	if x0 < 0 { x0 = 0 }; if y0 < 0 { y0 = 0 }
 	if x1 > int(target_w) { x1 = int(target_w) }; if y1 > int(target_h) { y1 = int(target_h) }
 	if x1 > x0 && y1 > y0 {

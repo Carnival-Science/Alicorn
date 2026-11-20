@@ -6,7 +6,7 @@ Date: 2026-11-04
 - Pre-change comparison source: `fe8967f08fed8b29e7cd27d5989f52b7a85f405c`
 - Structured candidate used for the 11-run A/B: pre-change source plus `issue-157-structured-invalidation-trace.patch` (SHA-256 `866b4200a6612fd8bc3cdaefc05aff101f17d3f6608a3936b926c52b5a0f7522`); that implementation was committed as `067ff0c`
 - Historical baseline: `96461223cdbf43080acb957276c045ad704f4606`
-- Issue: [#157 — Attribute and reduce initial retained-tree construction overhead](https://github.com/samanshaiza004/alicorn/issues/157)
+- Issue: [#157 — Attribute and reduce initial retained-tree construction overhead](https://github.com/Carnival-Science/Alicorn/issues/157)
 
 ## Verdict
 

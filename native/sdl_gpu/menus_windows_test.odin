@@ -5,6 +5,7 @@ package alicorn_sdl_gpu
 import "core:testing"
 import win "core:sys/windows"
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 import "vendor:sdl3"
 
 WIN32_MENU_TEST_DRAG_TYPE :: alicorn.Drag_Type(141)
@@ -79,9 +80,9 @@ test_hidden_native_popup_anchors_below_the_caption_at_fractional_dpi :: proc(t: 
 	state := Win32_Menu_State{menu=&menu, labels=labels[:]}
 	for dpi in ([4]u32{96, 120, 144, 192}) {
 		state.dpi = dpi
-		state.chrome_height_pixels = i32(native_pixel_edge(32, f32(dpi)/96))
+		state.chrome_height_pixels = i32(cpu_renderer.Pixel_Edge(32, f32(dpi)/96))
 		anchor := win32_menu_popup_anchor(&state, 0)
-		testing.expect(t, anchor.x == win.LONG(native_pixel_edge(8, f32(dpi)/96)) && anchor.y == state.chrome_height_pixels,
+		testing.expect(t, anchor.x == win.LONG(cpu_renderer.Pixel_Edge(8, f32(dpi)/96)) && anchor.y == state.chrome_height_pixels,
 			"hidden menus must open below the header using physical caption coordinates")
 	}
 	app.menu_presentation = .Labels

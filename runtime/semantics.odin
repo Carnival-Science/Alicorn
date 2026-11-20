@@ -884,6 +884,95 @@ semantic_snapshot :: proc(rt: ^Runtime, allocator := context.allocator) -> Seman
 	return result
 }
 
+// semantic_snapshot_bounded returns at most max_nodes semantic entities,
+// retaining the earliest nodes in deterministic tree order. It scans the
+// working map but allocates/clones no more than the requested node bound. A
+// nonnegative max_text_bytes additionally bounds cloned label, description,
+// and value storage; -1 leaves those strings uncapped. truncated is true when
+// either limit omits data, and complete-tree consumers should fail closed.
+semantic_snapshot_bounded :: proc(
+	rt: ^Runtime,
+	max_nodes: int,
+	max_text_bytes: int = -1,
+	allocator := context.allocator,
+) -> (result: Semantic_Snapshot, truncated: bool) {
+	result = Semantic_Snapshot{allocator=allocator}
+	if rt == nil { return result, true }
+	limit := max(max_nodes, 0)
+	if limit == 0 {
+		return result, len(rt.semantic_entities) > 0
+	}
+	selected := make([dynamic]Semantic_Node, 0, min(limit, len(rt.semantic_entities)), allocator=allocator)
+	heap_ready := false
+	for _, entity in rt.semantic_entities {
+		node := entity.node
+		if len(selected) < limit {
+			append(&selected, node)
+			if len(selected) == limit {
+				for parent := len(selected)/2; parent > 0; parent -= 1 {
+					semantic_snapshot_heap_sift_down(selected[:], parent-1)
+				}
+				heap_ready = true
+			}
+			continue
+		}
+		truncated = true
+		if heap_ready && semantic_snapshot_node_before(node, selected[0]) {
+			selected[0] = node
+			semantic_snapshot_heap_sift_down(selected[:], 0)
+		}
+	}
+	slice.sort_by(selected[:], semantic_snapshot_node_before)
+	if max_text_bytes >= 0 {
+		text_bytes := 0
+		for node in selected {
+			texts := [3]string{node.label, node.description, node.value}
+			for text in texts {
+				if len(text) > max_text_bytes-text_bytes {
+					delete(selected)
+					return Semantic_Snapshot{allocator=allocator}, true
+				}
+				text_bytes += len(text)
+			}
+		}
+	}
+	result.revision = rt.semantic_revision
+	result.keyboard_focus = rt.semantic_keyboard_focus
+	result.nodes = selected
+	for i in 0..<len(result.nodes) {
+		node := &result.nodes[i]
+		node.label = owned_with_allocator(node.label, allocator)
+		node.description = owned_with_allocator(node.description, allocator)
+		node.value = owned_with_allocator(node.value, allocator)
+		node.text_run_character_lengths, _ = semantic_text_run_lengths_clone(node.text_run_character_lengths, allocator)
+	}
+	return
+}
+
+@(private)
+semantic_snapshot_node_before :: proc(a, b: Semantic_Node) -> bool {
+	if a.tree_order != b.tree_order { return a.tree_order < b.tree_order }
+	if a.id.namespace != b.id.namespace { return a.id.namespace < b.id.namespace }
+	return a.id.value < b.id.value
+}
+
+@(private)
+semantic_snapshot_heap_sift_down :: proc(nodes: []Semantic_Node, root: int) {
+	index := root
+	for {
+		left := index*2+1
+		if left >= len(nodes) { break }
+		largest := left
+		right := left+1
+		if right < len(nodes) && semantic_snapshot_node_before(nodes[largest], nodes[right]) {
+			largest = right
+		}
+		if !semantic_snapshot_node_before(nodes[index], nodes[largest]) { break }
+		nodes[index], nodes[largest] = nodes[largest], nodes[index]
+		index = largest
+	}
+}
+
 semantic_snapshot_destroy :: proc(snapshot: ^Semantic_Snapshot) {
 	if snapshot == nil { return }
 	for node in snapshot.nodes {
@@ -1041,6 +1130,11 @@ semantic_description_defaults :: proc(d: ^Description, semantic: ^Semantic_Descr
 	states := Semantic_States{}
 	actions := Semantic_Actions{}
 	if d.disabled { states = semantic_states_add(states, .Disabled) }
+	// AccessKit's UIA adapter reports IsKeyboardFocusable from the node's
+	// Focus action (or its current tree focus). Any control the runtime can
+	// focus from the keyboard must advertise Focus, or assistive technology
+	// is told that a Tab-reachable control cannot take focus.
+	if d.focusable && !d.disabled { actions = semantic_actions_add(actions, .Focus) }
 	#partial switch d.kind {
 	case .Button:
 		semantic.role = .Button

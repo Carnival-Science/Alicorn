@@ -1,0 +1,18 @@
+﻿# Feasibility fixture readback smoke: d3d12
+[webgpu-feasibility] adapter info backend=D3D12 type=DiscreteGPU vendor=32.0.15.9597 architecture= device=NVIDIA GeForce RTX 2080 SUPER description=
+[webgpu-feasibility] retained solid cache PASS mesh_rebuilds=1 vertex_uploads=1 vertex_bytes=648 transform_uploads=1 transform_bytes=24 viewport_uploads=1 unchanged_repeat=true
+[webgpu-feasibility] mixed paint-order compositor PASS commands=15 solid_meshes=1 text_meshes=1 icon_meshes=1 icon_vertex_uploads=1 icon_atlas_pages=2 icon_atlas_bytes=1572864 image_meshes=1 image_vertex_uploads=1 image_texture_uploads=2 image_texture_bytes=128 custom_surface_meshes=2 custom_surface_vertex_uploads=2 custom_surface_vertices=72 instance_uploads=1
+[webgpu-feasibility] solid translation cache PASS mesh_rebuilds=0 vertex_uploads=0 transform_uploads=1 transform_bytes=24
+[webgpu-feasibility] custom geometry instance cache PASS translation_and_opacity_changes=1 mesh_rebuilds=0 vertex_uploads=0
+[webgpu-feasibility] retained text cache PASS mesh_rebuilds=1 vertex_uploads=1 atlas_uploads=1 atlas_bytes=1048576 atlas_page_creates=1 prepare_buffer_creates=0 translation_uploads=2 viewport_uploads=1 unchanged_repeat=true
+[webgpu-feasibility] text motion cache PASS translated_command_only=true glyph_mesh_uploads=0 atlas_uploads=0 atlas_page_creates=0
+
+# Feasibility fixture readback smoke: vulkan
+[webgpu-feasibility] adapter info backend=Vulkan type=DiscreteGPU vendor=NVIDIA architecture= device=NVIDIA GeForce RTX 2080 SUPER description=595.97
+[webgpu-feasibility] retained solid cache PASS mesh_rebuilds=1 vertex_uploads=1 vertex_bytes=648 transform_uploads=1 transform_bytes=24 viewport_uploads=1 unchanged_repeat=true
+[webgpu-feasibility] mixed paint-order compositor PASS commands=15 solid_meshes=1 text_meshes=1 icon_meshes=1 icon_vertex_uploads=1 icon_atlas_pages=2 icon_atlas_bytes=1572864 image_meshes=1 image_vertex_uploads=1 image_texture_uploads=2 image_texture_bytes=128 custom_surface_meshes=2 custom_surface_vertex_uploads=2 custom_surface_vertices=72 instance_uploads=1
+[webgpu-feasibility] solid translation cache PASS mesh_rebuilds=0 vertex_uploads=0 transform_uploads=1 transform_bytes=24
+[webgpu-feasibility] custom geometry instance cache PASS translation_and_opacity_changes=1 mesh_rebuilds=0 vertex_uploads=0
+[webgpu-feasibility] retained text cache PASS mesh_rebuilds=1 vertex_uploads=1 atlas_uploads=1 atlas_bytes=1048576 atlas_page_creates=1 prepare_buffer_creates=0 translation_uploads=2 viewport_uploads=1 unchanged_repeat=true
+[webgpu-feasibility] text motion cache PASS translated_command_only=true glyph_mesh_uploads=0 atlas_uploads=0 atlas_page_creates=0
+

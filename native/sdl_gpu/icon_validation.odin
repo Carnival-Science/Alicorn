@@ -3,6 +3,7 @@ package alicorn_sdl_gpu
 import "core:fmt"
 import "core:math"
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 import "vendor:sdl3"
 
 native_icon_readback_case :: proc(renderer: ^Native_Icon_Renderer, scale: f32, layers: int, tint := alicorn.Color{1,0.25,0.5,0.8}) -> bool {
@@ -47,7 +48,7 @@ native_icon_readback_case :: proc(renderer: ^Native_Icon_Renderer, scale: f32, l
     if mapped == nil { return false }
     defer sdl3.UnmapGPUTransferBuffer(device, download)
     pixels := cast([^]u8)mapped
-    x0,y0,x1,y1 := logical_to_pixel_bounds(draw.bounds, scale, scale)
+    x0,y0,x1,y1 := cpu_renderer.Logical_To_Pixel_Bounds(draw.bounds, scale, scale)
     entry, valid := alicorn.icon_atlas_lookup(.Search, x1-x0)
     if !valid { return false }
     page := alicorn.ICON_ATLAS_PAGES[entry.page]

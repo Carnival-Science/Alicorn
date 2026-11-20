@@ -190,7 +190,7 @@ is_transparent_by_category :: proc(r: rune) -> bool {
 
 @(private="file")
 init_table :: proc() {
-	context.allocator = runtime.heap_allocator()
+	context.allocator = runtime.default_allocator()
 	tmp := make([dynamic]Range, 0, 1024)
 	for line in strings.split_lines_iterator(&JOIN_DATA_LINES) {
 		trimmed := strings.trim_space(line)

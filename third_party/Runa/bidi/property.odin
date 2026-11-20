@@ -89,7 +89,7 @@ bidi_class :: proc(r: rune) -> Bidi_Class {
 
 @(private="file")
 init_table :: proc() {
-	context.allocator = runtime.heap_allocator()    // process-lifetime cache
+	context.allocator = runtime.default_allocator() // process-lifetime cache
 	tmp := make([dynamic]Range, 0, 2048)
 	for line in strings.split_lines_iterator(&BIDI_DATA_LINES) {
 		trimmed := strings.trim_space(line)

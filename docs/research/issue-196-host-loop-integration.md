@@ -26,7 +26,7 @@ entry and loop](../../native/sdl_gpu/main.odin),
 
 ## Requirements from the issue
 
-[Issue #196](https://github.com/samanshaiza004/alicorn/issues/196) calls for a
+[Issue #196](https://github.com/Carnival-Science/Alicorn/issues/196) calls for a
 small wxWidgets fixture that keeps one UI thread and one primary event loop,
 then hosts an Alicorn view through one of three modes: host-owned window and
 loop with a step API; an Alicorn-owned SDL window stepped from the host loop;
@@ -38,8 +38,8 @@ device loss, and teardown. Acceptance includes open, resize, focus, keyboard,
 pointer, close, worker wakes, scheduled motion, no idle spin, UI-thread
 callbacks, and no callbacks after teardown.
 
-The issue distinguishes this work from [#121](https://github.com/samanshaiza004/alicorn/issues/121),
-which investigates plugin-editor child-window attachment, and [#162](https://github.com/samanshaiza004/alicorn/issues/162),
+The issue distinguishes this work from [#121](https://github.com/Carnival-Science/Alicorn/issues/121),
+which investigates plugin-editor child-window attachment, and [#162](https://github.com/Carnival-Science/Alicorn/issues/162),
 which investigates a renderer-neutral frame boundary. The first wx proof
 should reuse the current retained runtime and SDL_GPU renderer where feasible;
 it should not become either a plugin wrapper or a renderer rewrite.
@@ -47,14 +47,14 @@ it should not become either a plugin wrapper or a renderer rewrite.
 Two comments add concrete Audacity gates. The first reports that its current
 button adapter creates separate runtimes and font state per view, and asks for
 one retained surface with multiple controls and shared runtime/resources
-([comment](https://github.com/samanshaiza004/alicorn/issues/196#issuecomment-6889700448)).
+([comment](https://github.com/Carnival-Science/Alicorn/issues/196#issuecomment-6889700448)).
 The second requires the Selection Toolbar's two specialized
 `NumericTextCtrl`s to preserve Start/End, Start/Length, Length/End, and
 Length/Center modes, localized format changes, digit editing/stepping, focus,
 per-digit accessibility, and `ProjectSelectionManager` semantics. It calls
 for committed text, preedit/cancel, navigation keys, accessible value/name/
 focus, selection, and control lifetime; keep the wx editor as fallback until
-that contract passes ([comment](https://github.com/samanshaiza004/alicorn/issues/196#issuecomment-6893307826)).
+that contract passes ([comment](https://github.com/Carnival-Science/Alicorn/issues/196#issuecomment-6893307826)).
 That comment describes Acetate's C ABI gap. This repository's Odin `Application`
 surface already declares text-input and text-key callbacks, while the SDL host
 currently supplies their native event path; a wx/C ABI adapter still needs to
@@ -166,8 +166,8 @@ No callback may retain session-owned state after `session_close` returns.
 - Also out of scope: a renderer rewrite, renderer-neutral frame protocol,
   plugin wrapper, arbitrary cross-platform GUI embedding protocol, and
   replacing standalone `Run` as the default host. See the separate scopes in
-  [#121](https://github.com/samanshaiza004/alicorn/issues/121) and
-  [#162](https://github.com/samanshaiza004/alicorn/issues/162).
+  [#121](https://github.com/Carnival-Science/Alicorn/issues/121) and
+  [#162](https://github.com/Carnival-Science/Alicorn/issues/162).
 
 ## Relevant symbols and files
 

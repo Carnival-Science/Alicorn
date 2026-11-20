@@ -10,6 +10,7 @@ import "core:math"
 import "core:os"
 import "core:time"
 import alicorn "../../runtime"
+import cpu_renderer "../../renderer/cpu"
 import "vendor:sdl3"
 
 GPU_CANVAS_VALIDATION_LOGICAL_WIDTH :: 640
@@ -230,7 +231,7 @@ gpu_canvas_validation_scissor :: proc(bounds, clip: alicorn.Rect, scale_x, scale
 	right := min(bounds.x+bounds.w, clip.x+clip.w)
 	bottom := min(bounds.y+bounds.h, clip.y+clip.h)
 	if right <= left || bottom <= top { return }
-	x0, y0, x1, y1 := logical_to_pixel_bounds(alicorn.Rect{left, top, right-left, bottom-top}, scale_x, scale_y)
+	x0, y0, x1, y1 := cpu_renderer.Logical_To_Pixel_Bounds(alicorn.Rect{left, top, right-left, bottom-top}, scale_x, scale_y)
 	x0 = max(x0, 0); y0 = max(y0, 0)
 	x1 = min(x1, int(target_w)); y1 = min(y1, int(target_h))
 	if x1 <= x0 || y1 <= y0 { return }

@@ -70,7 +70,7 @@ sb_class :: proc(r: rune) -> SB {
 
 @(private="file")
 init_sb_table :: proc() {
-	context.allocator = runtime.heap_allocator()
+	context.allocator = runtime.default_allocator()
 	tmp := make([dynamic]SB_Range, 0, 1024)
 
 	data := SB_DATA

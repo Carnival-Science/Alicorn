@@ -6,8 +6,8 @@ The #204 recovery path and D3D12 failure-injection validation are implemented
 in the Windows foundation workflow. Local macOS execution still requires a
 display-capable session.
 The wx/Audacity integration and native plugin-window work remain separate in
-[#196](https://github.com/samanshaiza004/alicorn/issues/196) and
-[#121](https://github.com/samanshaiza004/alicorn/issues/121).
+[#196](https://github.com/Carnival-Science/Alicorn/issues/196) and
+[#121](https://github.com/Carnival-Science/Alicorn/issues/121).
 
 ## Finding
 
@@ -130,10 +130,10 @@ so the host must not separately acknowledge that same submission through
 [hosted-runtime contract](../hosted-runtime.md).
 
 The wx host fixture, native service ownership, and complete Audacity
-interaction/teardown proof remain open in [#196](https://github.com/samanshaiza004/alicorn/issues/196);
-native window attachment remains in [#121](https://github.com/samanshaiza004/alicorn/issues/121).
+interaction/teardown proof remain open in [#196](https://github.com/Carnival-Science/Alicorn/issues/196);
+native window attachment remains in [#121](https://github.com/Carnival-Science/Alicorn/issues/121).
 This document covers the renderer/frame seam in
-[#162](https://github.com/samanshaiza004/alicorn/issues/162). Acetate's wx
+[#162](https://github.com/Carnival-Science/Alicorn/issues/162). Acetate's wx
 adapter remains its active presentation path until those pieces are integrated.
 
 Input, accessibility, clipboard/IME routing, native menus, integrated titlebar

@@ -118,6 +118,21 @@ class PackageDependencyAuditTests(unittest.TestCase):
         )
         self.assertNotIn("sdlSource", provenance)
 
+    def test_pinned_shared_provenance_records_source_checksum(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runtime = pathlib.Path(directory) / "libSDL3.0.dylib"
+            runtime.write_bytes(b"test pinned SDL dylib")
+            provenance = sdl_runtime_provenance(runtime, SDL_VERSION, "pinned-source")
+
+        self.assertEqual(
+            provenance["sdlRuntime"]["provenance"],
+            {
+                "provider": "pinned-source",
+                "source": SDL_SOURCE,
+                "sourceSha256": SDL_SOURCE_SHA256,
+            },
+        )
+
     def test_shared_version_is_read_from_the_supplied_library(self):
         get_version = Mock(return_value=3_004_020)
         library = SimpleNamespace(SDL_GetVersion=get_version)

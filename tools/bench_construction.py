@@ -47,7 +47,7 @@ COARSE_PHASES = {"Reconcile", "Tree_Order", "Layout", "Geometry_Finalize",
 
 def instrument_phases(path, detail):
     """Add entry/deferred-exit clocks in a disposable source snapshot only."""
-    files = {file: file.read_text() for file in (path / "runtime").glob("*.odin")}
+    files = {file: file.read_text(encoding="utf-8") for file in (path / "runtime").glob("*.odin")}
     instrumented = {}
     for phase, alternatives in PHASE_FUNCTIONS.items():
         if not detail and phase not in COARSE_PHASES:
@@ -82,7 +82,7 @@ def instrument_phases(path, detail):
             instrumented[phase] = name
             break
     for file, text in files.items():
-        file.write_text(text)
+        file.write_text(text, encoding="utf-8")
     enum = ", ".join(PHASE_FUNCTIONS)
     (path / "runtime" / "construction_profile.odin").write_text(f'''package alicorn
 import "core:fmt"
@@ -108,7 +108,7 @@ construction_profile_report :: proc() {{
         fmt.println("cpu_phase", phase, "calls", construction_profile_calls[phase], "inclusive_ns", construction_profile_times[phase], "inclusive_cpu_ns", construction_profile_cpu_times[phase])
     }}
 }}
-''')
+''', encoding="utf-8")
     return instrumented
 
 
@@ -198,7 +198,7 @@ def snapshot(root, output, label, ref, november):
             raise RuntimeError("refusing to replace a directory not created by this benchmark: " + str(path))
         shutil.rmtree(path)
     path.mkdir()
-    marker.write_text(commit + "\n")
+    marker.write_text(commit + "\n", encoding="utf-8")
     archive = subprocess.Popen(["git", "archive", commit], cwd=root, stdout=subprocess.PIPE)
     try:
         with tarfile.open(fileobj=archive.stdout, mode="r|") as source:
@@ -213,12 +213,12 @@ import "core:mem"
 Construction_Benchmark_New_Runtime :: proc(viewport: Rect, persistent_allocator: mem.Allocator) -> Runtime {
     return new_runtime(viewport, Runtime_Config{persistent_allocator=persistent_allocator})
 }
-''')
+''', encoding="utf-8")
     image = path / "runtime" / "image_assets.odin"
     if november and image.exists():
-        source = image.read_text()
+        source = image.read_text(encoding="utf-8")
         if "decoded.pixels.buf" in source:
-            image.write_text(source.replace("decoded.pixels.buf", "decoded.pixels"))
+            image.write_text(source.replace("decoded.pixels.buf", "decoded.pixels"), encoding="utf-8")
             compatibility.append("runtime/image_assets.odin: decoded.pixels.buf -> decoded.pixels (unused image decoder SDK adaptation)")
     return commit, path, compatibility
 
@@ -276,7 +276,7 @@ def main():
     if args.phases:
         body, closing = probe_source.rsplit("\n}", 1)
         probe_source = body + "\n\talicorn.construction_profile_report()\n}" + closing
-    (probe / "main.odin").write_text(probe_source)
+    (probe / "main.odin").write_text(probe_source, encoding="utf-8")
     refs = {}
     patches = {}
     labels = {definition.split("=", 1)[0] for definition in args.ref}
@@ -373,7 +373,7 @@ def main():
         "probe_sha256": hashlib.sha256(probe_bytes).hexdigest(),
         "refs": refs, "samples": samples, "summary": summary,
     }
-    (output / "results.json").write_text(json.dumps(report, indent=2) + "\n")
+    (output / "results.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     for row in summary:
         times = " ".join(f"{metric}={row[metric]['median']/1e6:.3f}ms" for metric in ("description_ns", "end_frame_ns", "total_ns"))
         print(row["label"], row["workload"], times)

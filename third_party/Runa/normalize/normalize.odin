@@ -303,7 +303,7 @@ try_compose :: proc(l, c: rune) -> (rune, bool) {
 
 @(private="file")
 init_tables :: proc() {
-	context.allocator = runtime.heap_allocator()
+	context.allocator = runtime.default_allocator()
 
 	// Pass 1: scan DerivedNormalizationProps.txt for Full_Composition_Exclusion.
 	excl_tmp := make([dynamic]rune, 0, 1024)
@@ -419,7 +419,7 @@ init_tables :: proc() {
 
 @(private="file")
 rebuild_transitive_decomposition :: proc() {
-	context.allocator = runtime.heap_allocator()
+	context.allocator = runtime.default_allocator()
 	new_runes := make([dynamic]rune, 0, len(g_decomp_runes) * 2)
 	// Stash the new (off, count) pair for each entry into a parallel
 	// slice. We can't mutate g_decomp's `off` field mid-iteration —

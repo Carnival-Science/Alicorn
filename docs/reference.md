@@ -146,7 +146,7 @@ runner returns. All callbacks execute on the application thread:
 | --- | --- | --- |
 | `on_initialize` | `proc(app: ^App, runtime: ^Runtime)` | Register themes and application resources after Runtime creation and before the first description. |
 | `on_start` | `proc(app: ^App, waker: ui.Application_Waker)` | Start app-owned producers, copying the borrowed thread-safe waker if needed. Runs before the initial description. |
-| `on_wake` | `proc(app: ^App, ctx: ui.Application_Context)` | Adopt synchronized results and call `ui.invalidate(ctx, reason)` when a new description is required. |
+| `on_wake` | `proc(app: ^App, ctx: ui.Application_Context)` | Adopt synchronized results and queued application-owned accessibility actions; call `ui.invalidate(ctx, reason)` when a new description is required. |
 | `on_stop` | `proc(app: ^App)` | Stop and join every producer before returning; release shared result storage after joining. |
 
 `ui.wake(waker)` forwards to the existing host event request. The application
@@ -282,10 +282,11 @@ when the user drops or cancels it. Hosts without a native source implementation
 return `false`; SDL file drops into an Alicorn window remain a separate,
 cross-platform input path.
 
-`Application_Waker` is borrowed host state. You may copy it to worker threads
-while `Run` is active, but `on_stop` must stop and join every worker that can
-call it before returning. Do not call a copied waker after `on_stop` returns;
-the host retires its backing state after that callback.
+`Application_Waker` is a borrowed, backend-provided wake callback. You may
+copy it to worker threads while `Run` is active, but `on_stop` must stop and
+join every worker that can call it before returning. Do not call a copied
+waker after `on_stop` returns; the host retires its backing state after that
+callback.
 
 `Application.on_initialize` is called after Runtime creation and before the
 host's default font faces and GPU renderers initialize. Use it for
@@ -1418,7 +1419,10 @@ system file drops or arbitrary MIME payloads.
   host applies platform conventions (Ctrl/Option word movement, Command line
   movement, and platform document-edge keys). A focused generic text owner gets
   first refusal on Tab; declining it preserves normal focus traversal. Global
-  menu shortcuts are checked before generic text keys.
+  menu shortcuts are checked before generic text keys. `ui.run` applications
+  can handle these events through its optional `on_text_key` callback; the
+  callback receives the focused owner so editor caret and selection state stay
+  application-owned.
 - `Runtime_Config` optionally configures persistent and scratch backing
   allocators when calling `new_runtime`.
 - The analytic motion kernel stores scalar and 2D responses by value and
