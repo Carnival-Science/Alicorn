@@ -1175,6 +1175,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 		free(node, allocator=rt.persistent_allocator)
 	}
 	delete(rt.nodes)
+	host_text_runs_destroy(rt)
 	delete(rt.drag_preview_modes)
 	delete(rt.drag_tracking_options)
 	if rt.motion_owners != nil { delete(rt.motion_owners) }

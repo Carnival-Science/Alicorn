@@ -19,7 +19,8 @@ import host "alicorn:host/sdl3"
 // UI_Host_Services.windows, native AccessKit adapters on Windows/macOS, and
 // shared native menus through the menus/menu_presentation arguments (Windows
 // system menu bar and macOS NSMenu; browser menus remain TODO). Integrated
-// titlebars are not yet ported.
+// titlebars are ported for Windows/macOS through host/sdl3; the browser host
+// records decoration policy only.
 run :: proc(
 	state: ^$T,
 	render: proc(^T, ^ui.UI),
@@ -47,10 +48,20 @@ run :: proc(
 	on_menu_command: proc(^T, ^alicorn.Runtime, alicorn.Action_ID) = nil,
 	on_close_requested: proc(^T, ^alicorn.Runtime) -> alicorn.Hosted_Close_Result = nil,
 	on_dialog: proc(^T, ^alicorn.Runtime, ^alicorn.File_Dialog_Result) = nil,
+	window_decorations: alicorn.Window_Decoration_Mode = .System,
+	window_chrome_height: f32 = 0,
+	window_chrome_metrics: alicorn.Window_Chrome_Metrics_Proc = nil,
+	window_chrome_layout: alicorn.Window_Chrome_Layout_Proc = nil,
+	window_chrome_appearance: alicorn.Window_Chrome_Appearance_Proc = nil,
 ) {
 	run_state := ui.Hosted_Run_State(T){
 		app=state, render=render, render_overlays=render_overlays,
 		menus=menus, menu_presentation=menu_presentation,
+		window_decorations=window_decorations,
+		window_chrome_height=window_chrome_height,
+		window_chrome_metrics=window_chrome_metrics,
+		window_chrome_layout=window_chrome_layout,
+		window_chrome_appearance=window_chrome_appearance,
 		on_initialize=on_initialize, on_start=on_start, on_wake=on_wake, on_stop=on_stop,
 		on_key=on_key, on_text_change=on_text_change, on_pointer=on_pointer,
 		on_text_key=on_text_key,

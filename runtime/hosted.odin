@@ -167,6 +167,26 @@ Hosted_Runtime_Config :: struct {
 	// matches. menu_presentation is host policy (see Menu_Presentation).
 	menus: []Menu,
 	menu_presentation: Menu_Presentation,
+	// window_decorations selects native chrome policy. Integrated_Title_Bar is
+	// the Windows host-owned titlebar band; Content_Title_Bar is the macOS
+	// full-size-content mode. System leaves chrome entirely with the platform.
+	window_decorations: Window_Decoration_Mode,
+	// window_chrome_height is the application-authored header height. It is
+	// informational for hosts that measure their own native band.
+	window_chrome_height: f32,
+	// The chrome callbacks mirror native/sdl_gpu's Application fields. The
+	// layout callback is sampled after retained layout; its returned slice is
+	// borrowed only for that call.
+	window_chrome_metrics: Window_Chrome_Metrics_Proc,
+	window_chrome_layout: Window_Chrome_Layout_Proc,
+	window_chrome_appearance: Window_Chrome_Appearance_Proc,
+	// chrome_paint appends host-owned chrome commands after application paint
+	// during presentation. Width and height include the chrome band.
+	chrome_paint: Hosted_Chrome_Paint_Proc,
+	// content_inset_top reserves host-owned chrome above the application
+	// viewport. The host updates it with hosted_runtime_set_content_inset when
+	// native geometry changes.
+	content_inset_top: f32,
 	// wake_allocator must be thread-safe because retained wakers may be released
 	// by worker threads. The default context allocator is used when omitted.
 	wake_allocator: mem.Allocator,
@@ -253,7 +273,18 @@ Hosted_Runtime_State :: struct {
 	on_menu_command: Hosted_Menu_Command_Proc,
 	on_close_requested: Hosted_Close_Requested_Proc,
 	on_dialog: Hosted_Dialog_Proc,
+	window_decorations: Window_Decoration_Mode,
+	window_chrome_height: f32,
+	window_chrome_metrics: Window_Chrome_Metrics_Proc,
+	window_chrome_layout: Window_Chrome_Layout_Proc,
+	window_chrome_appearance: Window_Chrome_Appearance_Proc,
+	chrome_paint: Hosted_Chrome_Paint_Proc,
 	logical_width, logical_height: int,
+	window_logical_width, window_logical_height: int,
+	content_inset_top: f32,
+	// hosted_display stages window-space application paint plus host chrome for
+	// one presentation. It is reused across frames and owned by this state.
+	hosted_display: [dynamic]Paint_Command,
 	dpi_scale: f32,
 	app_deadline_ns: u64,
 	drag_deadline_ns: u64,
@@ -282,6 +313,17 @@ hosted_runtime_metrics_valid :: proc(logical_width, logical_height, pixel_width,
 		dpi_scale > 0 && !math.is_nan(dpi_scale) && !math.is_inf(dpi_scale)
 }
 
+// hosted_app_logical_height mirrors native/sdl_gpu's content transform: the
+// application viewport excludes host-owned chrome, keeps at least one logical
+// pixel for a non-empty window, and never reports a negative height.
+hosted_app_logical_height :: proc(window_height: int, inset_top: f32) -> int {
+	if window_height <= 0 { return 0 }
+	height := f32(window_height)
+	inset := clamp(inset_top, 0, height)
+	app := max(height-inset, min(height, 1))
+	return int(app)
+}
+
 // hosted_runtime_init must run on the native surface's UI thread. The caller
 // supplies a zero-initialized Hosted_Runtime and keeps it alive until destroy.
 hosted_runtime_init :: proc(host: ^Hosted_Runtime, config: Hosted_Runtime_Config) -> Hosted_Runtime_Status {
@@ -297,6 +339,7 @@ hosted_runtime_init :: proc(host: ^Hosted_Runtime, config: Hosted_Runtime_Config
 	wake_allocator := config.wake_allocator
 	if wake_allocator.procedure == nil { wake_allocator = context.allocator }
 	state := new(Hosted_Runtime_State, allocator=state_allocator)
+	inset_top := clamp(config.content_inset_top, 0, f32(config.logical_height))
 	state^ = Hosted_Runtime_State{
 		allocator=state_allocator,
 		owner_thread_id=sync.current_thread_id(),
@@ -318,13 +361,22 @@ hosted_runtime_init :: proc(host: ^Hosted_Runtime, config: Hosted_Runtime_Config
 		on_menu_command=config.on_menu_command,
 		on_close_requested=config.on_close_requested,
 		on_dialog=config.on_dialog,
+		window_decorations=config.window_decorations,
+		window_chrome_height=config.window_chrome_height,
+		window_chrome_metrics=config.window_chrome_metrics,
+		window_chrome_layout=config.window_chrome_layout,
+		window_chrome_appearance=config.window_chrome_appearance,
+		chrome_paint=config.chrome_paint,
 		logical_width=config.logical_width,
-		logical_height=config.logical_height,
+		logical_height=hosted_app_logical_height(config.logical_height, inset_top),
+		window_logical_width=config.logical_width,
+		window_logical_height=config.logical_height,
+		content_inset_top=inset_top,
 		dpi_scale=config.dpi_scale,
 		renderable=true,
 	}
 	state.runtime = new_runtime(
-		Rect{0, 0, f32(config.logical_width), f32(config.logical_height)},
+		Rect{0, 0, f32(state.logical_width), f32(state.logical_height)},
 		config=config.runtime,
 	)
 	if config.pixel_width > 0 && config.pixel_height > 0 && config.logical_width > 0 && config.logical_height > 0 {
@@ -519,34 +571,83 @@ hosted_runtime_resize :: proc(
 		return .Invalid_Argument
 	}
 	rt := &state.runtime
-	logical_changed := logical_width != state.logical_width || logical_height != state.logical_height
+	next_inset := clamp(state.content_inset_top, 0, f32(logical_height))
+	next_height := hosted_app_logical_height(logical_height, next_inset)
+	logical_changed := logical_width != state.logical_width || next_height != state.logical_height
+	window_logical_changed := logical_width != state.window_logical_width || logical_height != state.window_logical_height
 	dpi_changed := dpi_scale != state.dpi_scale
-	state.logical_width, state.logical_height = logical_width, logical_height
+	state.window_logical_width, state.window_logical_height = logical_width, logical_height
+	state.content_inset_top = next_inset
+	state.logical_width, state.logical_height = logical_width, next_height
 	state.dpi_scale = dpi_scale
-	if logical_changed {
+	if logical_changed || window_logical_changed {
 		rt.viewport.w = f32(logical_width)
-		rt.viewport.h = f32(logical_height)
+		rt.viewport.h = f32(next_height)
 		invalidate_root(rt, "hosted surface logical size changed")
 	} else if dpi_changed {
 		invalidate_root(rt, "hosted surface DPI changed")
 	}
-	if pixel_width > 0 && pixel_height > 0 && logical_width > 0 && logical_height > 0 {
-		_ = set_presentation_scale(rt, f32(pixel_width)/f32(logical_width), f32(pixel_height)/f32(logical_height))
+	if pixel_width > 0 && pixel_height > 0 && logical_width > 0 && next_height > 0 {
+		_ = set_presentation_scale(rt, f32(pixel_width)/f32(logical_width), f32(pixel_height)/f32(next_height))
 	}
 	return .Ok
+}
+
+// hosted_runtime_set_content_inset publishes host-owned chrome reserved above
+// the application viewport. Input coordinates over that band are withheld from
+// the application (unless a capture is active), application descriptions see
+// the reduced height, and presentation translates app paint below the band.
+// Mirrors native/sdl_gpu's content_inset_top semantics.
+hosted_runtime_set_content_inset :: proc(
+	host: ^Hosted_Runtime,
+	inset_top: f32,
+) -> Hosted_Runtime_Status {
+	state, status := hosted_runtime_get_state(host)
+	if status != .Ok { return status }
+	if math.is_nan(inset_top) || math.is_inf(inset_top) { return .Invalid_Argument }
+	next := clamp(inset_top, 0, f32(state.window_logical_height))
+	if next == state.content_inset_top { return .Ok }
+	state.content_inset_top = next
+	next_height := hosted_app_logical_height(state.window_logical_height, next)
+	if next_height != state.logical_height {
+		state.logical_height = next_height
+		state.runtime.viewport.w = f32(state.logical_width)
+		state.runtime.viewport.h = f32(next_height)
+		invalidate_root(&state.runtime, "hosted surface content inset changed")
+	}
+	return .Ok
+}
+
+// hosted_runtime_content_inset reports the current host chrome inset.
+hosted_runtime_content_inset :: proc(host: ^Hosted_Runtime) -> (inset_top: f32, status: Hosted_Runtime_Status) {
+	state, access_status := hosted_runtime_get_state(host)
+	if access_status != .Ok { return 0, access_status }
+	return state.content_inset_top, .Ok
 }
 
 hosted_runtime_pointer :: proc(host: ^Hosted_Runtime, event: Pointer_Event) -> (target: Node_ID, status: Hosted_Runtime_Status) {
 	state, access_status := hosted_runtime_get_state(host)
 	if access_status != .Ok { return 0, access_status }
 	rt := &state.runtime
-	cause := pointer_cause_begin(rt, event.kind)
-	target = process_pointer(rt, event)
 	dispatched_event := event
+	if state.content_inset_top > 0 && event.kind != .Cancel {
+		// Pointer coordinates arrive in window-logical space. The application
+		// viewport starts below host-owned chrome. A captured interaction keeps
+		// receiving the event (clamped) until the host cancels it explicitly,
+		// matching the native host's chrome-ownership handoff.
+		if event.y < state.content_inset_top || event.y >= f32(state.window_logical_height) {
+			if rt.captured_node == 0 { return 0, .Ok }
+			dispatched_event.y = 0
+		} else {
+			dispatched_event.y -= state.content_inset_top
+		}
+	}
+	cause := pointer_cause_begin(rt, dispatched_event.kind)
+	target = process_pointer(rt, dispatched_event)
 	if key, ok := node_identity_key(rt, target); ok { dispatched_event.target_key = key }
 	if state.on_pointer != nil {
 		state.on_pointer(state.app_state, rt, dispatched_event, target)
-		if event.kind == .Down || event.kind == .Up {
+		if dispatched_event.kind == .Down || dispatched_event.kind == .Up {
 			invalidate_root(rt, "hosted application pointer callback")
 		}
 	}
@@ -602,14 +703,21 @@ hosted_runtime_application_key :: proc(
 hosted_runtime_scroll :: proc(host: ^Hosted_Runtime, event: Scroll_Event) -> (handled: bool, status: Hosted_Runtime_Status) {
 	state, access_status := hosted_runtime_get_state(host)
 	if access_status != .Ok { return false, access_status }
+	dispatched_event := event
+	if state.content_inset_top > 0 {
+		if event.y < state.content_inset_top || event.y >= f32(state.window_logical_height) {
+			return false, .Ok
+		}
+		dispatched_event.y -= state.content_inset_top
+	}
 	cause := cause_begin(&state.runtime, .Scroll, "hosted scroll event")
 	if state.on_scroll_capture != nil {
-		target := scroll_region_hit_test(&state.runtime, event.x, event.y)
-		if target != 0 { handled = state.on_scroll_capture(state.app_state, &state.runtime, event, target) }
+		target := scroll_region_hit_test(&state.runtime, dispatched_event.x, dispatched_event.y)
+		if target != 0 { handled = state.on_scroll_capture(state.app_state, &state.runtime, dispatched_event, target) }
 	}
-	if !handled { handled = process_scroll(&state.runtime, event) }
+	if !handled { handled = process_scroll(&state.runtime, dispatched_event) }
 	if !handled && state.on_scroll != nil {
-		state.on_scroll(state.app_state, &state.runtime, event)
+		state.on_scroll(state.app_state, &state.runtime, dispatched_event)
 		handled = true
 	}
 	cause_end(&state.runtime, cause)
@@ -866,6 +974,66 @@ hosted_runtime_display_commands :: proc(host: ^Hosted_Runtime) -> ([]Paint_Comma
 	return state.runtime.display[:], .Ok
 }
 
+// hosted_paint_command_apply_content_inset translates application logical
+// geometry into window space exactly once, at the presentation boundary.
+hosted_paint_command_apply_content_inset :: proc(command: Paint_Command, inset_top: f32) -> Paint_Command {
+	result := command
+	if inset_top > 0 {
+		result.bounds.y += inset_top
+		result.clip.y += inset_top
+	}
+	return result
+}
+
+// hosted_runtime_presentation_list returns the commands a presenter should
+// encode for this surface. Application paint is translated below host-owned
+// chrome and host chrome paint is appended after it, mirroring native/sdl_gpu's
+// draw_display_list overlay order. With no inset and no chrome provider the
+// retained display list is returned without copying. Otherwise commands are
+// staged in Runtime-owned storage and remain valid until the next call.
+hosted_runtime_presentation_list :: proc(
+	host: ^Hosted_Runtime,
+	allocator := context.allocator,
+) -> (view: Paint_Display_List_View, status: Hosted_Runtime_Status) {
+	state, access_status := hosted_runtime_get_state(host)
+	if access_status != .Ok { return {}, access_status }
+	rt := &state.runtime
+	if rt.frame_open { return {}, .Invalid_Argument }
+	has_chrome := state.chrome_paint != nil && state.window_decorations != .System
+	if state.content_inset_top <= 0 && !has_chrome {
+		view = Paint_Display_List_View{commands=rt.display[:], revision=rt.presentation_revision}
+		return view, .Ok
+	}
+	chrome: []Paint_Command
+	if has_chrome {
+		chrome = state.chrome_paint(
+			state.app_state,
+			rt,
+			f32(state.window_logical_width),
+			f32(state.window_logical_height),
+			allocator,
+		)
+	}
+	required := len(rt.display)+len(chrome)
+	clear(&state.hosted_display)
+	if required > 0 && state.hosted_display == nil {
+		state.hosted_display = make([dynamic]Paint_Command, 0, required, allocator=state.allocator)
+		if state.hosted_display == nil { return {}, .Invalid_Argument }
+	}
+	if required > cap(state.hosted_display) && state.hosted_display != nil {
+		reserve(&state.hosted_display, required)
+	}
+	for command in rt.display {
+		append(&state.hosted_display, hosted_paint_command_apply_content_inset(command, state.content_inset_top))
+	}
+	for command in chrome { append(&state.hosted_display, command) }
+	view = Paint_Display_List_View{
+		commands=state.hosted_display[:],
+		revision=rt.presentation_revision,
+	}
+	return view, .Ok
+}
+
 hosted_runtime_semantic_snapshot :: proc(host: ^Hosted_Runtime, allocator := context.allocator) -> (Semantic_Snapshot, Hosted_Runtime_Status) {
 	state, status := hosted_runtime_get_state(host)
 	if status != .Ok { return {}, status }
@@ -960,6 +1128,7 @@ hosted_runtime_destroy :: proc(host: ^Hosted_Runtime) -> Hosted_Runtime_Status {
 	}
 	state.closed = true
 	if state.on_stop != nil { state.on_stop(state.app_state) }
+	if state.hosted_display != nil { delete(state.hosted_display) }
 	destroy_runtime(&state.runtime)
 	if control != nil {
 		owner := Hosted_Waker{control=control}

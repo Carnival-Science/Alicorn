@@ -395,8 +395,9 @@ hosted_surface_present_pending :: proc(
 	if state.completion_failed { return .Resource_Failure }
 	if state.configuration.width == 0 || state.configuration.height == 0 { return .Suspended }
 	if !webgpu_renderer.WebGPU_Presenter_Can_Encode(&state.renderer) { return .Retry_Later }
-	display, display_ready := alicorn.paint_display_list(state.runtime)
-	if !display_ready || display.revision == 0 { return .No_Frame }
+	display, display_status := alicorn.hosted_runtime_presentation_list(state.hosted, state.allocator)
+	if display_status != .Ok { return .Invalid_Input }
+	if display.revision == 0 { return .No_Frame }
 
 	acquire_start: time.Tick
 	if state.timing_enabled { acquire_start = time.tick_now() }

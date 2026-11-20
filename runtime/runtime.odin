@@ -2176,6 +2176,7 @@ Runtime :: struct {
 	submission_cause_mixed: bool,
 	display:     [dynamic]Paint_Command,
 	display_target: [dynamic]Paint_Command,
+	host_text_runs: [dynamic]Host_Text_Run,
 	paint_resource_generation: u64,
 	images: map[u64]Image_Resource,
 	image_resource_sequence: u64,

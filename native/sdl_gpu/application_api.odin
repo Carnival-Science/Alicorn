@@ -24,11 +24,10 @@ Application_Menu_Shortcut :: alicorn.Menu_Shortcut
 Application_Menu_Item :: alicorn.Menu_Item
 Application_Menu :: alicorn.Menu
 
-Window_Decoration_Mode :: enum {
-	System,
-	Integrated_Title_Bar,
-	Content_Title_Bar,
-}
+// The decoration and chrome vocabulary lives in alicorn:runtime so the
+// reference SDL_GPU host and Hosted_Runtime hosts share one definition. These
+// aliases preserve the native Application-facing names.
+Window_Decoration_Mode :: alicorn.Window_Decoration_Mode
 
 // Hidden affects only Windows Integrated_Title_Bar labels. The native menu
 // descriptions, command shortcuts, and Alt menu access remain available.
@@ -40,46 +39,23 @@ Application_Menu_Presentation :: alicorn.Menu_Presentation
 // content_start_x follows visible native menu labels (or the frame inset when
 // menu_presentation is Hidden) and content_end_x precedes
 // the native caption buttons. The host keeps native-control hit testing.
-Window_Chrome_Metrics :: struct {
-	header: alicorn.Rect,
-	native_controls: [3]alicorn.Rect,
-	native_control_count: int,
-	content_start_x: f32,
-	content_end_x: f32,
-	display_scale: f32,
-	fullscreen: bool,
-}
+Window_Chrome_Metrics :: alicorn.Window_Chrome_Metrics
+window_chrome_metrics_equal :: alicorn.window_chrome_metrics_equal
 
-window_chrome_metrics_equal :: proc(a, b: Window_Chrome_Metrics) -> bool {
-	if a.header != b.header || a.native_control_count != b.native_control_count ||
-		a.content_start_x != b.content_start_x || a.content_end_x != b.content_end_x ||
-		a.display_scale != b.display_scale || a.fullscreen != b.fullscreen { return false }
-	for i in 0..<min(max(a.native_control_count, 0), len(a.native_controls)) {
-		if a.native_controls[i] != b.native_controls[i] { return false }
-	}
-	return true
-}
+Window_Chrome_Metrics_Proc :: alicorn.Window_Chrome_Metrics_Proc
 
-Window_Chrome_Metrics_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, metrics: Window_Chrome_Metrics)
+Window_Chrome_Region_Kind :: alicorn.Window_Chrome_Region_Kind
 
-Window_Chrome_Region_Kind :: enum { Interactive, Window_Drag }
-
-WINDOW_CHROME_REGION_CAPACITY :: 16
+WINDOW_CHROME_REGION_CAPACITY :: alicorn.WINDOW_CHROME_REGION_CAPACITY
 
 // A chrome region references an ordinary retained node. The host resolves its
 // finalized bounds after layout and retains only those geometry products. At
 // most WINDOW_CHROME_REGION_CAPACITY regions are consumed per layout callback.
-Window_Chrome_Region :: struct {
-	node: alicorn.Node_ID,
-	kind: Window_Chrome_Region_Kind,
-}
+Window_Chrome_Region :: alicorn.Window_Chrome_Region
 
-Window_Chrome_Layout :: struct {
-	header: alicorn.Node_ID,
-	regions: []Window_Chrome_Region,
-}
+Window_Chrome_Layout :: alicorn.Window_Chrome_Layout
 
-Window_Chrome_Layout_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime) -> Window_Chrome_Layout
+Window_Chrome_Layout_Proc :: alicorn.Window_Chrome_Layout_Proc
 
 Application_Build_Proc :: proc(
 	state: rawptr,
@@ -215,16 +191,9 @@ application_wake :: proc(waker: Application_Waker) {
 // Window_Chrome_Appearance is optional host presentation policy for integrated
 // window chrome. The native host keeps ownership of rendering and interaction;
 // applications may supply colors resolved from their active theme.
-Window_Chrome_Appearance :: struct {
-	defined:    bool,
-	background: alicorn.Color,
-	foreground: alicorn.Color,
-}
+Window_Chrome_Appearance :: alicorn.Window_Chrome_Appearance
 
-Application_Chrome_Appearance_Proc :: proc(
-	state: rawptr,
-	rt: ^alicorn.Runtime,
-) -> Window_Chrome_Appearance
+Application_Chrome_Appearance_Proc :: alicorn.Window_Chrome_Appearance_Proc
 
 // Application is the intended public boundary for a small native Alicorn
 // program. State is borrowed by callbacks for the duration of Run; retained

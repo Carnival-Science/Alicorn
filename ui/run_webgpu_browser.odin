@@ -54,9 +54,21 @@ run :: proc(
 	on_menu_command: proc(^T, ^alicorn.Runtime, alicorn.Action_ID) = nil,
 	on_close_requested: proc(^T, ^alicorn.Runtime) -> alicorn.Hosted_Close_Result = nil,
 	on_dialog: proc(^T, ^alicorn.Runtime, ^alicorn.File_Dialog_Result) = nil,
+	// The browser host records decoration and chrome policy so hosted
+	// applications keep one ui.run surface. The canvas has no native chrome
+	// band; browser titlebar integration remains outside scope.
+	window_decorations: alicorn.Window_Decoration_Mode = .System,
+	window_chrome_height: f32 = 0,
+	window_chrome_metrics: alicorn.Window_Chrome_Metrics_Proc = nil,
+	window_chrome_layout: alicorn.Window_Chrome_Layout_Proc = nil,
+	window_chrome_appearance: alicorn.Window_Chrome_Appearance_Proc = nil,
 ) {
 	_ = title
 	_ = smoke
+	_ = window_chrome_height
+	_ = window_chrome_metrics
+	_ = window_chrome_layout
+	_ = window_chrome_appearance
 	if browser_ui_run.run_state != nil || state == nil || render == nil || width <= 0 || height <= 0 {
 		panic("ui.run requires one live application, a valid state pointer, and a render callback")
 	}
@@ -69,6 +81,7 @@ run :: proc(
 		render_overlays=render_overlays,
 		menus=menus,
 		menu_presentation=menu_presentation,
+		window_decorations=window_decorations,
 		on_initialize=on_initialize,
 		on_start=on_start,
 		on_wake=on_wake,
