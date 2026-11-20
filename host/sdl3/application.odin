@@ -5,6 +5,7 @@ package sdl3_host
 import alicorn "alicorn:runtime"
 import presentation_host "alicorn:host/presentation"
 import sdl3_dialogs "alicorn:host/sdl3/dialogs"
+import host_menus "alicorn:host/menus"
 import "core:c"
 import "core:fmt"
 import "vendor:sdl3"
@@ -56,6 +57,8 @@ SDL3_WebGPU_Application :: struct {
 	hosted: alicorn.Hosted_Runtime,
 	presenter: presentation_host.Hosted_Surface_Presenter,
 	dialog_bridge: ^sdl3_dialogs.Native_Dialog_Bridge,
+	menu_service: host_menus.Menu_Service,
+	menu_adapter: host_menus.Native_Menu_Adapter,
 	accessibility_host: sdl_accessibility.Native_Accessibility_Host,
 	host_waker: sdl_accessibility.Native_Host_Event_Waker,
 	window: ^sdl3.Window,
@@ -102,6 +105,31 @@ sdl3_webgpu_application_dialog_callback :: proc(
 	application := cast(^SDL3_WebGPU_Application)data
 	if application == nil || !application.initialized { return }
 	_ = alicorn.hosted_runtime_dialog(&application.hosted, result)
+}
+
+@(private)
+sdl3_webgpu_application_menu_command :: proc(
+	data: rawptr,
+	_rt: ^alicorn.Runtime,
+	command: alicorn.Action_ID,
+) {
+	application := cast(^SDL3_WebGPU_Application)data
+	if application == nil || !application.initialized { return }
+	_ = alicorn.hosted_runtime_menu_command(&application.hosted, command)
+}
+
+// sdl3_webgpu_application_dispatch_menus delivers commands queued by native
+// menu callbacks on the owner thread. Call it at an event-loop safe point after
+// handling input, mirroring the SDL_GPU host's pending-menu dispatch.
+sdl3_webgpu_application_dispatch_menus :: proc(application: ^SDL3_WebGPU_Application) {
+	if application == nil || !application.initialized { return }
+	rt, status := alicorn.hosted_runtime_borrow(&application.hosted)
+	if status != .Ok { return }
+	for {
+		command, found := host_menus.native_menu_adapter_take_pending(&application.menu_adapter)
+		if !found { return }
+		_ = host_menus.menu_service_dispatch_command(&application.menu_service, rt, command)
+	}
 }
 
 // sdl3_webgpu_application_dispatch_dialogs delivers completed native dialogs on
@@ -232,6 +260,36 @@ sdl3_webgpu_application_init :: proc(
 		},
 	)
 	if application.dialog_bridge == nil { application^ = {}; return .Window_Failure }
+	menu_command: host_menus.Menu_Command_Proc
+	if hosted_config.on_menu_command != nil {
+		// Accelerators must not be consumed when the application installed no
+		// command callback; this matches the SDL_GPU host's try-shortcut gate.
+		menu_command = sdl3_webgpu_application_menu_command
+	}
+	host_menus.menu_service_init(
+		&application.menu_service,
+		hosted_config.menus,
+		hosted_config.menu_presentation,
+		rawptr(application),
+		menu_command,
+	)
+	if !host_menus.native_menu_adapter_prepare(&application.menu_adapter, window, &application.menu_service) {
+		sdl3_dialogs.native_dialog_bridge_release(application.dialog_bridge)
+		application^ = {}
+		return .Runtime_Failure
+	}
+	// Attaching a Win32 menu bar changes the client area. Re-read metrics so the
+	// initial retained viewport matches the post-menu geometry.
+	if measured_width, measured_height, measured_pixel_width, measured_pixel_height, measured_ok :=
+	   sdl3_webgpu_application_window_metrics(window);
+	   measured_ok && measured_width > 0 && measured_height > 0 &&
+	   measured_pixel_width > 0 && measured_pixel_height > 0 {
+		logical_width, logical_height = measured_width, measured_height
+		pixel_width, pixel_height = measured_pixel_width, measured_pixel_height
+		application.last_logical_width, application.last_logical_height = logical_width, logical_height
+		application.last_pixel_width, application.last_pixel_height = pixel_width, pixel_height
+		application.dpi_scale = f32(pixel_width) / f32(logical_width)
+	}
 	dpi := f32(pixel_width) / f32(logical_width)
 	config := hosted_config
 	config.logical_width, config.logical_height = logical_width, logical_height
@@ -595,6 +653,7 @@ sdl3_webgpu_application_destroy :: proc(application: ^SDL3_WebGPU_Application) -
 	if application.dialog_bridge != nil {
 		sdl3_dialogs.native_dialog_bridge_shutdown(application.dialog_bridge)
 	}
+	host_menus.native_menu_adapter_destroy(&application.menu_adapter)
 	if alicorn.hosted_runtime_destroy(&application.hosted) != .Ok { return false }
 	if application.dialog_bridge != nil {
 		sdl3_dialogs.native_dialog_bridge_release(application.dialog_bridge)

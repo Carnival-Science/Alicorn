@@ -8,9 +8,9 @@ and `host.Run` entry points remain available and unchanged.
 
 This is a Runtime lifecycle boundary, not a ready-made wxWidgets adapter. The
 host still owns its window, event translation, renderer/device, clipboard,
-dialogs, native text-input service, and native accessibility bridge. In
-particular, a host must prove that its chosen renderer can present into its
-surface and that native IME and accessibility behavior remain correct.
+dialogs, native menus, native text-input service, and native accessibility
+bridge. In particular, a host must prove that its chosen renderer can present
+into its surface and that native IME and accessibility behavior remain correct.
 
 ## Ownership and thread contract
 
@@ -188,6 +188,69 @@ copying, callback, and wake policy have one implementation rather than two.
 `ui/webgpu.run` exposes them with the same shapes. The browser host currently
 has no dialog or close-request service; its `hosted` config callbacks remain
 available for future browser integration.
+
+## Native menus
+
+`Hosted_Runtime_Config` carries `menus` and `menu_presentation`. Both
+`Hosted_Run_State` and `ui.run`, `ui/webgpu.run` (and the browser `run` for
+compile parity) accept `menus: []Menu` and
+`menu_presentation: Menu_Presentation`.
+
+```text
+Hosted_Runtime_Config.menus         []Menu                (borrowed)
+Hosted_Runtime_Config.menu_presentation  Menu_Presentation
+```
+
+The model lives in `runtime/menus.odin` so the SDL_GPU host, the hosted SDL3
+host, and tests share one definition: `Menu`, `Menu_Item`, `Menu_Item_Kind`,
+`Menu_Shortcut`, `Menu_Modifier(s)`, and `Menu_Presentation`. The
+`Application_Menu*` names in `native/sdl_gpu` are aliases of these types.
+
+Ownership follows the native host's documented contract exactly. Labels and
+menu structure are snapshotted when the host prepares its native menu; the
+`Action_State` in each borrowed item is read whenever a menu opens, an
+accelerator matches, or a command is dispatched. Applications must keep the
+borrowed slices stable and update state on the host's UI thread.
+
+The shared policy in `runtime/menus.odin` is:
+
+- `menu_match_shortcut` compares one printable key case-insensitively and
+  requires an exact modifier set. `Primary` is Ctrl on Windows/Linux and
+  Command on macOS; `Super` is the Windows key on Windows/Linux and Control on
+  macOS. Disabled commands never match, and repeat key transitions are consumed
+  without dispatching a second command.
+- `menu_command_enabled` gates dispatch. A top-level direct command uses its
+  borrowed description state; any other command requires at least one enabled
+  borrowed item to carry that command and, when the Runtime has a registered
+  action for the id, an enabled `Action_State`. Unknown ids remain dispatchable
+  so hosts can forward chrome commands the application handles itself.
+- `hosted_runtime_menu_command` applies that gate before it begins the
+  `.Native_Command` cause, invokes `on_menu_command`, and invalidates the root.
+
+`host/menus` adds the per-surface `Menu_Service` and the SDL3 adapters. The
+service owns matching, the enabled gate, and safe-point dispatch; the adapter
+owns presentation:
+
+- Windows builds one HMENU tree, attaches it to the SDL window's HWND with
+  `SetMenu`, refreshes enabled/checked state on `WM_INITMENUPOPUP`, and queues
+  `WM_COMMAND` selections for dispatch after the event batch.
+- macOS builds an NSMenu main menu (application, Window, application menus, and
+  Help in AppKit's conventional order) and queues selected item tags.
+- Linux keeps the descriptions as semantic accelerator metadata and creates no
+  native menu, matching the reference host.
+
+The SDL3/WebGPU event host calls `menu_service_try_shortcut` after overlay-key
+handling and before application key/text routing, and skips it during an active
+IME composition. `ui.run` on the SDL_GPU host receives the same descriptions
+through `Application.menus`.
+
+Menu presentation is policy, not a promise that labels are always painted.
+`Menu_Presentation.Hidden` suppresses only Windows integrated-title-bar labels;
+a system menu bar and the macOS main menu still show labels. Hosted Windows
+titlebar chrome is a later slice; until then the hosted adapter behaves like a
+system-decorated window. The browser host has no native menu yet; its
+accelerator and presentation TODO remains.
+
 
 ## Multiple outputs from one Runtime
 

@@ -803,8 +803,10 @@ sdl3_webgpu_run :: proc(
 			}
 		}
 		sdl3_webgpu_application_dispatch_dialogs(&application)
+		sdl3_webgpu_application_dispatch_menus(&application)
 		if window_manager.child != nil {
 			sdl3_webgpu_application_dispatch_dialogs(&window_manager.child.application)
+			sdl3_webgpu_application_dispatch_menus(&window_manager.child.application)
 		}
 		if quit_requested { return .Ok }
 		if window_manager.child != nil && window_manager.child.quit_requested {

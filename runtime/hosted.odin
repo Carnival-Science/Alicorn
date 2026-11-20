@@ -161,6 +161,12 @@ Hosted_Runtime_Config :: struct {
 	pixel_width, pixel_height: int,
 	dpi_scale: f32,
 	runtime: Runtime_Config,
+	// menus are borrowed for the Hosted_Runtime lifetime. A host's native menu
+	// adapter snapshots labels and structure at initialization; Action_State is
+	// read from this borrowed storage whenever a menu opens or an accelerator
+	// matches. menu_presentation is host policy (see Menu_Presentation).
+	menus: []Menu,
+	menu_presentation: Menu_Presentation,
 	// wake_allocator must be thread-safe because retained wakers may be released
 	// by worker threads. The default context allocator is used when omitted.
 	wake_allocator: mem.Allocator,
@@ -229,6 +235,7 @@ Hosted_Runtime_State :: struct {
 	owner_thread_id: int,
 	app_state: rawptr,
 	runtime: Runtime,
+	menus: []Menu,
 	wake_control: ^Hosted_Wake_Control,
 	render: Hosted_Render_Proc,
 	render_overlays: Hosted_Render_Proc,
@@ -294,6 +301,7 @@ hosted_runtime_init :: proc(host: ^Hosted_Runtime, config: Hosted_Runtime_Config
 		allocator=state_allocator,
 		owner_thread_id=sync.current_thread_id(),
 		app_state=config.state,
+		menus=config.menus,
 		render=config.render,
 		render_overlays=config.render_overlays,
 		on_wake=config.on_wake,
@@ -626,6 +634,9 @@ hosted_runtime_request_close :: proc(
 // hosted_runtime_menu_command routes one host-normalized command through the
 // application callback under the same native-command cause used by the SDL_GPU
 // host. Hosts call it when their menus, accelerators, or chrome actions fire.
+// Commands rejected by the shared enabled gate (a disabled top-level direct
+// command, a command carried only by disabled menu items, or a disabled
+// runtime action) are neither delivered nor traced.
 hosted_runtime_menu_command :: proc(
 	host: ^Hosted_Runtime,
 	command: Action_ID,
@@ -633,6 +644,7 @@ hosted_runtime_menu_command :: proc(
 	state, status := hosted_runtime_get_state(host)
 	if status != .Ok { return status }
 	if state.on_menu_command != nil {
+		if !menu_command_enabled(state.menus, &state.runtime, command) { return .Ok }
 		cause := cause_begin(&state.runtime, .Native_Command, "hosted menu command", command)
 		state.on_menu_command(state.app_state, &state.runtime, command)
 		invalidate_root(&state.runtime, "hosted application menu command")

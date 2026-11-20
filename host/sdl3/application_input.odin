@@ -3,6 +3,7 @@
 package sdl3_host
 
 import alicorn "alicorn:runtime"
+import host_menus "alicorn:host/menus"
 import "core:c"
 import "vendor:sdl3"
 
@@ -124,6 +125,21 @@ sdl3_webgpu_application_key_down :: proc(
 		reverse_tab=input_modifier_is_set(event.mod, sdl3.KMOD_SHIFT),
 	)
 	if overlay_handled {
+		if !sdl3_webgpu_application_sync_text_input(application) { return .Failure }
+		return .Handled
+	}
+
+	// Native menu accelerators are matched before application key routing, in
+	// the same order as the SDL_GPU host. Active IME composition keeps its keys;
+	// a held accelerator is consumed without dispatching a second command.
+	if !composition_active &&
+	   host_menus.menu_service_try_shortcut(
+		   &application.menu_service,
+		   rt,
+		   rune(event.key),
+		   menu_modifiers_from_sdl(event.mod),
+		   event.repeat,
+	   ) {
 		if !sdl3_webgpu_application_sync_text_input(application) { return .Failure }
 		return .Handled
 	}

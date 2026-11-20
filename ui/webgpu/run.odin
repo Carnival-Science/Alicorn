@@ -16,8 +16,10 @@ import host "alicorn:host/sdl3"
 //
 // on_services supplies host capabilities before on_start. The WebGPU host
 // supports one independently retained secondary window through
-// UI_Host_Services.windows and native AccessKit adapters on Windows/macOS;
-// integrated titlebars and native menus are not yet ported.
+// UI_Host_Services.windows, native AccessKit adapters on Windows/macOS, and
+// shared native menus through the menus/menu_presentation arguments (Windows
+// system menu bar and macOS NSMenu; browser menus remain TODO). Integrated
+// titlebars are not yet ported.
 run :: proc(
 	state: ^$T,
 	render: proc(^T, ^ui.UI),
@@ -40,12 +42,15 @@ run :: proc(
 	on_scroll: proc(^T, ^alicorn.Runtime, alicorn.Scroll_Event) = nil,
 	on_text_input: proc(^T, ^alicorn.Runtime, alicorn.Node_ID, alicorn.Hosted_Text_Input_Event) = nil,
 	on_scheduled_wake: proc(^T, ^alicorn.Runtime) = nil,
+	menus: []alicorn.Menu = nil,
+	menu_presentation: alicorn.Menu_Presentation = .Labels,
 	on_menu_command: proc(^T, ^alicorn.Runtime, alicorn.Action_ID) = nil,
 	on_close_requested: proc(^T, ^alicorn.Runtime) -> alicorn.Hosted_Close_Result = nil,
 	on_dialog: proc(^T, ^alicorn.Runtime, ^alicorn.File_Dialog_Result) = nil,
 ) {
 	run_state := ui.Hosted_Run_State(T){
 		app=state, render=render, render_overlays=render_overlays,
+		menus=menus, menu_presentation=menu_presentation,
 		on_initialize=on_initialize, on_start=on_start, on_wake=on_wake, on_stop=on_stop,
 		on_key=on_key, on_text_change=on_text_change, on_pointer=on_pointer,
 		on_text_key=on_text_key,

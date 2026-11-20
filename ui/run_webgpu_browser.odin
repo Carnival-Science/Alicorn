@@ -46,6 +46,11 @@ run :: proc(
 	on_scroll: proc(^T, ^alicorn.Runtime, alicorn.Scroll_Event) = nil,
 	on_text_input: proc(^T, ^alicorn.Runtime, Node_ID, alicorn.Hosted_Text_Input_Event) = nil,
 	on_scheduled_wake: proc(^T, ^alicorn.Runtime) = nil,
+	// Native menus are not implemented in the browser host yet; these fields
+	// keep the ui.run surface identical so hosted applications compile on both
+	// targets. Browser acceleration and menu presentation remain TODO.
+	menus: []alicorn.Menu = nil,
+	menu_presentation: alicorn.Menu_Presentation = .Labels,
 	on_menu_command: proc(^T, ^alicorn.Runtime, alicorn.Action_ID) = nil,
 	on_close_requested: proc(^T, ^alicorn.Runtime) -> alicorn.Hosted_Close_Result = nil,
 	on_dialog: proc(^T, ^alicorn.Runtime, ^alicorn.File_Dialog_Result) = nil,
@@ -62,6 +67,8 @@ run :: proc(
 		app=state,
 		render=render,
 		render_overlays=render_overlays,
+		menus=menus,
+		menu_presentation=menu_presentation,
 		on_initialize=on_initialize,
 		on_start=on_start,
 		on_wake=on_wake,

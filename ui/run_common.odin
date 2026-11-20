@@ -11,6 +11,11 @@ Hosted_Run_State :: struct($T: typeid) {
 	app: ^T,
 	render: proc(^T, ^UI),
 	render_overlays: proc(^T, ^UI),
+	// menus are borrowed for the run. Hosts snapshot labels and structure at
+	// startup and read Action_State from the same storage when a menu opens or
+	// an accelerator matches.
+	menus: []alicorn.Menu,
+	menu_presentation: alicorn.Menu_Presentation,
 	on_initialize: proc(^T, ^alicorn.Runtime),
 	on_services: proc(^T, UI_Host_Services),
 	host_services: UI_Host_Services,
@@ -193,6 +198,8 @@ run_hosted_config :: proc(
 		pixel_height=pixel_height,
 		dpi_scale=dpi_scale,
 		runtime=runtime_config,
+		menus=run_state.menus,
+		menu_presentation=run_state.menu_presentation,
 		on_host_services=host_services,
 		post_wake_data=post_wake_data,
 		post_wake=post_wake,

@@ -151,21 +151,8 @@ win32_menu_wide :: proc(state: ^Win32_Menu_State, value: string) -> []u16 {
 }
 
 win32_menu_shortcut_label :: proc(shortcut: Application_Menu_Shortcut) -> string {
-	if shortcut.key == 0 { return "" }
-	modifiers := shortcut.modifiers
-	primary, shift, alt, super := "", "", "", ""
-	if Application_Menu_Modifier.Primary in modifiers { primary = "Ctrl+" }
-	if Application_Menu_Modifier.Shift in modifiers { shift = "Shift+" }
-	if Application_Menu_Modifier.Alt in modifiers { alt = "Alt+" }
-	if Application_Menu_Modifier.Super in modifiers { super = "Win+" }
-	return fmt.tprintf(
-		"%s%s%s%s%c",
-		primary,
-		shift,
-		alt,
-		super,
-		shortcut.key,
-	)
+	// Shared with every native-menu host so accelerator text is identical.
+	return alicorn.menu_shortcut_label(shortcut)
 }
 
 win32_menu_build_items :: proc(state: ^Win32_Menu_State, menu: win.HMENU, items: []Application_Menu_Item) -> bool {

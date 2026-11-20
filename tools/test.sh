@@ -41,6 +41,8 @@ alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
 	test host/sdl3/clipboard "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_sdl3_clipboard_tests"
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
 	test host/sdl3/dialogs "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_sdl3_dialog_tests"
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+	test host/menus "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_host_menus_tests"
 "$ODIN" test host/web "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_web_host_tests"
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
 	test tests/fixtures/accessibility_contract \

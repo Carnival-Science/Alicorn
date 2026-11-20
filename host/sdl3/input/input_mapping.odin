@@ -36,6 +36,24 @@ text_primary_modifier_from_sdl :: proc(modifiers: sdl3.Keymod) -> bool {
 	}
 }
 
+// menu_modifiers_from_sdl converts SDL modifier state into the runtime's
+// platform-neutral menu shortcut vocabulary. Primary is Ctrl on Windows/Linux
+// and Command on macOS; Super is the Windows key on Windows/Linux and Control
+// on macOS. Shortcut matching requires an exact set, so this conversion is
+// shared by every SDL3 host rather than re-derived at each accelerator site.
+menu_modifiers_from_sdl :: proc(modifiers: sdl3.Keymod) -> alicorn.Menu_Modifiers {
+	result: alicorn.Menu_Modifiers
+	if text_primary_modifier_from_sdl(modifiers) { result += {.Primary} }
+	if input_modifier_is_set(modifiers, sdl3.KMOD_SHIFT) { result += {.Shift} }
+	if input_modifier_is_set(modifiers, sdl3.KMOD_ALT) { result += {.Alt} }
+	when ODIN_OS == .Darwin {
+		if input_modifier_is_set(modifiers, sdl3.KMOD_CTRL) { result += {.Super} }
+	} else {
+		if input_modifier_is_set(modifiers, sdl3.KMOD_GUI) { result += {.Super} }
+	}
+	return result
+}
+
 text_word_modifier_from_sdl :: proc(modifiers: sdl3.Keymod) -> bool {
 	when ODIN_OS == .Darwin {
 		return input_modifier_is_set(modifiers, sdl3.KMOD_ALT)

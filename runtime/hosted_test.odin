@@ -668,6 +668,66 @@ test_hosted_runtime_menu_command_and_dialog_delivery :: proc(t: ^testing.T) {
 		"asynchronous dialog completions reach the application callback")
 }
 
+Hosted_Menu_Test_App :: struct {
+	commands: int,
+	last:     Action_ID,
+}
+
+hosted_menu_test_command :: proc(data: rawptr, _rt: ^Runtime, command: Action_ID) {
+	app := cast(^Hosted_Menu_Test_App)data
+	app.commands += 1
+	app.last = command
+}
+
+@(test)
+test_hosted_runtime_menu_command_applies_borrowed_enabled_state :: proc(t: ^testing.T) {
+	app := Hosted_Menu_Test_App{}
+	items := [?]Menu_Item{
+		{kind=.Command, command=Action_ID(7), label="Save", state=Action_State{enabled=false}, shortcut=Menu_Shortcut{'S', {.Primary}}},
+	}
+	menus := [?]Menu{
+		{label="File", items=items[:]},
+		{label="Sync", command=Action_ID(9), state=Action_State{enabled=true}},
+	}
+	host: Hosted_Runtime
+	if hosted_runtime_init(&host, Hosted_Runtime_Config{
+		state=rawptr(&app), logical_width=240, logical_height=240,
+		pixel_width=480, pixel_height=480, dpi_scale=2,
+		post_wake_data=rawptr(&app), post_wake=hosted_test_post, render=hosted_test_render,
+		menus=menus[:], menu_presentation=.Hidden, on_menu_command=hosted_menu_test_command,
+	}) != .Ok {
+		testing.expect(t, false, "hosted menu test failed to initialize")
+		return
+	}
+	defer hosted_runtime_destroy(&host)
+
+	_ = hosted_runtime_menu_command(&host, Action_ID(7))
+	testing.expect(t, app.commands == 0,
+		"a command carried only by a disabled menu item must not reach on_menu_command")
+
+	_ = hosted_runtime_menu_command(&host, Action_ID(9))
+	testing.expect(t, app.commands == 1 && app.last == Action_ID(9),
+		"an enabled direct top-level menu command must dispatch")
+
+	menus[1].state.enabled = false
+	_ = hosted_runtime_menu_command(&host, Action_ID(9))
+	testing.expect(t, app.commands == 1,
+		"disabling the borrowed top-level state must prevent later dispatch")
+
+	_ = action_update(&host.state.runtime,
+		Action_Descriptor{id=Action_ID(30), name="test.menu.action", label="Export"},
+		Action_State{enabled=false})
+	_ = hosted_runtime_menu_command(&host, Action_ID(30))
+	testing.expect(t, app.commands == 1,
+		"a command backed by a disabled runtime action must not dispatch")
+	_ = action_update(&host.state.runtime,
+		Action_Descriptor{id=Action_ID(30), name="test.menu.action", label="Export"},
+		Action_State{enabled=true})
+	_ = hosted_runtime_menu_command(&host, Action_ID(30))
+	testing.expect(t, app.commands == 2 && app.last == Action_ID(30),
+		"enabling the runtime action must restore dispatch")
+}
+
 @(test)
 test_hosted_runtime_scroll_capture_and_application_text_input :: proc(t: ^testing.T) {
 	host: Hosted_Runtime

@@ -170,3 +170,24 @@ test_sdl_text_key_mapping_preserves_platform_editing_conventions :: proc(t: ^tes
 	_, printable_ok := text_key_event_from_sdl(sdl3.K_A, {})
 	testing.expect(t, !printable_ok, "ordinary printable keys stay on the text-input/IME path")
 }
+
+@(test)
+test_menu_modifier_mapping_preserves_primary_and_super_roles :: proc(t: ^testing.T) {
+	primary_modifier: sdl3.Keymod = sdl3.KMOD_CTRL
+	super_modifier: sdl3.Keymod = sdl3.KMOD_GUI
+	when ODIN_OS == .Darwin {
+		primary_modifier = sdl3.KMOD_GUI
+		super_modifier = sdl3.KMOD_CTRL
+	}
+	testing.expect(t, menu_modifiers_from_sdl(primary_modifier) == alicorn.Menu_Modifiers{.Primary},
+		"Primary must map to Ctrl on Windows/Linux and Command on macOS")
+	testing.expect(t, menu_modifiers_from_sdl(super_modifier) == alicorn.Menu_Modifiers{.Super},
+		"Super must map to the Windows key on Windows/Linux and Control on macOS")
+	modifiers := menu_modifiers_from_sdl(
+		sdl3.KMOD_SHIFT | sdl3.KMOD_ALT | primary_modifier | super_modifier,
+	)
+	testing.expect(t, modifiers == alicorn.Menu_Modifiers{.Primary, .Shift, .Alt, .Super},
+		"all four menu modifiers must be represented")
+	testing.expect(t, menu_modifiers_from_sdl({}) == alicorn.Menu_Modifiers{},
+		"an unmodified key has no menu modifiers")
+}

@@ -13,52 +13,16 @@ native_text_field_return_key :: proc(shifted: bool) -> Application_Key {
 // runtime-visible Action_ID. Platform-native menu item IDs stay host-private.
 Application_Command_ID :: alicorn.Action_ID
 
-Application_Menu_Item_Kind :: enum {
-	Command,
-	Separator,
-	Submenu,
-}
-
-Application_Menu_Modifier :: enum {
-	Primary,
-	Shift,
-	Alt,
-	Super,
-}
-
-Application_Menu_Modifiers :: distinct bit_set[Application_Menu_Modifier; u8]
-
-// A shortcut uses one printable key plus platform-neutral modifiers.
-// Primary means Ctrl on Windows/Linux and Command on macOS; Super maps to the
-// Windows key on Windows/Linux and Control on macOS.
-Application_Menu_Shortcut :: struct {
-	key:       rune,
-	modifiers: Application_Menu_Modifiers,
-}
-
-// Menu descriptions are borrowed for the duration of Run. Labels and menu
-// structure are snapshotted at startup; Action_State is read from
-// the borrowed item storage whenever a native menu opens or a host processes
-// an accelerator. Keep that storage stable and update its state on the
-// application thread.
-Application_Menu_Item :: struct {
-	kind:     Application_Menu_Item_Kind,
-	command:  Application_Command_ID,
-	label:    string,
-	state:    alicorn.Action_State,
-	shortcut: Application_Menu_Shortcut,
-	items:    []Application_Menu_Item,
-}
-
-Application_Menu :: struct {
-	label: string,
-	items: []Application_Menu_Item,
-	// A nonzero command turns this top-level label into a direct action instead
-	// of a popup menu. Its state and shortcut are borrowed like item state.
-	command: Application_Command_ID,
-	state: alicorn.Action_State,
-	shortcut: Application_Menu_Shortcut,
-}
+// The menu model and its accelerator/enabled-gate policy live in
+// alicorn:runtime so the reference SDL_GPU host, the hosted SDL3/WebGPU host,
+// and renderer-agnostic tests share one definition. These aliases keep the
+// native Application-facing vocabulary stable.
+Application_Menu_Item_Kind :: alicorn.Menu_Item_Kind
+Application_Menu_Modifier :: alicorn.Menu_Modifier
+Application_Menu_Modifiers :: alicorn.Menu_Modifiers
+Application_Menu_Shortcut :: alicorn.Menu_Shortcut
+Application_Menu_Item :: alicorn.Menu_Item
+Application_Menu :: alicorn.Menu
 
 Window_Decoration_Mode :: enum {
 	System,
@@ -68,7 +32,7 @@ Window_Decoration_Mode :: enum {
 
 // Hidden affects only Windows Integrated_Title_Bar labels. The native menu
 // descriptions, command shortcuts, and Alt menu access remain available.
-Application_Menu_Presentation :: enum { Labels, Hidden }
+Application_Menu_Presentation :: alicorn.Menu_Presentation
 
 // Window_Chrome_Metrics reports measured native geometry for an application-
 // authored titlebar header. Rectangles use top-left window-logical points. On
