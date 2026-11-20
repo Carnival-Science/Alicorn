@@ -500,9 +500,15 @@ Call these from the host's UI thread, in native event order:
 | Native accessibility action | `hosted_runtime_accessibility_action` |
 
 After `hosted_runtime_pointer` processes a pointer event, it dispatches any
-pending retained drag transition to the configured `on_drag` callback. Scroll
-capture is offered to `on_scroll_capture` before retained scroll handling;
-unclaimed events go to the retained regions and then `on_scroll`.
+pending retained drag transition to the configured `on_drag` callback. The
+application callback then runs through the same arbitration as
+`native/sdl_gpu`'s event loop: `application_dispatch_pointer` offers the event to
+interaction scopes first, a live drag consumes it (a captured split handle keeps
+its callback so application-owned measurement can refresh), and an open context
+menu owns pointer input. Hosts therefore see identical pointer ordering,
+scope routing, and drag suppression on both stacks. Scroll capture is offered to
+`on_scroll_capture` before retained scroll handling; unclaimed events go to the
+retained regions and then `on_scroll`.
 
 The host maps native key and modifier conventions. `Hosted_Key_Event.key_code`
 is an opaque host-normalized value; Alicorn does not interpret SDL, wx, or

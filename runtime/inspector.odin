@@ -397,6 +397,25 @@ inspect :: proc(rt: ^Runtime) -> string {
 			style_inspector_semantic_surface(&sb, rt, node, semantic_style)
 		}
 		fmt.sbprintf(&sb, "  selected=%t semantic_active=%t hovered=%t pressed=%t caret=(%d,%v) selection=(%d,%v)->(%d,%v) reason: %s\n", node.selected, node.semantic_active, node.hovered, node.pressed, node.caret.byte, node.caret.affinity, node.selection_anchor.byte, node.selection_anchor.affinity, node.selection_focus.byte, node.selection_focus.affinity, node.last_reason)
+		if node.kind == .Text || node.kind == .Text_Field {
+			// Span provenance keeps syntax-highlighting and decoration regressions
+			// visible in a capture bundle without requiring a rendered screenshot.
+			fmt.sbprintf(&sb, "  text run: valid=%t bytes=%d paint-spans=%d style-spans=%d",
+				node.text_run_valid, len(node.text_run.value) if node.text_run_valid else 0,
+				len(node.text_paint_spans), len(node.text_style_spans))
+			span_limit := min(len(node.text_paint_spans), 32)
+			for span in node.text_paint_spans[:span_limit] {
+				if span.color_set {
+					fmt.sbprintf(&sb, " [%d,%d)fg=(%.3f,%.3f,%.3f,%.3f)", span.start, span.end,
+						span.color.r, span.color.g, span.color.b, span.color.a)
+				}
+				if span.background_set {
+					fmt.sbprintf(&sb, " [%d,%d)bg=(%.3f,%.3f,%.3f,%.3f)", span.start, span.end,
+						span.background.r, span.background.g, span.background.b, span.background.a)
+				}
+			}
+			fmt.sbprintln(&sb)
+		}
 		if node.kind == .Button {
 			recipe := style_button_recipe(rt, node.style_environment, node.button_variant)
 			hovered := visual_part_owner_hovered(rt, node.id)

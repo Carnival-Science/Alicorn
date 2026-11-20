@@ -224,10 +224,8 @@ browser_webgpu_run_adapter_callback :: proc "c" (
 		return
 	}
 	format := caps.formats[0]
-	for i in 0..<int(caps.formatCount) {
-		candidate := caps.formats[i]
-		if candidate == .BGRA8UnormSrgb { format = candidate; break }
-		if candidate == .BGRA8Unorm { format = candidate }
+	if selected, selected_ok := presentation_host.hosted_presentation_format(caps.formats[:caps.formatCount]); selected_ok {
+		format = selected
 	}
 	alpha_mode := caps.alphaModes[0]
 	for i in 0..<int(caps.alphaModeCount) {

@@ -96,13 +96,8 @@ sdl3_webgpu_run_adapter_callback :: proc "c" (
 		return
 	}
 	state.configuration.format = caps.formats[0]
-	for i in 0..<int(caps.formatCount) {
-		format := caps.formats[i]
-		if format == .BGRA8UnormSrgb {
-			state.configuration.format = format
-			break
-		}
-		if format == .BGRA8Unorm { state.configuration.format = format }
+	if selected, selected_ok := presentation_host.hosted_presentation_format(caps.formats[:caps.formatCount]); selected_ok {
+		state.configuration.format = selected
 	}
 	state.configuration.alphaMode = caps.alphaModes[0]
 	for i in 0..<int(caps.alphaModeCount) {

@@ -3748,3 +3748,155 @@ position; Stage B wrap-up owns that Scratchpad change.
   `session_restore` were true. No Scratchpad source or lock file was changed.
   The Quick Open/modal visual regression remains for the founder's hands-on
   check; the hosted contract test now proves the overlay ancestry directly.
+
+## Stage B slice 5: application parity for paint spans and pointer drag (2026-11-20)
+
+Real Scratchpad testing on the hosted WebGPU path reported two P1
+application-parity gaps: the Go editor looked like plain text (no syntax
+highlighting) and click-drag text selection did not work, while the SDL_GPU
+reference did both. This slice traced both flows end to end and fixed the
+hosted-side causes.
+
+### What the span flow actually showed
+
+The span data itself was never lost. In the same restored Scratchpad scene
+(`language/detection.go`, `builtin:cool-light`, settled frame) the hosted
+`inspector.txt` and the SDL_GPU `inspector.txt` contain the same 25 span-bearing
+text nodes with identical byte ranges and colors, for example
+
+```text
+text run: valid=true bytes=27 paint-spans=5 style-spans=0
+  [4,8)fg=(0.040,0.058,0.085,1.000) [15,17)fg=(0.018,0.107,0.141,1.000) ...
+```
+
+The retained runtime node, the composed display command, the WebGPU
+`Text_Prepare` glyph-color resolution, and the WGSL vertex path all consume those
+spans (`renderer/webgpu/text.odin` already fingerprints
+`cpu_renderer.Hash_Text_Spans`, so a span-only change invalidates the retained
+glyph mesh). The remaining hosted-only difference was *color*: the hosted frame
+was the sRGB encoding of the reference frame, channel for channel.
+
+```text
+editor text band          background      text          token          token
+hosted before             250,251,254     56,68,82      36,92,105      96,74,136
+SDL_GPU reference         244,246,253     10,15,22       4,27,36       30,17,63
+hosted after fix          244,246,253     10,15,22       4,27,36       30,17,63
+full-frame diff before    2,694,611 / 2,914,752 channels differ (92.45%), max 82
+full-frame diff after                         0 / 2,914,752 channels differ
+```
+
+Root cause: `docs/themes.md` defines `Theme_Color`/`Color` channels as
+linear-sRGB values uploaded unchanged and leaves output transfer to the
+swapchain. `SDL_GetGPUSwapchainTextureFormat` is a non-sRGB (`*_UNORM`) target on
+the reference host, but the hosted WebGPU hosts preferred `BGRA8UnormSrgb`.
+That applied a second transfer function to every hosted color. On a light theme
+this lightens text and compresses the contrast between base text and the
+low-chroma syntax token colors, so highlighting reads as plain text even though
+the spans are present. The more saturated the theme, the smaller the visible
+difference.
+
+Changes:
+
+- `host/presentation/surface_format.odin` selects the hosted presentation
+  format: non-sRGB BGRA/RGBA first, the sRGB variant only when it is the sole
+  capability. `host/sdl3/run.odin` (primary surface),
+  `host/sdl3/window_service.odin` (secondary surface), and
+  `host/web/webgpu_run.odin` (browser) all use it. Image textures already derive
+  their format from the target format (`renderer/webgpu/images.odin`), so the
+  whole hosted stack stays consistent with the reference.
+- `runtime/inspector.odin` records `text run: valid=... bytes=... paint-spans=N
+  style-spans=N [start,end)fg=(...)` per Text/Text_Field node, so a capture
+  bundle proves span provenance and per-span colors without a screenshot.
+- `docs/themes.md` documents the rule explicitly: do not switch one host to
+  sRGB output without the other; true color-managed output is a deliberate
+  contract change that must land on both hosts (and their image texture formats)
+  together.
+
+### Pointer drag selection
+
+The hosted runtime delivered `process_pointer` and then called the application
+pointer callback directly. `native/sdl_gpu` and `testui` instead dispatch through
+`application_dispatch_pointer`, which offers the event to interaction scopes
+first, and they suppress the application callback while a live drag or an open
+context menu consumes pointer input (a captured split handle keeps its callback
+so app-owned measurement can refresh). The hosted route skipped scope routing
+and both suppressions, so an application whose selection or drag gesture lives in
+a scope - or which relies on the reference host's drag ownership - diverged.
+
+`hosted_runtime_pointer` now mirrors the reference arbitration exactly: hit test,
+pending drag-event dispatch, `application_dispatch_pointer` (scope dispatch then
+`on_pointer`), context-menu and drag gates, and the captured-split exception.
+The callback's Down/Up invalidation now comes from
+`application_dispatch_pointer` instead of a duplicate hosted branch.
+
+### Fixtures
+
+- `runtime/hosted_parity_test.odin`
+  - `test_hosted_presentation_preserves_text_paint_spans` describes an
+    application-owned Root, a scroll region, a Text row with three ordered
+    color spans (Scratchpad's syntax shape), and a Text_Field; it asserts the
+    presentation list carries every span (ranges and colors) with
+    `content_inset_top` 0 and 24, that the inset translates geometry only, and
+    that retained nodes keep their spans.
+  - `test_hosted_pointer_drag_selection_matches_reference` presses at byte 1 of
+    a shaped Text_Field, moves to byte 8, and releases through
+    `hosted_runtime_pointer`; it asserts anchor/caret, capture release, and
+    callback order, then repeats the identical description through
+    `process_pointer` + `application_dispatch_pointer` and asserts the same
+    selection. Both hosts therefore produce the same drag range for the same
+    description and pointer stream.
+- `renderer/webgpu/text_span_test.odin` asserts per-glyph span colors for
+  keyword/function/string/unspanned clusters and proves a span-only color change
+  invalidates the retained text mesh fingerprint.
+- `host/presentation/surface_format_test.odin` pins the non-sRGB preference,
+  sRGB-only fallback, unknown-format fallback, and empty-capability rejection.
+
+### Validation (Windows x64, RTX 2080 SUPER, `28afb82` + this slice)
+
+- Alicorn suites run individually with the pinned AccessKit arguments: runtime
+  407 (including the two hosted parity fixtures), host/sdl3 7, host/sdl3/input 8,
+  host/sdl3/clipboard 3, host/sdl3/dialogs 5, host/menus 8, host/web 14,
+  host/diagnostics 9, host/presentation 7 (new format test), renderer/webgpu 8
+  (two new span tests), ui 50, testui 13, theme 37, renderer/cpu 23,
+  native/sdl_gpu 169, native/scroll_capture_tests 6, plus `odin build tests` and
+  `out/alicorn_tests.exe`, the accessibility contract fixture, restoration, and
+  the SDL_GPU text-input contract. All passed. `tools/test.ps1` itself still
+  stops in the AccessKit binding stage on this machine, so the same stages were
+  run individually as in the previous slices.
+- All examples built with `tools/build_examples.ps1` (including
+  `-define:WGPU_SHARED=true` for example 16). `16_native_webgpu_ui` passed
+  `--smoke`, `--workbench-smoke`, `--titlebar-smoke`, `--child-chrome-smoke`,
+  `--menu-smoke`, and `--services-smoke` on `--backend=d3d12`,
+  `--backend=vulkan`, and `--backend=sdl-gpu` (18/18 exits 0).
+  `--test-diagnostics-sequence --diagnostics` on D3D12 wrote three five-artifact
+  bundles, and each inspector now carries the text-run span lines.
+- Scratchpad (`codex/issue-211-webgpu-frontend` at `bfb2aed`, read-only worktree,
+  candidate root this branch) built with `--allow-alicorn-revision` and passed
+  `smoke --renderer=webgpu --backend=d3d12` and `--backend=vulkan` for the clean
+  and unsaved-recovery launches (`publication_rendered`, `wake_observed`,
+  `ordered_shutdown`, `session_restore` all true). No Scratchpad source or lock
+  file was changed. The settled Go-editor capture is byte-identical to the
+  SDL_GPU reference capture (0 of 2,914,752 channels differ) after this slice,
+  and the dark `charcoal-ink` theme agrees as well.
+- Full evidence, histograms, raw diffs, and the span inspector excerpts are in
+  [`validation/webgpu-scratchpad-span-selection-parity-windows-2026-11-20.md`](validation/webgpu-scratchpad-span-selection-parity-windows-2026-11-20.md).
+
+### Residual work and Scratchpad-side follow-ups for the wrap-up slice
+
+- `hosted_render` in Scratchpad's adapter still runs `after_frame` at the start
+  of the next description; `ui/webgpu.run` now provides `on_after_frame`, so the
+  adapter should pass it and run `scratchpad_build_after_frame` after
+  `end_frame`. This also makes the editor row trace sample the same phase on
+  both hosts; today hosted style/paint row fingerprints differ from the
+  reference even though text, geometry, and rendered pixels agree.
+- Scratchpad's `hosted_render` comment still describes a host-owned root wrapper
+  that no longer exists; the description already opens `.Root`, so only the
+  comment (and the deferred after-frame note) needs updating.
+- A scripted OS-level mouse drag could not be delivered in this automation
+  session (the window receives no synthetic pointer motion, while F10/F11/F12
+  host shortcuts work), so drag selection is verified at the hosted-runtime API
+  seam against the native/testui route. The founder's hands-on click-drag is the
+  confirming check.
+- True sRGB output (both hosts encoding linear theme values into an sRGB target)
+  is a separate, deliberate contract change; it must land on SDL_GPU, hosted
+  WebGPU, and both image-texture paths together.

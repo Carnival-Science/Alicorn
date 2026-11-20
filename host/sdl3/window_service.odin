@@ -5,6 +5,7 @@ package sdl3_host
 import "core:c"
 import "core:strings"
 import alicorn "alicorn:runtime"
+import presentation_host "alicorn:host/presentation"
 import "vendor:sdl3"
 import "vendor:wgpu"
 import "vendor:wgpu/sdl3glue"
@@ -152,14 +153,10 @@ sdl3_webgpu_window_surface_configuration :: proc(
 	}
 	if !format_found {
 		configuration.format = capabilities.formats[0]
-		for i in 0..<int(capabilities.formatCount) {
-			if capabilities.formats[i] == .BGRA8Unorm { configuration.format = .BGRA8Unorm }
-		}
-		for i in 0..<int(capabilities.formatCount) {
-			if capabilities.formats[i] == .BGRA8UnormSrgb {
-				configuration.format = .BGRA8UnormSrgb
-				break
-			}
+		if selected, selected_ok := presentation_host.hosted_presentation_format(
+			capabilities.formats[:capabilities.formatCount],
+		); selected_ok {
+			configuration.format = selected
 		}
 	}
 	present_found := false

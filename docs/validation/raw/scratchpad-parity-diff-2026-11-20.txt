@@ -1,0 +1,9 @@
+# Hosted WebGPU vs SDL_GPU reference full-frame diff (screenshot.ppm, 1216x799)
+# Scene: Scratchpad codex/issue-211-webgpu-frontend @ bfb2aed, language/detection.go,
+# builtin:cool-light, workbench-relief, same saved session and scroll.
+
+## BEFORE host/presentation/surface_format.odin
+size=1216x799 channels=2914752 differing=2694611 (92.45%) max=82 mean=10.9163
+
+## AFTER host/presentation/surface_format.odin
+size=1216x799 channels=2914752 differing=0 (0.00%) max=0 mean=0.0000

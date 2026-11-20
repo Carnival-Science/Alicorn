@@ -914,16 +914,30 @@ hosted_runtime_pointer :: proc(host: ^Hosted_Runtime, event: Pointer_Event) -> (
 		}
 	}
 	cause := pointer_cause_begin(rt, dispatched_event.kind)
-	target = process_pointer(rt, dispatched_event)
-	if key, ok := node_identity_key(rt, target); ok { dispatched_event.target_key = key }
-	if state.on_pointer != nil {
-		state.on_pointer(state.app_state, rt, dispatched_event, target)
-		if dispatched_event.kind == .Down || dispatched_event.kind == .Up {
-			invalidate_root(rt, "hosted application pointer callback")
+	captured_split_move := false
+	if dispatched_event.kind == .Move {
+		if captured, found := rt.nodes[rt.captured_node]; found && captured != nil && captured.kind == .Split_Handle {
+			captured_split_move = true
 		}
 	}
-	if drag_event, pending := drag_event_take(rt); pending && state.on_drag != nil {
-		state.on_drag(state.app_state, rt, drag_event)
+	target = process_pointer(rt, dispatched_event)
+	if key, ok := node_identity_key(rt, target); ok { dispatched_event.target_key = key }
+	// Match native/sdl_gpu's arbitration exactly: a captured split keeps its
+	// application callback, a live drag consumes the event, and an open context
+	// menu owns pointer input. interaction_scope_dispatch_pointer runs inside
+	// application_dispatch_pointer, so hosted pointer input reaches the same
+	// scopes and callbacks in the same order as the reference host.
+	drag_event_dispatched := false
+	if drag_event, pending := drag_event_take(rt); pending {
+		drag_event_dispatched = true
+		if state.on_drag != nil { state.on_drag(state.app_state, rt, drag_event) }
+	}
+	drag_consumed := drag_event_dispatched || drag_is_active(rt)
+	blocked_by_context_menu := context_menu_pointer_consumed(rt)
+	blocked_by_drag := drag_consumed && !captured_split_move
+	callback_available := state.on_pointer != nil || interaction_scope_has_input(rt)
+	if callback_available && !blocked_by_context_menu && !blocked_by_drag {
+		_ = application_dispatch_pointer(rt, state.app_state, state.on_pointer, dispatched_event, target)
 	}
 	cause_end(rt, cause)
 	return target, .Ok

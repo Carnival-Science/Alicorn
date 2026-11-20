@@ -47,6 +47,20 @@ changelogs.
 
 ### Fixed
 
+- Fixed hosted WebGPU output-transfer parity. The SDL_GPU reference presents
+  linear-sRGB theme channels through a non-sRGB swapchain, while the hosted
+  WebGPU hosts selected an sRGB-encoded surface and therefore applied a second
+  transfer function to every color. Backgrounds, surfaces, and per-glyph
+  syntax paint-span colors were lightened relative to the reference, which made
+  a light-theme editor read as plain text. Hosted SDL3 (primary and secondary
+  windows) and browser presentations now select a non-sRGB format first, and a
+  settled Scratchpad frame is byte-identical to the SDL_GPU reference frame.
+- Fixed hosted pointer dispatch to match `native/sdl_gpu`'s arbitration.
+  `hosted_runtime_pointer` now routes through `application_dispatch_pointer`
+  (interaction scopes first), suppresses application callbacks while a drag or
+  context menu consumes input, and keeps a captured split handle's callback, so
+  application editor selection and drag gestures behave like the reference
+  host.
 - Fixed hosted WebGPU first-frame rejection for workbench-like scenes. An
   analytic-relief paper surface whose connected tab opens its top edge at the
   surface's left coordinate reserved two split quads but emitted only one; the
