@@ -218,7 +218,12 @@ native_menu_adapter_prepare :: proc(
 	adapter.window = window
 	adapter.service = service
 	adapter.chrome = chrome_config
-	if len(service.menus) == 0 && chrome_config.decorations == .System {
+	// Content_Title_Bar is the macOS full-size-content mode. On Windows the
+	// native host keeps system decorations instead of creating a chrome-less
+	// window; the hosted host mirrors that fallback.
+	decorations := chrome_config.decorations
+	if decorations == .Content_Title_Bar { decorations = .System }
+	if len(service.menus) == 0 && decorations == .System {
 		adapter.prepared = true
 		return true
 	}
@@ -239,7 +244,7 @@ native_menu_adapter_prepare :: proc(
 		adapter=adapter, menu_state=state, hwnd=hwnd, window=window, allocator=state.allocator,
 		active=true, windows_11=win32_caption_windows_11(),
 		hovered=-1, active_menu=-1, caption_hovered=-1, caption_pressed=-1,
-		frame_enabled=chrome_config.decorations == .Integrated_Title_Bar,
+		frame_enabled=decorations == .Integrated_Title_Bar,
 		last_inset=-1,
 	}
 	state.root = win.CreateMenu()
@@ -247,7 +252,7 @@ native_menu_adapter_prepare :: proc(
 		win32_menu_state_destroy(state)
 		return false
 	}
-	if chrome_config.decorations != .System {
+	if decorations != .System {
 		state.chrome.labels = make([]Win32_Chrome_Label, len(service.menus), allocator=state.allocator)
 		if len(service.menus) > 0 && state.chrome.labels == nil {
 			win32_menu_state_destroy(state)
@@ -292,7 +297,7 @@ native_menu_adapter_prepare :: proc(
 			win32_menu_state_destroy(state)
 			return false
 		}
-		if chrome_config.decorations != .System {
+		if decorations != .System {
 			label := &state.chrome.labels[index]
 			label.text = description.label
 			label.popup = popup
@@ -306,7 +311,7 @@ native_menu_adapter_prepare :: proc(
 	}
 	win.SetWindowSubclass(hwnd, win32_menu_subclass, MENU_ADAPTER_SUBCLASS_ID, win.DWORD_PTR(uintptr(state)))
 	state.installed = true
-	if chrome_config.decorations == .System {
+	if decorations == .System {
 		if !win.SetMenu(hwnd, state.root) {
 			win32_menu_state_destroy(state)
 			return false
