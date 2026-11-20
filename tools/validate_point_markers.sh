@@ -13,6 +13,9 @@ ODIN=$(alicorn_resolve_odin "$ODIN_ARG")
 cd "$REPO_ROOT"
 mkdir -p out/point-markers
 ACCESSKIT_LINK_FLAGS=$(alicorn_accesskit_linker_flags)
+# native/sdl_gpu now imports alicorn:host/sdl3; the collection is required even
+# though this fixture has no WebGPU dependency.
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
-    build native/point_marker_validation_entry -o:speed -out:out/alicorn_point_marker_validation
+    build native/point_marker_validation_entry "-collection:alicorn=$REPO_ROOT" \
+    -o:speed -out:out/alicorn_point_marker_validation
 exec ./out/alicorn_point_marker_validation "$@"
