@@ -3295,7 +3295,10 @@ Validation on Windows x64 (NVIDIA RTX 2080 SUPER, D3D12, 2026-11-20):
   `failures=0`, including the UIA tree, text field patterns, physical text
   input, Tab order, UIA Invoke, wake delivery, auxiliary open/resize/close, and
   primary-state preservation. Artifacts are under `out/uia-chrome-slice3/`.
-- `host/menus` type-checks for `darwin_arm64` and `linux_amd64`. The macOS
-  full-size-content path is compile-only: no physical Mac ran this slice, so
+- `host/menus` type-checks for `darwin_arm64` and `linux_amd64`, and
+  `native/sdl_gpu` type-checks for `darwin_arm64`. The full `host/sdl3` WebGPU
+  package could not be type-checked for macOS locally because this Odin install
+  does not include the macOS wgpu-native archive. The macOS full-size-content
+  path is therefore compile-only: no physical Mac ran this slice, so
   traffic-light placement, drag regions, and fullscreen transitions remain
   unverified.
