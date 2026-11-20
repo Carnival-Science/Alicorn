@@ -58,6 +58,20 @@ were updated to `tools/macos_sdl.sh` / `ALICORN_SDL_LINK_FLAGS`.
    path filters, run on `master` and the integration branch, and keep
    `workflow_dispatch` plus the weekly schedule. Scheduled runs only execute
    from the default branch, so they activate only after merge.
+4. **Point-marker validation lost its collection argument.** `native/sdl_gpu`
+   now imports `alicorn:host/sdl3`, so master's
+   `tools/validate_point_markers.{ps1,sh}` failed with
+   "Unknown library collection: 'alicorn'" on both Windows and macOS
+   foundation jobs. Both scripts now pass `-collection:alicorn`; the D3D12
+   fixture passes locally and both foundation jobs are green.
+5. **The CI SDL rpath leaked into the macOS package.** The merged macOS
+   workflow exports `ALICORN_SDL_LINK_FLAGS` (with `-Wl,-rpath`) for
+   development links. Packaging builds are explicit and should not inherit it;
+   the new LC_RPATH guard caught the leak. `tools/common.sh` gained an
+   `ALICORN_SKIP_SDL_LINK_FLAGS` opt-out and
+   `tools/build_native_release.sh` sets it, so the static-wgpu package no
+   longer embeds a runner-local rpath. The macOS WebGPU workflow's packaged-app
+   step now passes.
 
 ## Shared-surface changes and verdicts
 
@@ -123,3 +137,19 @@ were updated to `tools/macos_sdl.sh` / `ALICORN_SDL_LINK_FLAGS`.
   directly through `tools/native_sdl_gpu.ps1` instead and passed. The
   `tools/test.ps1` AccessKit `verify-uia` flake (upstream AccessKit issue #1)
   was avoided by running the Alicorn suites directly.
+
+### Hosted CI on the merged head
+
+At `6f9ce06` (all green):
+
+| Workflow | Run | Scope |
+| --- | --- | --- |
+| Alicorn foundation | [44651674196](https://github.com/Carnival-Science/Alicorn/actions/runs/44651674196) | Windows build, suites, D3D12 blending/effects/point markers/presenter, examples, benchmarks |
+| Alicorn foundation (macOS) | [44651674302](https://github.com/Carnival-Science/Alicorn/actions/runs/44651674302) | Pinned Odin + SDL3 + wgpu-native, Metal blend/effects/point markers, fixture readback, patched destroy callbacks, TSan teardown |
+| Native packaging | [44651674420](https://github.com/Carnival-Science/Alicorn/actions/runs/44651674420) | Windows/macOS static and shared packages, audits |
+| WebGPU feasibility (Linux) | [44651674223](https://github.com/Carnival-Science/Alicorn/actions/runs/44651674223) | X11/lavapipe native readback and browser build |
+| WebGPU feasibility (macOS arm64) | [44651674347](https://github.com/Carnival-Science/Alicorn/actions/runs/44651674347) | Shared-wgpu fixture, device-loss probe build, static-wgpu packaged app, Metal readback/resize |
+
+The headless-browser workflow passed on `565952c` in run
+[44650168542](https://github.com/Carnival-Science/Alicorn/actions/runs/44650168542);
+later commits touch only tooling/docs outside its path filter.
