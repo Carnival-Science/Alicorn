@@ -944,14 +944,27 @@ drag is held near an overflowing edge; the application handles the events and
 changes its own item order. The widget does not mutate the supplied slice or
 own application data.
 
-For browser-style reorder previews, `drag_preview_mode = .Source_Subtree`
-captures the source tab's current paint commands when the drag threshold is
-crossed and moves that inert visual copy with the pointer. Its original visual
+A dragged tab previews itself. `Tab_Bar_Options.drag_preview_mode` defaults to
+`Drag_Preview_Mode.Auto`, which a tab bar resolves to `.Source_Subtree`: when the
+drag threshold is crossed the runtime captures the source tab's current paint
+commands and moves that inert visual copy with the pointer. Its original visual
 slot is hidden during the drag, while its retained node, semantic identity,
-logical hit bounds, and drop targets remain in place. If the bounded snapshot
-cannot be captured, the runtime falls back to the ordinary label preview.
-Applications should use this only when the source subtree remains realized for
-the duration of the drag.
+logical hit bounds, and drop targets remain in place. The copy is appended to
+the end of the display list, so it stays above the strip, the insertion marker,
+and neighboring tabs, and it is clipped only by the window viewport. If the
+bounded snapshot cannot be captured (more than 512 commands or 2048 text spans,
+or a source that painted nothing), the runtime falls back to the label preview;
+`.Label` forces that compact card for applications that prefer it.
+
+A label preview names its source. When the drag source node has no label or text
+of its own - as with a tab, list row, or icon button, whose visible name lives
+in a child text node - the runtime borrows the first painted descendant text
+run's value, size, font and style spans and shapes its own copy. An empty
+96x28 card therefore only remains for a source that paints no text at all.
+
+`Drag_Preview_Mode.Label` and `.Source_Subtree` still select one presentation
+explicitly for any `drag_source`; `Auto` means "the declaring widget's default",
+which for a non-tab source is the label card.
 
 `animate_drag_reorder = true` returns `Tab_Bar_Result.item_nodes`, a frame-local
 slice mapping each input item to its retained tab root. An application can

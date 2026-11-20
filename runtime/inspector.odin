@@ -324,6 +324,7 @@ inspect :: proc(rt: ^Runtime) -> string {
 		rt.stats.semantic_structure_changes, rt.stats.semantic_property_changes,
 		rt.stats.semantic_focus_search_visits, rt.stats.semantic_active_update_visits)
 	fmt.sbprintf(&sb, "last invalidation: %s\n", rt.last_invalidation_reason)
+	inspector_append_drag(&sb, rt)
 	fmt.sbprintf(&sb, "frame: %d built=%d idle=%d regions-skipped=%d subtrees-reused=%d adjacency-rebuilds=%d surface-updates=%d geometry-updates=%d surface-clears=%d stale-surface-updates=%d geometry-overflow-rejections=%d surface-pending=%t presentation=%d submitted=%d\n", rt.stats.frame, rt.stats.frames_built, rt.stats.idle_frames, rt.stats.regions_skipped, rt.stats.retained_subtrees_reused, rt.stats.adjacency_rebuilds, rt.stats.surface_updates, rt.stats.surface_geometry_updates, rt.stats.surface_clear_count, rt.stats.surface_stale_update_rejections, rt.stats.surface_geometry_overflow_rejections, rt.surface_frame_pending, rt.presentation_revision, rt.submitted_revision)
 	fmt.sbprintf(&sb, "work: reconcile=%d measure=%d measure_hits=%d measure_misses=%d text_shapes=%d layout=%d paint=%d compose=%d style_resolutions=%d style_cache_hits=%d created=%d retired=%d\n", rt.stats.reconcile_nodes_visited, rt.stats.measure_requests, rt.stats.measure_cache_hits, rt.stats.measure_cache_misses, rt.stats.text_shape_requests, rt.stats.layout_nodes_visited, rt.stats.paint_nodes_visited, rt.stats.composition_nodes_visited, rt.stats.style_resolutions, rt.stats.style_cache_hits, rt.stats.nodes_created, rt.stats.nodes_retired)
 	fmt.sbprintln(&sb, "actions:")
@@ -502,6 +503,53 @@ inspect :: proc(rt: ^Runtime) -> string {
 		fmt.sbprintf(&sb, "HARD ERROR: %s\n", rt.diagnostic)
 	}
 	return strings.to_string(sb)
+}
+
+// inspector_append_drag records the local drag session and the paint commands
+// its preview contributes at the tail of the display list. Capture bundles from
+// the reference and hosted hosts can then be compared command for command:
+// the preview must carry the dragged control's real content, the same
+// geometry, and the same stacking index, not a fallback card.
+inspector_append_drag :: proc(sb: ^strings.Builder, rt: ^Runtime) {
+	if rt == nil { return }
+	preview := rt.drag_preview
+	pending := 0
+	if preview.mode == .Source_Subtree { pending = len(preview.commands) }
+	if pending == 0 && preview.ready { pending = 1 }
+	fmt.sbprintf(sb,
+		"drag: phase=%v type=%d source=(%d,%d) source-node=%d target=(%d,%d) target-node=%d position=%v state=%v tracking=%v preview=(mode=%v ready=%t %.1fx%.1f display-start=%d commands=%d)\n",
+		rt.drag.phase, u32(rt.drag.drag_type), rt.drag.source.namespace, rt.drag.source.value,
+		rt.drag.source_node, rt.drag.target.namespace, rt.drag.target.value, rt.drag.target_node,
+		rt.drag.position, rt.drag.presentation_state, rt.drag.tracking.mode,
+		preview.mode, preview.ready, preview.width, preview.height,
+		preview.display_start, pending)
+	if rt.drag.phase != .Dragging || preview.display_start < 0 { return }
+	shown := 0
+	for index in preview.display_start..<len(rt.display) {
+		if shown >= 16 { break }
+		command := rt.display[index]
+		if command.owner != 0 { continue }
+		shown += 1
+		label := ""
+		if text, is_text := command.payload.(Text_Paint); is_text {
+			if run, found := paint_text_run_resolve(rt, text.run); found && run != nil { label = run.value }
+			if len(label) > 120 { label = label[:grapheme_floor_boundary(label, 120)] }
+		}
+		kind := "surface"
+		switch payload in command.payload {
+		case Text_Paint: kind = "text"
+		case Icon_Paint: kind = "icon"
+		case Image_Paint: kind = "image"
+		case Geometry_Paint: kind = "geometry"
+		case Surface_Paint: kind = "surface"
+		case Backdrop_Effect_Paint: kind = "effect"
+		}
+		fmt.sbprintf(sb,
+			"  preview[%d] index=%d kind=%s bounds=(%.1f,%.1f %.1fx%.1f) clip=(%.1f,%.1f %.1fx%.1f) translation=(%.1f,%.1f) opacity=%.2f text=%q\n",
+			shown-1, index, kind, command.bounds.x, command.bounds.y, command.bounds.w, command.bounds.h,
+			command.clip.x, command.clip.y, command.clip.w, command.clip.h,
+			command.translation[0], command.translation[1], command.opacity, label)
+	}
 }
 
 // Returns a shallow copy of the bounded trace window in chronological order.

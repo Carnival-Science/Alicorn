@@ -2,6 +2,8 @@
 
 package alicorn
 
+import "core:fmt"
+import "core:strings"
 import "core:testing"
 
 // Hosted presentation fixtures for Scratchpad's two application-parity gaps:
@@ -286,3 +288,191 @@ test_hosted_pointer_drag_selection_matches_reference :: proc(t: ^testing.T) {
 	delete(ref_app.events)
 }
 
+// Hosted drag-preview parity: a tab drag must describe the same preview paint
+// commands through the hosted pointer route as through the reference runtime
+// route. Scratchpad's connected titlebar tabs use exactly this shape (default
+// tab_bar options, magnetic tracking, animate_drag_reorder).
+HOSTED_TAB_DRAG_TYPE :: Drag_Type(0x746462)
+
+Hosted_Tab_Drag_App :: struct {
+	nodes: [3]Node_ID,
+	count: int,
+}
+
+hosted_tab_drag_render :: proc(data: rawptr, ui: ^UI, _width, _height: int, _dpi: f32) {
+	app := cast(^Hosted_Tab_Drag_App)data
+	root := container_begin(
+		ui, .Root, label="tab-drag-root", key="tab-drag-root",
+		style=layout_style(.Column, grow=1, padding=6, gap=6),
+	)
+	if root == 0 { return }
+	items := [3]Tab_Bar_Item{
+		{key=key_string("tab-drag-main"), label="main.go", selected=true,
+			semantic_id=Semantic_ID{namespace=911, value=1}},
+		{key=key_string("tab-drag-notes"), label="notes.md",
+			semantic_id=Semantic_ID{namespace=911, value=2}},
+		{key=key_string("tab-drag-readme"), label="README.md",
+			semantic_id=Semantic_ID{namespace=911, value=3}},
+	}
+	options := DEFAULT_TAB_BAR_OPTIONS
+	options.height = 34
+	options.min_tab_width = 120
+	options.max_tab_width = 160
+	options.gap = 0
+	options.presentation = .Compact
+	options.appearance = .Connected
+	options.animate_drag_reorder = true
+	options.drag_type = HOSTED_TAB_DRAG_TYPE
+	options.drag_tracking = DRAG_TRACKING_HORIZONTAL_MAGNETIC
+	result := tab_bar(
+		ui, key_string("tab-drag-bar"), items[:], options,
+		layout_style(.Row, width=460, height=34, clip=true),
+	)
+	app.count = len(result.item_nodes)
+	for index in 0..<app.count { app.nodes[index] = result.item_nodes[index] }
+	container_end(ui)
+}
+
+hosted_tab_drag_post :: proc(_data: rawptr) -> bool { return true }
+
+// drag_preview_signature is a host-independent description of the drag preview's
+// paint commands: content kind, geometry, clip, translation and resolved label.
+// Node IDs are deliberately excluded (each host retains its own), so an exact
+// string match proves the two hosts describe the same visual.
+drag_preview_signature :: proc(rt: ^Runtime, builder: ^strings.Builder) {
+	if rt == nil { return }
+	preview := rt.drag_preview
+	count := 0
+	if preview.mode == .Source_Subtree { count = len(preview.commands) }
+	fmt.sbprintf(builder, "mode=%v ready=%t size=%.1fx%.1f commands=%d\n",
+		preview.mode, preview.ready, preview.width, preview.height, count)
+	if rt.drag.phase != .Dragging { return }
+	for index in preview.display_start..<len(rt.display) {
+		command := rt.display[index]
+		if command.owner != 0 { continue }
+		kind := "surface"
+		switch payload in command.payload {
+		case Text_Paint: kind = "text"
+		case Icon_Paint: kind = "icon"
+		case Image_Paint: kind = "image"
+		case Geometry_Paint: kind = "geometry"
+		case Surface_Paint: kind = "surface"
+		case Backdrop_Effect_Paint: kind = "effect"
+		}
+		label := ""
+		if text, is_text := command.payload.(Text_Paint); is_text {
+			if run, found := paint_text_run_resolve(rt, text.run); found && run != nil { label = run.value }
+		}
+		fmt.sbprintf(builder,
+			"%s bounds=(%.2f,%.2f %.2fx%.2f) clip=(%.1f,%.1f %.1fx%.1f) translation=(%.2f,%.2f) opacity=%.2f text=%q\n",
+			kind, command.bounds.x, command.bounds.y, command.bounds.w, command.bounds.h,
+			command.clip.x, command.clip.y, command.clip.w, command.clip.h,
+			command.translation[0], command.translation[1], command.opacity, label)
+	}
+}
+
+@(test)
+test_hosted_tab_drag_preview_matches_the_reference_route :: proc(t: ^testing.T) {
+	host: Hosted_Runtime
+	app: Hosted_Tab_Drag_App
+	if hosted_runtime_init(&host, Hosted_Runtime_Config{
+		state=rawptr(&app),
+		logical_width=520, logical_height=240,
+		pixel_width=520, pixel_height=240,
+		dpi_scale=1,
+		post_wake_data=rawptr(&app),
+		post_wake=hosted_tab_drag_post,
+		render=hosted_tab_drag_render,
+	}) != .Ok {
+		testing.expect(t, false, "the hosted tab drag fixture should initialize")
+		return
+	}
+	defer hosted_runtime_destroy(&host)
+	hosted_rt, borrowed := hosted_runtime_borrow(&host)
+	if borrowed != .Ok {
+		testing.expect(t, false, "the hosted fixture should borrow its runtime")
+		return
+	}
+	testing.expect(t, text_engine_load_font(&hosted_rt.text_engine, HOSTED_PARITY_TEST_FONT),
+		"the hosted drag preview needs the fixture font")
+	_ = hosted_runtime_step(&host, 1_000_000)
+	if app.count < 2 {
+		testing.expect(t, false, "the hosted fixture should retain both tabs")
+		return
+	}
+	source := hosted_rt.nodes[app.nodes[0]]
+	target := hosted_rt.nodes[app.nodes[1]]
+	sx := source.bounds.x+source.bounds.w*0.5
+	sy := source.bounds.y+source.bounds.h*0.5
+	tx := target.bounds.x+target.bounds.w*0.4
+	_, _ = hosted_runtime_pointer(&host, Pointer_Event{
+		kind=.Down, x=sx, y=sy, button=POINTER_BUTTON_PRIMARY,
+	})
+	_ = hosted_runtime_step(&host, 2_000_000)
+	_, _ = hosted_runtime_pointer(&host, Pointer_Event{kind=.Move, x=sx+DRAG_START_THRESHOLD+2, y=sy})
+	_ = hosted_runtime_step(&host, 3_000_000)
+	_, _ = hosted_runtime_pointer(&host, Pointer_Event{kind=.Move, x=tx, y=sy})
+	_ = hosted_runtime_step(&host, 4_000_000)
+	hosted_preview := strings.builder_make()
+	defer strings.builder_destroy(&hosted_preview)
+	drag_preview_signature(hosted_rt, &hosted_preview)
+
+	// The same description through the reference route: process_pointer, then
+	// the interaction-only presentation frame the native host runs.
+	reference := new_runtime(Rect{0, 0, 520, 240})
+	defer destroy_runtime(&reference)
+	testing.expect(t, text_engine_load_font(&reference.text_engine, HOSTED_PARITY_TEST_FONT),
+		"the reference drag preview needs the fixture font")
+	reference_app: Hosted_Tab_Drag_App
+	ui, should_build := begin_frame(&reference)
+	if should_build {
+		hosted_tab_drag_render(rawptr(&reference_app), &ui, 520, 240, 1)
+		end_frame(&ui)
+	}
+	if reference_app.count < 2 {
+		testing.expect(t, false, "the reference fixture should retain both tabs")
+		return
+	}
+	reference_source := reference.nodes[reference_app.nodes[0]]
+	reference_target := reference.nodes[reference_app.nodes[1]]
+	_ = process_pointer(&reference, Pointer_Event{
+		kind=.Down, x=reference_source.bounds.x+reference_source.bounds.w*0.5,
+		y=reference_source.bounds.y+reference_source.bounds.h*0.5,
+		button=POINTER_BUTTON_PRIMARY,
+	})
+	// The press invalidates the root; describe that pressed frame before the
+	// drag begins, exactly as native/sdl_gpu's loop does.
+	describe_ui, describe := begin_frame(&reference)
+	if describe {
+		hosted_tab_drag_render(rawptr(&reference_app), &describe_ui, 520, 240, 1)
+		end_frame(&describe_ui)
+	}
+	reference_source = reference.nodes[reference_app.nodes[0]]
+	reference_target = reference.nodes[reference_app.nodes[1]]
+	_ = process_pointer(&reference, Pointer_Event{
+		kind=.Move, x=reference_source.bounds.x+reference_source.bounds.w*0.5+DRAG_START_THRESHOLD+2,
+		y=reference_source.bounds.y+reference_source.bounds.h*0.5,
+	})
+	_ = process_pointer(&reference, Pointer_Event{
+		kind=.Move, x=reference_target.bounds.x+reference_target.bounds.w*0.4,
+		y=reference_source.bounds.y+reference_source.bounds.h*0.5,
+	})
+	reference_ui, reference_presentation := begin_presentation_frame(&reference)
+	if reference_presentation { end_presentation_frame(&reference_ui) }
+	reference_preview := strings.builder_make()
+	defer strings.builder_destroy(&reference_preview)
+	drag_preview_signature(&reference, &reference_preview)
+
+	testing.expect(t, hosted_rt.drag_preview.mode == .Source_Subtree &&
+		hosted_rt.drag_preview.mode == reference.drag_preview.mode,
+		"both hosts should lift the painted tab, not fall back to a label card")
+	testing.expect(t, strings.to_string(hosted_preview) == strings.to_string(reference_preview),
+		fmt.tprintf("the hosted drag preview should describe the same paint commands as the reference:\nhosted:\n%s\nreference:\n%s",
+			strings.to_string(hosted_preview), strings.to_string(reference_preview)))
+	testing.expect(t, strings.contains(strings.to_string(hosted_preview), "text=") &&
+		strings.contains(strings.to_string(hosted_preview), `"main.go"`),
+		"the lifted tab preview should carry the tab's real label text")
+	_, _ = hosted_runtime_pointer(&host, Pointer_Event{
+		kind=.Up, x=tx, y=sy, button=POINTER_BUTTON_PRIMARY,
+	})
+}

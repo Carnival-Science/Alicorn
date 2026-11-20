@@ -4047,3 +4047,152 @@ installation `if`.
 - Live frames do not run `on_tick` or scheduled wakes by design; applications
   that animate from `on_tick` rather than retained motion will hold their last
   pose during a modal drag, exactly as on the reference host.
+
+## Stage C slice 2: tab drag reorder preview fidelity (2026-11-20)
+
+Founder testing on the hosted WebGPU build reported the last P1 in Scratchpad's
+tab drag: during a reorder the dragged tab became a dark, empty ~96x28
+rectangle instead of the tab that was lifted. The SDL_GPU reference app shows
+the real tab (contour, label, state) following the pointer with the source slot
+empty and the insertion marker in the strip.
+
+### What actually engaged the fallback
+
+The fallback is `drag_preview_begin`'s last resort in `runtime/drag_drop.odin`:
+when no preview could be built it paints a 96x28 dark card. Two things combined
+to reach it, and neither was hosted-specific:
+
+1. `Drag_Preview_Mode.Label` was the enum's zero value and therefore the
+   default for every `Tab_Bar_Options` that did not set `drag_preview_mode`.
+   Scratchpad's hosted frontend enabled `drag_type` and
+   `animate_drag_reorder` but not the preview mode, so both hosts went down the
+   label path. The reference Scratchpad branch happens to set
+   `.Source_Subtree` explicitly, which is why it looked right there.
+2. A tab is a composed button whose visible name is a child text node. The tab
+   root's own `label`/`text` are empty, so the label path had nothing to shape
+   and left `drag_preview.ready == false`; the card kept its 96x28 default.
+
+A probe through the hosted runtime settled the host question: with
+`.Source_Subtree` requested, `hosted_runtime_pointer` and the reference
+`process_pointer` + presentation-frame route captured the identical three
+commands (150x32 tab surface, its text run, its zero-height indicator), with
+`drag_preview.mode == .Source_Subtree` and the same geometry. The hosted
+capture hook, text-resource lifetime and transient translation updates were all
+functioning. The defect was the preview *choice* and the label fallback's
+inability to name a composed control.
+
+### Changes
+
+- `runtime/runtime.odin`: `Drag_Preview_Mode` gained `Auto = 0` before `Label`
+  and `Source_Subtree`. `Auto` means "the declaring widget's default".
+- `runtime/tab_bar.odin`: a tab bar resolves `Auto` to `.Source_Subtree`, so
+  `DEFAULT_TAB_BAR_OPTIONS` and plain `Tab_Bar_Options{...}` literals both lift
+  the real tab. Applications that want the compact card set `.Label`.
+- `runtime/drag_drop.odin`: `drag_preview_begin` now resolves its label through
+  `drag_preview_source_label`, which falls back to the first painted descendant
+  text run (value, size, font, weight, style spans) when the source node has no
+  label or text. The shaped preview is an owned copy, so the borrowed run may
+  retire with its node. `drag_source`'s default mode is `Auto`, which behaves as
+  the label card for non-tab sources.
+- `runtime/inspector.odin`: capture bundles now record the drag session and up
+  to 16 preview paint commands (`drag: phase=... preview=(mode=... commands=...)`
+  plus `preview[i] index= kind= bounds= clip= translation= opacity= text=`), so
+  a drag frame can be compared between hosts command for command.
+
+Nothing changed in the paint pipeline, stacking, clipping, or retained
+translation path: the lifted copy is still appended at the display tail, clipped
+by the window viewport, updated by `drag_preview_pointer_moved` without a
+display rebuild, and the source slot is still hidden by `drag_source_opacity`.
+Neighbor motion remains application-owned through
+`Tab_Bar_Result.item_nodes` + `ui.motion` (Scratchpad already does this), and
+the insertion marker remains the drop target's own paint below the copy.
+
+### Fixtures
+
+- `runtime/tab_bar_test.odin`:
+  - `test_tab_bar_default_drag_preview_lifts_the_real_tab` builds a tab bar that
+    leaves the preview mode at `Auto`, drags across a sibling, and asserts the
+    lifted mode/size, the tab's own contour and label text in the display tail,
+    viewport clipping, inert owner 0, source hidden/neighbor visible, the
+    insertion marker below the copy, and that a pointer move updates only the
+    bounded preview translations (no display full pass).
+  - `test_tab_bar_label_drag_preview_names_the_tab` forces `.Label` and asserts
+    the shaped preview is the tab's label rather than the 96x28 empty card, on
+    both the retained session and the composed display.
+- `runtime/hosted_parity_test.odin`:
+  `test_hosted_tab_drag_preview_matches_the_reference_route` describes
+  Scratchpad's tab shape (default options, magnetic tracking,
+  `animate_drag_reorder`, three semantic tabs), drags through
+  `hosted_runtime_pointer` and through `process_pointer`, and compares a
+  host-independent signature of the preview commands: mode, size, content kind,
+  bounds, clip, translation, opacity and resolved label. The two hosts must
+  describe the same visual.
+- `examples/16_native_webgpu_ui --tab-drag-smoke` drives a scripted drag from
+  `on_after_frame` (header tab 1 onto tab 2, magnetic track) and prints the
+  preview evidence: mode, commands, tab size, label text, insertion marker,
+  source/neighbor visibility, topmost stacking, owner 0, viewport clip and the
+  retained translation, plus the semantic drop target/position. The titlebar
+  tabs now carry stable semantic ids (the fixture's existing `titlebar_drag`
+  handler already reordered by that value), and the fixture enables the same
+  magnetic tracking as Scratchpad's connected titlebar tabs.
+  `--tab-drag-hold-ms=N` keeps the lift alive and nudges the pointer one pixel
+  per frame for an external capture.
+- `tools/validate_native_webgpu_tab_drag.ps1` launches that fixture with
+  `--diagnostics --capture-after=1 --capture-dir=...`, focuses the window and
+  presses F12, finds the bundle whose `inspector.txt` contains
+  `drag: phase=Dragging`, and writes the drag/preview lines to
+  `<backend>-drag-preview.txt` for cross-backend comparison.
+
+### Validation (Windows x64, RTX 2080 SUPER, `3df0f69` + this slice)
+
+- Root-cause probe: hosted and reference routes captured the same three preview
+  commands; the default-mode drag reported `mode=Label ready=false 96x28`, which
+  is the founder's rectangle.
+- `tab_drag_smoke` PASS with identical evidence on D3D12, Vulkan and SDL_GPU:
+  `mode=Source_Subtree commands=3 size=150.0x32.0 tab=150.0x32.0 text_found=true
+  marker=true source_hidden=true neighbor_visible=true topmost=true
+  owner_zero=true viewport_clip=true translation=150.0,0.0 drop_target=2
+  drop_position=After`.
+- Mid-drag capture, `inspector.txt` preview lines (D3D12 vs Vulkan byte-equal;
+  SDL_GPU differs only in node ids and the absolute display index):
+  `preview[0] surface bounds=(269.0,0.0 150.0x32.0) clip=(0.0,0.0 736.0x519.0)
+  translation=(150.0,0.0)`, `preview[1] text bounds=(289.0,6.0 110.0x20.0)
+  text="Alicorn Overvi."`, `preview[2] surface bounds=(269.0,31.0 150.0x0.0)`.
+- The captured mid-drag frames are pixel-identical between hosted D3D12 and the
+  SDL_GPU reference: 0 of 381,984 pixels differ over the full 736x519 frame, and
+  0 of 4,800 in the lifted-tab rectangle.
+- Suites run individually: runtime (413, including the three new fixtures),
+  host/sdl3, host/sdl3/live_resize, host/sdl3/input, host/sdl3/clipboard,
+  host/sdl3/dialogs, host/menus, host/web, host/diagnostics,
+  host/presentation, renderer/webgpu, renderer/cpu, ui, testui, theme,
+  native/sdl_gpu (169), native/scroll_capture_tests, `odin build tests` and
+  `out/alicorn_tests.exe`, and the accessibility contract fixture all pass.
+  All examples build; example 16 passes all seven smokes (`--smoke`,
+  `--workbench-smoke`, `--titlebar-smoke`, `--child-chrome-smoke`,
+  `--menu-smoke`, `--services-smoke`, `--tab-drag-smoke`) on D3D12, Vulkan and
+  SDL_GPU (21/21).
+- Scratchpad (`codex/issue-211-webgpu-frontend` at `b458d6e`, candidate root
+  this branch, no Scratchpad source or lock change) builds with
+  `--allow-alicorn-revision` and passes both smoke legs on
+  `--renderer=webgpu --backend=d3d12`, `--backend=vulkan`, and
+  `--renderer=sdl-gpu` (`publication_rendered`, `wake_observed`,
+  `ordered_shutdown`, `session_restore` all true).
+
+### Residual work and hands-on items
+
+- This automation session cannot deliver synthetic OS pointer input to the
+  Scratchpad window (the same limitation recorded in Stage B slice 5: host keys
+  such as F10-F12 arrive, pointer motion does not). The Scratchpad tab drag is
+  therefore verified at the hosted-runtime seam plus the instrumented example 16
+  fixture, not by a pixel capture of the real app. The founder's real tab drag
+  is the confirming check; the hosted frontend picks up the new default without
+  any Scratchpad change.
+- Neighbor "make room" motion is application policy. Scratchpad retargets
+  `ui.motion` on `Tab_Bar_Result.item_nodes`; the example 16 fixture does not,
+  so its strip shows an empty source slot rather than animated neighbors. The
+  runtime evidence asserted here is the marker, the lift, the hidden source and
+  the retained translation.
+- A drag that starts when the source subtree has already painted nothing (for
+  example a virtualized row that retired in the same frame) still falls back to
+  the label card; with the descendant-label resolution it now shows that row's
+  text instead of an empty rectangle.

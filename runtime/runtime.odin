@@ -532,8 +532,14 @@ Drag_Session :: struct {
 	target_mode: Drop_Target_Mode,
 }
 
+// Drag_Preview_Mode selects what a local drag paints under the pointer.
+// Auto is the widget default: a tab bar lifts the dragged tab's painted subtree
+// so the preview is the real tab; every other source draws the compact label
+// card. Label and Source_Subtree force one presentation regardless of the
+// declaring widget.
 Drag_Preview_Mode :: enum {
-	Label = 0,
+	Auto = 0,
+	Label,
 	Source_Subtree,
 }
 

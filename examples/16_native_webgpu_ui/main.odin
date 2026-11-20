@@ -3,6 +3,8 @@ package main
 import "core:c"
 import "core:fmt"
 import "core:os"
+import "core:strconv"
+import "core:strings"
 import alicorn "alicorn:runtime"
 import ui "alicorn:ui"
 import webgpu "alicorn:ui/webgpu"
@@ -103,6 +105,23 @@ App :: struct {
 	titlebar_selected: u64,
 	titlebar_reorder_count: int,
 	titlebar_pointer_count: int,
+	// --tab-drag-smoke scripts a drag across the titlebar tabs and asserts the
+	// preview visual contract (lifted tab content, stacking, marker, hidden
+	// source) on the SDL_GPU reference and the hosted WebGPU host.
+	tab_drag_smoke: bool,
+	tab_drag_stage: int,
+	tab_drag_ok: bool,
+	tab_drag_evidence: string,
+	tab_drag_tab_nodes: [2]alicorn.Node_ID,
+	tab_drag_source_node: alicorn.Node_ID,
+	tab_drag_target_node: alicorn.Node_ID,
+	tab_drag_dx: f32,
+	tab_drag_target_value: u64,
+	tab_drag_position: alicorn.Drop_Position,
+	// --tab-drag-hold-ms keeps the drag open for an external capture (F12).
+	// Zero releases as soon as the evidence is taken.
+	tab_drag_hold_ms: u64,
+	tab_drag_hold_until: u64,
 	// --child-chrome-smoke: the child's own menu tree must outlive the open
 	// request because the host borrows its slices for the window lifetime.
 	child_chrome_smoke: bool,
@@ -221,6 +240,7 @@ render :: proc(app: ^App, ctx: ^ui.UI) {
 }
 
 TITLEBAR_SMOKE_TAB_DRAG :: alicorn.Drag_Type(0x746162)
+TITLEBAR_SMOKE_TAB_NAMESPACE :: u64(0x746162)
 
 // live_resize_record accounts each description the host builds while the
 // live-resize fixture is running. Width changes are the signal that matters: a
@@ -389,6 +409,9 @@ titlebar_render :: proc(app: ^App, ctx: ^ui.UI) {
 			label="Alicorn Overview" if tab_id == 1 else "Connected Input Probe",
 			selected=app.titlebar_selected == tab_id,
 			closable=false,
+			// The drag source identity carries the tab id, which is also the
+			// value titlebar_drag reorders by.
+			semantic_id=alicorn.Semantic_ID{namespace=TITLEBAR_SMOKE_TAB_NAMESPACE, value=tab_id},
 		}
 		item_ids[count] = tab_id
 		count += 1
@@ -402,10 +425,16 @@ titlebar_render :: proc(app: ^App, ctx: ^ui.UI) {
 	options.appearance = .Connected
 	options.animate_drag_reorder = true
 	options.drag_type = TITLEBAR_SMOKE_TAB_DRAG
+	// Mirror Scratchpad's connected titlebar tabs: the lift stays inside the tab
+	// strip until the pointer leaves it.
+	options.drag_tracking = alicorn.DRAG_TRACKING_HORIZONTAL_MAGNETIC
 	result := alicorn.tab_bar(
 		ctx, alicorn.key_string("titlebar-smoke-tabs"), items[:count], options,
 		alicorn.layout_style(.Row, width=f32(tab_width), height=height, compress_weight=1),
 	)
+	for index in 0..<min(count, len(result.item_nodes)) {
+		app.tab_drag_tab_nodes[index] = result.item_nodes[index]
+	}
 	if result.item_index >= 0 && result.item_index < count && result.action == .Select {
 		app.titlebar_selected = item_ids[result.item_index]
 		alicorn.invalidate_root(ctx.runtime, "titlebar smoke tab selected")
@@ -502,6 +531,133 @@ titlebar_drag :: proc(app: ^App, rt: ^alicorn.Runtime, event: alicorn.Drag_Event
 	}
 	app.titlebar_reorder_count += 1
 	alicorn.invalidate_root(rt, "titlebar smoke tabs reordered")
+}
+
+// tab_drag_preview_evidence summarizes the active drag preview exactly as it is
+// described for the presenter: mode, content commands, tab geometry, resolved
+// label text, stacking, insertion marker, source visibility, and the retained
+// translation. Both hosts print the same line for the same scripted drag.
+tab_drag_preview_evidence :: proc(app: ^App, rt: ^alicorn.Runtime) -> (ok: bool, evidence: string) {
+	preview := rt.drag_preview
+	source, source_ok := rt.nodes[app.tab_drag_source_node]
+	_, target_ok := rt.nodes[app.tab_drag_target_node]
+	if !source_ok || !target_ok || rt.drag.phase != .Dragging { return false, "phase=inactive" }
+	count := 0
+	if preview.mode == .Source_Subtree { count = len(preview.commands) }
+	display := rt.display
+	start := preview.display_start
+	if start < 0 || start+count > len(display) {
+		return false, fmt.tprintf("mode=%v commands=%d start=%d display=%d", preview.mode, count, start, len(display))
+	}
+	label_text, text_found := "", false
+	owner_zero, viewport_clip := true, true
+	for index in start..<start+count {
+		command := display[index]
+		if command.owner != 0 { owner_zero = false }
+		if command.clip != rt.viewport { viewport_clip = false }
+		if text, is_text := command.payload.(alicorn.Text_Paint); is_text {
+			if run, found := alicorn.paint_text_run_resolve(rt, text.run); found && len(run.value) > 0 {
+				label_text, text_found = run.value, true
+			}
+		}
+	}
+	// The insertion marker is the narrow accent surface the drop target paints.
+	marker_found := false
+	for index in 0..<start {
+		command := display[index]
+		if command.owner == app.tab_drag_target_node && abs(command.bounds.w-3) <= 0.01 {
+			marker_found = true
+		}
+	}
+	topmost := start+count == len(display)
+	source_hidden := alicorn.drag_source_opacity(rt, app.tab_drag_source_node) == 0
+	neighbor_visible := alicorn.drag_source_opacity(rt, app.tab_drag_target_node) == 1
+	size_matches := abs(preview.width-source.bounds.w) <= 1 && abs(preview.height-source.bounds.h) <= 1
+	translation := display[start].translation
+	evidence = fmt.tprintf(
+		"mode=%v ready=%t commands=%d size=%.1fx%.1f tab=%.1fx%.1f size_ok=%t text=%q text_found=%t marker=%t source_hidden=%t neighbor_visible=%t topmost=%t owner_zero=%t viewport_clip=%t translation=%.1f,%.1f",
+		preview.mode, preview.ready, count, preview.width, preview.height,
+		source.bounds.w, source.bounds.h, size_matches, label_text, text_found, marker_found,
+		source_hidden, neighbor_visible, topmost, owner_zero, viewport_clip,
+		translation[0], translation[1],
+	)
+	ok = preview.mode == .Source_Subtree && count >= 2 && size_matches && text_found &&
+		marker_found && source_hidden && neighbor_visible && topmost && owner_zero && viewport_clip
+	return
+}
+
+// tab_drag_drive advances one step of the scripted tab drag per described frame.
+// It runs from on_after_frame, so the hosted and reference hosts both present the
+// preview frames and the same runtime drag path is exercised.
+tab_drag_drive :: proc(app: ^App, rt: ^alicorn.Runtime) {
+	if app == nil || rt == nil || !app.tab_drag_smoke || app.tab_drag_stage > 3 { return }
+	if app.tab_drag_tab_nodes[0] == 0 || app.tab_drag_tab_nodes[1] == 0 { return }
+	first, first_ok := rt.nodes[app.tab_drag_tab_nodes[0]]
+	second, second_ok := rt.nodes[app.tab_drag_tab_nodes[1]]
+	if !first_ok || !second_ok { return }
+	ax := first.bounds.x+first.bounds.w*0.5
+	ay := first.bounds.y+first.bounds.h*0.5
+	switch app.tab_drag_stage {
+	case 0:
+		app.tab_drag_source_node = app.tab_drag_tab_nodes[0]
+		app.tab_drag_target_node = app.tab_drag_tab_nodes[1]
+		app.tab_drag_dx = second.bounds.x+second.bounds.w*0.75-ax
+		_ = alicorn.process_pointer(rt, alicorn.Pointer_Event{
+			kind=.Down, x=ax, y=ay, button=alicorn.POINTER_BUTTON_PRIMARY,
+		})
+		app.tab_drag_stage = 1
+		// The fixture drives its own script from after-frame; post a wake so the
+		// host runs another loop turn and presents this step on both hosts.
+		ui.wake(app.waker)
+	case 1:
+		// Cross the drag threshold so the runtime lifts the tab.
+		_ = alicorn.process_pointer(rt, alicorn.Pointer_Event{
+			kind=.Move, x=ax+alicorn.DRAG_START_THRESHOLD+2, y=ay,
+		})
+		app.tab_drag_stage = 2
+		ui.wake(app.waker)
+	case 2:
+		_ = alicorn.process_pointer(rt, alicorn.Pointer_Event{
+			kind=.Move, x=ax+app.tab_drag_dx, y=ay,
+		})
+		app.tab_drag_hold_until = sdl3.GetTicks()+app.tab_drag_hold_ms
+		app.tab_drag_stage = 3
+		ui.wake(app.waker)
+	case 3:
+		if app.tab_drag_hold_ms > 0 && sdl3.GetTicks() < app.tab_drag_hold_until {
+			// Keep the lift alive for an external capture. The pointer nudges one
+			// pixel each frame, so the presented frames prove retained translation
+			// updates rather than preview rebuilds.
+			nudge := f32(1) if (sdl3.GetTicks()/16)%2 == 0 else f32(-1)
+			_ = alicorn.process_pointer(rt, alicorn.Pointer_Event{
+				kind=.Move, x=ax+app.tab_drag_dx+nudge, y=ay,
+			})
+			ui.wake(app.waker)
+			return
+		}
+		ok, evidence := tab_drag_preview_evidence(app, rt)
+		app.tab_drag_target_value = rt.drag.target.value
+		app.tab_drag_position = rt.drag.position
+		ok = ok && rt.drag.target.value == 2 && rt.drag.position == .After
+		app.tab_drag_ok = ok
+		app.tab_drag_evidence = evidence
+		_ = alicorn.process_pointer(rt, alicorn.Pointer_Event{
+			kind=.Up, x=ax+app.tab_drag_dx, y=ay, button=alicorn.POINTER_BUTTON_PRIMARY,
+		})
+		app.tab_drag_stage = 4
+		ui.ui_quit_request(app.quit)
+	}
+}
+
+tab_drag_report :: proc(app: ^App) -> bool {
+	if app == nil || !app.tab_drag_smoke { return true }
+	fmt.println(
+		"tab_drag_smoke", "PASS" if app.tab_drag_ok else "FAIL",
+		app.tab_drag_evidence,
+		"drop_target", app.tab_drag_target_value,
+		"drop_position", app.tab_drag_position,
+	)
+	return app.tab_drag_ok
 }
 
 example_initialize :: proc(app: ^App, rt: ^alicorn.Runtime) {
@@ -917,6 +1073,29 @@ main :: proc() {
 			app.interactive = true
 			smoke = false
 		}
+		if argument == "--tab-drag-smoke" {
+			app.tab_drag_smoke = true
+			app.titlebar_smoke = true
+			app.titlebar_order = [2]u64{1, 2}
+			app.titlebar_selected = 1
+			app.titlebar_header_height = 32
+			app.titlebar_content_end_x = 900
+			app.interactive = true
+			smoke = false
+		}
+		if strings.has_prefix(argument, "--tab-drag-hold-ms=") {
+			app.tab_drag_smoke = true
+			app.titlebar_smoke = true
+			app.titlebar_order = [2]u64{1, 2}
+			app.titlebar_selected = 1
+			app.titlebar_header_height = 32
+			app.titlebar_content_end_x = 900
+			app.interactive = true
+			smoke = false
+			if milliseconds, ok := strconv.parse_int(strings.trim_prefix(argument, "--tab-drag-hold-ms=")); ok {
+				app.tab_drag_hold_ms = u64(clamp(milliseconds, 0, 60_000))
+			}
+		}
 	}
 	if app.interactive { smoke = false }
 	// The services smoke owns its quit: it completes only after the scheduler,
@@ -1004,6 +1183,9 @@ main :: proc() {
 	after_frame_proc: proc(^App, ^alicorn.Runtime)
 	if app.live_resize_smoke {
 		after_frame_proc = live_resize_after_frame
+	}
+	if app.tab_drag_smoke {
+		after_frame_proc = tab_drag_drive
 	}
 	if app.services_smoke {
 		scheduled_proc = services_scheduled_wake
@@ -1095,5 +1277,8 @@ main :: proc() {
 	}
 	if app.live_resize_smoke {
 		if !live_resize_report(&app) { os.exit(1) }
+	}
+	if app.tab_drag_smoke {
+		if !tab_drag_report(&app) { os.exit(1) }
 	}
 }

@@ -1,0 +1,4 @@
+drag: phase=Dragging type=7627106 source=(7627106,1) source-node=1857795050478967540 target=(7627106,2) target-node=14386085618565336558 position=After state=Horizontal_Track tracking=Horizontal_Magnetic preview=(mode=Source_Subtree ready=false 150.0x32.0 display-start=14 commands=3)
+  preview[0] index=14 kind=surface bounds=(269.0,0.0 150.0x32.0) clip=(0.0,0.0 736.0x519.0) translation=(150.0,0.0) opacity=1.00 text=""
+  preview[1] index=15 kind=text bounds=(289.0,6.0 110.0x20.0) clip=(0.0,0.0 736.0x519.0) translation=(150.0,0.0) opacity=1.00 text="Alicorn Overvi…"
+  preview[2] index=16 kind=surface bounds=(269.0,31.0 150.0x0.0) clip=(0.0,0.0 736.0x519.0) translation=(150.0,0.0) opacity=1.00 text=""

@@ -47,6 +47,17 @@ changelogs.
 
 ### Fixed
 
+- Fixed tab drag reorder previews on both hosts. A tab bar that enabled
+  `drag_type` but left `Tab_Bar_Options.drag_preview_mode` at its default drew
+  an empty 96x28 card while dragging, because a tab is a composed control whose
+  visible name lives in a child text node and the label fallback had nothing to
+  shape. `Drag_Preview_Mode` now has an `Auto` zero value: the tab bar resolves
+  it to `Source_Subtree`, so the dragged tab is lifted with its real contour,
+  label and state (the reference Scratchpad behavior), and the source slot is
+  hidden until the drop. A label preview now borrows the first painted
+  descendant text run's value, size and style spans when the drag source has no
+  label of its own, so `.Label` mode names the control instead of drawing an
+  empty card.
 - Fixed hosted WebGPU output-transfer parity. The SDL_GPU reference presents
   linear-sRGB theme channels through a non-sRGB swapchain, while the hosted
   WebGPU hosts selected an sRGB-encoded surface and therefore applied a second

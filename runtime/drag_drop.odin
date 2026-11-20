@@ -17,7 +17,7 @@ drag_source :: proc(
 	ui: ^UI,
 	drag_type: Drag_Type,
 	identity: Semantic_ID,
-	preview_mode := Drag_Preview_Mode.Label,
+	preview_mode := Drag_Preview_Mode.Auto,
 	tracking := DEFAULT_DRAG_TRACKING_OPTIONS,
 ) -> bool {
 	if ui == nil || ui.runtime == nil || drag_type == Drag_Type(0) || !semantic_id_is_valid(identity) { return false }
@@ -126,17 +126,9 @@ drag_preview_begin :: proc(rt: ^Runtime) {
 			request_presentation(rt, "dragged subtree lifted")
 			return
 		}
-		label := source.label if source.label != "" else source.text
+		label, size, font, weight, styles := drag_preview_source_label(rt, source)
 		if len(label) > DRAG_PREVIEW_MAX_LABEL_BYTES {
 			label = label[:grapheme_floor_boundary(label, DRAG_PREVIEW_MAX_LABEL_BYTES)]
-		}
-		size := f32(14)
-		font := source.font
-		weight := effective_font_weight(source.text_style.font_weight)
-		styles: []Text_Style_Span
-		if source.text_run_valid {
-			size = source.text_run.size
-			styles = source.text_style_spans[:]
 		}
 		if len(label) > 0 {
 			run, built := text_run_build_with_overflow(
@@ -202,6 +194,48 @@ drag_preview_capture_subtree :: proc(rt: ^Runtime, source: Node_ID) -> bool {
 		append(&preview.commands, command)
 	}
 	return len(preview.commands) == command_count
+}
+
+// drag_preview_source_label resolves what a label preview should shape. A
+// declared label or text on the source wins. Composed controls such as tabs,
+// list rows and icon buttons carry their visible name in a descendant text
+// node, so an empty source label must not produce an empty card: borrow the
+// first painted descendant run's text, size and style spans instead. The
+// preview shapes its own copy, so the borrowed run may retire with the source.
+drag_preview_source_label :: proc(
+	rt: ^Runtime,
+	source: ^Node,
+) -> (label: string, size: f32, font: Font_Role, weight: f32, styles: []Text_Style_Span) {
+	size = 14
+	if source == nil { return }
+	font = source.font
+	weight = effective_font_weight(source.text_style.font_weight)
+	if source.text_run_valid {
+		size = source.text_run.size
+		styles = source.text_style_spans[:]
+	}
+	label = source.label
+	if label == "" { label = source.text }
+	if label != "" || rt == nil { return }
+	for command in rt.display_target {
+		text, ok := command.payload.(Text_Paint)
+		if !ok || text.run.generation == 0 { continue }
+		if !drag_preview_owner_is_descendant(rt, command.owner, source.id) { continue }
+		run, found := paint_text_run_resolve(rt, text.run)
+		if !found || run == nil || run.value == "" { continue }
+		styles = nil
+		label = run.value
+		size = run.size
+		font = run.font
+		weight = effective_font_weight(run.font_weight)
+		if text.run.source == .Retained {
+			if node, exists := rt.nodes[Node_ID(text.run.resource)]; exists && node != nil && node.active {
+				if len(node.text_style_spans) > 0 { styles = node.text_style_spans[:] }
+			}
+		}
+		return
+	}
+	return
 }
 
 drag_preview_owner_is_descendant :: proc(rt: ^Runtime, owner, ancestor: Node_ID) -> bool {

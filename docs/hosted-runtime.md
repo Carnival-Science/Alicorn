@@ -704,6 +704,14 @@ capture → quit inside the real host loop for automated validation.
 `--test-diagnostics-present-failure` injects one presentation-boundary encode
 failure after the first frame and exercises the failure-capture path.
 
+`inspector.txt` records the live local drag session and the paint commands its
+preview contributes: `drag: phase=... source=... target=... position=...
+preview=(mode=... ready=... WxH display-start=... commands=...)` followed by up
+to 16 `preview[i] index= kind= bounds= clip= translation= opacity= text=` lines.
+Both hosts describe the same drag preview for the same application, so a
+mid-drag capture bundle from each can be compared command for command (example
+16's `--tab-drag-smoke` + `tools/validate_native_webgpu_tab_drag.ps1`).
+
 ## Current boundary and integration gates
 
 The headless hosted-session regression suite in `runtime/hosted_test.odin` and

@@ -33,8 +33,10 @@ Tab_Bar_Options :: struct {
 	gap:           f32,
 	close_policy:  Tab_Close_Policy,
 	drag_type:     Drag_Type,
-	// drag_preview_mode is forwarded to each tab drag source. Source_Subtree
-	// lifts the complete painted tab into an inert runtime overlay.
+	// drag_preview_mode is forwarded to each tab drag source. A tab is a
+	// composed control whose visible name lives in a child text node, so the
+	// default (Auto) lifts the complete painted tab into an inert runtime
+	// overlay; .Label forces the compact label card instead.
 	drag_preview_mode: Drag_Preview_Mode,
 	// drag_tracking opts into magnetic horizontal reorder behavior. When the
 	// source is inside a horizontal scroll viewport, the preview stays within
@@ -247,6 +249,12 @@ tab_bar :: proc(
 
 	opts.min_tab_width = clampf(opts.min_tab_width, 48, 1024)
 	opts.max_tab_width = clampf(opts.max_tab_width, opts.min_tab_width, 2048)
+	// A dragged tab previews itself, not a placeholder: every reference host
+	// (Scratchpad's connected titlebar tabs included) shows the lifted tab with
+	// its label and contour. The label card cannot describe a composed control
+	// because a tab carries no node-level label, so Auto resolves here.
+	preview_mode := opts.drag_preview_mode
+	if preview_mode == .Auto { preview_mode = .Source_Subtree }
 	// Closable tabs retain a 24x24 logical hit target. Keep the row tall enough
 	// for that target rather than silently shrinking it below the intended size.
 	opts.height = clampf(opts.height, 26, 256)
@@ -464,7 +472,7 @@ tab_bar :: proc(
 		})
 		if item.selected { selected_semantic_id = item_semantic_id }
 		if opts.drag_type != Drag_Type(0) && semantic_id_is_valid(item.semantic_id) {
-			_ = drag_source(ui, opts.drag_type, item.semantic_id, opts.drag_preview_mode, opts.drag_tracking)
+			_ = drag_source(ui, opts.drag_type, item.semantic_id, preview_mode, opts.drag_tracking)
 			_ = drop_target(ui, opts.drag_type, item.semantic_id, .Between_Horizontal)
 		}
 		if tab_activated && result.action == .None { result.action, result.item_index = .Select, index }
