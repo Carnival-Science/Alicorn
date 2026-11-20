@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "description": "Approximate structural bands for a 1216x799 Scratchpad capture at 100% DPI. Region stats are supplementary evidence; the full-frame diff is authoritative. Areas outside the captured frame are clamped.",
+  "regions": [
+    {"name": "window-chrome", "x": 0, "y": 0, "w": 1216, "h": 40},
+    {"name": "sidebar", "x": 0, "y": 40, "w": 332, "h": 720},
+    {"name": "editor-body", "x": 332, "y": 40, "w": 884, "h": 720},
+    {"name": "editor-gutter", "x": 332, "y": 88, "w": 44, "h": 600},
+    {"name": "editor-text-band", "x": 376, "y": 88, "w": 800, "h": 600},
+    {"name": "status-strip", "x": 0, "y": 760, "w": 1216, "h": 39}
+  ]
+}

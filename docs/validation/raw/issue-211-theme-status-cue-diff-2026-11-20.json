@@ -1,0 +1,158 @@
+{
+  "a": {
+    "path": "C:\\Users\\saman\\.codex\\worktrees\\alicorn-webgpu-migration\\alicorn\\out\\backend-compare\\json-document-cool-light\\sdl-gpu\\capture\\20261120T224900.403Z-0002\\screenshot.ppm",
+    "label": "webgpu-d3d12"
+  },
+  "b": {
+    "path": "C:\\Users\\saman\\.codex\\worktrees\\alicorn-webgpu-migration\\alicorn\\out\\backend-compare\\json-document-cool-light\\webgpu-d3d12\\capture\\20261120T224913.538Z-0002\\screenshot.ppm",
+    "label": "sdl-gpu"
+  },
+  "size": [
+    1216,
+    799
+  ],
+  "full": {
+    "rect": [
+      0,
+      0,
+      1216,
+      799
+    ],
+    "pixels": 971584,
+    "channels": 2914752,
+    "differing_channels": 1116,
+    "differing_channels_percent": 0.03828799156840788,
+    "differing_pixels": 372,
+    "differing_pixels_percent": 0.03828799156840788,
+    "max_delta": 550,
+    "mean_delta": 0.0387398310387985,
+    "mean_differing_channel_delta": 101.18010752688173,
+    "bbox": [
+      415,
+      774,
+      494,
+      783
+    ]
+  },
+  "regions": [
+    {
+      "rect": [
+        0,
+        0,
+        1216,
+        40
+      ],
+      "pixels": 48640,
+      "channels": 145920,
+      "differing_channels": 0,
+      "differing_channels_percent": 0.0,
+      "differing_pixels": 0,
+      "differing_pixels_percent": 0.0,
+      "max_delta": 0,
+      "mean_delta": 0.0,
+      "mean_differing_channel_delta": 0.0,
+      "bbox": null,
+      "name": "window-chrome"
+    },
+    {
+      "rect": [
+        0,
+        40,
+        332,
+        720
+      ],
+      "pixels": 239040,
+      "channels": 717120,
+      "differing_channels": 0,
+      "differing_channels_percent": 0.0,
+      "differing_pixels": 0,
+      "differing_pixels_percent": 0.0,
+      "max_delta": 0,
+      "mean_delta": 0.0,
+      "mean_differing_channel_delta": 0.0,
+      "bbox": null,
+      "name": "sidebar"
+    },
+    {
+      "rect": [
+        332,
+        40,
+        884,
+        720
+      ],
+      "pixels": 636480,
+      "channels": 1909440,
+      "differing_channels": 0,
+      "differing_channels_percent": 0.0,
+      "differing_pixels": 0,
+      "differing_pixels_percent": 0.0,
+      "max_delta": 0,
+      "mean_delta": 0.0,
+      "mean_differing_channel_delta": 0.0,
+      "bbox": null,
+      "name": "editor-body"
+    },
+    {
+      "rect": [
+        332,
+        88,
+        44,
+        600
+      ],
+      "pixels": 26400,
+      "channels": 79200,
+      "differing_channels": 0,
+      "differing_channels_percent": 0.0,
+      "differing_pixels": 0,
+      "differing_pixels_percent": 0.0,
+      "max_delta": 0,
+      "mean_delta": 0.0,
+      "mean_differing_channel_delta": 0.0,
+      "bbox": null,
+      "name": "editor-gutter"
+    },
+    {
+      "rect": [
+        376,
+        88,
+        800,
+        600
+      ],
+      "pixels": 480000,
+      "channels": 1440000,
+      "differing_channels": 0,
+      "differing_channels_percent": 0.0,
+      "differing_pixels": 0,
+      "differing_pixels_percent": 0.0,
+      "max_delta": 0,
+      "mean_delta": 0.0,
+      "mean_differing_channel_delta": 0.0,
+      "bbox": null,
+      "name": "editor-text-band"
+    },
+    {
+      "rect": [
+        0,
+        760,
+        1216,
+        39
+      ],
+      "pixels": 47424,
+      "channels": 142272,
+      "differing_channels": 1116,
+      "differing_channels_percent": 0.7844129554655871,
+      "differing_pixels": 372,
+      "differing_pixels_percent": 0.7844129554655871,
+      "max_delta": 550,
+      "mean_delta": 0.7936698717948718,
+      "mean_differing_channel_delta": 101.18010752688173,
+      "bbox": [
+        415,
+        774,
+        494,
+        783
+      ],
+      "name": "status-strip"
+    }
+  ]
+}

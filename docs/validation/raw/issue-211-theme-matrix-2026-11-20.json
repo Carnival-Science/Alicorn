@@ -1,0 +1,437 @@
+[
+  {
+    "scene": "go-editor",
+    "theme": "warm",
+    "backends": {
+      "webgpu-d3d12": {
+        "channels": 2914752,
+        "differing": 0,
+        "percent": 0.0,
+        "max": 0,
+        "mean": 0.0,
+        "pixels": 0,
+        "bbox": null
+      },
+      "webgpu-vulkan": {
+        "channels": 2914752,
+        "differing": 0,
+        "percent": 0.0,
+        "max": 0,
+        "mean": 0.0,
+        "pixels": 0,
+        "bbox": null
+      }
+    },
+    "size": [
+      "1216x799"
+    ]
+  },
+  {
+    "scene": "go-editor",
+    "theme": "cool-light",
+    "backends": {
+      "webgpu-d3d12": {
+        "channels": 2914752,
+        "differing": 0,
+        "percent": 0.0,
+        "max": 0,
+        "mean": 0.0,
+        "pixels": 0,
+        "bbox": null
+      },
+      "webgpu-vulkan": {
+        "channels": 2914752,
+        "differing": 0,
+        "percent": 0.0,
+        "max": 0,
+        "mean": 0.0,
+        "pixels": 0,
+        "bbox": null
+      }
+    },
+    "size": [
+      "1216x799"
+    ]
+  },
+  {
+    "scene": "go-editor",
+    "theme": "charcoal-ink",
+    "backends": {
+      "webgpu-d3d12": {
+        "channels": 2914752,
+        "differing": 0,
+        "percent": 0.0,
+        "max": 0,
+        "mean": 0.0,
+        "pixels": 0,
+        "bbox": null
+      },
+      "webgpu-vulkan": {
+        "channels": 2914752,
+        "differing": 0,
+        "percent": 0.0,
+        "max": 0,
+        "mean": 0.0,
+        "pixels": 0,
+        "bbox": null
+      }
+    },
+    "size": [
+      "1216x799"
+    ]
+  },
+  {
+    "scene": "markdown",
+    "theme": "warm",
+    "backends": {
+      "webgpu-d3d12": {
+        "channels": 2914752,
+        "differing": 0,
+        "percent": 0.0,
+        "max": 0,
+        "mean": 0.0,
+        "pixels": 0,
+        "bbox": null
+      },
+      "webgpu-vulkan": {
+        "channels": 2914752,
+        "differing": 0,
+        "percent": 0.0,
+        "max": 0,
+        "mean": 0.0,
+        "pixels": 0,
+        "bbox": null
+      }
+    },
+    "size": [
+      "1216x799"
+    ]
+  },
+  {
+    "scene": "markdown",
+    "theme": "cool-light",
+    "backends": {
+      "webgpu-d3d12": {
+        "channels": 2914752,
+        "differing": 0,
+        "percent": 0.0,
+        "max": 0,
+        "mean": 0.0,
+        "pixels": 0,
+        "bbox": null
+      },
+      "webgpu-vulkan": {
+        "channels": 2914752,
+        "differing": 0,
+        "percent": 0.0,
+        "max": 0,
+        "mean": 0.0,
+        "pixels": 0,
+        "bbox": null
+      }
+    },
+    "size": [
+      "1216x799"
+    ]
+  },
+  {
+    "scene": "markdown",
+    "theme": "charcoal-ink",
+    "backends": {
+      "webgpu-d3d12": {
+        "channels": 2914752,
+        "differing": 0,
+        "percent": 0.0,
+        "max": 0,
+        "mean": 0.0,
+        "pixels": 0,
+        "bbox": null
+      },
+      "webgpu-vulkan": {
+        "channels": 2914752,
+        "differing": 0,
+        "percent": 0.0,
+        "max": 0,
+        "mean": 0.0,
+        "pixels": 0,
+        "bbox": null
+      }
+    },
+    "size": [
+      "1216x799"
+    ]
+  },
+  {
+    "scene": "json-document",
+    "theme": "warm",
+    "backends": {
+      "webgpu-d3d12": {
+        "channels": 2914752,
+        "differing": 1113,
+        "percent": 0.0382,
+        "max": 319,
+        "mean": 0.0225,
+        "pixels": 371,
+        "bbox": [
+          415,
+          774,
+          494,
+          783
+        ]
+      },
+      "webgpu-vulkan": {
+        "channels": 2914752,
+        "differing": 1113,
+        "percent": 0.0382,
+        "max": 319,
+        "mean": 0.0225,
+        "pixels": 371,
+        "bbox": [
+          415,
+          774,
+          494,
+          783
+        ]
+      }
+    },
+    "size": [
+      "1216x799"
+    ]
+  },
+  {
+    "scene": "json-document",
+    "theme": "cool-light",
+    "backends": {
+      "webgpu-d3d12": {
+        "channels": 2914752,
+        "differing": 1116,
+        "percent": 0.0383,
+        "max": 550,
+        "mean": 0.0387,
+        "pixels": 372,
+        "bbox": [
+          415,
+          774,
+          494,
+          783
+        ]
+      },
+      "webgpu-vulkan": {
+        "channels": 2914752,
+        "differing": 1116,
+        "percent": 0.0383,
+        "max": 550,
+        "mean": 0.0387,
+        "pixels": 372,
+        "bbox": [
+          415,
+          774,
+          494,
+          783
+        ]
+      }
+    },
+    "size": [
+      "1216x799"
+    ]
+  },
+  {
+    "scene": "json-document",
+    "theme": "charcoal-ink",
+    "backends": {
+      "webgpu-d3d12": {
+        "channels": 2914752,
+        "differing": 1113,
+        "percent": 0.0382,
+        "max": 308,
+        "mean": 0.0217,
+        "pixels": 371,
+        "bbox": [
+          415,
+          774,
+          494,
+          783
+        ]
+      },
+      "webgpu-vulkan": {
+        "channels": 2914752,
+        "differing": 1113,
+        "percent": 0.0382,
+        "max": 308,
+        "mean": 0.0217,
+        "pixels": 371,
+        "bbox": [
+          415,
+          774,
+          494,
+          783
+        ]
+      }
+    },
+    "size": [
+      "1216x799"
+    ]
+  },
+  {
+    "scene": "pinned",
+    "theme": "warm",
+    "backends": {
+      "webgpu-d3d12": {
+        "channels": 2914752,
+        "differing": 0,
+        "percent": 0.0,
+        "max": 0,
+        "mean": 0.0,
+        "pixels": 0,
+        "bbox": null
+      },
+      "webgpu-vulkan": {
+        "channels": 2914752,
+        "differing": 0,
+        "percent": 0.0,
+        "max": 0,
+        "mean": 0.0,
+        "pixels": 0,
+        "bbox": null
+      }
+    },
+    "size": [
+      "1216x799"
+    ]
+  },
+  {
+    "scene": "pinned",
+    "theme": "cool-light",
+    "backends": {
+      "webgpu-d3d12": {
+        "channels": 2914752,
+        "differing": 0,
+        "percent": 0.0,
+        "max": 0,
+        "mean": 0.0,
+        "pixels": 0,
+        "bbox": null
+      },
+      "webgpu-vulkan": {
+        "channels": 2914752,
+        "differing": 0,
+        "percent": 0.0,
+        "max": 0,
+        "mean": 0.0,
+        "pixels": 0,
+        "bbox": null
+      }
+    },
+    "size": [
+      "1216x799"
+    ]
+  },
+  {
+    "scene": "pinned",
+    "theme": "charcoal-ink",
+    "backends": {
+      "webgpu-d3d12": {
+        "channels": 2914752,
+        "differing": 0,
+        "percent": 0.0,
+        "max": 0,
+        "mean": 0.0,
+        "pixels": 0,
+        "bbox": null
+      },
+      "webgpu-vulkan": {
+        "channels": 2914752,
+        "differing": 0,
+        "percent": 0.0,
+        "max": 0,
+        "mean": 0.0,
+        "pixels": 0,
+        "bbox": null
+      }
+    },
+    "size": [
+      "1216x799"
+    ]
+  },
+  {
+    "scene": "workbench-start",
+    "theme": "warm",
+    "backends": {
+      "webgpu-d3d12": {
+        "channels": 2914752,
+        "differing": 0,
+        "percent": 0.0,
+        "max": 0,
+        "mean": 0.0,
+        "pixels": 0,
+        "bbox": null
+      },
+      "webgpu-vulkan": {
+        "channels": 2914752,
+        "differing": 0,
+        "percent": 0.0,
+        "max": 0,
+        "mean": 0.0,
+        "pixels": 0,
+        "bbox": null
+      }
+    },
+    "size": [
+      "1216x799"
+    ]
+  },
+  {
+    "scene": "workbench-start",
+    "theme": "cool-light",
+    "backends": {
+      "webgpu-d3d12": {
+        "channels": 2914752,
+        "differing": 0,
+        "percent": 0.0,
+        "max": 0,
+        "mean": 0.0,
+        "pixels": 0,
+        "bbox": null
+      },
+      "webgpu-vulkan": {
+        "channels": 2914752,
+        "differing": 0,
+        "percent": 0.0,
+        "max": 0,
+        "mean": 0.0,
+        "pixels": 0,
+        "bbox": null
+      }
+    },
+    "size": [
+      "1216x799"
+    ]
+  },
+  {
+    "scene": "workbench-start",
+    "theme": "charcoal-ink",
+    "backends": {
+      "webgpu-d3d12": {
+        "channels": 2914752,
+        "differing": 0,
+        "percent": 0.0,
+        "max": 0,
+        "mean": 0.0,
+        "pixels": 0,
+        "bbox": null
+      },
+      "webgpu-vulkan": {
+        "channels": 2914752,
+        "differing": 0,
+        "percent": 0.0,
+        "max": 0,
+        "mean": 0.0,
+        "pixels": 0,
+        "bbox": null
+      }
+    },
+    "size": [
+      "1216x799"
+    ]
+  }
+]

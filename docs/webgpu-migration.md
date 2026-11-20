@@ -4252,3 +4252,111 @@ report `publication_rendered`, `wake_observed`, `ordered_shutdown`, and
 Full evidence, coverage probes, the exact Scratchpad change list, and harness
 limits are in
 [`validation/issue-211-hosted-font-parity-ellipsis-windows-2026-11-20.md`](validation/issue-211-hosted-font-parity-ellipsis-windows-2026-11-20.md).
+
+## Stage C slice 4: theme color fidelity across the presentation matrix (2026-11-20)
+
+Founder finding on the hosted WebGPU build: syntax highlighting "seems to work,
+the colors are just super subtle". The only pixel evidence so far was one Go
+editor scene with one theme. This slice runs a matched real-application matrix
+before changing anything: parity everywhere means theme design, a mismatch means
+a renderer regression.
+
+### Matrix
+
+One Scratchpad build (Alicorn `3596387` + this slice, Scratchpad `b458d6e`,
+candidate root, `--allow-alicorn-revision`, no Scratchpad source or lock change)
+served every leg; `SCRATCHPAD_RENDERER` selected the host and `--backend=` the
+hosted GPU. Every leg used the founder's restored session bytes, the same
+theme preference, 1216x799 at 100% DPI, and two F12 captures that had to be
+byte-identical before the frame was accepted.
+
+Scenes: Go editor (`language/detection.go`), markdown (`README.md`), JSON
+(`caliber.config.json`), the Pinned fixture, and the workbench start screen.
+Themes: warm (default), cool-light, charcoal-ink, all with the
+`workbench-relief` treatment.
+
+Result over 5 scenes x 3 themes x 2 hosted backends (D3D12, Vulkan), against the
+SDL_GPU reference: **27 of 30 comparisons are byte-identical**
+(0 / 2,914,752 channels). All syntax-token colours, selection paints, chrome,
+the pinned editor and the start screen agree pixel for pixel, which confirms the
+Stage B5 surface-format fix holds across the app's presentation.
+
+### The one mismatch is an application status label
+
+The three `json-document` scenes differ in exactly one status-strip rectangle,
+`(415,774)-(494,783)`: the hosted legs draw the app's conditional "Editor
+focused" cue, the reference does not. Both hosted backends agree with each
+other byte for byte (1113-1116 channels, max 308-550), and the editor, tabs,
+sidebar and chrome are identical. A build-time trace showed both hosts run the
+identical startup/focus sequence; the reference performs **one more describe
+turn** after it, which lets the app's status strip read a valid current-pass
+caret anchor. The hosted host presents the previous turn's stale label. That is
+a host turn/scheduling parity gap, not a paint, material or colour difference:
+the app's own state is what differs. It is recorded for a follow-up host slice;
+no runtime change is made here.
+
+### Why the highlighting is subtle (measured)
+
+Both hosts follow the documented contract: generated theme channels are
+linear-sRGB after the compiler's sRGB decode, and they are written unchanged
+into a non-sRGB swapchain, so the displayed value is the linear channel read as
+an sRGB code. The authored palette never appears on either host. In the
+captured Go editor, cool-light's authored background `#fafbfe`, body text
+`#121a26` and keyword `#604a88` are displayed as `#f4f6fd`, `#020305` and
+`#1e113f`.
+
+WCAG contrast from the compiled styles: on the light themes every token is
+13.5-17.8:1 against its background (readable) but only **1.04-1.19:1 against
+plain text** (the `syntax.variable` baseline), so only hue (dE 8-31) separates
+highlighting from code. Warm is flattest; its comment colour is dE 8.9 from
+plain text. On charcoal-ink the compression goes the other way: keyword
+(2.91:1), number (2.82:1) and comment (2.22:1) fall **below the 3:1
+body-text threshold** against their own background, while the authored palette
+has 4.42-5.15:1.
+
+Options for the founder are in the validation record: (A) true sRGB output on
+both hosts together, restoring authored colours everywhere; (B) pre-compensate
+the syntax palette (exact replacement components are tabulated) so the current
+contract displays the authored colours, measured to move light-theme tokens from
+1.04-1.19:1 to 2.3-3.2:1 against plain text and to fix charcoal-ink's sub-3:1
+readability; (C) retune the palette itself for >=3:1 against plain text; (D)
+typographic separation instead. No theme or renderer change is applied without
+approval.
+
+### Evidence equipment
+
+`tools/compare_backends.ps1` is now the standard one-command matched comparison:
+it runs each renderer/backend with the same state, environment, arguments and
+window, drives F12 twice to prove the frame settled, diffs each candidate against
+the reference, and writes a full-frame plus per-region `report.md`/`report.json`.
+`tools/ppm_diff.py` is the dependency-free differ, `tools/theme_contrast.py`
+reports authored-versus-displayed contrast for generated themes, and
+`tools/test_compare_tools.py` covers the parser, region statistics and contrast
+math (10/10). Usage is documented in `docs/development.md`.
+
+Full matrix, region tables, the status-cue trace, the contrast tables, the
+pre-compensation values and the retuned example are in
+[`validation/issue-211-theme-fidelity-windows-2026-11-20.md`](validation/issue-211-theme-fidelity-windows-2026-11-20.md).
+
+### Validation
+
+All runtime, host, renderer, ui, testui, theme, native and accessibility suites
+pass unchanged (this slice changes no runtime or host code): runtime 412/412,
+host/fonts 5/5, host/sdl3 7/7, live_resize 9/9, input 8/8, clipboard 3/3,
+dialogs 5/5, host/menus 8/8, host/web 14/14, host/diagnostics 9/9,
+host/presentation 7/7, renderer/webgpu 8/8, renderer/cpu 23/23, ui 50/50,
+testui 13/13, theme 37/37, native/sdl_gpu 166/166, scroll_capture 6/6,
+`odin build tests` and `out/alicorn_tests.exe`, the accessibility contract
+fixture, restoration, the text-input contract, and the theme CLI checks all
+pass. `python tools/test_compare_tools.py` passes 10/10. Scratchpad smokes on
+`--renderer=webgpu --backend=d3d12`, `--backend=vulkan` and `--renderer=sdl-gpu`
+report `publication_rendered`, `wake_observed`, `ordered_shutdown` and
+`session_restore` true.
+
+### Residual work
+
+- Hosted host turn parity: present the same final describe turn after the
+  restore/focus sequence as the reference, or make the app's status read the
+  current pass's anchor. The trace and the exact rectangle are in the record.
+- The founder's hands-on judgement of whether the measured separation is
+  acceptable decides between options A-D.

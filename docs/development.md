@@ -92,6 +92,60 @@ build (Scratchpad) for the same drags without fixture chrome. The mechanism it
 exercises is shared with `native/sdl_gpu`; see
 [`hosted-runtime.md`](hosted-runtime.md#live-resize-and-window-movement).
 
+### Matched renderer/backend capture comparison
+
+`tools/compare_backends.ps1` is the standard evidence harness for renderer
+parity. One command runs the same application scene on every renderer/backend,
+presses F12 through the host capture shortcut, proves the frame settled (two
+consecutive captures byte-identical), and diffs each hosted frame against the
+reference frame:
+
+```powershell
+.\tools\compare_backends.ps1 `
+    -Executable C:\work\scratchpad\out\c4\scratchpad-alicorn.exe `
+    -Scene go-editor -Theme cool-light -Reference sdl-gpu `
+    -Backends @(
+        @{ Name = 'sdl-gpu'; Env = @{ SCRATCHPAD_RENDERER = 'sdl-gpu' } },
+        @{ Name = 'webgpu-d3d12'; Env = @{ SCRATCHPAD_RENDERER = 'webgpu' }; Args = @('--backend=d3d12') },
+        @{ Name = 'webgpu-vulkan'; Env = @{ SCRATCHPAD_RENDERER = 'webgpu' }; Args = @('--backend=vulkan') }
+    ) `
+    -StateFiles @(
+        @{ Path = "$env:APPDATA\Scratchpad\session.json"; Source = 'fixtures\session-go.json' },
+        @{ Path = "$env:LOCALAPPDATA\Scratchpad\preferences.json"; Source = 'fixtures\prefs-cool-light.json' }
+    ) `
+    -RegionsFile .\tools\compare_regions.scratchpad-1216x799.json `
+    -OutputDir out\backend-compare\go-cool-light
+```
+
+Each leg launches with `--diagnostics --capture-dir=... --capture-after=600`;
+the large `--capture-after` suppresses the host's automatic 2 s capture so the
+evidence is the settled frame requested by the harness. `-StateFiles` installs
+restored application state for the run (an empty `Source` removes the file),
+backs up what was there, and restores it byte-for-byte with SHA-256 verification
+in a `finally` block. `-Backends` supplies the per-leg environment and extra
+arguments, so the harness is not Scratchpad-specific.
+
+The report contains, per candidate backend, the full-frame channel diff and the
+named-region statistics from the regions file: differing channels, percent, max
+and mean delta, differing pixels, and the bounding box. Captures, `report.md`,
+`report.json`, and the per-pair diff JSON stay under `-OutputDir`, which defaults
+to `out\backend-compare\<scene>-<theme>-<stamp>` and is git-ignored.
+
+The capture driving (window activation, F12, bundle discovery) is Windows-only,
+matching the other F12 runners; `ppm_diff.py` and `theme_contrast.py` are
+portable and can compare any two captured PPMs.
+
+Standalone pieces:
+
+- `python tools/ppm_diff.py --a reference.ppm --b candidate.ppm [--regions ...]`
+  prints and optionally writes the diff JSON/markdown; `--fail-on-diff` exits 3.
+- `python tools/theme_contrast.py --theme name=style_generated.odin ...` reports
+  syntax-token contrast in generated style themes for both the authored sRGB
+  intent and the displayed linear-as-sRGB value (see
+  [`themes.md`](themes.md) for the transfer contract).
+- `python tools/test_compare_tools.py` covers the PPM parser, region statistics,
+  and the contrast math.
+
 ### Linux NixOS/Mango validation
 
 The Linux-specific runner separates deterministic contracts from evidence that
