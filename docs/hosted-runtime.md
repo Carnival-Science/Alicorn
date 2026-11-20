@@ -123,8 +123,9 @@ after a bounded event batch or one-shot timer:
 ```
 
 `step` never waits, polls, or drains the host's event queue. It advances
-retained motion, tooltips, notices, drag-edge autoscroll, and the optional application deadline,
-then performs at most one application description. `next_wake_ns` is the
+retained motion, tooltips, notices, drag-edge autoscroll, and the optional
+application deadline, runs at most one due tick, then performs one bounded
+application description sequence. `next_wake_ns` is the
 earliest one-shot deadline Alicorn currently needs. `has_more_work` reports
 work that requires another step; a pending frame is reported separately by
 `render_required`. After a successful renderer submission, acknowledge it
@@ -132,14 +133,19 @@ once. If submission fails, do not acknowledge it; the host owns a bounded
 retry policy and any GPU/device recovery.
 
 The host should use one monotonic clock for `step`, pointer timestamps, and
-deadlines. `hosted_runtime_set_deadline` installs or replaces one application
-deadline; zero cancels it. The scheduled callback may install the next
-deadline. There is no recurring tick when the Runtime is idle.
+deadlines. `hosted_runtime_set_deadline` installs or replaces one legacy
+Frequent-class application deadline; zero cancels it. New code should use
+`Hosted_Host_Services.scheduler` instead. Both deadline paths are one-shot and
+the scheduled callback may install the next deadline from inside the callback.
+There is no recurring wake except an installed `on_tick`; that callback runs at
+the native host's bounded ~60 Hz cadence and is not an idle poll.
 An application deadline remains armed while the surface is hidden; retained
 motion, tooltip, notice, and drag-autoscroll sampling pause until the surface
-becomes renderable. Hidden steps can still process model invalidation, but
-never report `render_required`. Restoration requests a retained presentation
-and samples the current monotonic time, without replaying missed ticks.
+becomes renderable. Ticks and scheduled wakes still run while hidden, mirroring
+the reference host's event loop. Hidden steps can still process model
+invalidation, but never report `render_required`. Restoration requests a
+retained presentation and samples the current monotonic time, without replaying
+missed ticks.
 The Runtime cannot observe arbitrary application memory. If `on_wake`,
 `on_scheduled_wake`, `on_drag`, or `on_scroll` changes data used by the next
 description, that callback must call `invalidate_root` on its supplied Runtime.
@@ -156,13 +162,23 @@ on_drag              proc(state, rt, Drag_Event)
 on_scroll_capture    proc(state, rt, Scroll_Event, target: Node_ID) -> bool
 on_scroll            proc(state, rt, Scroll_Event)
 on_text_input        proc(state, rt, owner: Node_ID, Hosted_Text_Input_Event)
-on_scheduled_wake    proc(state, rt)
+on_scheduled_wake    proc(state, rt, class: Scheduled_Wake_Class)
+on_file_drop         proc(state, rt, path: string)
+on_tick              proc(state, rt)
 on_menu_command      proc(state, rt, command: Action_ID)
 on_close_requested   proc(state, rt) -> Hosted_Close_Result
 on_dialog            proc(state, rt, result: ^File_Dialog_Result)
 ```
 
-`Hosted_Host_Services` publishes `windows`, `dialogs`, and `quit`:
+`Hosted_Scheduled_Wake_Proc`, `Hosted_File_Drop_Proc`, `Hosted_Tick_Proc`,
+`Interaction_Update_Policy`, `Scheduled_Wake_Class`, and the scheduler service
+are the same runtime-defined values that `native/sdl_gpu` re-exports as
+`Application_*` aliases, so a native callback can be moved to the hosted
+surface without signature changes. File-drop paths are borrowed for the
+callback only.
+
+`Hosted_Host_Services` publishes `windows`, `dialogs`, `quit`, `clipboard`,
+and `scheduler`:
 
 - `Hosted_Dialog_Service` is an opaque host backend. Submit a
   `File_Dialog_Request` with `hosted_dialog_show_file`; the host copies the
@@ -176,6 +192,24 @@ on_dialog            proc(state, rt, result: ^File_Dialog_Result)
 - `Hosted_Menu_Command_Proc` matches native
   `Application_Menu_Command_Proc`; `hosted_runtime_menu_command` routes one
   command under the native-command cause and invalidates the description.
+- `clipboard` is the synchronous native SDL3 clipboard service:
+  `ClipboardGetText(service, allocator)` returns an owned UTF-8 copy and
+  `ClipboardSetText(service, text)` copies UTF-8 synchronously. This mirrors
+  `Application_Services.clipboard` exactly. Browser hosts cannot provide it
+  synchronously (the Web Clipboard API is asynchronous); they publish the
+  renderer-neutral asynchronous service in `alicorn:host/clipboard` through
+  `UI_Host_Services.clipboard` instead. Browser applications must consume the
+  async request/completion shape; that migration is a Stage C concern.
+- `scheduler` is a UI-thread-only `Application_Scheduler` with one replaceable
+  `Frequent` and one replaceable `Opportunistic` deadline. Each hosted session
+  publishes its own service, so a child surface schedules against its own
+  runtime rather than the parent's. `Frequent` work runs at its deadline.
+  `Opportunistic` work is deferred to 150 ms after the last keyboard, text,
+  pointer, or scroll input, matching the reference host. The runtime clears
+  the due class before `on_scheduled_wake` runs, so the callback may rearm it.
+  `application_scheduler_stats` reports requests, coalesces, runs, deferrals,
+  pending state, and maximum lateness. There is no task queue and no wake while
+  no deadline is armed.
 
 A host close request is delivered through `hosted_runtime_request_close`. A
 missing callback returns `.Allow`, preserving immediate-close behavior. A
@@ -185,9 +219,13 @@ Both native SDL3 hosts share `host/sdl3/dialogs`, so the dialog request,
 copying, callback, and wake policy have one implementation rather than two.
 
 `ui.run_hosted_config` adapts `Hosted_Run_State` to these fields, and
-`ui/webgpu.run` exposes them with the same shapes. The browser host currently
-has no dialog or close-request service; its `hosted` config callbacks remain
-available for future browser integration.
+`ui/webgpu.run` exposes them with the same shapes. Both `ui.run` entry points
+default `interaction_update_policy` to `.Correct_After_Interaction`; pass
+`.Explicit` to keep host-driven invalidation only. The hosted description loop
+mirrors the native bounded stabilization pass limit (four descriptions). The
+browser host publishes ticks and scheduled wakes, records the interaction
+policy, and has no file-drop or synchronous clipboard event; its
+`UI_Host_Services.clipboard` remains asynchronous.
 
 ## Native menus
 
@@ -312,9 +350,10 @@ safe point.
 Each hosted child owns independent retained state:
 
 - Its own `Hosted_Runtime`, viewport, `content_inset_top`, pointer/text/focus
-  state, close-deferral result, dialog bridge, and `on_scheduled_wake` callback.
-  The SDL3/WebGPU loop steps the primary and child and arms the earliest of
-  their deadlines.
+  state, close-deferral result, dialog bridge, `on_scheduled_wake` class
+  deadlines, and per-surface `scheduler`. The SDL3/WebGPU loop steps the
+  primary and child and arms the earliest of their deadlines. The synchronous
+  clipboard service is host-shared because SDL's clipboard is process-global.
 - Its own menu service and accelerator matching. On Windows the per-window
   HMENU is attached to the child HWND; commands and accelerators are queued and
   dispatched to that child's `on_menu_command`. On macOS the main menu is
@@ -324,9 +363,11 @@ Each hosted child owns independent retained state:
   regions, and host chrome paint. `Window_Drag` regions in a child are caption
   gestures for that child only; the content inset is published on the child's
   Runtime and applied to the child's presenter.
-- Its own `Hosted_Host_Services.dialogs` and `.quit`. A child close request is
-  routed through the child's `on_close_requested`; `.Defer` keeps that child
-  alive and the child's `quit` service completes shutdown.
+- Its own `Hosted_Host_Services.dialogs`, `.quit`, and `.scheduler`. A child
+  close request is routed through the child's `on_close_requested`; `.Defer`
+  keeps that child alive and the child's `quit` service completes shutdown.
+  The child's scheduler owns that surface's deadlines; it does not arm the
+  parent's scheduler.
 
 The SDL_GPU `ui.run` path keeps its reference behavior by bridging a hosted
 description onto `Application_Window_Description`. That bridge preserves menus,
@@ -518,13 +559,17 @@ and discard events from the earlier session before delivering them.
 
 ## Current boundary and integration gates
 
-The headless hosted-session regression suite in `runtime/hosted_test.odin`
-exercises retained description and submission acknowledgement, idle and one-shot
-deadlines, resize and independent drawable scales, hidden motion and restoration,
-drag-edge deadlines and focus cancellation, UTF-8 preedit/commit and semantic
-actions, and worker-thread wake coalescing, failed posts, owner-thread rejection,
-and shutdown. Run it as part of `odin test runtime`. These tests validate the
-Runtime contract, not a native wxWidgets surface or platform IME/AT integration.
+The headless hosted-session regression suite in `runtime/hosted_test.odin` and
+`runtime/hosted_services_test.odin` exercises retained description and
+submission acknowledgement, idle and one-shot deadlines, the per-surface
+scheduler (arm/cancel/coalescing/class/lateness/opportunistic deferral), tick
+cadence, file-drop routing, the synchronous clipboard roundtrip, resize and
+independent drawable scales, hidden motion and restoration, drag-edge deadlines
+and focus cancellation, corrective versus explicit description policy, UTF-8
+preedit/commit and semantic actions, and worker-thread wake coalescing, failed
+posts, owner-thread rejection, and shutdown. Run them as part of
+`odin test runtime`. These tests validate the Runtime contract, not a native
+wxWidgets surface or platform IME/AT integration.
 
 Stage A is complete on the native hosted path. `host/sdl3` now supplies one
 per-window implementation of native menus and accelerators, integrated
@@ -547,18 +592,28 @@ never enter this UI API.
 
 What remains before Scratchpad can retire its native-only window path is
 browser-side and physical-platform work, not another hosted API shape: browser
-menus/accelerators and browser dialog/close services are still unimplemented;
-macOS chrome, per-window menu policy, and pointer-sample pairing are
-compile-checked but unrun on a physical Mac; Linux keeps semantic menu metadata
-only; and Snap Layouts, mixed-DPI moves, and trackpad inertia still need
-hands-on Windows records. The hosted `on_scheduled_wake` callback has no wake
-class, unlike the reference `Application_Scheduled_Wake_Proc`, and an embedded
-application cannot currently arm that callback itself:
-`hosted_runtime_set_deadline` needs a `Hosted_Runtime` handle that is not
-published to the application. `Hosted_Host_Services` publishes only `windows`,
-`dialogs`, and `quit`; a
-hosted scheduler/motion-clock/diagnostics/file-drag service and child clipboard
-handoff remain mapping gaps for consumers that need them.
+menus/accelerators and browser dialog/close/file-drop services are still
+unimplemented; the browser clipboard remains asynchronous (the native
+synchronous shape is intentionally unavailable there); macOS chrome,
+per-window menu policy, and pointer-sample pairing are compile-checked but
+unrun on a physical Mac; Linux keeps semantic menu metadata only; and Snap
+Layouts, mixed-DPI moves, and trackpad inertia still need hands-on Windows
+records.
+
+The hosted scheduler, synchronous clipboard, file-drop, tick, and interaction
+policy now mirror the reference host. `Hosted_Host_Services` publishes
+`windows`, `dialogs`, `quit`, `clipboard`, and a per-surface `scheduler`;
+`Hosted_Runtime_Config` carries `on_file_drop`, `on_tick`, and
+`interaction_update_policy`. `on_tick` is a bounded ~60 Hz callback backed by a
+one-shot hosted deadline rather than the native host's 1 ms delay pump; that is
+observably equivalent for application work (the callback still runs at the same
+16.67 ms minimum spacing) but it never becomes an idle poll. The reference
+SDL_GPU `ui.run` path continues to use its native scheduler directly.
+
+The remaining hosted service gap is browser clipboard consumption: a browser
+application must use the asynchronous `UI_Host_Services.clipboard` request and
+completion API rather than the synchronous native calls. Native WebGPU keeps
+Scratchpad's existing synchronous call sites working unchanged.
 
 The fixture is separate from plugin editor child-window attachment in
 [#121](https://github.com/Carnival-Science/Alicorn/issues/121) and renderer

@@ -35,7 +35,10 @@ Hosted_Run_State :: struct($T: typeid) {
 	on_scroll_capture: proc(^T, ^alicorn.Runtime, alicorn.Scroll_Event, Node_ID) -> bool,
 	on_scroll: proc(^T, ^alicorn.Runtime, alicorn.Scroll_Event),
 	on_text_input: proc(^T, ^alicorn.Runtime, Node_ID, alicorn.Hosted_Text_Input_Event),
-	on_scheduled_wake: proc(^T, ^alicorn.Runtime),
+	on_scheduled_wake: proc(^T, ^alicorn.Runtime, alicorn.Scheduled_Wake_Class),
+	on_file_drop: proc(^T, ^alicorn.Runtime, string),
+	on_tick: proc(^T, ^alicorn.Runtime),
+	interaction_update_policy: alicorn.Interaction_Update_Policy,
 	on_menu_command: proc(^T, ^alicorn.Runtime, alicorn.Action_ID),
 	on_close_requested: proc(^T, ^alicorn.Runtime) -> alicorn.Hosted_Close_Result,
 	on_dialog: proc(^T, ^alicorn.Runtime, ^alicorn.File_Dialog_Result),
@@ -171,9 +174,17 @@ run_hosted_config :: proc(
 		state := cast(^Hosted_Run_State(T))data
 		if state.on_text_input != nil { state.on_text_input(state.app, rt, owner, event) }
 	}
-	scheduled_wake :: proc(data: rawptr, rt: ^alicorn.Runtime) {
+	scheduled_wake :: proc(data: rawptr, rt: ^alicorn.Runtime, class: alicorn.Scheduled_Wake_Class) {
 		state := cast(^Hosted_Run_State(T))data
-		if state.on_scheduled_wake != nil { state.on_scheduled_wake(state.app, rt) }
+		if state.on_scheduled_wake != nil { state.on_scheduled_wake(state.app, rt, class) }
+	}
+	file_drop :: proc(data: rawptr, rt: ^alicorn.Runtime, path: string) {
+		state := cast(^Hosted_Run_State(T))data
+		if state.on_file_drop != nil { state.on_file_drop(state.app, rt, path) }
+	}
+	tick :: proc(data: rawptr, rt: ^alicorn.Runtime) {
+		state := cast(^Hosted_Run_State(T))data
+		if state.on_tick != nil { state.on_tick(state.app, rt) }
 	}
 	menu_command :: proc(data: rawptr, rt: ^alicorn.Runtime, command: alicorn.Action_ID) {
 		state := cast(^Hosted_Run_State(T))data
@@ -193,6 +204,8 @@ run_hosted_config :: proc(
 		state.host_services.windows = services.windows
 		state.host_services.dialogs = services.dialogs
 		state.host_services.quit = services.quit
+		state.host_services.clipboard_text = services.clipboard
+		state.host_services.scheduler = services.scheduler
 	}
 	chrome_metrics :: proc(data: rawptr, rt: ^alicorn.Runtime, metrics: alicorn.Window_Chrome_Metrics) {
 		state := cast(^Hosted_Run_State(T))data
@@ -228,6 +241,7 @@ run_hosted_config :: proc(
 		post_wake_data=post_wake_data,
 		post_wake=post_wake,
 		render=describe,
+		interaction_update_policy=run_state.interaction_update_policy,
 	}
 	if run_state.on_initialize != nil { config.on_initialize = initialize }
 	if run_state.on_services != nil || run_state.on_start != nil { config.on_start = start }
@@ -242,6 +256,8 @@ run_hosted_config :: proc(
 	if run_state.on_scroll != nil { config.on_scroll = scroll }
 	if run_state.on_text_input != nil { config.on_text_input = text_input }
 	if run_state.on_scheduled_wake != nil { config.on_scheduled_wake = scheduled_wake }
+	if run_state.on_file_drop != nil { config.on_file_drop = file_drop }
+	if run_state.on_tick != nil { config.on_tick = tick }
 	if run_state.on_menu_command != nil { config.on_menu_command = menu_command }
 	if run_state.on_close_requested != nil { config.on_close_requested = close_requested }
 	if run_state.on_dialog != nil { config.on_dialog = dialog }

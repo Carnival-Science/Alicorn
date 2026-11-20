@@ -24,6 +24,9 @@ MENU_SYNC         :: alicorn.Action_ID(0x210B)
 MENU_CHILD_ACTION :: alicorn.Action_ID(0x2201)
 CHILD_CHROME_TITLE :: "Alicorn child chrome probe"
 CHILD_CHROME_HEADER_HEIGHT :: f32(34)
+CLIPBOARD_SMOKE_TEXT :: "alicorn hosted services smoke"
+DROP_SMOKE_PATH :: "C:\\alicorn\\services-smoke.txt"
+SERVICES_SMOKE_TIMEOUT_TICKS :: 900
 
 Child_App :: struct {
 	windows: ui.UI_Window_Service,
@@ -107,6 +110,23 @@ App :: struct {
 	child_menus: [1]alicorn.Menu,
 	// --interactive keeps a fixture open for scripted physical window input.
 	interactive: bool,
+	// --services-smoke proves the hosted scheduler, synchronous clipboard, file
+	// drop, and tick callbacks through ui.run on both renderer paths.
+	services_smoke: bool,
+	services_scheduler: alicorn.Application_Scheduler,
+	services_clipboard: alicorn.Clipboard_Service,
+	scheduler_armed: bool,
+	scheduled_frequent: int,
+	scheduled_opportunistic: int,
+	frequent_class_ok: bool,
+	opportunistic_class_ok: bool,
+	clipboard_ok: bool,
+	file_drops: int,
+	file_drop_ok: bool,
+	ticks: int,
+	drop_push_requested: bool,
+	drop_path: [64]u8,
+	services_done: bool,
 }
 
 render :: proc(app: ^App, ctx: ^ui.UI) {
@@ -570,9 +590,68 @@ services :: proc(app: ^App, value: ui.UI_Host_Services) {
 	app.windows = value.windows
 	app.dialogs = value.dialogs
 	app.quit = value.quit
+	app.services_scheduler = value.scheduler
+	app.services_clipboard = value.clipboard_text
 	app.dialog_available = value.dialogs.show_file != nil
+	if app.services_smoke {
+		clipboard_set := ui.ui_clipboard_set_text(app.services_clipboard, CLIPBOARD_SMOKE_TEXT)
+		clipboard_text, clipboard_read := ui.ui_clipboard_get_text(app.services_clipboard)
+		app.clipboard_ok = clipboard_set && clipboard_read && clipboard_text == CLIPBOARD_SMOKE_TEXT
+		if len(clipboard_text) > 0 { delete(clipboard_text) }
+		app.scheduler_armed = ui.ui_schedule_after(app.services_scheduler, .Frequent, 0)
+	}
 	if app.open_child_on_services {
 		app.child_open_accepted = open_auxiliary_window(app)
+	}
+}
+
+services_scheduled_wake :: proc(app: ^App, rt: ^alicorn.Runtime, class: alicorn.Scheduled_Wake_Class) {
+	switch class {
+	case .Frequent:
+		app.scheduled_frequent += 1
+		app.frequent_class_ok = true
+		_ = ui.ui_schedule_after(app.services_scheduler, .Opportunistic, 5_000_000)
+	case .Opportunistic:
+		app.scheduled_opportunistic += 1
+		app.opportunistic_class_ok = true
+	}
+	alicorn.invalidate_root(rt, "services smoke scheduled wake")
+}
+
+services_file_drop :: proc(app: ^App, rt: ^alicorn.Runtime, path: string) {
+	if !app.services_smoke { return }
+	app.file_drops += 1
+	app.file_drop_ok = path == DROP_SMOKE_PATH
+	alicorn.invalidate_root(rt, "services smoke file drop")
+}
+
+services_push_file_drop :: proc(app: ^App) {
+	if app.drop_push_requested { return }
+	path := DROP_SMOKE_PATH
+	copy(app.drop_path[:], path)
+	app.drop_path[len(path)] = 0
+	event: sdl3.Event
+	event.type = .DROP_FILE
+	event.drop.commonEvent.type = .DROP_FILE
+	event.drop.windowID = 0
+	event.drop.data = cstring(rawptr(&app.drop_path[0]))
+	app.drop_push_requested = sdl3.PushEvent(&event)
+}
+
+services_tick :: proc(app: ^App, _rt: ^alicorn.Runtime) {
+	app.ticks += 1
+	if !app.services_smoke || app.services_done { return }
+	if !app.drop_push_requested && app.ticks >= 5 { services_push_file_drop(app) }
+	if app.scheduled_frequent == 0 && app.ticks%60 == 0 {
+		app.scheduler_armed = app.scheduler_armed ||
+			ui.ui_schedule_after(app.services_scheduler, .Frequent, 0)
+	}
+	complete := app.scheduler_armed && app.scheduled_frequent >= 1 &&
+		app.scheduled_opportunistic >= 1 && app.clipboard_ok &&
+		app.file_drops >= 1 && app.file_drop_ok
+	if complete || app.ticks > SERVICES_SMOKE_TIMEOUT_TICKS {
+		app.services_done = true
+		ui.ui_quit_request(app.quit)
 	}
 }
 
@@ -603,6 +682,7 @@ main :: proc() {
 			app.child.title = CHILD_CHROME_TITLE
 		}
 		if argument == "--interactive" { app.interactive = true }
+		if argument == "--services-smoke" { app.services_smoke = true }
 		if argument == "--menu-smoke" {
 			app.menu_smoke = true
 			app.menu_expected = [3]alicorn.Action_ID{MENU_CUT, MENU_PALETTE, MENU_SYNC}
@@ -617,6 +697,10 @@ main :: proc() {
 		}
 	}
 	if app.interactive { smoke = false }
+	// The services smoke owns its quit: it completes only after the scheduler,
+	// clipboard, and file-drop callbacks have all run, so the bounded --smoke
+	// first-present exit must not stop it early.
+	if app.services_smoke { smoke = false }
 	if app.child_chrome_smoke {
 		app.child_menu_items[0] = alicorn.Menu_Item{
 			kind=.Command,
@@ -692,6 +776,14 @@ main :: proc() {
 		pointer_proc = titlebar_pointer
 		drag_proc = titlebar_drag
 	}
+	scheduled_proc: proc(^App, ^alicorn.Runtime, alicorn.Scheduled_Wake_Class)
+	file_drop_proc: proc(^App, ^alicorn.Runtime, string)
+	tick_proc: proc(^App, ^alicorn.Runtime)
+	if app.services_smoke {
+		scheduled_proc = services_scheduled_wake
+		file_drop_proc = services_file_drop
+		tick_proc = services_tick
+	}
 	if sdl_gpu_reference {
 		ui.run(&app, render, title="Alicorn · Native Renderer Probe", on_start=start, on_wake=wake,
 			on_stop=stop, smoke=smoke, on_services=services, on_dialog=dialog_done,
@@ -699,7 +791,8 @@ main :: proc() {
 			on_menu_command=menu_command, window_decorations=decorations,
 			window_chrome_height=chrome_h, window_chrome_metrics=chrome_metrics,
 			window_chrome_layout=chrome_layout, on_pointer=pointer_proc,
-			on_drag=drag_proc)
+			on_drag=drag_proc, on_scheduled_wake=scheduled_proc,
+			on_file_drop=file_drop_proc, on_tick=tick_proc)
 	} else {
 		webgpu.run(&app, render, title="Alicorn · Native Renderer Probe", on_start=start, on_wake=wake,
 			on_stop=stop, smoke=smoke, on_services=services, on_dialog=dialog_done,
@@ -707,7 +800,26 @@ main :: proc() {
 			on_menu_command=menu_command, window_decorations=decorations,
 			window_chrome_height=chrome_h, window_chrome_metrics=chrome_metrics,
 			window_chrome_layout=chrome_layout, on_pointer=pointer_proc,
-			on_drag=drag_proc)
+			on_drag=drag_proc, on_scheduled_wake=scheduled_proc,
+			on_file_drop=file_drop_proc, on_tick=tick_proc)
+	}
+	if app.services_smoke {
+		ok := app.scheduler_armed && app.scheduled_frequent >= 1 &&
+			app.scheduled_opportunistic >= 1 && app.frequent_class_ok &&
+			app.opportunistic_class_ok && app.clipboard_ok && app.file_drops >= 1 &&
+			app.file_drop_ok && app.ticks >= 1
+		fmt.println(
+			"services_smoke", "PASS" if ok else "FAIL",
+			"scheduler", app.scheduler_armed,
+			"frequent", app.scheduled_frequent,
+			"opportunistic", app.scheduled_opportunistic,
+			"classes", app.frequent_class_ok && app.opportunistic_class_ok,
+			"clipboard", app.clipboard_ok,
+			"drops", app.file_drops,
+			"drop_ok", app.file_drop_ok,
+			"ticks", app.ticks,
+		)
+		if !ok { os.exit(1) }
 	}
 	if app.menu_smoke {
 		if !app.menu_ok {

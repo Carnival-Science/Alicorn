@@ -25,6 +25,7 @@ Hosted_Test_App :: struct {
 	last_text_key: Application_Text_Navigation_Key,
 	scroll_captures, text_inputs, dialogs, close_requests, menu_commands: int,
 	last_menu_command: Action_ID,
+	last_scheduled_class: Scheduled_Wake_Class,
 	last_dialog_status: Dialog_Status,
 	capture_scroll: bool,
 	close_result: Hosted_Close_Result,
@@ -86,9 +87,10 @@ hosted_test_wake :: proc(data: rawptr, rt: ^Runtime) {
 	invalidate_root(rt, "hosted worker wake")
 }
 
-hosted_test_scheduled :: proc(data: rawptr, rt: ^Runtime) {
+hosted_test_scheduled :: proc(data: rawptr, rt: ^Runtime, class: Scheduled_Wake_Class) {
 	app := (^Hosted_Test_App)(data)
 	app.scheduled += 1
+	app.last_scheduled_class = class
 }
 
 hosted_test_stop :: proc(data: rawptr) {
@@ -400,7 +402,9 @@ test_hosted_runtime_step_resize_and_idle :: proc(t: ^testing.T) {
 	defer hosted_waker_release(&app.waker)
 	defer hosted_runtime_destroy(&host)
 	first := hosted_runtime_step(&host, 1)
-	testing.expect(t, first.status == .Ok && first.description_built && first.render_required && app.descriptions == 1)
+	testing.expect(t, first.status == .Ok && first.description_built && first.render_required &&
+		app.descriptions >= 1 && app.descriptions <= HOSTED_DESCRIPTION_STABILIZATION_LIMIT,
+		"an invalidated hosted step runs one bounded description sequence, mirroring the native host")
 	commands, status := hosted_runtime_display_commands(&host)
 	testing.expect(t, status == .Ok && len(commands) > 0)
 	_ = hosted_runtime_frame_submission_succeeded(&host)

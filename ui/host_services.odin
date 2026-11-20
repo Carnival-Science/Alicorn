@@ -5,10 +5,21 @@ import alicorn "alicorn:runtime"
 
 // UI_Host_Services contains capabilities supplied by the selected platform
 // host. Unsupported services are nil. Native alicorn:ui/webgpu currently
-// provides one secondary window, native file dialogs, and a deferred-close quit
-// request; browser UI currently has no window or dialog service.
+// provides one secondary window, native file dialogs, a deferred-close quit
+// request, the synchronous native clipboard, and the per-surface scheduler;
+// browser UI has no window or dialog service and uses the asynchronous
+// clipboard service.
 UI_Host_Services :: struct {
+	// clipboard is the renderer-neutral asynchronous UI clipboard contract.
+	// Browser hosts complete it after permission checks; native hosts may
+	// complete it synchronously.
 	clipboard: clipboard.Clipboard_Service,
+	// clipboard_text is the synchronous native SDL3 clipboard shape that
+	// mirrors Application_Services.clipboard. It stays empty on browser hosts.
+	clipboard_text: alicorn.Clipboard_Service,
+	// scheduler mirrors Application_Services.scheduler. Every hosted Runtime
+	// publishes one replaceable Frequent and Opportunistic deadline.
+	scheduler: alicorn.Application_Scheduler,
 	windows: alicorn.Hosted_Window_Service,
 	dialogs: alicorn.Hosted_Dialog_Service,
 	quit: alicorn.Hosted_Quit_Service,
@@ -59,6 +70,33 @@ ui_window_set_title :: proc(service: UI_Window_Service, title: string) -> bool {
 UI_Clipboard_Request_ID :: clipboard.Clipboard_Request_ID
 UI_Clipboard_Result :: clipboard.Clipboard_Result
 UI_Clipboard_Completion_Proc :: clipboard.Clipboard_Completion_Proc
+
+// UI_Clipboard_Service is the synchronous native clipboard shape.
+UI_Clipboard_Service :: alicorn.Clipboard_Service
+
+ui_clipboard_get_text :: proc(service: UI_Clipboard_Service, allocator := context.allocator) -> (text: string, ok: bool) {
+	return alicorn.ClipboardGetText(service, allocator)
+}
+
+ui_clipboard_set_text :: proc(service: UI_Clipboard_Service, text: string) -> bool {
+	return alicorn.ClipboardSetText(service, text)
+}
+
+UI_Scheduler :: alicorn.Application_Scheduler
+UI_Scheduled_Wake_Class :: alicorn.Scheduled_Wake_Class
+UI_Scheduler_Stats :: alicorn.Application_Scheduler_Stats
+
+ui_schedule_after :: proc(scheduler: UI_Scheduler, class: UI_Scheduled_Wake_Class, delay_ns: u64) -> bool {
+	return alicorn.application_schedule_after(scheduler, class, delay_ns)
+}
+
+ui_cancel_scheduled_wake :: proc(scheduler: UI_Scheduler, class: UI_Scheduled_Wake_Class) -> bool {
+	return alicorn.application_cancel_scheduled_wake(scheduler, class)
+}
+
+ui_scheduler_stats :: proc(scheduler: UI_Scheduler) -> UI_Scheduler_Stats {
+	return alicorn.application_scheduler_stats(scheduler)
+}
 
 ui_clipboard_read_text :: proc(
 	service: clipboard.Clipboard_Service,

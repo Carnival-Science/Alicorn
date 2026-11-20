@@ -45,7 +45,13 @@ run :: proc(
 	on_scroll_capture: proc(^T, ^alicorn.Runtime, alicorn.Scroll_Event, Node_ID) -> bool = nil,
 	on_scroll: proc(^T, ^alicorn.Runtime, alicorn.Scroll_Event) = nil,
 	on_text_input: proc(^T, ^alicorn.Runtime, Node_ID, alicorn.Hosted_Text_Input_Event) = nil,
-	on_scheduled_wake: proc(^T, ^alicorn.Runtime) = nil,
+	on_scheduled_wake: proc(^T, ^alicorn.Runtime, alicorn.Scheduled_Wake_Class) = nil,
+	// Browser hosts can deliver ticks and scheduled wakes. File drops have no
+	// canvas event in this slice, so on_file_drop is accepted for compile parity
+	// and recorded by the browser policy without being invoked.
+	on_file_drop: proc(^T, ^alicorn.Runtime, string) = nil,
+	on_tick: proc(^T, ^alicorn.Runtime) = nil,
+	interaction_update_policy: alicorn.Interaction_Update_Policy = .Correct_After_Interaction,
 	// Native menus are not implemented in the browser host yet; these fields
 	// keep the ui.run surface identical so hosted applications compile on both
 	// targets. Browser acceleration and menu presentation remain TODO.
@@ -82,6 +88,7 @@ run :: proc(
 		menus=menus,
 		menu_presentation=menu_presentation,
 		window_decorations=window_decorations,
+		interaction_update_policy=interaction_update_policy,
 		on_initialize=on_initialize,
 		on_start=on_start,
 		on_wake=on_wake,
@@ -93,6 +100,7 @@ run :: proc(
 		on_services=on_services,
 		on_drag=on_drag, on_scroll_capture=on_scroll_capture, on_scroll=on_scroll,
 		on_text_input=on_text_input, on_scheduled_wake=on_scheduled_wake,
+		on_file_drop=on_file_drop, on_tick=on_tick,
 		on_menu_command=on_menu_command, on_close_requested=on_close_requested,
 		on_dialog=on_dialog,
 	}

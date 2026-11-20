@@ -4,6 +4,7 @@ package sdl3_host
 
 import alicorn "alicorn:runtime"
 import presentation_host "alicorn:host/presentation"
+import sdl3_clipboard "alicorn:host/sdl3/clipboard"
 import sdl3_dialogs "alicorn:host/sdl3/dialogs"
 import host_menus "alicorn:host/menus"
 import "core:c"
@@ -79,6 +80,11 @@ SDL3_WebGPU_Application :: struct {
 	accessibility_ready: bool,
 	presenter_device_lost: bool,
 	chrome_redraw_pending: bool,
+}
+
+@(private)
+sdl3_webgpu_application_now :: proc(_data: rawptr) -> u64 {
+	return u64(sdl3.GetTicksNS())
 }
 
 @(private)
@@ -370,6 +376,12 @@ sdl3_webgpu_application_init :: proc(
 	config.chrome_paint = sdl3_webgpu_application_chrome_paint
 	config.chrome_paint_data = rawptr(application)
 	config.host_services.dialogs = sdl3_dialogs.dialog_service(application.dialog_bridge)
+	if config.host_services.clipboard.get_text == nil {
+		config.host_services.clipboard = sdl3_clipboard.SDL3ClipboardService()
+	}
+	if config.monotonic_now == nil {
+		config.monotonic_now = sdl3_webgpu_application_now
+	}
 	if alicorn.hosted_runtime_init(&application.hosted, config) != .Ok {
 		sdl3_dialogs.native_dialog_bridge_release(application.dialog_bridge)
 		application^ = {}
@@ -660,6 +672,11 @@ sdl3_webgpu_application_handle_event :: proc(
 	event_window := event_window_id_from_sdl(event)
 	if event_window != 0 && event_window != application.window_id { return .Ignored }
 	#partial switch event.type {
+	case .DROP_FILE:
+		if event.drop.data != nil {
+			_ = alicorn.hosted_runtime_file_drop(&application.hosted, string(event.drop.data))
+		}
+		return .Handled
 	case .WINDOW_RESIZED, .WINDOW_PIXEL_SIZE_CHANGED, .WINDOW_DISPLAY_SCALE_CHANGED:
 		result := sdl3_webgpu_application_resize(application)
 		if result != .Ok && result != .Suspended { return .Failure }

@@ -396,8 +396,9 @@ for the callback contract and native fixture.
 
 For an application that owns its event loop, see
 [host-owned UI loops](hosted-runtime.md) for the nonblocking retained Runtime
-session, UI-thread event ingress, wake/deadline handling, resize/DPI, and close
-contract. This API does not provide a wxWidgets or native renderer adapter.
+session, UI-thread event ingress, wake/deadline handling, resize/DPI, close
+contract, per-surface scheduler, synchronous clipboard, file-drop, and tick
+callbacks. This API does not provide a wxWidgets or native renderer adapter.
 
 ## Frame and invalidation
 

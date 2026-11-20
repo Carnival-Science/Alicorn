@@ -206,7 +206,10 @@ test_typed_stop_joins_a_worker_that_wakes_during_shutdown :: proc(t: ^testing.T)
 @(test)
 test_runner_keeps_optional_hooks_absent_and_preserves_simple_app_policy :: proc(t: ^testing.T) {
 	app := Run_Lifecycle_Test_App{}
-	state := Hosted_Run_State(Run_Lifecycle_Test_App){app=&app, render=run_lifecycle_test_render}
+	state := Hosted_Run_State(Run_Lifecycle_Test_App){
+		app=&app, render=run_lifecycle_test_render,
+		interaction_update_policy=.Correct_After_Interaction,
+	}
 	application := run_application(&state, "Simple test", 240, 120)
 	testing.expect(t, application.on_initialize == nil && application.on_start == nil && application.on_wake == nil && application.on_stop == nil && application.on_tick == nil && application.on_text_key == nil &&
 		application.interaction_update_policy == .Correct_After_Interaction,

@@ -23,7 +23,29 @@ Hosted_Initialize_Proc :: proc(state: rawptr, rt: ^Runtime)
 Hosted_Start_Proc :: proc(state: rawptr, waker: Hosted_Waker)
 Hosted_Wake_Proc :: proc(state: rawptr, rt: ^Runtime)
 Hosted_Stop_Proc :: proc(state: rawptr)
-Hosted_Scheduled_Wake_Proc :: proc(state: rawptr, rt: ^Runtime)
+// Hosted_Scheduled_Wake_Proc matches native/sdl_gpu's
+// Application_Scheduled_Wake_Proc: the due class is supplied and the runtime
+// has already cleared that class before the callback runs.
+Hosted_Scheduled_Wake_Proc :: Application_Scheduled_Wake_Proc
+// Hosted_File_Drop_Proc matches Application_File_Drop_Proc. The path is
+// borrowed from the host's event storage for the callback only.
+Hosted_File_Drop_Proc :: proc(state: rawptr, rt: ^Runtime, path: string)
+// Hosted_Tick_Proc matches Application_Tick_Proc. Hosted runtimes invoke it at
+// the same bounded 60 Hz cadence as the native host and never use it as an
+// idle poll.
+Hosted_Tick_Proc :: proc(state: rawptr, rt: ^Runtime)
+// Hosted_Monotonic_Now_Proc supplies the monotonic nanosecond domain used for
+// scheduler deadlines and interaction timestamps. Hosts should install the
+// same clock they pass to hosted_runtime_step; when omitted, the last step
+// time is used.
+Hosted_Monotonic_Now_Proc :: proc(data: rawptr) -> u64
+
+// Interaction_Update_Policy mirrors native/sdl_gpu's
+// Application_Interaction_Update_Policy.
+Interaction_Update_Policy :: enum {
+	Explicit,
+	Correct_After_Interaction,
+}
 Hosted_Pointer_Proc :: proc(state: rawptr, rt: ^Runtime, event: Pointer_Event, target: Node_ID)
 Hosted_Scroll_Proc :: proc(state: rawptr, rt: ^Runtime, event: Scroll_Event)
 Hosted_Scroll_Capture_Proc :: proc(state: rawptr, rt: ^Runtime, event: Scroll_Event, target: Node_ID) -> bool
@@ -117,9 +139,17 @@ hosted_quit_request :: proc(service: Hosted_Quit_Service) {
 }
 
 Hosted_Host_Services :: struct {
-	windows: Hosted_Window_Service,
-	dialogs: Hosted_Dialog_Service,
-	quit:    Hosted_Quit_Service,
+	windows:   Hosted_Window_Service,
+	dialogs:   Hosted_Dialog_Service,
+	quit:      Hosted_Quit_Service,
+	// clipboard is the synchronous native SDL3 clipboard shape. Browser hosts
+	// may leave it empty; they publish the asynchronous alicorn:host/clipboard
+	// service through UI_Host_Services instead.
+	clipboard: Clipboard_Service,
+	// scheduler is always supplied by the hosted Runtime. It owns one
+	// replaceable Frequent and one replaceable Opportunistic deadline for this
+	// surface and mirrors native/sdl_gpu's Application_Scheduler.
+	scheduler: Application_Scheduler,
 }
 
 Hosted_Host_Services_Proc :: proc(state: rawptr, services: Hosted_Host_Services)
@@ -213,6 +243,20 @@ Hosted_Runtime_Config :: struct {
 	on_menu_command: Hosted_Menu_Command_Proc,
 	on_close_requested: Hosted_Close_Requested_Proc,
 	on_dialog: Hosted_Dialog_Proc,
+	// on_file_drop receives one borrowed path per host file-drop event. Browser
+	// hosts have no equivalent and leave it unused.
+	on_file_drop: Hosted_File_Drop_Proc,
+	// on_tick is the optional ~60 Hz application callback. Installing it keeps
+	// the hosted deadline cadence armed; it is not an idle poll.
+	on_tick: Hosted_Tick_Proc,
+	// interaction_update_policy requests a corrective description after a
+	// consumed widget interaction, mirroring the native host's bounded
+	// stabilization loop.
+	interaction_update_policy: Interaction_Update_Policy,
+	// monotonic_now supplies scheduler/interaction timestamps. The host should
+	// pass the same clock used for hosted_runtime_step.
+	monotonic_now: Hosted_Monotonic_Now_Proc,
+	monotonic_now_data: rawptr,
 }
 
 Hosted_Runtime :: struct {
@@ -235,9 +279,11 @@ Hosted_Waker :: struct {
 }
 
 HOSTED_MOTION_SAMPLE_INTERVAL_NS :: u64(16_666_667)
+HOSTED_TICK_INTERVAL_NS :: u64(16_666_667)
 HOSTED_DRAG_AUTOSCROLL_INTERVAL_NS :: u64(16_000_000)
 HOSTED_UNCERTIFIED_MOTION_LIMIT_NS :: u64(5_000_000_000)
 HOSTED_MAX_MONOTONIC_NS :: u64(0x7fff_ffff_ffff_ffff)
+HOSTED_DESCRIPTION_STABILIZATION_LIMIT :: 4
 
 @(private)
 Hosted_Wake_Control :: struct {
@@ -274,6 +320,11 @@ Hosted_Runtime_State :: struct {
 	on_menu_command: Hosted_Menu_Command_Proc,
 	on_close_requested: Hosted_Close_Requested_Proc,
 	on_dialog: Hosted_Dialog_Proc,
+	on_file_drop: Hosted_File_Drop_Proc,
+	on_tick: Hosted_Tick_Proc,
+	interaction_update_policy: Interaction_Update_Policy,
+	monotonic_now: Hosted_Monotonic_Now_Proc,
+	monotonic_now_data: rawptr,
 	window_decorations: Window_Decoration_Mode,
 	window_chrome_height: f32,
 	window_chrome_metrics: Window_Chrome_Metrics_Proc,
@@ -288,7 +339,13 @@ Hosted_Runtime_State :: struct {
 	// one presentation. It is reused across frames and owned by this state.
 	hosted_display: [dynamic]Paint_Command,
 	dpi_scale: f32,
-	app_deadline_ns: u64,
+	// scheduled owns the two replaceable application deadlines. app deadlines
+	// and interaction timestamps use the host's monotonic clock.
+	scheduled: Scheduled_Wake_State,
+	scheduler_stats: Application_Scheduler_Stats,
+	last_interaction_ns: u64,
+	last_tick_ns: u64,
+	has_tick: bool,
 	drag_deadline_ns: u64,
 	last_step_ns: u64,
 	uncertified_motion_since_ns: u64,
@@ -363,6 +420,11 @@ hosted_runtime_init :: proc(host: ^Hosted_Runtime, config: Hosted_Runtime_Config
 		on_menu_command=config.on_menu_command,
 		on_close_requested=config.on_close_requested,
 		on_dialog=config.on_dialog,
+		on_file_drop=config.on_file_drop,
+		on_tick=config.on_tick,
+		interaction_update_policy=config.interaction_update_policy,
+		monotonic_now=config.monotonic_now,
+		monotonic_now_data=config.monotonic_now_data,
 		window_decorations=config.window_decorations,
 		window_chrome_height=config.window_chrome_height,
 		window_chrome_metrics=config.window_chrome_metrics,
@@ -397,7 +459,9 @@ hosted_runtime_init :: proc(host: ^Hosted_Runtime, config: Hosted_Runtime_Config
 	wake_control.active = true
 	state.wake_control = wake_control
 	host.state = state
-	if config.on_host_services != nil { config.on_host_services(config.state, config.host_services) }
+	services := config.host_services
+	services.scheduler = hosted_runtime_scheduler_service(state)
+	if config.on_host_services != nil { config.on_host_services(config.state, services) }
 	if config.on_initialize != nil { config.on_initialize(config.state, &state.runtime) }
 	if config.on_start != nil { config.on_start(config.state, Hosted_Waker{control=wake_control}) }
 	return .Ok
@@ -412,23 +476,156 @@ hosted_runtime_borrow :: proc(host: ^Hosted_Runtime) -> (^Runtime, Hosted_Runtim
 	return &state.runtime, .Ok
 }
 
+// hosted_runtime_clock_now reads the host's monotonic clock. A host that does
+// not install one falls back to the last step time, which keeps scheduler
+// deadlines relative to the hosted loop's only known time domain.
+hosted_runtime_clock_now :: proc(state: ^Hosted_Runtime_State) -> u64 {
+	if state == nil { return 0 }
+	now := state.last_step_ns
+	if state.monotonic_now != nil {
+		now = state.monotonic_now(state.monotonic_now_data)
+	}
+	return min(now, HOSTED_MAX_MONOTONIC_NS)
+}
+
+@(private)
+hosted_scheduler_schedule :: proc(data: rawptr, class: Scheduled_Wake_Class, delay_ns: u64) -> bool {
+	state := cast(^Hosted_Runtime_State)data
+	if state == nil || state.closed { return false }
+	if scheduled_wake_class_index(class) < 0 { return false }
+	if state.scheduled.pending[scheduled_wake_class_index(class)] {
+		state.scheduler_stats.coalesced += 1
+	}
+	if !scheduled_wake_state_schedule(&state.scheduled, class, hosted_runtime_clock_now(state), delay_ns) {
+		return false
+	}
+	state.scheduler_stats.scheduled += 1
+	return true
+}
+
+@(private)
+hosted_scheduler_cancel :: proc(data: rawptr, class: Scheduled_Wake_Class) -> bool {
+	state := cast(^Hosted_Runtime_State)data
+	if state == nil || state.closed { return false }
+	return scheduled_wake_state_cancel(&state.scheduled, class)
+}
+
+@(private)
+hosted_scheduler_read_stats :: proc(data: rawptr) -> Application_Scheduler_Stats {
+	state := cast(^Hosted_Runtime_State)data
+	if state == nil { return {} }
+	result := state.scheduler_stats
+	result.frequent_pending = state.scheduled.pending[0]
+	result.opportunistic_pending = state.scheduled.pending[1]
+	return result
+}
+
+hosted_runtime_scheduler_service :: proc(state: ^Hosted_Runtime_State) -> Application_Scheduler {
+	if state == nil { return {} }
+	return Application_Scheduler{
+		data=rawptr(state),
+		schedule=hosted_scheduler_schedule,
+		cancel=hosted_scheduler_cancel,
+		read_stats=hosted_scheduler_read_stats,
+	}
+}
+
+// hosted_runtime_note_interaction updates the input-quiet timestamp used to
+// defer Opportunistic work. Hosts with an event queue call it for keyboard,
+// text, pointer, and scroll input; the standard hosted input entry points also
+// call it so a host cannot silently lose the quiet window. Pass zero to use the
+// installed monotonic clock.
+hosted_runtime_note_interaction :: proc(host: ^Hosted_Runtime, now_ns: u64 = 0) -> Hosted_Runtime_Status {
+	state, status := hosted_runtime_get_state(host)
+	if status != .Ok { return status }
+	timestamp := now_ns
+	if timestamp == 0 { timestamp = hosted_runtime_clock_now(state) }
+	timestamp = min(timestamp, HOSTED_MAX_MONOTONIC_NS)
+	if timestamp != 0 { state.last_interaction_ns = timestamp }
+	return .Ok
+}
+
+@(private)
+hosted_dispatch_scheduled_wakes :: proc(state: ^Hosted_Runtime_State, now_ns: u64) {
+	classes := [SCHEDULED_WAKE_CLASS_COUNT]Scheduled_Wake_Class{.Frequent, .Opportunistic}
+	for class in classes {
+		if !scheduled_wake_state_is_due(&state.scheduled, class, now_ns) { continue }
+		index := scheduled_wake_class_index(class)
+		if class == .Opportunistic {
+			deferred_until, defer_work := scheduled_wake_defer_until_quiet(
+				now_ns, state.last_interaction_ns, APPLICATION_OPPORTUNISTIC_QUIET_NS,
+			)
+			if defer_work {
+				state.scheduled.deadlines_ns[index] = deferred_until
+				state.scheduler_stats.opportunistic_deferrals += 1
+				continue
+			}
+		}
+		deadline_ns := state.scheduled.deadlines_ns[index]
+		lateness_ns := u64(0)
+		if now_ns > deadline_ns { lateness_ns = now_ns-deadline_ns }
+		state.scheduled.pending[index] = false
+		if class == .Frequent { state.scheduler_stats.frequent_wakes += 1 }
+		else { state.scheduler_stats.opportunistic_wakes += 1 }
+		state.scheduler_stats.maximum_lateness_ns = max(state.scheduler_stats.maximum_lateness_ns, lateness_ns)
+		if state.on_scheduled_wake != nil {
+			reason := class == .Frequent ? "frequent scheduled work" : "opportunistic scheduled work"
+			cause := cause_begin(&state.runtime, .Scheduled_Wake, reason)
+			state.on_scheduled_wake(state.app_state, &state.runtime, class)
+			cause_end(&state.runtime, cause)
+		}
+	}
+}
+
+@(private)
+hosted_dispatch_tick :: proc(state: ^Hosted_Runtime_State, now_ns: u64) {
+	if state.on_tick == nil { return }
+	if !state.has_tick {
+		state.has_tick = true
+		state.last_tick_ns = now_ns
+		return
+	}
+	if now_ns < state.last_tick_ns || now_ns-state.last_tick_ns < HOSTED_TICK_INTERVAL_NS { return }
+	tick_cause := cause_begin(&state.runtime, .Application, "application tick")
+	state.on_tick(state.app_state, &state.runtime)
+	cause_end(&state.runtime, tick_cause)
+	state.last_tick_ns = now_ns
+}
+
+@(private)
+hosted_tick_deadline :: proc(state: ^Hosted_Runtime_State, now_ns: u64) -> u64 {
+	if state.on_tick == nil { return 0 }
+	if !state.has_tick { return hosted_deadline_after(now_ns, HOSTED_TICK_INTERVAL_NS) }
+	return hosted_deadline_after(state.last_tick_ns, HOSTED_TICK_INTERVAL_NS)
+}
+
 hosted_root_describe :: proc(state: ^Hosted_Runtime_State) -> Node_ID {
 	rt := &state.runtime
-	ui, should_build := begin_frame(rt)
-	if !should_build { return 0 }
-	root := container_begin(
-		&ui,
-		.Root,
-		label="ui-root",
-		key="alicorn.hosted.root",
-		style=layout_style(.Column, grow=1),
-	)
-	if root != 0 {
-		state.render(state.app_state, &ui, state.logical_width, state.logical_height, state.dpi_scale)
-		container_end(&ui)
-		if state.render_overlays != nil { state.render_overlays(state.app_state, &ui, state.logical_width, state.logical_height, state.dpi_scale) }
+	root: Node_ID
+	passes := 0
+	for rt.invalidated && passes < HOSTED_DESCRIPTION_STABILIZATION_LIMIT {
+		interaction_sequence := rt.interaction_consumption_sequence
+		ui, should_build := begin_frame(rt)
+		if !should_build { break }
+		root = container_begin(
+			&ui,
+			.Root,
+			label="ui-root",
+			key="alicorn.hosted.root",
+			style=layout_style(.Column, grow=1),
+		)
+		if root != 0 {
+			state.render(state.app_state, &ui, state.logical_width, state.logical_height, state.dpi_scale)
+			container_end(&ui)
+			if state.render_overlays != nil { state.render_overlays(state.app_state, &ui, state.logical_width, state.logical_height, state.dpi_scale) }
+		}
+		end_frame(&ui)
+		passes += 1
+		if state.interaction_update_policy == .Correct_After_Interaction &&
+		   rt.interaction_consumption_sequence != interaction_sequence && !rt.invalidated {
+			invalidate_root(rt, "corrective description after consumed interaction")
+		}
 	}
-	end_frame(&ui)
 	return root
 }
 
@@ -444,7 +641,12 @@ hosted_deadline_after :: proc(now_ns, interval_ns: u64) -> u64 {
 
 hosted_runtime_next_deadline :: proc(state: ^Hosted_Runtime_State, now_ns: u64) -> u64 {
 	if state == nil { return 0 }
-	deadline := state.app_deadline_ns
+	deadline: u64
+	if scheduled_deadline, found := scheduled_wake_state_next_deadline(&state.scheduled); found {
+		deadline = scheduled_deadline
+	}
+	// Ticks run while hidden as well, matching the reference host's event loop.
+	deadline = hosted_deadline_min(deadline, hosted_tick_deadline(state, now_ns))
 	if !state.renderable { return deadline }
 	deadline = hosted_deadline_min(deadline, tooltip_next_deadline(&state.runtime))
 	deadline = hosted_deadline_min(deadline, notice_next_deadline(&state.runtime))
@@ -491,8 +693,9 @@ hosted_runtime_advance_presentation :: proc(state: ^Hosted_Runtime_State, now_ns
 }
 
 // hosted_runtime_step advances due retained work and performs at most one
-// application description. Call it from the native UI loop after each bounded
-// batch of input events or one-shot timer. It never waits or polls.
+// bounded application description sequence. Call it from the native UI loop
+// after each bounded batch of input events or one-shot timer. It never waits or
+// polls.
 hosted_runtime_step :: proc(host: ^Hosted_Runtime, now_ns: u64) -> Hosted_Step_Result {
 	state, status := hosted_runtime_get_state(host)
 	if status != .Ok { return Hosted_Step_Result{status=status} }
@@ -506,10 +709,8 @@ hosted_runtime_step :: proc(host: ^Hosted_Runtime, now_ns: u64) -> Hosted_Step_R
 	}
 
 	result := Hosted_Step_Result{status=.Ok}
-	if state.app_deadline_ns != 0 && now_ns >= state.app_deadline_ns {
-		state.app_deadline_ns = 0
-		if state.on_scheduled_wake != nil { state.on_scheduled_wake(state.app_state, rt) }
-	}
+	hosted_dispatch_tick(state, now_ns)
+	hosted_dispatch_scheduled_wakes(state, now_ns)
 	if rt.invalidated {
 		result.root = hosted_root_describe(state)
 		result.description_built = true
@@ -522,14 +723,33 @@ hosted_runtime_step :: proc(host: ^Hosted_Runtime, now_ns: u64) -> Hosted_Step_R
 	return result
 }
 
-// hosted_runtime_set_deadline installs one application-owned, one-shot
-// monotonic deadline. It is cleared before on_scheduled_wake runs, so that
-// callback may safely arm the next one. Pass zero to cancel.
+// hosted_runtime_set_deadline installs one legacy application-owned, one-shot
+// monotonic deadline in the Frequent class. It is cleared before
+// on_scheduled_wake runs, so that callback may safely arm the next one. Pass
+// zero to cancel. Prefer the Hosted_Host_Services.scheduler service for new
+// code because it preserves the wake class.
 hosted_runtime_set_deadline :: proc(host: ^Hosted_Runtime, deadline_ns: u64) -> Hosted_Runtime_Status {
 	state, status := hosted_runtime_get_state(host)
 	if status != .Ok { return status }
 	if deadline_ns > HOSTED_MAX_MONOTONIC_NS { return .Invalid_Argument }
-	state.app_deadline_ns = deadline_ns
+	state.scheduled.pending[0] = deadline_ns != 0
+	state.scheduled.deadlines_ns[0] = deadline_ns
+	return .Ok
+}
+
+// hosted_runtime_file_drop delivers one native file-drop path to the
+// application callback under the same host-event cause as the reference SDL
+// host and invalidates the description. The path is borrowed only for the
+// callback.
+hosted_runtime_file_drop :: proc(host: ^Hosted_Runtime, path: string) -> Hosted_Runtime_Status {
+	state, status := hosted_runtime_get_state(host)
+	if status != .Ok { return status }
+	if state.on_file_drop != nil {
+		drop_cause := cause_begin(&state.runtime, .Host_Event, "hosted file drop")
+		state.on_file_drop(state.app_state, &state.runtime, path)
+		invalidate_root(&state.runtime, "hosted application file drop")
+		cause_end(&state.runtime, drop_cause)
+	}
 	return .Ok
 }
 
@@ -631,6 +851,7 @@ hosted_runtime_content_inset :: proc(host: ^Hosted_Runtime) -> (inset_top: f32, 
 hosted_runtime_pointer :: proc(host: ^Hosted_Runtime, event: Pointer_Event) -> (target: Node_ID, status: Hosted_Runtime_Status) {
 	state, access_status := hosted_runtime_get_state(host)
 	if access_status != .Ok { return 0, access_status }
+	_ = hosted_runtime_note_interaction(host, event.timestamp_ns)
 	rt := &state.runtime
 	dispatched_event := event
 	if state.content_inset_top > 0 && event.kind != .Cancel {
@@ -696,6 +917,7 @@ hosted_runtime_pointer_cancel :: proc(host: ^Hosted_Runtime) -> Hosted_Runtime_S
 hosted_runtime_key :: proc(host: ^Hosted_Runtime, event: Hosted_Key_Event) -> (handled: bool, status: Hosted_Runtime_Status) {
 	state, access_status := hosted_runtime_get_state(host)
 	if access_status != .Ok { return false, access_status }
+	_ = hosted_runtime_note_interaction(host)
 	if state.on_key == nil { return false, .Ok }
 	focused_owner := focused_node(&state.runtime)
 	handled = state.on_key(state.app_state, &state.runtime, focused_owner, event)
@@ -716,6 +938,7 @@ hosted_runtime_application_key :: proc(
 ) -> (handled: bool, status: Hosted_Runtime_Status) {
 	state, access_status := hosted_runtime_get_state(host)
 	if access_status != .Ok { return false, access_status }
+	_ = hosted_runtime_note_interaction(host)
 	if event.pressed {
 		if event.text_input_focused && !application_key_can_preempt_text_field(key, event.composition_active) {
 			return false, .Ok
@@ -732,6 +955,7 @@ hosted_runtime_application_key :: proc(
 hosted_runtime_scroll :: proc(host: ^Hosted_Runtime, event: Scroll_Event) -> (handled: bool, status: Hosted_Runtime_Status) {
 	state, access_status := hosted_runtime_get_state(host)
 	if access_status != .Ok { return false, access_status }
+	_ = hosted_runtime_note_interaction(host)
 	dispatched_event := event
 	if state.content_inset_top > 0 {
 		if event.y < state.content_inset_top || event.y >= f32(state.window_logical_height) {
@@ -817,6 +1041,7 @@ hosted_runtime_text_input :: proc(
 ) -> Hosted_Runtime_Status {
 	state, status := hosted_runtime_get_state(host)
 	if status != .Ok { return status }
+	_ = hosted_runtime_note_interaction(host)
 	rt := &state.runtime
 	target_owner := owner
 	if target_owner == 0 { target_owner = focused_node(rt) }

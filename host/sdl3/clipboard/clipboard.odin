@@ -4,38 +4,22 @@ package sdl3_clipboard
 
 import "core:mem"
 import "core:strings"
+import alicorn "alicorn:runtime"
 import "vendor:sdl3"
 
-// Clipboard_Get_Text_Proc returns an owned UTF-8 copy allocated by allocator.
-// A successful empty clipboard is "", true; an OS failure is "", false.
-Clipboard_Get_Text_Proc :: proc(data: rawptr, allocator: mem.Allocator) -> (text: string, ok: bool)
+// The synchronous clipboard vocabulary is defined by alicorn:runtime so the
+// reference SDL_GPU host and hosted SDL3 surfaces publish one service shape.
+Clipboard_Get_Text_Proc :: alicorn.Clipboard_Get_Text_Proc
 
-// Clipboard_Set_Text_Proc copies borrowed UTF-8 text before returning.
-Clipboard_Set_Text_Proc :: proc(data: rawptr, text: string) -> bool
+Clipboard_Set_Text_Proc :: alicorn.Clipboard_Set_Text_Proc
 
-// Clipboard_Service is an SDL3 host service. Calls belong on the SDL owner
-// thread; the service contains no renderer or GPU state.
-Clipboard_Service :: struct {
-	data: rawptr,
-	get_text: Clipboard_Get_Text_Proc,
-	set_text: Clipboard_Set_Text_Proc,
-}
+Clipboard_Service :: alicorn.Clipboard_Service
 
-ClipboardGetText :: proc(service: Clipboard_Service, allocator := context.allocator) -> (text: string, ok: bool) {
-	if service.get_text == nil { return "", false }
-	return service.get_text(service.data, allocator)
-}
+ClipboardGetText :: alicorn.ClipboardGetText
 
-// ClipboardSetText rejects embedded NUL bytes, which cannot be represented
-// by SDL's NUL-terminated clipboard API.
-ClipboardSetText :: proc(service: Clipboard_Service, text: string) -> bool {
-	if !ClipboardTextIsSupported(text) || service.set_text == nil { return false }
-	return service.set_text(service.data, text)
-}
+ClipboardSetText :: alicorn.ClipboardSetText
 
-ClipboardTextIsSupported :: proc(text: string) -> bool {
-	return !strings.contains_rune(text, 0)
-}
+ClipboardTextIsSupported :: alicorn.ClipboardTextIsSupported
 
 @(private)
 sdl3_clipboard_get_text :: proc(_data: rawptr, allocator: mem.Allocator) -> (text: string, ok: bool) {

@@ -11,6 +11,8 @@ SDL3_WebGPU_Application_Wake_Test_State :: struct {
 	wake_count: int,
 	close_requests: int,
 	close_result: alicorn.Hosted_Close_Result,
+	file_drops: int,
+	drop_path: string,
 }
 
 sdl3_webgpu_application_wake_test_close :: proc(
@@ -37,6 +39,61 @@ sdl3_webgpu_application_wake_test_start :: proc(data: rawptr, waker: alicorn.Hos
 sdl3_webgpu_application_wake_test_on_wake :: proc(data: rawptr, _rt: ^alicorn.Runtime) {
 	state := cast(^SDL3_WebGPU_Application_Wake_Test_State)data
 	state.wake_count += 1
+}
+
+sdl3_webgpu_application_wake_test_file_drop :: proc(data: rawptr, _rt: ^alicorn.Runtime, path: string) {
+	state := cast(^SDL3_WebGPU_Application_Wake_Test_State)data
+	state.file_drops += 1
+	state.drop_path = path
+}
+
+@(test)
+test_sdl3_webgpu_application_routes_drop_file_events :: proc(t: ^testing.T) {
+	if !sdl3.InitSubSystem(sdl3.INIT_EVENTS) {
+		testing.expect(t, false, "SDL event subsystem must initialize for the file-drop test")
+		return
+	}
+	defer sdl3.QuitSubSystem(sdl3.INIT_EVENTS)
+	wake_event := sdl3.EventType(sdl3.RegisterEvents(1))
+	if wake_event == {} {
+		testing.expect(t, false, "SDL must register the hosted wake event")
+		return
+	}
+	application := SDL3_WebGPU_Application{
+		wake_event_type=wake_event,
+		initialized=true,
+	}
+	state := SDL3_WebGPU_Application_Wake_Test_State{}
+	config := alicorn.Hosted_Runtime_Config{
+		state=rawptr(&state),
+		logical_width=160,
+		logical_height=100,
+		pixel_width=160,
+		pixel_height=100,
+		dpi_scale=1,
+		post_wake_data=rawptr(&application),
+		post_wake=sdl3_webgpu_application_post_wake,
+		render=sdl3_webgpu_application_wake_test_render,
+		on_file_drop=sdl3_webgpu_application_wake_test_file_drop,
+	}
+	if status := alicorn.hosted_runtime_init(&application.hosted, config); status != .Ok {
+		testing.expect(t, false, "Hosted_Runtime must initialize before the drop event")
+		return
+	}
+	defer alicorn.hosted_runtime_destroy(&application.hosted)
+
+	drop_event: sdl3.Event
+	drop_event.type = .DROP_FILE
+	drop_event.drop.commonEvent.type = .DROP_FILE
+	drop_event.drop.windowID = 0
+	drop_event.drop.data = cstring("C:/alicorn/host-drop.txt")
+	result := sdl3_webgpu_application_handle_event(&application, drop_event)
+	step := alicorn.hosted_runtime_step(&application.hosted, 1)
+	testing.expect(t, result == .Handled && state.file_drops == 1 &&
+		state.drop_path == "C:/alicorn/host-drop.txt",
+		"SDL3 DROP_FILE events reach the hosted application callback with the exact path")
+	testing.expect(t, step.description_built,
+		"a routed drop invalidates the hosted application description")
 }
 
 @(test)

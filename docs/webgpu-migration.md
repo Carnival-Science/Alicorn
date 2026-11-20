@@ -3384,8 +3384,75 @@ Stage B entry state: Scratchpad should consume the branch tip after this slice
 fields map directly: `application.state/title/width/height`, `menus`,
 `menu_presentation`, `window_decorations`, `window_chrome_height`,
 `window_chrome_metrics/layout/appearance`, and every `on_*` callback become the
-description's `title/width/height/always_on_top` plus `config`. The hosted
-`on_scheduled_wake` has no wake-class argument, and the hosted clipboard service
-is the shared asynchronous API (bounded request IDs and completion callbacks,
-not the native synchronous clipboard calls); those are the expected consumption
-changes.
+description's `title/width/height/always_on_top` plus `config`. That entry state
+has since been superseded by Stage B slice 1 below.
+
+### Stage B slice 1: hosted scheduler, synchronous clipboard, file drop, tick, and interaction policy (Windows, 2026-11-20)
+
+Stage B closes the remaining service-shape gaps that blocked a 1:1 mapping from
+Scratchpad's native `Application_Services`. The scheduler vocabulary now lives
+in `runtime/scheduler.odin`; `native/sdl_gpu` re-exports it with unchanged
+`Application_*` names.
+
+```text
+Hosted_Host_Services      windows dialogs quit clipboard scheduler
+Hosted_Runtime_Config     ... on_scheduled_wake(state, rt, class)
+                              on_file_drop(state, rt, path)
+                              on_tick(state, rt)
+                              interaction_update_policy
+                              monotonic_now / monotonic_now_data
+UI_Host_Services          clipboard (async) clipboard_text (sync)
+                              scheduler windows dialogs quit
+```
+
+- `Scheduled_Wake_Class` is `{Frequent, Opportunistic}`. The hosted scheduler
+  mirrors the native service one-for-one: one replaceable deadline per class,
+  replaceable scheduling, cancel, `Application_Scheduler_Stats`, and a 150 ms
+  input-quiet deferral for opportunistic work. The hosted input entry points
+  timestamp pointer, key, text, and scroll interaction automatically;
+  `hosted_runtime_note_interaction` is available for hosts with additional
+  event sources. `hosted_runtime_set_deadline` remains as a legacy
+  Frequent-class absolute deadline. Each `Hosted_Runtime` publishes its own
+  service, so primary and child surfaces schedule independently, exactly like
+  the reference host's per-window `Application_Scheduler`.
+- The canonical clipboard service moved to `runtime/clipboard.odin` and
+  `host/sdl3/clipboard` now forwards to it. The hosted service is the native
+  synchronous shape (`ClipboardGetText`/`ClipboardSetText`); SDL3 hosts install
+  the SDL3 implementation for primary and child surfaces. Browser hosts keep
+  the asynchronous Web Clipboard service and leave the sync shape empty.
+  Scratchpad's existing synchronous call sites work unchanged on native
+  WebGPU; browser consumption still needs the async API (Stage C).
+- `on_file_drop` mirrors `Application_File_Drop_Proc`. The SDL3 host routes
+  `SDL_EVENT_DROP_FILE` through `hosted_runtime_file_drop`, which invokes the
+  callback under the `.Host_Event` cause and invalidates the description. The
+  browser host has no drop event and records the policy only.
+- `on_tick` mirrors `Application_Tick_Proc` at the same 16.67 ms minimum
+  cadence. The hosted implementation arms one one-shot deadline instead of the
+  reference host's 1 ms delay pump: the callback timing is equivalent, and the
+  idle runtime still has no recurring wake. Ticks and scheduled wakes keep
+  running while the surface is hidden, as the reference loop does.
+- `interaction_update_policy` now reaches hosted descriptions. The hosted
+  description loop runs the same bounded four-pass stabilization as
+  `native_application_build_until_stable`; `.Correct_After_Interaction`
+  requests one corrective pass after a consumed widget interaction. Both
+  `ui.run` entry points default to `.Correct_After_Interaction`.
+- `ui.run`, `ui/webgpu.run`, and the browser `ui.run` now accept
+  `on_scheduled_wake(..., class)`, `on_file_drop`, `on_tick`, and
+  `interaction_update_policy`. `UI_Host_Services` adds `scheduler` and the
+  synchronous `clipboard_text`, while its existing `clipboard` remains the
+  asynchronous UI contract.
+
+Tests cover scheduler arm/cancel/coalescing/class/lateness/deferral, legacy
+deadline behavior, tick cadence, file-drop routing (including the SDL3 event
+bridge), the clipboard roundtrip through published services, and corrective
+versus explicit description policy. `examples/16_native_webgpu_ui
+--services-smoke` exercises scheduler, clipboard, file drop, and tick through
+`ui.run` on D3D12 and SDL_GPU.
+
+Stage B entry state for the Scratchpad consumption slice: the native
+`Application_Services` fields `scheduler`, `clipboard`, `windows`, `dialogs`,
+and `quit` map 1:1, and `Application.on_file_drop`, `Application.on_tick`,
+`Application.on_scheduled_wake`, and `interaction_update_policy` map 1:1 to the
+hosted config/UI run surface. Remaining gaps are browser-only: asynchronous
+clipboard consumption, browser file drops, browser menus/dialogs, and browser
+close policy.

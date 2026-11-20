@@ -80,10 +80,10 @@ run_native_window_wake :: proc(data: rawptr, rt: ^alicorn.Runtime) {
 }
 
 @(private)
-run_native_window_scheduled_wake :: proc(data: rawptr, rt: ^alicorn.Runtime, _class: host.Scheduled_Wake_Class) {
+run_native_window_scheduled_wake :: proc(data: rawptr, rt: ^alicorn.Runtime, class: host.Scheduled_Wake_Class) {
 	bridge := cast(^Run_Native_Window_Bridge)data
 	if bridge != nil && bridge.config.on_scheduled_wake != nil {
-		bridge.config.on_scheduled_wake(bridge.config.state, rt)
+		bridge.config.on_scheduled_wake(bridge.config.state, rt, alicorn.Scheduled_Wake_Class(class))
 	}
 }
 
@@ -259,6 +259,22 @@ run_native_window_chrome_appearance :: proc(
 }
 
 @(private)
+run_native_window_tick :: proc(data: rawptr, rt: ^alicorn.Runtime) {
+	bridge := cast(^Run_Native_Window_Bridge)data
+	if bridge != nil && bridge.config.on_tick != nil {
+		bridge.config.on_tick(bridge.config.state, rt)
+	}
+}
+
+@(private)
+run_native_window_file_drop :: proc(data: rawptr, rt: ^alicorn.Runtime, path: string) {
+	bridge := cast(^Run_Native_Window_Bridge)data
+	if bridge != nil && bridge.config.on_file_drop != nil {
+		bridge.config.on_file_drop(bridge.config.state, rt, path)
+	}
+}
+
+@(private)
 run_native_window_services :: proc(data: rawptr, services: host.Application_Services) {
 	bridge := cast(^Run_Native_Window_Bridge)data
 	if bridge == nil || bridge.config.on_host_services == nil { return }
@@ -276,6 +292,8 @@ run_native_window_services :: proc(data: rawptr, services: host.Application_Serv
 			},
 			dialogs=services.dialogs,
 			quit=services.quit,
+			clipboard=services.clipboard,
+			scheduler=services.scheduler,
 		},
 	)
 }
@@ -302,10 +320,12 @@ run_native_window_open :: proc(data: rawptr, description: alicorn.Hosted_Window_
 		window_chrome_layout=run_native_window_chrome_layout,
 		window_chrome_appearance=run_native_window_chrome_appearance,
 		build=run_native_window_build,
-		interaction_update_policy=.Correct_After_Interaction,
+		interaction_update_policy=host.Application_Interaction_Update_Policy(description.config.interaction_update_policy),
 	}
 	if description.config.on_initialize != nil { application.on_initialize = run_native_window_initialize }
 	if description.config.on_host_services != nil { application.on_services = run_native_window_services }
+	if description.config.on_file_drop != nil { application.on_file_drop = run_native_window_file_drop }
+	if description.config.on_tick != nil { application.on_tick = run_native_window_tick }
 	if description.config.on_start != nil { application.on_start = run_native_window_start }
 	if description.config.on_wake != nil { application.on_wake = run_native_window_wake }
 	if description.config.on_scheduled_wake != nil {
@@ -409,6 +429,8 @@ run_application :: proc(
 		service_context := cast(^Run_Native_Window_Service_Context)state.host_services.windows.data
 		state.host_services.dialogs = services.dialogs
 		state.host_services.quit = services.quit
+		state.host_services.clipboard_text = services.clipboard
+		state.host_services.scheduler = services.scheduler
 		if service_context != nil {
 			service_context.windows = services.windows
 			state.host_services.windows = alicorn.Hosted_Window_Service{
@@ -483,9 +505,19 @@ run_application :: proc(
 			})
 		}
 	}
-	on_scheduled_wake :: proc(data: rawptr, rt: ^alicorn.Runtime, _class: host.Scheduled_Wake_Class) {
+	on_scheduled_wake :: proc(data: rawptr, rt: ^alicorn.Runtime, class: host.Scheduled_Wake_Class) {
 		state := cast(^Hosted_Run_State(T))data
-		if state.on_scheduled_wake != nil { state.on_scheduled_wake(state.app, rt) }
+		if state.on_scheduled_wake != nil {
+			state.on_scheduled_wake(state.app, rt, alicorn.Scheduled_Wake_Class(class))
+		}
+	}
+	on_file_drop :: proc(data: rawptr, rt: ^alicorn.Runtime, path: string) {
+		state := cast(^Hosted_Run_State(T))data
+		if state.on_file_drop != nil { state.on_file_drop(state.app, rt, path) }
+	}
+	on_tick :: proc(data: rawptr, rt: ^alicorn.Runtime) {
+		state := cast(^Hosted_Run_State(T))data
+		if state.on_tick != nil { state.on_tick(state.app, rt) }
 	}
 	on_menu_command :: proc(data: rawptr, rt: ^alicorn.Runtime, command: host.Application_Command_ID) {
 		state := cast(^Hosted_Run_State(T))data
@@ -528,7 +560,7 @@ run_application :: proc(
 		window_chrome_layout=chrome_layout,
 		window_chrome_appearance=chrome_appearance,
 		build=build,
-		interaction_update_policy=.Correct_After_Interaction,
+		interaction_update_policy=host.Application_Interaction_Update_Policy(run_state.interaction_update_policy),
 	}
 	if run_state.on_initialize != nil { application.on_initialize = initialize }
 	if run_state.on_services != nil { application.on_services = on_services }
@@ -543,6 +575,8 @@ run_application :: proc(
 	if run_state.on_scroll_capture != nil { application.on_scroll_capture = on_scroll_capture }
 	if run_state.on_scroll != nil { application.on_scroll = on_scroll }
 	if run_state.on_text_input != nil { application.on_text_input = on_text_input }
+	if run_state.on_file_drop != nil { application.on_file_drop = on_file_drop }
+	if run_state.on_tick != nil { application.on_tick = on_tick }
 	if run_state.on_scheduled_wake != nil { application.on_scheduled_wake = on_scheduled_wake }
 	if run_state.on_menu_command != nil { application.on_menu_command = on_menu_command }
 	if run_state.on_close_requested != nil { application.on_close_requested = on_close_requested }
@@ -579,7 +613,10 @@ run :: proc(
 	on_scroll_capture: proc(^T, ^alicorn.Runtime, alicorn.Scroll_Event, Node_ID) -> bool = nil,
 	on_scroll: proc(^T, ^alicorn.Runtime, alicorn.Scroll_Event) = nil,
 	on_text_input: proc(^T, ^alicorn.Runtime, Node_ID, alicorn.Hosted_Text_Input_Event) = nil,
-	on_scheduled_wake: proc(^T, ^alicorn.Runtime) = nil,
+	on_scheduled_wake: proc(^T, ^alicorn.Runtime, alicorn.Scheduled_Wake_Class) = nil,
+	on_file_drop: proc(^T, ^alicorn.Runtime, string) = nil,
+	on_tick: proc(^T, ^alicorn.Runtime) = nil,
+	interaction_update_policy: alicorn.Interaction_Update_Policy = .Correct_After_Interaction,
 	menus: []alicorn.Menu = nil,
 	menu_presentation: alicorn.Menu_Presentation = .Labels,
 	on_menu_command: proc(^T, ^alicorn.Runtime, alicorn.Action_ID) = nil,
@@ -599,12 +636,14 @@ run :: proc(
 		window_chrome_metrics=window_chrome_metrics,
 		window_chrome_layout=window_chrome_layout,
 		window_chrome_appearance=window_chrome_appearance,
+		interaction_update_policy=interaction_update_policy,
 		on_initialize=on_initialize, on_start=on_start, on_wake=on_wake, on_stop=on_stop,
 		on_key=on_key, on_text_change=on_text_change, on_pointer=on_pointer,
 		on_text_key=on_text_key,
 		on_services=on_services,
 		on_drag=on_drag, on_scroll_capture=on_scroll_capture, on_scroll=on_scroll,
 		on_text_input=on_text_input, on_scheduled_wake=on_scheduled_wake,
+		on_file_drop=on_file_drop, on_tick=on_tick,
 		on_menu_command=on_menu_command, on_close_requested=on_close_requested,
 		on_dialog=on_dialog,
 	}

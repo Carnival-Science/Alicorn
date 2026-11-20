@@ -1,6 +1,7 @@
 #+build !js
 package ui
 
+import "core:mem"
 import "core:testing"
 import alicorn "alicorn:runtime"
 import clipboard "alicorn:host/clipboard"
@@ -19,6 +20,10 @@ Run_Hosted_Config_Test_App :: struct {
 	last_menu_command: alicorn.Action_ID,
 	last_dialog_status: alicorn.Dialog_Status,
 	close_result: alicorn.Hosted_Close_Result,
+	scheduler_available: bool,
+	clipboard_text_available: bool,
+	file_drops: int,
+	ticks: int,
 }
 
 run_hosted_config_test_render :: proc(app: ^Run_Hosted_Config_Test_App, ctx: ^UI) {
@@ -45,10 +50,27 @@ run_hosted_config_test_start :: proc(app: ^Run_Hosted_Config_Test_App, waker: Ap
 run_hosted_config_test_services :: proc(app: ^Run_Hosted_Config_Test_App, services: UI_Host_Services) {
 	app.service_calls += 1
 	app.service_read_available = services.clipboard.read_text != nil
+	app.scheduler_available = services.scheduler.schedule != nil && services.scheduler.cancel != nil
+	app.clipboard_text_available = services.clipboard_text.get_text != nil
 }
 
-run_hosted_config_test_clipboard_read :: proc(
-	_data: rawptr,
+run_hosted_config_test_file_drop :: proc(app: ^Run_Hosted_Config_Test_App, _rt: ^alicorn.Runtime, _path: string) {
+	app.file_drops += 1
+}
+
+run_hosted_config_test_tick :: proc(app: ^Run_Hosted_Config_Test_App, _rt: ^alicorn.Runtime) {
+	app.ticks += 1
+}
+
+run_hosted_config_test_clipboard_text_get :: proc(_data: rawptr, allocator: mem.Allocator) -> (text: string, ok: bool) {
+	return "", true
+}
+
+run_hosted_config_test_clipboard_text_set :: proc(_data: rawptr, _text: string) -> bool {
+	return true
+}
+
+run_hosted_config_test_clipboard_read :: proc(	_data: rawptr,
 	request_id: clipboard.Clipboard_Request_ID,
 	completion_data: rawptr,
 	completion: clipboard.Clipboard_Completion_Proc,
@@ -113,7 +135,7 @@ run_hosted_config_test_text_input :: proc(
 	app.text_inputs += 1
 }
 
-run_hosted_config_test_scheduled :: proc(app: ^Run_Hosted_Config_Test_App, _rt: ^alicorn.Runtime) {
+run_hosted_config_test_scheduled :: proc(app: ^Run_Hosted_Config_Test_App, _rt: ^alicorn.Runtime, _class: alicorn.Scheduled_Wake_Class) {
 	app.scheduled += 1
 }
 
@@ -168,15 +190,24 @@ test_shared_ui_run_adapts_to_hosted_runtime :: proc(t: ^testing.T) {
 		on_scroll=run_hosted_config_test_scroll,
 		on_text_input=run_hosted_config_test_text_input,
 		on_scheduled_wake=run_hosted_config_test_scheduled,
+		on_file_drop=run_hosted_config_test_file_drop,
+		on_tick=run_hosted_config_test_tick,
+		interaction_update_policy=.Correct_After_Interaction,
 		on_menu_command=run_hosted_config_test_menu_command,
 		on_close_requested=run_hosted_config_test_close_requested,
 		on_dialog=run_hosted_config_test_dialog,
 	}
 	queue := Run_Hosted_Config_Test_Wake_Queue{}
 	config := run_hosted_config(&state, 240, 120, 480, 240, 2, rawptr(&queue), run_hosted_config_test_post_wake)
+	config.host_services.clipboard = alicorn.Clipboard_Service{
+		get_text=run_hosted_config_test_clipboard_text_get,
+		set_text=run_hosted_config_test_clipboard_text_set,
+	}
 	testing.expect(t,
 		config.on_drag != nil && config.on_scroll_capture != nil && config.on_scroll != nil &&
 		config.on_text_input != nil && config.on_scheduled_wake != nil &&
+		config.on_file_drop != nil && config.on_tick != nil &&
+		config.interaction_update_policy == .Correct_After_Interaction &&
 		config.on_menu_command != nil && config.on_close_requested != nil && config.on_dialog != nil,
 		"the shared ui.run adapter should expose every optional hosted callback")
 	session: alicorn.Hosted_Runtime
@@ -186,6 +217,8 @@ test_shared_ui_run_adapts_to_hosted_runtime :: proc(t: ^testing.T) {
 	testing.expect(t, app.initializations == 1 && app.starts == 1 && app.service_calls == 1 &&
 		app.service_read_available && app.service_available_before_start,
 		"host services should be delivered after initialization and before the app start hook")
+	testing.expect(t, app.scheduler_available && app.clipboard_text_available,
+		"UI_Host_Services should publish the native-shaped scheduler and synchronous clipboard")
 
 	first := alicorn.hosted_runtime_step(&session, 1)
 	testing.expect(t, first.status == .Ok && first.description_built && first.render_required && app.renders == 2,

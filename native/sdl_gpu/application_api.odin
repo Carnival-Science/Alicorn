@@ -68,10 +68,7 @@ Application_Build_Proc :: proc(
 // interaction during a description requests a corrective description.
 // Stabilization remains bounded by the native host pass limit. Explicit is
 // the default for applications that manage invalidation themselves.
-Application_Interaction_Update_Policy :: enum {
-	Explicit,
-	Correct_After_Interaction,
-}
+Application_Interaction_Update_Policy :: alicorn.Interaction_Update_Policy
 
 // Application_Initialize_Proc runs on the application thread after Runtime
 // creation and before host-default fonts and renderer resources initialize.
@@ -117,7 +114,7 @@ Application_Services_Proc :: proc(state: rawptr, services: Application_Services)
 
 Application_Wake_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime)
 
-Application_Scheduled_Wake_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, class: Scheduled_Wake_Class)
+Application_Scheduled_Wake_Proc :: alicorn.Application_Scheduled_Wake_Proc
 
 Application_Stop_Proc :: proc(state: rawptr)
 
@@ -127,50 +124,31 @@ Application_Close_Result :: alicorn.Hosted_Close_Result
 
 Application_Close_Requested_Proc :: alicorn.Hosted_Close_Requested_Proc
 
-// Scheduled_Wake_Class distinguishes work that should run at a useful cadence
-// from lower-fidelity work that can wait until the user has been quiet.
-Scheduled_Wake_Class :: enum {Frequent, Opportunistic}
+// Scheduled_Wake_Class and the scheduler service vocabulary live in
+// alicorn:runtime so the reference SDL_GPU host, hosted SDL3/WebGPU, and
+// renderer-agnostic tests share one definition. These aliases preserve the
+// native Application-facing names.
+Scheduled_Wake_Class :: alicorn.Scheduled_Wake_Class
 
 NATIVE_DRAG_AUTOSCROLL_INTERVAL_NS :: u64(16_000_000)
 
-Application_Schedule_After_Proc :: proc(data: rawptr, class: Scheduled_Wake_Class, delay_ns: u64) -> bool
+Application_Schedule_After_Proc :: alicorn.Application_Schedule_After_Proc
 
-Application_Cancel_Scheduled_Proc :: proc(data: rawptr, class: Scheduled_Wake_Class) -> bool
+Application_Cancel_Scheduled_Proc :: alicorn.Application_Cancel_Scheduled_Proc
 
-Application_Scheduler_Stats_Proc :: proc(data: rawptr) -> Application_Scheduler_Stats
+Application_Scheduler_Stats_Proc :: alicorn.Application_Scheduler_Stats_Proc
 
-Application_Scheduler_Stats :: struct {
-	scheduled:               u64,
-	coalesced:               u64,
-	frequent_wakes:          u64,
-	opportunistic_wakes:     u64,
-	opportunistic_deferrals: u64,
-	maximum_lateness_ns:     u64,
-	frequent_pending:        bool,
-	opportunistic_pending:   bool,
-}
+Application_Scheduler_Stats :: alicorn.Application_Scheduler_Stats
 
 // Application_Scheduler is a UI-thread-only service. It owns at most one
 // replaceable deadline for each class; it is deliberately not a task queue.
-Application_Scheduler :: struct {
-	data:         rawptr,
-	schedule:     Application_Schedule_After_Proc,
-	cancel:       Application_Cancel_Scheduled_Proc,
-	read_stats:   Application_Scheduler_Stats_Proc,
-}
+Application_Scheduler :: alicorn.Application_Scheduler
 
-application_schedule_after :: proc(scheduler: Application_Scheduler, class: Scheduled_Wake_Class, delay_ns: u64) -> bool {
-	return scheduler.schedule != nil && scheduler.schedule(scheduler.data, class, delay_ns)
-}
+application_schedule_after :: alicorn.application_schedule_after
 
-application_cancel_scheduled_wake :: proc(scheduler: Application_Scheduler, class: Scheduled_Wake_Class) -> bool {
-	return scheduler.cancel != nil && scheduler.cancel(scheduler.data, class)
-}
+application_cancel_scheduled_wake :: alicorn.application_cancel_scheduled_wake
 
-application_scheduler_stats :: proc(scheduler: Application_Scheduler) -> Application_Scheduler_Stats {
-	if scheduler.read_stats != nil { return scheduler.read_stats(scheduler.data) }
-	return {}
-}
+application_scheduler_stats :: alicorn.application_scheduler_stats
 
 // Application_Waker is a borrowed, thread-safe request to wake the native
 // application loop. Applications may copy and call it from worker threads
