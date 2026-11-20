@@ -1033,6 +1033,10 @@ hosted_runtime_presentation_list :: proc(
 		view = Paint_Display_List_View{commands=rt.display[:], revision=rt.presentation_revision}
 		return view, .Ok
 	}
+	// Host chrome paint is transient: shape/command storage comes from the
+	// Runtime scratch arena and is invalid after the next Runtime mutation.
+	chrome_allocator := allocator
+	if rt.scratch_allocator.procedure != nil { chrome_allocator = rt.scratch_allocator }
 	chrome: []Paint_Command
 	if has_chrome {
 		chrome = state.chrome_paint(
@@ -1040,7 +1044,7 @@ hosted_runtime_presentation_list :: proc(
 			rt,
 			f32(state.window_logical_width),
 			f32(state.window_logical_height),
-			allocator,
+			chrome_allocator,
 		)
 	}
 	required := len(rt.display)+len(chrome)

@@ -118,6 +118,7 @@ test_hosted_presentation_shifts_app_paint_and_appends_chrome :: proc(t: ^testing
 		content_inset_top=32,
 		window_decorations=.Integrated_Title_Bar,
 		chrome_paint=hosted_chrome_test_paint,
+		chrome_paint_data=rawptr(&app),
 	}
 	if hosted_chrome_test_open(&host, &app, config) != .Ok {
 		testing.expect(t, false, "hosted chrome fixture should initialize")

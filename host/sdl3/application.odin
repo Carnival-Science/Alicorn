@@ -378,6 +378,7 @@ sdl3_webgpu_application_init :: proc(
 	application.menu_adapter.hosted = &application.hosted
 	if !host_menus.native_menu_adapter_activate_chrome(&application.menu_adapter) {
 		_ = alicorn.hosted_runtime_destroy(&application.hosted)
+		host_menus.native_menu_adapter_destroy(&application.menu_adapter)
 		sdl3_dialogs.native_dialog_bridge_release(application.dialog_bridge)
 		application^ = {}
 		return .Runtime_Failure
@@ -414,6 +415,7 @@ sdl3_webgpu_application_init :: proc(
 			application.accessibility_ready = false
 		}
 		_ = alicorn.hosted_runtime_destroy(&application.hosted)
+		host_menus.native_menu_adapter_destroy(&application.menu_adapter)
 		sdl3_dialogs.native_dialog_bridge_release(application.dialog_bridge)
 		application^ = {}
 		return .Presenter_Failure
@@ -546,6 +548,7 @@ sdl3_webgpu_application_resize :: proc(application: ^SDL3_WebGPU_Application) ->
 			return .Invalid_Input
 		}
 		application.dpi_scale = dpi
+		sdl3_webgpu_application_sync_chrome(application)
 		if renderable { return .Ok }
 		return .Suspended
 	}

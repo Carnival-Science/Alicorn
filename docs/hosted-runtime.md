@@ -246,10 +246,58 @@ through `Application.menus`.
 
 Menu presentation is policy, not a promise that labels are always painted.
 `Menu_Presentation.Hidden` suppresses only Windows integrated-title-bar labels;
-a system menu bar and the macOS main menu still show labels. Hosted Windows
-titlebar chrome is a later slice; until then the hosted adapter behaves like a
-system-decorated window. The browser host has no native menu yet; its
-accelerator and presentation TODO remains.
+a system menu bar and the macOS main menu still show labels. The browser host has
+no native menu yet; its accelerator and presentation TODO remains.
+
+## Integrated title bar and application chrome
+
+The hosted host shares the SDL_GPU chrome vocabulary:
+`Window_Decoration_Mode` (`.System`, `.Integrated_Title_Bar`,
+`.Content_Title_Bar`), `Window_Chrome_Metrics`,
+`Window_Chrome_Region`/`Window_Chrome_Layout`, and
+`Window_Chrome_Appearance`. The runtime defines them; `native/sdl_gpu`'s
+`Application_*` names alias the same types.
+
+```text
+Hosted_Runtime_Config.window_decorations        Window_Decoration_Mode
+Hosted_Runtime_Config.window_chrome_height      f32
+Hosted_Runtime_Config.window_chrome_metrics     Window_Chrome_Metrics_Proc
+Hosted_Runtime_Config.window_chrome_layout      Window_Chrome_Layout_Proc
+Hosted_Runtime_Config.window_chrome_appearance  Window_Chrome_Appearance_Proc
+Hosted_Runtime_Config.chrome_paint              Hosted_Chrome_Paint_Proc (host-owned)
+Hosted_Runtime_Config.content_inset_top         f32
+```
+
+`ui.run`, `ui/webgpu.run`, and the browser `ui.run` accept the same
+application-facing fields; the browser records decoration policy only.
+Application callbacks describe ordinary retained nodes. The metrics callback
+receives measured window-logical geometry before the first build and when
+native geometry changes. The layout callback is sampled after description and
+retained layout and returns a borrowed header node plus up to
+`WINDOW_CHROME_REGION_CAPACITY` `Interactive`/`Window_Drag` regions.
+
+Two coordinate modes exist:
+
+- A host-owned band (no `window_chrome_layout`) sets `content_inset_top`.
+  Application descriptions see a reduced viewport, pointer/wheel input over the
+  band is withheld (a captured interaction stays clamped until cancellation),
+  and presentation translates application paint below the band.
+- An application-owned header (`window_chrome_layout` supplied) keeps the inset
+  at zero. Interactive regions receive ordinary client input; only explicit
+  `Window_Drag` regions become caption gestures.
+
+Host chrome paint is appended after application paint during presentation; the
+shared SDL3 pre-present hook samples layout and metrics in the same frame.
+`Hosted_Runtime` exposes `hosted_runtime_set_content_inset`,
+`hosted_runtime_content_inset`, `hosted_runtime_presentation_list`,
+`hosted_runtime_pointer_cancel`, and host text resources
+(`runtime_host_text_run_set/resolve/release`) for shaped menu/title runs.
+
+On Windows, `host/menus` owns one HMENU/subclass construction path for both the
+system menu bar and the integrated band. On macOS, `Content_Title_Bar` uses
+AppKit full-size-content coordination; it is compile-checked but not yet
+validated on a physical Mac in this slice. Secondary-window chrome parity and
+Scratchpad consumption remain slice-4 work.
 
 
 ## Multiple outputs from one Runtime
