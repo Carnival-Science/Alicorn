@@ -1,6 +1,6 @@
 #+build linux
 
-package alicorn_sdl_gpu
+package alicorn_host_fonts
 
 import "core:dynlib"
 import "core:os"
@@ -25,7 +25,7 @@ Fontconfig_Symbols :: struct {
 fontconfig_symbols: Fontconfig_Symbols
 fontconfig_initialized: bool
 
-native_fontconfig_initialize :: proc() -> bool {
+fontconfig_initialize :: proc() -> bool {
 	if fontconfig_initialized {
 		return fontconfig_symbols._handle != nil && fontconfig_symbols.init != nil &&
 			fontconfig_symbols.charset_create != nil && fontconfig_symbols.charset_destroy != nil &&
@@ -52,7 +52,7 @@ native_fontconfig_initialize :: proc() -> bool {
 	return false
 }
 
-native_fontconfig_find_font_with_library :: proc(family: cstring, codepoints: []rune) -> string {
+fontconfig_find_font_with_library :: proc(family: cstring, codepoints: []rune) -> string {
 	pattern := fontconfig_symbols.pattern_create()
 	if pattern == nil { return "" }
 	defer fontconfig_symbols.pattern_destroy(pattern)
@@ -82,7 +82,7 @@ native_fontconfig_find_font_with_library :: proc(family: cstring, codepoints: []
 	return resolved
 }
 
-native_fontconfig_find_font_with_command :: proc(family: cstring, codepoints: []rune) -> string {
+fontconfig_find_font_with_command :: proc(family: cstring, codepoints: []rune) -> string {
 	// NixOS may expose Fontconfig through fc-match's own store RPATH without
 	// putting libfontconfig.so on the host executable's loader path.
 	query_builder, builder_err := strings.builder_make(allocator=context.temp_allocator)
@@ -110,12 +110,12 @@ native_fontconfig_find_font_with_command :: proc(family: cstring, codepoints: []
 	return resolved
 }
 
-native_fontconfig_find_font :: proc(family: cstring, codepoints: []rune) -> string {
+fontconfig_find_font :: proc(family: cstring, codepoints: []rune) -> string {
 	if len(codepoints) == 0 { return "" }
-	if native_fontconfig_initialize() {
-		if path := native_fontconfig_find_font_with_library(family, codepoints); path != "" {
+	if fontconfig_initialize() {
+		if path := fontconfig_find_font_with_library(family, codepoints); path != "" {
 			return path
 		}
 	}
-	return native_fontconfig_find_font_with_command(family, codepoints)
+	return fontconfig_find_font_with_command(family, codepoints)
 }

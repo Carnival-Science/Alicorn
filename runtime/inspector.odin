@@ -282,6 +282,64 @@ style_inspector_semantic_surface :: proc(sb: ^strings.Builder, rt: ^Runtime, nod
 		computed.generations.paint, computed.generations.material)
 }
 
+// inspector_text_run_line records span provenance plus the registered faces and
+// fallback glyphs Runa selected. A capture bundle can then show whether a boxed
+// character is an unresolved .notdef or a face the host actually resolved, and
+// whether both hosts picked the same face for the run.
+inspector_text_run_line :: proc(sb: ^strings.Builder, node: ^Node) {
+	run := &node.text_run
+	fmt.sbprintf(sb, "  text run: valid=%t bytes=%d paint-spans=%d style-spans=%d",
+		node.text_run_valid, len(run.value) if node.text_run_valid else 0,
+		len(node.text_paint_spans), len(node.text_style_spans))
+	span_limit := min(len(node.text_paint_spans), 32)
+	for span in node.text_paint_spans[:span_limit] {
+		if span.color_set {
+			fmt.sbprintf(sb, " [%d,%d)fg=(%.3f,%.3f,%.3f,%.3f)", span.start, span.end,
+				span.color.r, span.color.g, span.color.b, span.color.a)
+		}
+		if span.background_set {
+			fmt.sbprintf(sb, " [%d,%d)bg=(%.3f,%.3f,%.3f,%.3f)", span.start, span.end,
+				span.background.r, span.background.g, span.background.b, span.background.a)
+		}
+	}
+	// The low generation byte is the runtime's unresolved-coverage marker.
+	unresolved := run.font_generation & TEXT_RUN_FALLBACK_GENERATION_MASK != 0
+	seen: [8]Font_Face_ID
+	seen_count := 0
+	truncated := false
+	for glyph in run.glyphs {
+		known := false
+		for prior in seen[:seen_count] {
+			if prior == glyph.font_face { known = true; break }
+		}
+		if known { continue }
+		if seen_count == len(seen) { truncated = true; break }
+		seen[seen_count] = glyph.font_face
+		seen_count += 1
+	}
+	fmt.sbprintf(sb, " faces=[")
+	for face, index in seen[:seen_count] {
+		if index > 0 { fmt.sbprintf(sb, ",") }
+		fmt.sbprintf(sb, "%d", u32(face))
+	}
+	if truncated { fmt.sbprintf(sb, ",...") }
+	fmt.sbprintf(sb, "] unresolved=%t\n", unresolved)
+	// Bounded fallback-glyph provenance: identity, face, and shaped glyph id.
+	fallback_count := 0
+	for glyph in run.glyphs {
+		if glyph.font_source != .Fallback { continue }
+		if fallback_count == 4 {
+			fmt.sbprintf(sb, " ...")
+			break
+		}
+		if fallback_count == 0 { fmt.sbprintf(sb, "  text fallback glyphs:") }
+		fmt.sbprintf(sb, " [%d,%d)face=%d gid=%d",
+			glyph.cluster_start, glyph.cluster_end, u32(glyph.font_face), u32(glyph.glyph_id))
+		fallback_count += 1
+	}
+	if fallback_count > 0 { fmt.sbprintln(sb) }
+}
+
 inspect :: proc(rt: ^Runtime) -> string {
 	previous_suppression := false
 	if rt != nil {
@@ -399,23 +457,7 @@ inspect :: proc(rt: ^Runtime) -> string {
 		}
 		fmt.sbprintf(&sb, "  selected=%t semantic_active=%t hovered=%t pressed=%t caret=(%d,%v) selection=(%d,%v)->(%d,%v) reason: %s\n", node.selected, node.semantic_active, node.hovered, node.pressed, node.caret.byte, node.caret.affinity, node.selection_anchor.byte, node.selection_anchor.affinity, node.selection_focus.byte, node.selection_focus.affinity, node.last_reason)
 		if node.kind == .Text || node.kind == .Text_Field {
-			// Span provenance keeps syntax-highlighting and decoration regressions
-			// visible in a capture bundle without requiring a rendered screenshot.
-			fmt.sbprintf(&sb, "  text run: valid=%t bytes=%d paint-spans=%d style-spans=%d",
-				node.text_run_valid, len(node.text_run.value) if node.text_run_valid else 0,
-				len(node.text_paint_spans), len(node.text_style_spans))
-			span_limit := min(len(node.text_paint_spans), 32)
-			for span in node.text_paint_spans[:span_limit] {
-				if span.color_set {
-					fmt.sbprintf(&sb, " [%d,%d)fg=(%.3f,%.3f,%.3f,%.3f)", span.start, span.end,
-						span.color.r, span.color.g, span.color.b, span.color.a)
-				}
-				if span.background_set {
-					fmt.sbprintf(&sb, " [%d,%d)bg=(%.3f,%.3f,%.3f,%.3f)", span.start, span.end,
-						span.background.r, span.background.g, span.background.b, span.background.a)
-				}
-			}
-			fmt.sbprintln(&sb)
+			inspector_text_run_line(&sb, node)
 		}
 		if node.kind == .Button {
 			recipe := style_button_recipe(rt, node.style_environment, node.button_variant)
@@ -435,6 +477,7 @@ inspect :: proc(rt: ^Runtime) -> string {
 			} else {
 				fmt.sbprintf(&sb, "  button identity: label=%q\n", node.label)
 			}
+			if node.text_run_valid { inspector_text_run_line(&sb, node) }
 			fmt.sbprintf(&sb, "  button recipe: variant=%s recipe=button.%s base=(%v,%v) surface=(%.3f,%.3f,%.3f,%.3f) text=(%.3f,%.3f,%.3f,%.3f) indicator=%v/%v\n",
 				button_variant_name(node.button_variant), button_variant_name(node.button_variant), recipe.surface_role, recipe.text_role,
 				resolved.surface.r, resolved.surface.g, resolved.surface.b, resolved.surface.a,

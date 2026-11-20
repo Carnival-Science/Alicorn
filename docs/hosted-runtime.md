@@ -53,6 +53,16 @@ scroll restoration. If it changes retained layout or paint state, it must call
 in the same step. `ui.run`, `ui/webgpu.run`, and the browser `run` expose the
 same hook as `on_after_frame`.
 
+Desktop font initialization is part of the same parity contract. `ui.run` and
+the hosted SDL3/WebGPU `ui/webgpu.run` install the canonical stack through
+`alicorn:host/fonts` (`load_default_fonts`): bundled Atkinson faces first, then
+the bounded platform/DirectWrite fallbacks. A host that creates
+`Hosted_Runtime` directly owns this step; calling only
+`text_engine_load_default_fonts` leaves the runtime without system fallbacks and
+will resolve CJK, emoji, and symbols differently from the SDL_GPU reference.
+The browser `ui/webgpu.run` path loads bundled defaults only, because a page
+cannot read local font files.
+
 ```odin
 import alicorn "alicorn:runtime"
 import "core:fmt"

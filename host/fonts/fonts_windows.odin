@@ -1,6 +1,6 @@
 #+build windows
 
-package alicorn_sdl_gpu
+package alicorn_host_fonts
 
 import "core:mem"
 import "core:strings"
@@ -329,7 +329,7 @@ win32_dwrite_load_face_bytes :: proc(fallback: rawptr, sample: string, locale_na
 // synchronously querying DirectWrite from typing, scrolling, or composition.
 // Each mapping is for a complete UTF-16 sample; Runa still performs cluster-
 // atomic cmap selection over the resulting immutable face stack.
-native_load_directwrite_fallback_faces :: proc(rt: ^alicorn.Runtime) -> int {
+load_directwrite_fallback_faces :: proc(rt: ^alicorn.Runtime) -> int {
 	factory: rawptr
 	factory_iid := WIN32_DWRITE_FACTORY2_IID
 	if !win32_dwrite_succeeded(DWriteCreateFactory(0, &factory_iid, &factory)) || factory == nil { return 0 }

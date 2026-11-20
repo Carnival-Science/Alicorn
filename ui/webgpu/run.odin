@@ -7,6 +7,7 @@ import alicorn "alicorn:runtime"
 import ui "alicorn:ui"
 import sdl3_clipboard "alicorn:host/sdl3/clipboard"
 import host "alicorn:host/sdl3"
+import host_fonts "alicorn:host/fonts"
 
 // run is the opt-in native WebGPU entry point for dogfooding the shared
 // WebGPU renderer through SDL3. It keeps the ui.run callback vocabulary but
@@ -94,12 +95,15 @@ run :: proc(
 		rawptr(&run_state),
 		webgpu_unused_post_wake,
 	)
-	// Load the bundled fonts after the app has had a chance to register custom
-	// faces. The host will overwrite the placeholder SDL wake callback.
+	// Load the canonical desktop font stack after the app has had a chance to
+	// register custom faces: bundled defaults, then the bounded DirectWrite /
+	// script fallbacks. The SDL_GPU reference host calls the same function, so
+	// both backends resolve every codepoint against an identical stack. The
+	// host will overwrite the placeholder SDL wake callback.
 	initialize :: proc(data: rawptr, rt: ^alicorn.Runtime) {
 		state := cast(^ui.Hosted_Run_State(T))data
 		if state.on_initialize != nil { state.on_initialize(state.app, rt) }
-		if !alicorn.text_engine_load_default_fonts(rt) {
+		if !host_fonts.load_default_fonts(rt) {
 			fmt.panicf("Alicorn's bundled UI fonts could not be initialized")
 		}
 	}

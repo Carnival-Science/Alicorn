@@ -33,6 +33,7 @@ sh "$ACCESSKIT_BINDING_ROOT/tools/check.sh" --odin "$ODIN" --cache-root "$REPO_R
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
 	build native/sdl_gpu_entry "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_sdl_gpu"
 "$ODIN" test runtime
+"$ODIN" test host/fonts "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_host_fonts_tests"
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
 	test host/sdl3 "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_sdl3_host_tests"
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
