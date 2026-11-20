@@ -43,6 +43,25 @@ Hosted_Run_State :: struct($T: typeid) {
 	on_close_requested: proc(^T, ^alicorn.Runtime) -> alicorn.Hosted_Close_Result,
 	on_dialog: proc(^T, ^alicorn.Runtime, ^alicorn.File_Dialog_Result),
 	hosted_waker: alicorn.Hosted_Waker,
+	// on_after_frame runs after end_frame of the same description pass and
+	// before presentation, matching the native host's build-then-after-frame
+	// ordering.
+	on_after_frame: proc(^T, ^alicorn.Runtime),
+	// root_ownership is set by the entry point, not by applications. Host is
+	// the ui.run callback contract; Application is the native Application.build
+	// contract used by ui/webgpu.run.
+	root_ownership: Hosted_Root_Ownership,
+}
+
+// Hosted_Root_Ownership selects which layer owns the application root.
+// Host-owned is the ui.run callback contract: `render` describes content inside
+// a host root. Application-owned is the native/sdl_gpu Application.build
+// contract: `render` opens and closes the application's own root and describes
+// overlays as top-level layers. `ui/webgpu.run` uses Application-owned so a
+// caller such as Scratchpad can scope overlays against its own workbench root.
+Hosted_Root_Ownership :: enum {
+	Host,
+	Application,
 }
 
 @(private)
@@ -98,7 +117,13 @@ run_hosted_config :: proc(
 
 	describe :: proc(data: rawptr, ctx: ^alicorn.UI, _width, _height: int, _dpi: f32) {
 		state := cast(^Hosted_Run_State(T))data
-		state.render(state.app, ctx)
+		if state.root_ownership == .Application {
+			// Native Application.build contract: the application opens and closes
+			// its own root. Overlays are its responsibility.
+			state.render(state.app, ctx)
+		} else {
+			_ = run_describe(state, ctx)
+		}
 	}
 	describe_overlays :: proc(data: rawptr, ctx: ^alicorn.UI, _width, _height: int, _dpi: f32) {
 		state := cast(^Hosted_Run_State(T))data
@@ -186,6 +211,10 @@ run_hosted_config :: proc(
 		state := cast(^Hosted_Run_State(T))data
 		if state.on_tick != nil { state.on_tick(state.app, rt) }
 	}
+	after_frame :: proc(data: rawptr, rt: ^alicorn.Runtime) {
+		state := cast(^Hosted_Run_State(T))data
+		if state.on_after_frame != nil { state.on_after_frame(state.app, rt) }
+	}
 	menu_command :: proc(data: rawptr, rt: ^alicorn.Runtime, command: alicorn.Action_ID) {
 		state := cast(^Hosted_Run_State(T))data
 		if state.on_menu_command != nil { state.on_menu_command(state.app, rt, command) }
@@ -258,9 +287,12 @@ run_hosted_config :: proc(
 	if run_state.on_scheduled_wake != nil { config.on_scheduled_wake = scheduled_wake }
 	if run_state.on_file_drop != nil { config.on_file_drop = file_drop }
 	if run_state.on_tick != nil { config.on_tick = tick }
+	if run_state.on_after_frame != nil { config.on_after_frame = after_frame }
 	if run_state.on_menu_command != nil { config.on_menu_command = menu_command }
 	if run_state.on_close_requested != nil { config.on_close_requested = close_requested }
 	if run_state.on_dialog != nil { config.on_dialog = dialog }
-	if run_state.render_overlays != nil { config.render_overlays = describe_overlays }
+	if run_state.root_ownership == .Application && run_state.render_overlays != nil {
+		config.render_overlays = describe_overlays
+	}
 	return config
 }

@@ -480,7 +480,12 @@ raw_child_stop :: proc(state: rawptr) {
 
 hosted_render :: proc(state: rawptr, ctx: ^alicorn.UI, _width, _height: int, _dpi: f32) {
 	app := cast(^App)state
+	if alicorn.container_begin(
+		ctx, .Root, label="alicorn.workload.hosted.root", key="alicorn.workload.hosted.root",
+		style=alicorn.layout_style(.Column, grow=1),
+	) == 0 { return }
 	describe_frame(app, ctx)
+	alicorn.container_end(ctx)
 }
 
 hosted_wake :: proc(state: rawptr, rt: ^alicorn.Runtime) {
@@ -551,7 +556,12 @@ hosted_child_render :: proc(state: rawptr, ctx: ^alicorn.UI, _width, _height: in
 	child.frames_described += 1
 	sync.atomic_store(&child.frames_described, child.frames_described)
 	if child.rt == nil { child.rt = ctx.runtime }
+	if alicorn.container_begin(
+		ctx, .Root, label="alicorn.workload.hosted.child.root", key="alicorn.workload.hosted.child.root",
+		style=alicorn.layout_style(.Column, grow=1),
+	) == 0 { return }
 	workload_content(&child.scene, ctx)
+	alicorn.container_end(ctx)
 }
 
 hosted_child_wake :: proc(state: rawptr, _rt: ^alicorn.Runtime) {

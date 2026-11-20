@@ -3653,3 +3653,98 @@ activity strip or counters change (bounded, opt-in developer overlay); it does
 not rebuild text or allocate per frame. The browser host has no F10/F11/F12
 keyboard capture surface; the shared core is ready for one, but browser
 diagnostics remain future work.
+
+## Stage B slice 4: hosted root ownership and after-frame ordering (2026-11-20)
+
+Real Scratchpad dogfooding exposed two hosted-runtime contract defects that
+Scratchpad had been compensating for in its adapter:
+
+- `Hosted_Runtime` always opened its own `ui-root` `.Column` around the
+  application description. Scratchpad describes its workbench `.Root` directly
+  and then describes Quick Open, modals, context menus, and floating-window
+  scenes as top-level layers. Under the host wrapper those layers became
+  children of a column and laid out relative to the wrong ancestor; the
+  founder's screenshot showed Quick Open underneath a compressed workbench.
+- The hosted runtime had no post-frame hook. Scratchpad's `after_frame` work
+  (focus restoration, scroll restoration, deferred geometry) was deferred to
+  the next description, so it never ran when no later frame was requested.
+  Its smoke had moved publication assertions into the description phase to hide
+  that gap.
+
+The reference `native/sdl_gpu` host does not wrap: `Application.build` owns the
+root, runs `end_frame`, then runs the application's after-frame code before the
+host presents. The hosted runtime now matches that ordering and root contract.
+
+### Contract changes
+
+- `Hosted_Runtime` calls `begin_frame`/`end_frame` but does not add a host root.
+  `Hosted_Runtime_Config.render` must open and close the application's own
+  `.Root`, exactly like `Application.build`. The application root's bounds are
+  the content viewport; host-owned chrome continues through
+  `content_inset_top` (the application viewport is reduced and paint is
+  translated below the band), not through a wrapper. `render_overlays` runs at
+  top level after the application root closes.
+- `Hosted_Step_Result.root` is the application root described in the settled
+  pass (the top-level `.Root` node, with a top-level fallback for malformed
+  descriptions).
+- `Hosted_Runtime_Config.on_after_frame` and `Hosted_After_Frame_Proc` were
+  added. Ordering is `prepare -> begin_frame -> describe -> end_frame ->
+  after_frame -> present/commit acknowledgement`. The hook runs after
+  `end_frame` of the same pass, after layout, on every described frame
+  including the last one before idle, and does not wait for another
+  description. A hook that changes retained state calls `invalidate_root`; the
+  bounded stabilization loop then rebuilds in the same step.
+- `Hosted_Run_State` gained `on_after_frame` and an internal
+  `root_ownership` selector. `ui.run` and the browser `run` keep the
+  host-owned-root `ui.run` callback contract. `ui/webgpu.run` selects
+  `Hosted_Root_Ownership.Application`, so its `render` owns the root and
+  overlays are top-level, matching `native/sdl_gpu`. Native `ui.run` accepts
+  `on_after_frame` and runs it after `end_frame` in its build callback.
+- Alicorn-side hosted consumers that relied on the implicit wrapper now own
+  their root: example 15's native/browser feasibility render, example 16's
+  default and auxiliary render, the workload matrix hosted renderers, and the
+  runtime hosted fixtures. Example 16's smoke renderers already owned roots.
+
+Regression coverage lives in `runtime/hosted_contract_test.odin`: the
+application root is a top-level node with exact window content bounds, a modal
+overlay is a top-level sibling with viewport bounds, content inset reduces the
+root/viewport instead of adding a wrapper, after-frame runs after `end_frame`
+with finalized geometry on every described frame, a second step with no
+description does not defer it, and an after-frame invalidation rebuilds in the
+same step. The existing hosted, chrome, diagnostics, multisurface, services,
+menus, SDL3, and UI tests were updated where their fixtures relied on the
+wrapper.
+
+The earlier B2 smoke workaround (publication evidence asserted during the
+description phase) was Scratchpad-side. Once Scratchpad adopts
+`on_after_frame`, its adapter should move that work back to the after-frame
+position; Stage B wrap-up owns that Scratchpad change.
+
+### Validation (Windows x64, RTX 2080 SUPER)
+
+- Alicorn suites run individually with the pinned AccessKit arguments:
+  runtime 405 (including the four new hosted contract tests), host/sdl3 7,
+  host/sdl3/input 8, host/sdl3/clipboard 3, host/sdl3/dialogs 5, host/menus 8,
+  host/web 14, host/diagnostics 9, host/presentation 6, renderer/webgpu 6,
+  ui 50, testui 13, theme 37, renderer/cpu 23, native/sdl_gpu 169, and
+  native/scroll_capture_tests 6. All passed. `odin build tests` plus
+  `out/alicorn_tests.exe`, `tools/test_restoration.ps1`, and the SDL_GPU
+  `--text-input-contract-test` also passed. `tools/test.ps1` itself stopped in
+  the AccessKit binding check because its test runner writes INFO records to
+  stderr under Windows PowerShell 5.1 with `$ErrorActionPreference = 'Stop'`;
+  every stage was then run individually with the same arguments.
+- All examples built with `tools/build_examples.ps1`'s arguments (including
+  `-define:WGPU_SHARED=true` for example 16).
+- `examples/16_native_webgpu_ui` `--smoke`, `--workbench-smoke`,
+  `--titlebar-smoke`, `--child-chrome-smoke`, `--menu-smoke`, and
+  `--services-smoke` passed on `--backend=d3d12`, `--backend=vulkan`, and the
+  reference `--backend=sdl-gpu` path. `--test-diagnostics-sequence` on D3D12
+  still produced HUD, bounds, and plain capture bundles with the screenshot.
+- Scratchpad (`codex/issue-211-webgpu-frontend` at `bfb2aed`, read-only
+  worktree, candidate root this branch) built against this worktree and passed
+  the full native session smoke on `--renderer=webgpu --backend=d3d12` and
+  `--backend=vulkan`, including both clean and unsaved-recovery launches:
+  `publication_rendered`, `wake_observed`, `ordered_shutdown`, and
+  `session_restore` were true. No Scratchpad source or lock file was changed.
+  The Quick Open/modal visual regression remains for the founder's hands-on
+  check; the hosted contract test now proves the overlay ancestry directly.

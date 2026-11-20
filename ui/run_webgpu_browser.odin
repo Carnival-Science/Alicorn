@@ -68,6 +68,7 @@ run :: proc(
 	window_chrome_metrics: alicorn.Window_Chrome_Metrics_Proc = nil,
 	window_chrome_layout: alicorn.Window_Chrome_Layout_Proc = nil,
 	window_chrome_appearance: alicorn.Window_Chrome_Appearance_Proc = nil,
+	on_after_frame: proc(^T, ^alicorn.Runtime) = nil,
 ) {
 	_ = title
 	_ = smoke
@@ -101,6 +102,7 @@ run :: proc(
 		on_drag=on_drag, on_scroll_capture=on_scroll_capture, on_scroll=on_scroll,
 		on_text_input=on_text_input, on_scheduled_wake=on_scheduled_wake,
 		on_file_drop=on_file_drop, on_tick=on_tick,
+		on_after_frame=on_after_frame,
 		on_menu_command=on_menu_command, on_close_requested=on_close_requested,
 		on_dialog=on_dialog,
 	}

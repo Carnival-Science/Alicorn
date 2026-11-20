@@ -664,6 +664,10 @@ native_hosted_initialize_runtime :: proc(_data: rawptr, rt: ^alicorn.Runtime) {
 
 native_hosted_render :: proc(data: rawptr, ui: ^alicorn.UI, _width, _height: int, _dpi: f32) {
 	app := cast(^Native_Hosted_Feasibility_App)data
+	if alicorn.container_begin(
+		ui, .Root, label="native-hosted-root", key="native-hosted-root",
+		style=alicorn.layout_style(.Column, grow=1),
+	) == 0 { return }
 	alicorn.text(
 		ui, "Shared Alicorn WebGPU host",
 		key=alicorn.key_string("native-hosted-title"),
@@ -702,6 +706,7 @@ native_hosted_render :: proc(data: rawptr, ui: ^alicorn.UI, _width, _height: int
 		style=alicorn.layout_style(.Row, width=360, height=40, padding=8),
 	)
 	_ = alicorn.text_input_target(ui, app.generic_text_owner)
+	alicorn.container_end(ui)
 }
 
 native_hosted_smoke_click_button :: proc() {

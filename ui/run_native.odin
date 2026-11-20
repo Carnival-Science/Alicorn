@@ -412,6 +412,8 @@ run_application :: proc(
 		if !should_build { return 0 }
 		root := run_describe(cast(^Hosted_Run_State(T))data, &ctx)
 		alicorn.end_frame(&ctx)
+		state := cast(^Hosted_Run_State(T))data
+		if state.on_after_frame != nil { state.on_after_frame(state.app, rt) }
 		return root
 	}
 	initialize :: proc(data: rawptr, rt: ^alicorn.Runtime) {
@@ -627,6 +629,7 @@ run :: proc(
 	window_chrome_metrics: alicorn.Window_Chrome_Metrics_Proc = nil,
 	window_chrome_layout: alicorn.Window_Chrome_Layout_Proc = nil,
 	window_chrome_appearance: alicorn.Window_Chrome_Appearance_Proc = nil,
+	on_after_frame: proc(^T, ^alicorn.Runtime) = nil,
 ) {
 	run_state := Hosted_Run_State(T){
 		app=state, render=render, render_overlays=render_overlays,
@@ -644,6 +647,7 @@ run :: proc(
 		on_drag=on_drag, on_scroll_capture=on_scroll_capture, on_scroll=on_scroll,
 		on_text_input=on_text_input, on_scheduled_wake=on_scheduled_wake,
 		on_file_drop=on_file_drop, on_tick=on_tick,
+		on_after_frame=on_after_frame,
 		on_menu_command=on_menu_command, on_close_requested=on_close_requested,
 		on_dialog=on_dialog,
 	}

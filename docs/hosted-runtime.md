@@ -33,10 +33,25 @@ into its surface and that native IME and accessibility behavior remain correct.
 
 ## Create and describe a session
 
-`render` describes the application content inside Alicorn's root. It does not
-call `begin_frame` or `end_frame`; the session does that. `on_initialize` runs
-after Runtime creation and before the first description, so it can install
-application fonts. `on_start` runs before the first step.
+`render` owns the application root, exactly like `native/sdl_gpu`'s
+`Application.build`: open one `.Root` container, describe its children, and
+close it before returning. The session calls `begin_frame`/`end_frame` around
+the callback but does not add a host root column, so the application root's
+bounds are the content viewport (reduced only by host-owned `content_inset_top`)
+and overlay layers described with `modal_overlay_begin` resolve against the same
+root as they do under the reference host. `on_initialize` runs after Runtime
+creation and before the first description, so it can install application fonts.
+`on_start` runs before the first step.
+
+`Hosted_Runtime_Config.on_after_frame` runs after `end_frame` of the same
+description pass and before the host presents that frame:
+`describe -> end_frame -> after_frame -> present`. It runs on every described
+frame, including the last one before an idle period, and does not depend on
+another frame being scheduled. Use it for post-layout work such as focus or
+scroll restoration. If it changes retained layout or paint state, it must call
+`invalidate_root`; the bounded stabilization loop then runs another description
+in the same step. `ui.run`, `ui/webgpu.run`, and the browser `run` expose the
+same hook as `on_after_frame`.
 
 ```odin
 import alicorn "alicorn:runtime"
@@ -49,14 +64,14 @@ describe :: proc(data: rawptr, ui: ^alicorn.UI, width, height: int, dpi: f32) {
 	app := (^App)(data)
 	if alicorn.container_begin(
 		ui,
-		.Column,
-		key="hosted-content",
-		style=alicorn.layout_style(.Column, padding=24, gap=12),
-	) != 0 {
-		alicorn.text(ui, "Hosted by the application", key="heading")
-		alicorn.text(ui, fmt.tprintf("Count: %d", app.count), key="count")
-		alicorn.container_end(ui)
-	}
+		.Root,
+		label="app-root",
+		key="app-root",
+		style=alicorn.layout_style(.Column, grow=1, padding=24, gap=12),
+	) == 0 { return }
+	alicorn.text(ui, "Hosted by the application", key="heading")
+	alicorn.text(ui, fmt.tprintf("Count: %d", app.count), key="count")
+	alicorn.container_end(ui)
 }
 
 // post_wake posts a custom event to the host's normal UI queue. The queued
@@ -165,6 +180,7 @@ on_text_input        proc(state, rt, owner: Node_ID, Hosted_Text_Input_Event)
 on_scheduled_wake    proc(state, rt, class: Scheduled_Wake_Class)
 on_file_drop         proc(state, rt, path: string)
 on_tick              proc(state, rt)
+on_after_frame       proc(state, rt)
 on_menu_command      proc(state, rt, command: Action_ID)
 on_close_requested   proc(state, rt) -> Hosted_Close_Result
 on_dialog            proc(state, rt, result: ^File_Dialog_Result)
@@ -219,13 +235,17 @@ Both native SDL3 hosts share `host/sdl3/dialogs`, so the dialog request,
 copying, callback, and wake policy have one implementation rather than two.
 
 `ui.run_hosted_config` adapts `Hosted_Run_State` to these fields, and
-`ui/webgpu.run` exposes them with the same shapes. Both `ui.run` entry points
-default `interaction_update_policy` to `.Correct_After_Interaction`; pass
-`.Explicit` to keep host-driven invalidation only. The hosted description loop
-mirrors the native bounded stabilization pass limit (four descriptions). The
-browser host publishes ticks and scheduled wakes, records the interaction
-policy, and has no file-drop or synchronous clipboard event; its
-`UI_Host_Services.clipboard` remains asynchronous.
+`ui/webgpu.run` exposes them with the same shapes. `ui.run` and the browser
+`run` keep the host-owned-root callback contract: their `render` describes
+content inside a host root. `ui/webgpu.run` uses `Hosted_Root_Ownership.Application`,
+so its `render` owns the root exactly like `native/sdl_gpu`, and
+`render_overlays` is described as a top-level layer after the application root
+closes. Both `ui.run` entry points default `interaction_update_policy` to
+`.Correct_After_Interaction`; pass `.Explicit` to keep host-driven invalidation
+only. The hosted description loop mirrors the native bounded stabilization pass
+limit (four descriptions). The browser host publishes ticks and scheduled wakes,
+records the interaction policy, and has no file-drop or synchronous clipboard
+event; its `UI_Host_Services.clipboard` remains asynchronous.
 
 ## Native menus
 

@@ -222,6 +222,15 @@ runs. `ui.run` also accepts optional typed `on_key`, `on_text_change`, and
 not require those callbacks. Use the lower-level `host.Run` loop when custom
 event ordering or native services are needed.
 
+`ui.run`, `ui/webgpu.run`, and the browser `run` also accept `on_after_frame`,
+a per-frame hook that runs after `end_frame` of the same description and before
+presentation. Unlike `ui.after_frame`, it is not one-shot: it runs on every
+described frame, including the last one before idle, and may invalidate the
+Runtime to request a same-step corrective description. `ui.run` and the browser
+`run` keep the host-owned-root callback contract; `ui/webgpu.run` uses the
+native `Application.build` contract, so its `render` opens and closes the
+application's own `.Root` and treats `render_overlays` as a top-level layer.
+
 ## Native application host
 
 Import `native/sdl_gpu` as a host package and pass an `Application` to `Run`.

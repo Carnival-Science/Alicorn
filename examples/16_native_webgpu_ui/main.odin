@@ -146,6 +146,10 @@ render :: proc(app: ^App, ctx: ^ui.UI) {
 		workbench_render(app, ctx)
 		return
 	}
+	if alicorn.container_begin(
+		ctx, .Root, label="native-renderer-root", key="native-renderer-root",
+		style=alicorn.layout_style(.Column, grow=1),
+	) == 0 { return }
 	if ui.column(ctx, padding=24, gap=12) {
 		ui.text(ctx, "Native WebGPU UI", size=24)
 		ui.text(ctx, "The retained runtime and surface presenter are shared with the browser host.")
@@ -198,6 +202,7 @@ render :: proc(app: ^App, ctx: ^ui.UI) {
 			}
 		}
 	}
+	alicorn.container_end(ctx)
 }
 
 TITLEBAR_SMOKE_TAB_DRAG :: alicorn.Drag_Type(0x746162)
@@ -514,6 +519,10 @@ auxiliary_render :: proc(data: rawptr, ctx: ^alicorn.UI, _width, _height: int, _
 		child_chrome_render(child, ctx)
 		return
 	}
+	if alicorn.container_begin(
+		ctx, .Root, label="auxiliary-root", key="auxiliary-root",
+		style=alicorn.layout_style(.Column, grow=1),
+	) == 0 { return }
 	if ui.column(ctx, padding=24, gap=12) {
 		ui.text(ctx, "Independent retained surface", size=22)
 		ui.text(ctx, "This window has its own focus, input state, and Runtime on the shared WebGPU device.")
@@ -522,6 +531,7 @@ auxiliary_render :: proc(data: rawptr, ctx: ^alicorn.UI, _width, _height: int, _
 			ui.ui_window_close(child.windows)
 		}
 	}
+	alicorn.container_end(ctx)
 }
 
 child_chrome_metrics :: proc(data: rawptr, _rt: ^alicorn.Runtime, metrics: alicorn.Window_Chrome_Metrics) {

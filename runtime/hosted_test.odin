@@ -35,6 +35,13 @@ Hosted_Test_App :: struct {
 hosted_test_render :: proc(data: rawptr, ui: ^UI, width, height: int, dpi: f32) {
 	app := (^Hosted_Test_App)(data)
 	app.descriptions += 1
+	if container_begin(
+		ui,
+		.Root,
+		label="hosted-test-root",
+		key="hosted-test-root",
+		style=layout_style(.Column, grow=1),
+	) == 0 { return }
 	app.button, _ = button_ex(ui, "Source", key="hosted-source", style=layout_style(width=100, height=36))
 	_ = drag_source(ui, DRAG_TEST_TYPE, DRAG_SCROLL_SOURCE)
 	app.field = text_field(ui, "seed", key="hosted-field", style=layout_style(width=180, height=36))
@@ -48,6 +55,7 @@ hosted_test_render :: proc(data: rawptr, ui: ^UI, width, height: int, dpi: f32) 
 	button(ui, "Target", key="hosted-target", style=layout_style(width=180, height=36))
 	_ = drop_target(ui, DRAG_TEST_TYPE, DRAG_SCROLL_TARGET, .On)
 	scroll_region_end(ui)
+	container_end(ui)
 }
 
 hosted_test_post :: proc(data: rawptr) -> bool {
@@ -173,6 +181,13 @@ hosted_key_route_post :: proc(_data: rawptr) -> bool {
 
 hosted_key_route_render :: proc(data: rawptr, ui: ^UI, _width, _height: int, _dpi: f32) {
 	state := (^Hosted_Key_Route_Test_State)(data)
+	if container_begin(
+		ui,
+		.Root,
+		label="hosted-key-route-root",
+		key="hosted-key-route-root",
+		style=layout_style(.Column, grow=1),
+	) == 0 { return }
 	state.scope_owner = container_begin(
 		ui,
 		.Container,
@@ -193,6 +208,7 @@ hosted_key_route_render :: proc(data: rawptr, ui: ^UI, _width, _height: int, _dp
 		rawptr(state),
 		Interaction_Scope_Options{keys={.Find}},
 	)
+	container_end(ui)
 }
 
 hosted_key_route_key :: proc(data: rawptr, _rt: ^Runtime, _owner: Node_ID, event: Hosted_Key_Event) -> bool {

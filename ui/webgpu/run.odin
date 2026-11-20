@@ -9,9 +9,12 @@ import sdl3_clipboard "alicorn:host/sdl3/clipboard"
 import host "alicorn:host/sdl3"
 
 // run is the opt-in native WebGPU entry point for dogfooding the shared
-// WebGPU renderer through SDL3. It preserves the ui.run callback model while
-// leaving ui.run on SDL_GPU until the renderer's migration acceptance gates
-// pass. It lives in its own package so SDL_GPU-only consumers of alicorn:ui
+// WebGPU renderer through SDL3. It keeps the ui.run callback vocabulary but
+// uses the reference native host's description contract: `render` opens and
+// closes the application's own root (no implicit host root column), and
+// `render_overlays` describes a top-level layer after that root. `on_after_frame`
+// runs after end_frame of the same description pass and before presentation.
+// It lives in its own package so SDL_GPU-only consumers of alicorn:ui
 // do not compile the WebGPU host or require wgpu-native at build time.
 //
 // on_services supplies host capabilities before on_start. The WebGPU host
@@ -56,9 +59,11 @@ run :: proc(
 	window_chrome_metrics: alicorn.Window_Chrome_Metrics_Proc = nil,
 	window_chrome_layout: alicorn.Window_Chrome_Layout_Proc = nil,
 	window_chrome_appearance: alicorn.Window_Chrome_Appearance_Proc = nil,
+	on_after_frame: proc(^T, ^alicorn.Runtime) = nil,
 ) {
 	run_state := ui.Hosted_Run_State(T){
 		app=state, render=render, render_overlays=render_overlays,
+		root_ownership=.Application,
 		menus=menus, menu_presentation=menu_presentation,
 		window_decorations=window_decorations,
 		window_chrome_height=window_chrome_height,
@@ -73,6 +78,7 @@ run :: proc(
 		on_drag=on_drag, on_scroll_capture=on_scroll_capture, on_scroll=on_scroll,
 		on_text_input=on_text_input, on_scheduled_wake=on_scheduled_wake,
 		on_file_drop=on_file_drop, on_tick=on_tick,
+		on_after_frame=on_after_frame,
 		on_menu_command=on_menu_command, on_close_requested=on_close_requested,
 		on_dialog=on_dialog,
 	}

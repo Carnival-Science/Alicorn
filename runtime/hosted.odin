@@ -34,6 +34,15 @@ Hosted_File_Drop_Proc :: proc(state: rawptr, rt: ^Runtime, path: string)
 // the same bounded 60 Hz cadence as the native host and never use it as an
 // idle poll.
 Hosted_Tick_Proc :: proc(state: rawptr, rt: ^Runtime)
+// Hosted_After_Frame_Proc runs after end_frame for the same description pass
+// and before the host presents that frame. It mirrors the reference SDL_GPU
+// application ordering: prepare -> begin_frame -> describe -> end_frame ->
+// after_frame -> present/commit acknowledgement. It runs on every completed
+// description pass, including the last one, whether or not another frame is
+// scheduled. Post-layout work such as focus restoration, scroll restoration,
+// and deferred geometry fixes belongs here; a callback that changes retained
+// layout or paint state must explicitly invalidate the supplied Runtime.
+Hosted_After_Frame_Proc :: proc(state: rawptr, rt: ^Runtime)
 // Hosted_Monotonic_Now_Proc supplies the monotonic nanosecond domain used for
 // scheduler deadlines and interaction timestamps. Hosts should install the
 // same clock they pass to hosted_runtime_step; when omitted, the last step
@@ -263,6 +272,11 @@ Hosted_Runtime_Config :: struct {
 	// pass the same clock used for hosted_runtime_step.
 	monotonic_now: Hosted_Monotonic_Now_Proc,
 	monotonic_now_data: rawptr,
+	// on_after_frame runs after end_frame of the description pass that just
+	// completed and before presentation, matching the reference host's
+	// build-then-after-frame ordering. It runs every described frame, including
+	// the final frame before an idle period.
+	on_after_frame: Hosted_After_Frame_Proc,
 }
 
 Hosted_Runtime :: struct {
@@ -328,6 +342,7 @@ Hosted_Runtime_State :: struct {
 	on_dialog: Hosted_Dialog_Proc,
 	on_file_drop: Hosted_File_Drop_Proc,
 	on_tick: Hosted_Tick_Proc,
+	on_after_frame: Hosted_After_Frame_Proc,
 	interaction_update_policy: Interaction_Update_Policy,
 	monotonic_now: Hosted_Monotonic_Now_Proc,
 	monotonic_now_data: rawptr,
@@ -430,6 +445,7 @@ hosted_runtime_init :: proc(host: ^Hosted_Runtime, config: Hosted_Runtime_Config
 		on_dialog=config.on_dialog,
 		on_file_drop=config.on_file_drop,
 		on_tick=config.on_tick,
+		on_after_frame=config.on_after_frame,
 		interaction_update_policy=config.interaction_update_policy,
 		monotonic_now=config.monotonic_now,
 		monotonic_now_data=config.monotonic_now_data,
@@ -609,6 +625,30 @@ hosted_tick_deadline :: proc(state: ^Hosted_Runtime_State, now_ns: u64) -> u64 {
 	return hosted_deadline_after(state.last_tick_ns, HOSTED_TICK_INTERVAL_NS)
 }
 
+// hosted_description_root identifies the application root described in the
+// open frame. The reference host requires the application description to own
+// its root, so a top-level `.Root` node is authoritative; a top-level node of
+// another kind is adopted as a fallback so a malformed description still
+// reports something useful to the host.
+@(private)
+hosted_description_root :: proc(rt: ^Runtime) -> Node_ID {
+	fallback: Node_ID
+	for item in rt.pending {
+		if item.kind != .Description { continue }
+		description := item.description
+		if description.parent != 0 { continue }
+		if fallback == 0 { fallback = description.id }
+		if description.kind == .Root { return description.id }
+	}
+	return fallback
+}
+
+// hosted_root_describe runs one bounded application description sequence. The
+// application's description establishes the root directly, exactly like
+// native/sdl_gpu's Application.build contract; the hosted runtime does not wrap
+// it in a host-owned root column. Host-owned chrome remains expressed through
+// content_inset_top, which reduces the application viewport, and host chrome /
+// diagnostics paint are appended at the presentation boundary.
 hosted_root_describe :: proc(state: ^Hosted_Runtime_State) -> Node_ID {
 	rt := &state.runtime
 	root: Node_ID
@@ -617,19 +657,16 @@ hosted_root_describe :: proc(state: ^Hosted_Runtime_State) -> Node_ID {
 		interaction_sequence := rt.interaction_consumption_sequence
 		ui, should_build := begin_frame(rt)
 		if !should_build { break }
-		root = container_begin(
-			&ui,
-			.Root,
-			label="ui-root",
-			key="alicorn.hosted.root",
-			style=layout_style(.Column, grow=1),
-		)
-		if root != 0 {
-			state.render(state.app_state, &ui, state.logical_width, state.logical_height, state.dpi_scale)
-			container_end(&ui)
-			if state.render_overlays != nil { state.render_overlays(state.app_state, &ui, state.logical_width, state.logical_height, state.dpi_scale) }
+		state.render(state.app_state, &ui, state.logical_width, state.logical_height, state.dpi_scale)
+		root = hosted_description_root(rt)
+		if state.render_overlays != nil {
+			state.render_overlays(state.app_state, &ui, state.logical_width, state.logical_height, state.dpi_scale)
 		}
 		end_frame(&ui)
+		// Post-layout application work runs after end_frame of this same pass and
+		// before the host presents it, matching native/sdl_gpu. It runs even when
+		// no further frame is scheduled.
+		if state.on_after_frame != nil { state.on_after_frame(state.app_state, rt) }
 		passes += 1
 		if state.interaction_update_policy == .Correct_After_Interaction &&
 		   rt.interaction_consumption_sequence != interaction_sequence && !rt.invalidated {
