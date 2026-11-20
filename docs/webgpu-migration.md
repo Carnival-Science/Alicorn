@@ -4161,7 +4161,7 @@ the insertion marker remains the drop target's own paint below the copy.
 - The captured mid-drag frames are pixel-identical between hosted D3D12 and the
   SDL_GPU reference: 0 of 381,984 pixels differ over the full 736x519 frame, and
   0 of 4,800 in the lifted-tab rectangle.
-- Suites run individually: runtime (413, including the three new fixtures),
+- Suites run individually: runtime (410, including the three new fixtures),
   host/sdl3, host/sdl3/live_resize, host/sdl3/input, host/sdl3/clipboard,
   host/sdl3/dialogs, host/menus, host/web, host/diagnostics,
   host/presentation, renderer/webgpu, renderer/cpu, ui, testui, theme,

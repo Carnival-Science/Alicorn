@@ -105,7 +105,7 @@ preview rect differing pixels 0 of 4800 max channel delta 0
 
 ### Suites and app validation
 
-- Suites run individually with the pinned AccessKit arguments: runtime 413
+- Suites run individually with the pinned AccessKit arguments: runtime 410
   (includes the three new fixtures), host/sdl3, host/sdl3/live_resize,
   host/sdl3/input, host/sdl3/clipboard, host/sdl3/dialogs, host/menus, host/web,
   host/diagnostics, host/presentation, renderer/webgpu, renderer/cpu, ui,
