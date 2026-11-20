@@ -294,6 +294,30 @@ sdl3_webgpu_run_loss_injection_requested :: proc() -> bool {
 	return false
 }
 
+// sdl3_webgpu_run_diagnostics_test_requested enables a deterministic host
+// self-test for the shared diagnostics wiring. It invokes the same F10/F11/F12
+// handlers the window dispatches, so automated validation does not depend on
+// window focus or synthetic input. It is a test seam, not a product feature.
+@(private)
+sdl3_webgpu_run_diagnostics_test_requested :: proc() -> bool {
+	for argument in os.args {
+		if argument == "--test-diagnostics-sequence" { return true }
+	}
+	return false
+}
+
+// sdl3_webgpu_run_encode_failure_test_requested injects one presentation-
+// boundary encode failure after the first frame. The host must then still write
+// a diagnostics bundle (retained state, pending commands, counters) before it
+// reports the failure.
+@(private)
+sdl3_webgpu_run_encode_failure_test_requested :: proc() -> bool {
+	for argument in os.args {
+		if argument == "--test-diagnostics-present-failure" { return true }
+	}
+	return false
+}
+
 @(private)
 sdl3_webgpu_run_timing_percentiles :: proc(samples: []u64) -> (p50, p95, p99: u64) {
 	if len(samples) == 0 { return }
@@ -406,6 +430,14 @@ sdl3_webgpu_run_dispatch_event :: proc(
 		presentation_host.hosted_surface_presenter_note_input(&application.presenter)
 	}
 	return result
+}
+
+@(private)
+sdl3_webgpu_run_application_has_pending_work :: proc(application: ^SDL3_WebGPU_Application) -> bool {
+	if application == nil || !application.initialized { return false }
+	rt, status := alicorn.hosted_runtime_borrow(&application.hosted)
+	if status != .Ok { return false }
+	return rt.invalidated || alicorn.frame_needs_submission(rt)
 }
 
 @(private)
@@ -681,6 +713,7 @@ sdl3_webgpu_run :: proc(
 		return .WebGPU_Failure
 	}
 	if state.device_lost { return .Device_Lost }
+	backend_name, backend_detail: string
 	if info, info_status := wgpu.AdapterGetInfo(state.adapter); info_status == .Success {
 		fmt.printf(
 			"[alicorn-webgpu] adapter backend=%v type=%v vendor=%s architecture=%s device=%s description=%s\n",
@@ -691,9 +724,20 @@ sdl3_webgpu_run :: proc(
 			info.device,
 			info.description,
 		)
+		backend_name = fmt.aprintf("webgpu/%v", info.backendType)
+		backend_detail = fmt.aprintf(
+			"adapter_type=%v vendor=%s architecture=%s device=%s description=%s",
+			info.adapterType, info.vendor, info.architecture, info.device, info.description,
+		)
 		wgpu.AdapterInfoFreeMembers(info)
 	} else {
 		fmt.printf("[alicorn-webgpu] adapter details unavailable status=%v\n", info_status)
+		backend_name = "webgpu/unknown"
+		backend_detail = "adapter details unavailable"
+	}
+	defer {
+		delete(backend_name)
+		delete(backend_detail)
 	}
 
 	application: SDL3_WebGPU_Application
@@ -703,6 +747,12 @@ sdl3_webgpu_run :: proc(
 		data=rawptr(&quit_requested),
 		request=sdl3_webgpu_run_request_quit,
 	}
+	// Host diagnostics own the F10/F11/F12 behavior and their overlays. Installing
+	// the paint provider on the shared hosted config gives every ui/webgpu.run
+	// consumer the same overlays with no application-side opt-in.
+	diagnostics: SDL3_Diagnostics
+	application_config.diagnostics_paint = sdl3_diagnostics_paint
+	application_config.diagnostics_paint_data = rawptr(&diagnostics)
 	if result := sdl3_webgpu_application_init(
 		&application,
 		application_config,
@@ -719,6 +769,14 @@ sdl3_webgpu_run :: proc(
 		if result == .Runtime_Failure { return .Runtime_Failure }
 		return .Presenter_Failure
 	}
+	if !sdl3_diagnostics_init(&diagnostics, &application, backend_name, backend_detail) {
+		_ = sdl3_webgpu_application_destroy(&application)
+		sdl3_webgpu_window_manager_destroy(
+			&window_manager, state.instance, state.device, state.device_lost,
+		)
+		return .Presenter_Failure
+	}
+	defer sdl3_diagnostics_destroy(&diagnostics)
 	state.application = &application
 	defer sdl3_webgpu_run_destroy_application(&application, &state)
 	defer sdl3_webgpu_run_destroy_windows(rawptr(&state))
@@ -760,9 +818,43 @@ sdl3_webgpu_run :: proc(
 	inject_loss_after_present := sdl3_webgpu_run_loss_injection_requested()
 	remove_d3d12_device_after_present := sdl3_webgpu_run_d3d12_removal_requested()
 	expect_post_recovery_present := false
+	diagnostics_test_enabled := sdl3_webgpu_run_diagnostics_test_requested()
+	diagnostics_test_step := 0
+	fail_encode_after_present := sdl3_webgpu_run_encode_failure_test_requested()
 	for !quit_requested {
 		now_ns := u64(sdl3.GetTicksNS())
+		iteration_start_ns := now_ns
+		host_wake := false
 		state.last_now_ns = now_ns
+		if diagnostics_test_enabled {
+			for diagnostics_test_step < 7 &&
+			      now_ns >= started_ns+u64(diagnostics_test_step+1)*400_000_000 {
+				switch diagnostics_test_step {
+				case 0:
+					fmt.println("[alicorn-diagnostics-test] action=hud-on")
+					_ = sdl3_diagnostics_key(&diagnostics, sdl3.K_F10, {}, false)
+				case 1:
+					fmt.println("[alicorn-diagnostics-test] action=bounds-on")
+					_ = sdl3_diagnostics_key(&diagnostics, sdl3.K_F11, {}, false)
+				case 2:
+					fmt.println("[alicorn-diagnostics-test] action=capture-overlays")
+					_ = sdl3_diagnostics_key(&diagnostics, sdl3.K_F12, {}, false)
+				case 3:
+					fmt.println("[alicorn-diagnostics-test] action=hud-off")
+					_ = sdl3_diagnostics_key(&diagnostics, sdl3.K_F10, {}, false)
+				case 4:
+					fmt.println("[alicorn-diagnostics-test] action=bounds-off")
+					_ = sdl3_diagnostics_key(&diagnostics, sdl3.K_F11, {}, false)
+				case 5:
+					fmt.println("[alicorn-diagnostics-test] action=capture-plain")
+					_ = sdl3_diagnostics_key(&diagnostics, sdl3.K_F12, {}, false)
+				case 6:
+					fmt.println("[alicorn-diagnostics-test] action=quit")
+					quit_requested = true
+				}
+				diagnostics_test_step += 1
+			}
+		}
 		if window_manager.pending && !state.device_lost && !state.recovery_active {
 			if !sdl3_webgpu_window_create_pending(
 				&window_manager, state.configuration, clear_color,
@@ -782,15 +874,22 @@ sdl3_webgpu_run :: proc(
 			fmt.eprintln("[alicorn-webgpu] WebGPU device recovery failed")
 			return .Device_Lost
 		}
+		app_frame_pending_before_step := sdl3_webgpu_run_application_has_pending_work(&application)
 		step := sdl3_webgpu_application_step(&application, now_ns)
-		if step.status != .Ok { return .Runtime_Failure }
+		if step.status != .Ok {
+			_ = sdl3_diagnostics_capture(&diagnostics, "runtime step failed")
+			return .Runtime_Failure
+		}
 		steps += 1
 		if step.presentation == .No_Frame { no_frame_steps += 1 }
 		child_step: SDL3_WebGPU_Application_Step
 		child_stepped := window_manager.child != nil && !window_manager.pending_close
 		if child_stepped {
 			child_step = sdl3_webgpu_application_step(&window_manager.child.application, now_ns)
-			if child_step.status != .Ok { return .Runtime_Failure }
+			if child_step.status != .Ok {
+				_ = sdl3_diagnostics_capture(&diagnostics, "secondary runtime step failed")
+				return .Runtime_Failure
+			}
 			#partial switch child_step.presentation {
 			case .Ok:
 				child_did_present = true
@@ -798,7 +897,13 @@ sdl3_webgpu_run :: proc(
 			     .Surface_Acquire_Failure, .Present_Failure:
 				// A loss discovered inside the child step owns recovery; do not
 				// turn the expected presentation fallout into a host failure.
-				if !(state.device_lost && state.recovery_active) { return .Presenter_Failure }
+				if !(state.device_lost && state.recovery_active) {
+					_ = sdl3_diagnostics_capture(
+						&diagnostics,
+						fmt.tprintf("secondary presentation failed: %v", child_step.presentation),
+					)
+					return .Presenter_Failure
+				}
 			case .Suspended, .Retry_Later, .No_Frame, .Reconfigure_Required, .Hidden:
 			}
 		}
@@ -817,6 +922,14 @@ sdl3_webgpu_run :: proc(
 			did_present = true
 			presentations += 1
 			last_present_ns = now_ns
+			if fail_encode_after_present {
+				fail_encode_after_present = false
+				fmt.println(
+					"[alicorn-webgpu] test injection: forcing the next presentation encode to fail; diagnostics capture must still write a bundle",
+				)
+				presentation_host.hosted_surface_presenter_fail_next_encode_for_test(&application.presenter)
+				_ = alicorn.hosted_runtime_request_presentation(&application.hosted, "diagnostics encode-failure test")
+			}
 			if expect_post_recovery_present {
 				expect_post_recovery_present = false
 				sdl3_webgpu_run_test_trace("post-recovery frame presented")
@@ -862,6 +975,13 @@ sdl3_webgpu_run :: proc(
 					"frames_presented", presentations,
 					"device_lost", state.device_lost,
 				)
+				// Capture from retained runtime state, the pending command list,
+				// and the renderer counters. The screenshot path renders offscreen,
+				// so a presentation failure cannot block the investigation bundle.
+				_ = sdl3_diagnostics_capture(
+					&diagnostics,
+					fmt.tprintf("primary presentation failed: %v", step.presentation),
+				)
 				return .Presenter_Failure
 			}
 		case .Suspended, .Retry_Later, .No_Frame, .Reconfigure_Required, .Hidden:
@@ -882,16 +1002,24 @@ sdl3_webgpu_run :: proc(
 		if smoke && now_ns-started_ns > 15_000_000_000 { return .Smoke_Timeout }
 
 		event: sdl3.Event
+		event_pump_start := u64(sdl3.GetTicksNS())
 		for sdl3.PollEvent(&event) {
 			result := sdl3_webgpu_run_dispatch_event(&application, event)
 			switch result {
 			case .Close_Requested:
 				return .Ok
-			case .Close_Deferred, .Ignored, .Handled:
+			case .Close_Deferred, .Ignored:
+			case .Handled:
+				host_wake = true
 			case .Failure:
+				_ = sdl3_diagnostics_capture(&diagnostics, "event dispatch failed")
 				return .Event_Failure
 			case .Wake:
 				wake_events += 1
+				// Queue-completion and diagnostics wakes are host housekeeping,
+				// not application activity. Only a wake that leaves retained work
+				// pending counts as a host wake in the flight recorder.
+				if sdl3_webgpu_run_application_has_pending_work(&application) { host_wake = true }
 			}
 			if window_manager.child != nil {
 				child_result := sdl3_webgpu_run_dispatch_event(&window_manager.child.application, event)
@@ -900,12 +1028,14 @@ sdl3_webgpu_run :: proc(
 					window_manager.pending_close = true
 				case .Close_Deferred, .Ignored, .Handled:
 				case .Failure:
+					_ = sdl3_diagnostics_capture(&diagnostics, "secondary event dispatch failed")
 					return .Event_Failure
 				case .Wake:
 					wake_events += 1
 				}
 			}
 		}
+		sdl3_diagnostics_note_event_pump(&diagnostics, u64(sdl3.GetTicksNS())-event_pump_start)
 
 		if window_manager.pending_close && window_manager.child != nil {
 			_ = sdl3_webgpu_window_destroy(&window_manager)
@@ -934,6 +1064,16 @@ sdl3_webgpu_run :: proc(
 		}
 		if state.device_lost && !state.recovery_active { return .Device_Lost }
 
+		sdl3_diagnostics_after_step(
+			&diagnostics,
+			&application,
+			u64(sdl3.GetTicksNS()),
+			iteration_start_ns,
+			step.presentation == .Ok,
+			host_wake,
+			host_only_frame=step.presentation == .Ok && !app_frame_pending_before_step,
+		)
+
 		timeout_ms := -1
 		if state.recovery_active && !state.recovery_draining &&
 		   !state.adapter_pending && !state.device_pending {
@@ -961,6 +1101,20 @@ sdl3_webgpu_run :: proc(
 			poll_timeout := int(min(u64(1000), (until_poll+999_999)/1_000_000))
 			if timeout_ms < 0 || poll_timeout < timeout_ms { timeout_ms = poll_timeout }
 		}
+		if diagnostics.hud.visible {
+			// A new HUD sample or an overlay toggle requests one immediate frame;
+			// otherwise wake once at the shared idle/counter-expiry deadline.
+			if diagnostics.hud_redraw_pending {
+				timeout_ms = 0
+			} else if diagnostics.hud_deadline_ns != 0 {
+				if diagnostics.hud_deadline_ns <= now_ns {
+					timeout_ms = 0
+				} else {
+					hud_timeout := int(min(u64(1000), (diagnostics.hud_deadline_ns-now_ns+999_999)/1_000_000))
+					if timeout_ms < 0 || hud_timeout < timeout_ms { timeout_ms = hud_timeout }
+				}
+			}
+		}
 		if smoke && smoke_hold_ns > 0 && last_present_ns != 0 && now_ns >= last_present_ns {
 			remaining := smoke_hold_ns-(now_ns-last_present_ns)
 			hold_timeout := int(min(u64(1000), (remaining+999_999)/1_000_000))
@@ -970,15 +1124,20 @@ sdl3_webgpu_run :: proc(
 		if timeout_ms < 0 {
 			_ = sdl3.WaitEvent(&event)
 		} else if sdl3.WaitEventTimeout(&event, sdl3.Sint32(timeout_ms)) {
+			dispatch_start := u64(sdl3.GetTicksNS())
 			result := sdl3_webgpu_run_dispatch_event(&application, event)
 			switch result {
 			case .Close_Requested:
 				return .Ok
-			case .Close_Deferred, .Ignored, .Handled:
+			case .Close_Deferred, .Ignored:
+			case .Handled:
+				host_wake = true
 			case .Failure:
+				_ = sdl3_diagnostics_capture(&diagnostics, "event dispatch failed")
 				return .Event_Failure
 			case .Wake:
 				wake_events += 1
+				if sdl3_webgpu_run_application_has_pending_work(&application) { host_wake = true }
 			}
 			if window_manager.child != nil {
 			child_result := sdl3_webgpu_run_dispatch_event(&window_manager.child.application, event)
@@ -987,11 +1146,13 @@ sdl3_webgpu_run :: proc(
 					window_manager.pending_close = true
 				case .Close_Deferred, .Ignored, .Handled:
 				case .Failure:
+					_ = sdl3_diagnostics_capture(&diagnostics, "secondary event dispatch failed")
 					return .Event_Failure
 				case .Wake:
 					wake_events += 1
 				}
 			}
+			sdl3_diagnostics_note_event_pump(&diagnostics, u64(sdl3.GetTicksNS())-dispatch_start)
 		}
 	}
 	return .Ok

@@ -1,4 +1,4 @@
-package alicorn_sdl_gpu
+﻿package alicorn_sdl_gpu
 
 import "core:c"
 import alicorn "../../runtime"
@@ -161,64 +161,6 @@ native_solid_build :: proc(
 	}
 	renderer.upload_pending = len(renderer.vertices) > 0
 	return true
-}
-// Append a diagnostic-only bounds overlay after the application display list.
-// These quads are deliberately not retained in Alicorn: they are host
-// inspection geometry and disappear when the diagnostic mode is disabled.
-native_solid_append_debug_bounds :: proc(
-	renderer: ^Native_Solid_Renderer,
-	display: []alicorn.Paint_Command,
-	scale_x, scale_y: f32,
-	target_w, target_h: sdl3.Uint32,
-) {
-	color := [4]f32{1.0, 0.78, 0.16, 0.72}
-	visible_bounds_count := 0
-	for draw in display {
-		left := (draw.bounds.x + draw.translation[0]) * scale_x
-		top := (draw.bounds.y + draw.translation[1]) * scale_y
-		right := (draw.bounds.x + draw.bounds.w + draw.translation[0]) * scale_x
-		bottom := (draw.bounds.y + draw.bounds.h + draw.translation[1]) * scale_y
-		if left < 0 { left = 0 }
-		if top < 0 { top = 0 }
-		if right > f32(target_w) { right = f32(target_w) }
-		if bottom > f32(target_h) { bottom = f32(target_h) }
-		if right <= left || bottom <= top { continue }
-		visible_bounds_count += 1
-	}
-	required_vertices := len(renderer.vertices) + visible_bounds_count * 24
-	if required_vertices > cap(renderer.vertices) {
-		reserve(&renderer.vertices, required_vertices)
-	}
-	for draw in display {
-		left := (draw.bounds.x + draw.translation[0]) * scale_x
-		top := (draw.bounds.y + draw.translation[1]) * scale_y
-		right := (draw.bounds.x + draw.bounds.w + draw.translation[0]) * scale_x
-		bottom := (draw.bounds.y + draw.bounds.h + draw.translation[1]) * scale_y
-		if left < 0 { left = 0 }
-		if top < 0 { top = 0 }
-		if right > f32(target_w) { right = f32(target_w) }
-		if bottom > f32(target_h) { bottom = f32(target_h) }
-		if right <= left || bottom <= top { continue }
-		thickness := f32(1)
-		if scale_x > thickness { thickness = scale_x }
-		if scale_y > thickness { thickness = scale_y }
-		if len(renderer.vertices) + 24 > renderer.vertex_capacity && !native_vertex_buffer_ensure_capacity(
-			renderer.device, &renderer.vertex_buffer, &renderer.vertex_transfer,
-			&renderer.vertex_capacity, len(renderer.vertices) + 24,
-		) {
-			// Bounds are optional diagnostics; preserve the app frame and draw any
-			// overlay geometry accumulated so far if the extra allocation fails.
-			renderer.upload_pending = len(renderer.vertices) > 0
-			return
-		}
-		first := sdl3.Uint32(len(renderer.vertices))
-		cpu_renderer.Append_Quad(&renderer.vertices, left, top, right, min(top+thickness, bottom), color)
-		cpu_renderer.Append_Quad(&renderer.vertices, left, max(bottom-thickness, top), right, bottom, color)
-		cpu_renderer.Append_Quad(&renderer.vertices, left, top, min(left+thickness, right), bottom, color)
-		cpu_renderer.Append_Quad(&renderer.vertices, max(right-thickness, left), top, right, bottom, color)
-		append(&renderer.draws, Native_Solid_Draw{first_vertex=first, vertex_count=24})
-	}
-	renderer.upload_pending = len(renderer.vertices) > 0
 }
 
 native_solid_render_batch :: proc(

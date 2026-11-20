@@ -9,6 +9,7 @@ native starter app, use [Getting Started](getting-started.md).
 runtime/          retained runtime and lower-level public API
 ui/               convenience API for ordinary native application UI
 native/sdl_gpu/   SDL3 / SDL_GPU host and compositor
+host/diagnostics/ shared, renderer-neutral developer diagnostics
 examples/         numbered native application lessons
 tests/fixtures/   focused runtime and lifecycle validation applications
 tests/            deterministic foundation tests
@@ -241,7 +242,12 @@ for the automatic capture timer.
 
 The native window supports `F10` to toggle the host-owned runtime HUD, `F11` to
 toggle retained bounds, and `F12` for a diagnostic capture (including repeated
-captures during one run). The HUD reports recent application builds,
+captures during one run). The implementation lives in `host/diagnostics` and is
+shared with the hosted SDL3/WebGPU runtime; `native/sdl_gpu` keeps thin
+compatibility shims and its own SDL_GPU overlay sink. See
+[Host-owned UI loops](hosted-runtime.md#diagnostics) for the hosted contract,
+backend identity, and capture-on-failure behavior.
+The HUD reports recent application builds,
 presentation updates, app-driven GPU submissions, host wakes, surface updates,
 runtime allocations, retained-region reuse, last-interaction stage visits, and
 input-to-submit latency. Its status classifies the latest work as `IDLE`,

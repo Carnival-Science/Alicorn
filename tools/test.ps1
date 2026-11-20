@@ -52,6 +52,8 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin test host\web "-collection:alicorn=$RepoRoot" -out:out\alicorn_web_host_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $Odin test host\diagnostics "-collection:alicorn=$RepoRoot" -out:out\alicorn_diagnostics_tests.exe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin test tests\fixtures\accessibility_contract "-collection:alicorn=$RepoRoot" `
 	@($AccessKit.CompilerArguments) -out:out\accessibility_contract_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

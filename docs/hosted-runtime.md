@@ -557,6 +557,69 @@ notification do not invoke the wake callback. A host that recreates a session
 at the same address must tag queued events with a host-owned lifetime identity
 and discard events from the earlier session before delivering them.
 
+## Diagnostics
+
+Diagnostics are host-owned, exactly as they are in the reference SDL_GPU host.
+`host/diagnostics` is the shared, renderer-neutral core: the fixed 256-sample
+flight recorder, activity classification and HUD model, the performance-HUD
+geometry, retained-bounds outline geometry, capture options/paths/bundles, the
+versioned timeline export, and the JSONL breadcrumb recorder. It depends only on
+`alicorn:runtime`, so every host builds the same overlay and schema.
+
+A host supplies a quad/paint sink and its renderer identity. The reference
+`native/sdl_gpu` host aliases the shared types in thin compatibility shims and
+appends overlay quads to its own solid mesh. `host/sdl3` converts the same quads
+into host-owned paint commands and installs them on the hosted runtime through
+`Hosted_Runtime_Config.diagnostics_paint`. Applications never opt in:
+`hosted_runtime_presentation_list` appends diagnostics after application paint
+and host chrome, and every `ui/webgpu.run` consumer receives them.
+
+The hosted runtime keeps the reference key contract:
+
+- `F10` (without `Shift`) toggles the performance HUD. It is consumed after menu
+  accelerators and before application key routing, so applications do not see
+  it. The HUD reports retained work, recent activity class, stage counters, and
+  frame timings from the presenter's bounded CPU timing samples.
+- `F11` toggles retained-bounds inspection. It is a host effect and does not
+  consume the key.
+- `F12` requests one diagnostic capture. Repeated captures in one run are
+  supported. It is also non-consuming.
+
+Overlay frames are re-composites of the current retained display. They do not
+mutate the Runtime, increment application `Frame_Stats`, or count as
+application submissions; the presenter acknowledges an application revision
+once. Overlay geometry is staged in a host-owned, reused command buffer so a
+visible HUD does not allocate per frame.
+
+Capture flags mirror the reference host: `--diagnostics` enables captures and
+breadcrumbs, `--capture-after=SECONDS` enables an automatic capture,
+`--capture-dir=PATH` selects the output root (and enables breadcrumbs), and
+`--debug-bounds` starts with bounds inspection visible. Without
+`--capture-dir`, captures use SDL's preference path for `Alicorn / Alicorn
+Diagnostics`. A bundle contains `diagnostics.json`, `inspector.txt`,
+`timeline.json`, `screenshot.ppm`, and `windows.json`.
+
+Backend identity is always reported. The hosted path records
+`"gpu_driver": "webgpu/<backend>"`, a `backend` object with the wgpu backend,
+adapter type, vendor, device, and description, and per-pass WebGPU
+`backend_counters` for solid, text, icons, images, and surfaces (mesh
+rebuilds/cache hits, uploads, upload bytes, transforms, viewports, atlas and
+texture uploads). The shared `gpu` block keeps the reference key names for
+cross-renderer comparison.
+
+Capture also covers the failing frame. When frame encoding or presentation
+fails, `host/sdl3` writes the bundle before returning the failure: retained
+state, pending commands, counters, and timeline do not depend on presentation.
+The screenshot is rendered from the retained display into an offscreen target,
+not the swapchain, so a failing acquire/present still yields an image. A
+failure capture is an error artifact and is written even without the
+`--diagnostics` flags.
+
+`--test-diagnostics-sequence` drives F10 → F11 → capture → F10 off → F11 off →
+capture → quit inside the real host loop for automated validation.
+`--test-diagnostics-present-failure` injects one presentation-boundary encode
+failure after the first frame and exercises the failure-capture path.
+
 ## Current boundary and integration gates
 
 The headless hosted-session regression suite in `runtime/hosted_test.odin` and

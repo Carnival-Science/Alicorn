@@ -159,6 +159,16 @@ sdl3_webgpu_application_key_down :: proc(
 		return .Handled
 	}
 
+	// Host diagnostics sit exactly where native/sdl_gpu places them: after menu
+	// accelerators and before application key routing. F10 toggles the
+	// performance HUD and is consumed; F11/F12 are host effects that do not
+	// consume the key, so the application still receives them.
+	if !composition_active && application.diagnostics != nil &&
+	   sdl3_diagnostics_key(application.diagnostics, event.key, event.mod, event.repeat) {
+		if !sdl3_webgpu_application_sync_text_input(application) { return .Failure }
+		return .Handled
+	}
+
 	// Control+Tab is application navigation and remains consumed when an app
 	// chooses not to bind document cycling.
 	control_tab := event.key == sdl3.K_TAB && input_modifier_is_set(event.mod, sdl3.KMOD_CTRL)

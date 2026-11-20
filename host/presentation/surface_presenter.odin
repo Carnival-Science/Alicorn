@@ -124,6 +124,14 @@ hosted_surface_presenter_state :: struct {
 	device_lost: bool,
 	timing_enabled: bool,
 	timing: ^hosted_surface_timing_buffer,
+	// overlay_redraw requests one host-owned overlay frame (diagnostics HUD or
+	// retained-bounds inspection) without mutating the application Runtime or
+	// acknowledging a new application presentation.
+	overlay_redraw: bool,
+	// fail_next_encode is a host test seam: the next presentation attempt
+	// reports Render_Failure before encoding so the diagnostics failure-capture
+	// path can be validated against a real host-loop failure branch.
+	fail_next_encode: bool,
 }
 
 @(private)
@@ -272,6 +280,30 @@ hosted_surface_visibility_changed :: proc(data: rawptr, visible: bool) {
 	_ = hosted_surface_presenter_set_visible(presenter, visible)
 }
 
+// hosted_surface_presenter_request_overlay_redraw asks the next step to
+// composite the current retained display plus host overlays even when the
+// application has no pending presentation. It never mutates the Runtime, so a
+// HUD-only redraw cannot look like application work in counters or captures.
+hosted_surface_presenter_request_overlay_redraw :: proc(presenter: ^Hosted_Surface_Presenter) {
+	state := hosted_surface_state(presenter)
+	if state == nil || state.device_lost { return }
+	state.overlay_redraw = true
+	if state.wake != nil { state.wake(state.wake_data) }
+}
+
+hosted_surface_presenter_overlay_redraw_pending :: proc(presenter: ^Hosted_Surface_Presenter) -> bool {
+	state := hosted_surface_state(presenter)
+	return state != nil && state.overlay_redraw
+}
+
+// hosted_surface_presenter_fail_next_encode_for_test injects one deterministic
+// encode failure at the presentation boundary. It exists so a host can prove
+// that diagnostics capture still produces its bundle when presentation fails.
+hosted_surface_presenter_fail_next_encode_for_test :: proc(presenter: ^Hosted_Surface_Presenter) {
+	state := hosted_surface_state(presenter)
+	if state != nil { state.fail_next_encode = true }
+}
+
 // Step once after a bounded input batch or scheduled wake. At most one Runtime
 // description and one surface submission are performed. The host scheduler
 // should use step.next_wake_ns, keep running when has_more_work is true, wait
@@ -302,7 +334,13 @@ hosted_surface_presenter_step_with_hook :: proc(
 	if step.status != .Ok { return step, .Invalid_Input }
 	if hook != nil {
 		hook(hook_data)
-		step.render_required = state.visible && state.drawable && alicorn.frame_needs_submission(state.runtime)
+	}
+	app_frame_required := alicorn.frame_needs_submission(state.runtime)
+	step.render_required = state.visible && state.drawable && (app_frame_required || state.overlay_redraw)
+	if state.overlay_redraw && !app_frame_required {
+		// The application has no pending presentation. This frame exists only to
+		// composite host overlays, so it must not advertise application work.
+		step.has_more_work = false
 	}
 	if !step.render_required {
 		// An input event that produced no requested presentation has no visible
@@ -322,6 +360,7 @@ hosted_surface_presenter_step_with_hook :: proc(
 		timing_sample.runtime_step_ns = hosted_surface_timing_elapsed_ns(timing_start)
 	}
 	presentation = hosted_surface_present_pending(presenter, &timing_sample)
+	if presentation == .Ok || presentation == .No_Frame { state.overlay_redraw = false }
 	if state.timing_enabled && timing_sample.submission_serial != 0 {
 		timing_sample.step_to_present_ns = hosted_surface_timing_elapsed_ns(timing_start)
 		hosted_surface_timing_record(state.timing, timing_sample)
@@ -369,6 +408,31 @@ hosted_surface_presenter_take_timing_samples :: proc(
 	state := hosted_surface_state(presenter)
 	if state == nil || !state.timing_enabled || state.timing == nil { return 0 }
 	return hosted_surface_timing_take(state.timing, output)
+}
+
+// Copy oldest-first timing samples without consuming them. Diagnostics capture
+// uses this so an investigation does not disturb the --timings report.
+hosted_surface_presenter_copy_timing_samples :: proc(
+	presenter: ^Hosted_Surface_Presenter,
+	output: []Hosted_Surface_Timing_Sample,
+) -> int {
+	state := hosted_surface_state(presenter)
+	if state == nil || !state.timing_enabled || state.timing == nil || len(output) == 0 { return 0 }
+	buffer := state.timing
+	taken := min(buffer.count, len(output))
+	for i in 0..<taken {
+		index := (buffer.first+i) % HOSTED_SURFACE_TIMING_SAMPLE_CAPACITY
+		output[i] = buffer.samples[index]
+	}
+	return taken
+}
+
+// hosted_surface_presenter_timing_total returns retained and overwritten sample
+// counts without draining.
+hosted_surface_presenter_timing_counts :: proc(presenter: ^Hosted_Surface_Presenter) -> (retained: int, overwritten: u64, ok: bool) {
+	state := hosted_surface_state(presenter)
+	if state == nil || !state.timing_enabled || state.timing == nil { return 0, 0, false }
+	return state.timing.count, state.timing.overwritten, true
 }
 
 hosted_surface_presenter_timing_overwritten :: proc(presenter: ^Hosted_Surface_Presenter) -> u64 {
@@ -420,6 +484,10 @@ hosted_surface_present_pending :: proc(
 	display, display_status := alicorn.hosted_runtime_presentation_list(state.hosted, state.allocator)
 	if display_status != .Ok { return .Invalid_Input }
 	if display.revision == 0 { return .No_Frame }
+	if state.fail_next_encode {
+		state.fail_next_encode = false
+		return .Render_Failure
+	}
 
 	acquire_start: time.Tick
 	if state.timing_enabled { acquire_start = time.tick_now() }

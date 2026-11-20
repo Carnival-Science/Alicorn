@@ -80,6 +80,7 @@ SDL3_WebGPU_Application :: struct {
 	accessibility_ready: bool,
 	presenter_device_lost: bool,
 	chrome_redraw_pending: bool,
+	diagnostics: ^SDL3_Diagnostics,
 }
 
 @(private)
@@ -671,6 +672,14 @@ sdl3_webgpu_application_handle_event :: proc(
 	}
 	event_window := event_window_id_from_sdl(event)
 	if event_window != 0 && event_window != application.window_id { return .Ignored }
+	if application.diagnostics != nil {
+		#partial switch event.type {
+		case .KEY_DOWN, .TEXT_INPUT, .TEXT_EDITING, .MOUSE_MOTION, .MOUSE_BUTTON_DOWN, .MOUSE_BUTTON_UP, .MOUSE_WHEEL:
+			application.diagnostics.telemetry.events_received_sequence += 1
+			sdl3_diagnostics_note_input(application.diagnostics, u64(sdl3.GetTicksNS()))
+		case:
+		}
+	}
 	#partial switch event.type {
 	case .DROP_FILE:
 		if event.drop.data != nil {
@@ -723,6 +732,11 @@ sdl3_webgpu_application_handle_event :: proc(
 		// reference host does.
 		value = host_menus.native_menu_adapter_translate_pointer(&application.menu_adapter, value, event)
 		if status := sdl3_webgpu_application_pointer(application, value); status != .Ok { return .Failure }
+		if application.diagnostics != nil {
+			if rt, status := alicorn.hosted_runtime_borrow(&application.hosted); status == .Ok {
+				sdl3_diagnostics_note_pointer(application.diagnostics, rt, value, true, true)
+			}
+		}
 		if event.type == .MOUSE_BUTTON_DOWN && !sdl3_webgpu_application_sync_text_input(application) {
 			return .Failure
 		}

@@ -3542,3 +3542,114 @@ Validation on Windows x64 (NVIDIA RTX 2080 SUPER, this branch):
   two-document workbench session: `publication_rendered`, `wake_observed`,
   `ordered_shutdown`, and `session_restore` were all true for the clean and
   recovery launches. No Scratchpad source or lock file was changed.
+
+## Stage B slice 3: backend-neutral diagnostics parity (2026-11-20)
+
+Stage B was reopened after real-world Scratchpad testing showed that the hosted
+WebGPU path had no developer diagnostics: an encode failure produced only
+`Presenter_Failure` plus a console line, with no retained state, counters, or
+image to investigate. The reference `native/sdl_gpu` host already had all of
+it, implemented directly inside its event loop.
+
+### What the reference host actually provides
+
+- `F10` toggles a performance HUD. It is consumed after menu accelerators and
+  before app key routing. The HUD classifies the latest wake as `IDLE`, `HOST`,
+  `PRESENT`, `APP`, or `SURFACE`, shows one-second build/present/submit/wake
+  counters, the last cause and retained-stage work, build/encode/input latency,
+  semantic/accessibility activity, the invalidation reason, and a bounded
+  activity strip. It is transient solid geometry; it adds no nodes and does not
+  change application `Frame_Stats`.
+- `F11` toggles retained-bounds inspection: one amber outline per visible paint
+  command, appended after application paint. It is non-consuming.
+- `F12` requests one capture (repeatable in a run), non-consuming.
+- Capture writes `diagnostics.json` (timing percentiles, GPU/renderer counters,
+  runtime state), `inspector.txt` (the human-readable retained tree),
+  `timeline.json` (the versioned 256-sample flight recorder), `screenshot.ppm`,
+  and `windows.json`, plus an opt-in `events.jsonl` breadcrumb recorder.
+- Flags: `--diagnostics`, `--capture-after=SECONDS`, `--capture-dir=PATH`,
+  `--debug-bounds`, `--diagnostic-events`.
+- `Capture` was gated on a presented frame and rendered the screenshot through
+  an offscreen SDL_GPU target.
+
+### What moved where
+
+`host/diagnostics` is now the single implementation: recorder/pointer samples,
+activity classification, HUD model and 5x7 glyph quad layout, bounds geometry,
+timing and text-event telemetry, options/path/bundle handling, JSON/window
+writers, timeline export, and breadcrumbs. It imports only
+`alicorn:runtime`. `native/sdl_gpu` keeps `Native_*` type aliases and thin
+proc shims, its metric capture (SDL_GPU structures), its offscreen PPM capture,
+and a quad sink that appends HUD/bounds geometry to its solid mesh. The shared
+HUD text now emits one quad per contiguous glyph-row run instead of per pixel,
+so the hosted renderer sees ~3x fewer commands for identical pixels.
+
+`Hosted_Runtime_Config` gained `diagnostics_paint` / `diagnostics_paint_data`.
+`hosted_runtime_presentation_list` appends those commands after application
+paint and host chrome, so diagnostics are part of every `ui/webgpu.run` surface
+without application code.
+
+### Hosted wiring
+
+- `host/sdl3/diagnostics.odin` owns options, the recorder, timing aggregation,
+  the HUD/bounds paint provider, capture, and backend identity. It is created
+  after application init and destroyed after teardown.
+- `sdl3_webgpu_application_key_down` calls the diagnostics handler after menu
+  keydown/accelerator handling and before Control+Tab/application keys. F10 is
+  consumed; F11/F12 are not. This matches `native/sdl_gpu`'s order.
+- Overlay frames are host-only re-composites: a presenter overlay-redraw flag
+  renders the current retained display without mutating the Runtime, and an
+  application display revision is acknowledged once. A visible HUD therefore
+  cannot feed a redraw loop or count as application work. Overlay commands are
+  staged in one reused host-owned buffer.
+- Backend identity is captured from `wgpu.AdapterGetInfo`:
+  `"gpu_driver": "webgpu/<backend>"`, a `backend` object (adapter type, vendor,
+  device, description), and `backend_counters` groups for solid, text, icons,
+  images, and surfaces with the shared compositor's mesh rebuild/cache-hit,
+  upload, upload-byte, transform, viewport, atlas, and texture counters.
+- Capture-on-failure: encoder/present failures call capture before returning
+  `Presenter_Failure`. The bundle does not depend on presentation, and the
+  screenshot is encoded from the retained display into an offscreen texture and
+  copied to a mapped buffer, so an acquire/present failure still yields an image.
+  A failure capture is written even without the diagnostic flags.
+
+### Validation (Windows x64, RTX 2080 SUPER)
+
+- Alicorn suites: `alicorn_tests`, runtime 401, host/sdl3 7, host/sdl3/input 8,
+  host/sdl3/clipboard 3, host/sdl3/dialogs 5, host/menus 8, host/web 14,
+  host/diagnostics 9, host/presentation 6, renderer/webgpu 6, ui 50, testui 13,
+  theme 37, renderer/cpu 23, native/sdl_gpu 169, native/scroll_capture_tests 6,
+  text-input contract, restoration, web-UI package build, and theme CLI checks
+  all passed. `tools/test.ps1` itself stopped at its AccessKit native UIA stage
+  (`Accessible Button missing`), the same environmental failure recorded for the
+  previous slice; every Alicorn suite was then run individually with the same
+  arguments and passed.
+- `examples/16_native_webgpu_ui` built and `--smoke` and `--workbench-smoke`
+  passed on `--backend=d3d12` and `--backend=vulkan`.
+- `--test-diagnostics-sequence` on both backends produced two five-artifact
+  bundles. The overlay capture had the HUD panel and bounds outlines in
+  `screenshot.ppm`; the plain capture did not. HUD activity cost four frames,
+  text mesh rebuilds stayed at one, and no per-frame persistent allocations
+  appeared in the timeline.
+- `--test-diagnostics-present-failure` (no `--diagnostics`) forced one encode
+  failure after the first frame and still wrote `diagnostics.json`,
+  `inspector.txt`, `timeline.json`, `screenshot.ppm`, `windows.json`, and
+  `events.jsonl`, with `failure_reason` = `primary presentation failed:
+  Render_Failure`.
+- The reference SDL_GPU host captured the same artifact set (`diagnostics.json`,
+  `inspector.txt`, `timeline.json`, `screenshot.ppm`, `windows.json`,
+  `events.jsonl`) from `--inspector-fixture --diagnostics --capture-after=0
+  --debug-bounds`.
+- Scratchpad (`codex/issue-211-webgpu-frontend` at `bfb2aed`, read-only
+  worktree, candidate root this branch) built with `--allow-alicorn-revision`
+  and passed `smoke --renderer=webgpu --backend=d3d12` and
+  `--backend=vulkan`, including the restored two-document session:
+  `publication_rendered`, `wake_observed`, `ordered_shutdown`, and
+  `session_restore` were true for clean and recovery launches. No Scratchpad
+  source or lock file was changed.
+
+Known limits: the hosted HUD still rebuilds the compositor's solid mesh when its
+activity strip or counters change (bounded, opt-in developer overlay); it does
+not rebuild text or allocate per frame. The browser host has no F10/F11/F12
+keyboard capture surface; the shared core is ready for one, but browser
+diagnostics remain future work.

@@ -214,6 +214,12 @@ Hosted_Runtime_Config :: struct {
 	// during presentation. Width and height include the chrome band.
 	chrome_paint: Hosted_Chrome_Paint_Proc,
 	chrome_paint_data: rawptr,
+	// diagnostics_paint appends host-owned diagnostic overlays after
+	// application paint and chrome for the next presented frame. The built-in
+	// hosts install it automatically; applications never opt in. Returning nil
+	// means diagnostics are hidden.
+	diagnostics_paint: Hosted_Chrome_Paint_Proc,
+	diagnostics_paint_data: rawptr,
 	// content_inset_top reserves host-owned chrome above the application
 	// viewport. The host updates it with hosted_runtime_set_content_inset when
 	// native geometry changes.
@@ -332,6 +338,8 @@ Hosted_Runtime_State :: struct {
 	window_chrome_appearance: Window_Chrome_Appearance_Proc,
 	chrome_paint: Hosted_Chrome_Paint_Proc,
 	chrome_paint_data: rawptr,
+	diagnostics_paint: Hosted_Chrome_Paint_Proc,
+	diagnostics_paint_data: rawptr,
 	logical_width, logical_height: int,
 	window_logical_width, window_logical_height: int,
 	content_inset_top: f32,
@@ -432,6 +440,8 @@ hosted_runtime_init :: proc(host: ^Hosted_Runtime, config: Hosted_Runtime_Config
 		window_chrome_appearance=config.window_chrome_appearance,
 		chrome_paint=config.chrome_paint,
 		chrome_paint_data=config.chrome_paint_data,
+		diagnostics_paint=config.diagnostics_paint,
+		diagnostics_paint_data=config.diagnostics_paint_data,
 		logical_width=config.logical_width,
 		logical_height=hosted_app_logical_height(config.logical_height, inset_top),
 		window_logical_width=config.logical_width,
@@ -1254,12 +1264,14 @@ hosted_runtime_presentation_list :: proc(
 	rt := &state.runtime
 	if rt.frame_open { return {}, .Invalid_Argument }
 	has_chrome := state.chrome_paint != nil && state.window_decorations != .System
-	if state.content_inset_top <= 0 && !has_chrome {
+	has_diagnostics := state.diagnostics_paint != nil
+	if state.content_inset_top <= 0 && !has_chrome && !has_diagnostics {
 		view = Paint_Display_List_View{commands=rt.display[:], revision=rt.presentation_revision}
 		return view, .Ok
 	}
-	// Host chrome paint is transient: shape/command storage comes from the
-	// Runtime scratch arena and is invalid after the next Runtime mutation.
+	// Host chrome and diagnostic paint are transient: shape/command storage
+	// comes from the Runtime scratch arena and is invalid after the next Runtime
+	// mutation.
 	chrome_allocator := allocator
 	if rt.scratch_allocator.procedure != nil { chrome_allocator = rt.scratch_allocator }
 	chrome: []Paint_Command
@@ -1272,7 +1284,20 @@ hosted_runtime_presentation_list :: proc(
 			chrome_allocator,
 		)
 	}
-	required := len(rt.display)+len(chrome)
+	// Diagnostics are appended last so bounds outlines and the performance HUD
+	// stay above application paint and host chrome, matching native/sdl_gpu's
+	// overlay order.
+	overlays: []Paint_Command
+	if has_diagnostics {
+		overlays = state.diagnostics_paint(
+			state.diagnostics_paint_data,
+			rt,
+			f32(state.window_logical_width),
+			f32(state.window_logical_height),
+			chrome_allocator,
+		)
+	}
+	required := len(rt.display)+len(chrome)+len(overlays)
 	clear(&state.hosted_display)
 	if required > 0 && state.hosted_display == nil {
 		state.hosted_display = make([dynamic]Paint_Command, 0, required, allocator=state.allocator)
@@ -1285,6 +1310,7 @@ hosted_runtime_presentation_list :: proc(
 		append(&state.hosted_display, hosted_paint_command_apply_content_inset(command, state.content_inset_top))
 	}
 	for command in chrome { append(&state.hosted_display, command) }
+	for command in overlays { append(&state.hosted_display, command) }
 	view = Paint_Display_List_View{
 		commands=state.hosted_display[:],
 		revision=rt.presentation_revision,
