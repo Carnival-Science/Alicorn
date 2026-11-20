@@ -3456,3 +3456,26 @@ and `quit` map 1:1, and `Application.on_file_drop`, `Application.on_tick`,
 hosted config/UI run surface. Remaining gaps are browser-only: asynchronous
 clipboard consumption, browser file drops, browser menus/dialogs, and browser
 close policy.
+
+Validation on Windows x64 (NVIDIA RTX 2080 SUPER, `af28167`):
+
+- `tools/test.ps1 -Odin C:\odin\odin.exe` passed: AccessKit 8, runtime 399,
+  host/sdl3 3, host/sdl3/input 8, host/sdl3/clipboard 3, host/sdl3/dialogs 5,
+  host/menus 8, host/web 14, ui 50, testui 13, theme 37, renderer/cpu 22,
+  native/sdl_gpu 169, native/scroll_capture_tests 6, plus the foundation,
+  text-input/navigation, restoration, theme CLI, and `js_wasm32`
+  package-boundary checks. The AccessKit native UIA contract passed; its first
+  invocation in this session missed the fixture window and was rerun
+  successfully.
+- `examples/15_webgpu_feasibility/build.ps1` built all native and browser
+  fixtures. `examples/16_native_webgpu_ui` built (AccessKit + shared
+  wgpu-native) and `--smoke`, `--menu-smoke`, `--titlebar-smoke`,
+  `--child-smoke`, `--child-chrome-smoke`, and `--services-smoke` exited 0 on
+  both `--backend=d3d12` and `--backend=sdl-gpu`. Services smoke reported
+  `frequent=1 opportunistic=1` with both classes, clipboard roundtrip, one
+  file drop, and six ticks on both renderers.
+- `tools/validate_native_webgpu_ui.ps1 -Executable out\example16.exe -Backend
+  d3d12` reported `failures=0` with real UIA and SendInput, including the
+  auxiliary window lifecycle.
+- `odin check ui -target:js_wasm32` and `odin check host/web -target:js_wasm32`
+  passed; `git diff --check` passed.
