@@ -624,10 +624,13 @@ run_application_loop :: proc(
 			if motion_update.status != .Ok { fail("secondary retained motion sampling failed") }
 			native_motion_scheduler_sync_timing(&child.motion_scheduler, &child.timing, motion_update.active_owners)
 			if child.native_menu.application != nil {
+				application_frame_pending := alicorn.frame_needs_submission(child.runtime)
 				when ODIN_OS == .Windows {
 					_ = win32_menu_refresh_text_if_needed(&child.native_menu, child.runtime)
+					// App-authored headers must re-resolve chrome regions after each
+					// child description, exactly as the primary window does.
+					if application_frame_pending { native_menu_sync_chrome_layout(&child.native_menu) }
 				}
-				application_frame_pending := alicorn.frame_needs_submission(child.runtime)
 				_ = native_menu_sync_chrome_appearance(&child.native_menu, request_redraw=!application_frame_pending)
 			}
 			if !child.runtime.invalidated && alicorn.presentation_needs_frame(child.runtime) {

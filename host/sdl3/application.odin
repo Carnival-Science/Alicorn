@@ -700,6 +700,11 @@ sdl3_webgpu_application_handle_event :: proc(
 		value, ok := pointer_event_from_sdl(event, application.modifiers, &application.pointer_buttons)
 		if !ok { return .Ignored }
 		value.timestamp_ns = u64(sdl3.GetTicksNS())
+		// macOS asks Cocoa's hit-test callback before queueing the matching SDL
+		// pointer event, so the event point can predate or trail the native drag.
+		// Reconcile it with the hit-test sample stream exactly as the SDL_GPU
+		// reference host does.
+		value = host_menus.native_menu_adapter_translate_pointer(&application.menu_adapter, value, event)
 		if status := sdl3_webgpu_application_pointer(application, value); status != .Ok { return .Failure }
 		if event.type == .MOUSE_BUTTON_DOWN && !sdl3_webgpu_application_sync_text_input(application) {
 			return .Failure
@@ -709,6 +714,11 @@ sdl3_webgpu_application_handle_event :: proc(
 		value := scroll_event_from_sdl(event.wheel, pointer_modifiers_from_sdl(application.modifiers))
 		_, status := alicorn.hosted_runtime_scroll(&application.hosted, value)
 		if status != .Ok { return .Failure }
+		return .Handled
+	case .WINDOW_HIT_TEST:
+		// A drag region consumed by Cocoa still queues this event. Drain the
+		// paired native sample so later client pointer events are not shifted.
+		host_menus.native_menu_adapter_note_window_hit_test(&application.menu_adapter)
 		return .Handled
 	case:
 		return .Ignored

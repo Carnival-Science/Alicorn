@@ -52,6 +52,16 @@ native_menu_adapter_handle_keydown :: proc(
 	return false
 }
 
+native_menu_adapter_translate_pointer :: proc(
+	adapter: ^Native_Menu_Adapter,
+	pointer: alicorn.Pointer_Event,
+	event: sdl3.Event,
+) -> alicorn.Pointer_Event {
+	return pointer
+}
+
+native_menu_adapter_note_window_hit_test :: proc(adapter: ^Native_Menu_Adapter) {}
+
 native_menu_adapter_destroy :: proc(adapter: ^Native_Menu_Adapter) {
 	if adapter == nil { return }
 	adapter.window = nil

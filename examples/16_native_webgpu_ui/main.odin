@@ -1,5 +1,6 @@
 package main
 
+import "core:c"
 import "core:fmt"
 import "core:os"
 import alicorn "alicorn:runtime"
@@ -20,11 +21,37 @@ MENU_WORD_WRAP    :: alicorn.Action_ID(0x2108)
 MENU_PALETTE      :: alicorn.Action_ID(0x2109)
 MENU_ABOUT        :: alicorn.Action_ID(0x210A)
 MENU_SYNC         :: alicorn.Action_ID(0x210B)
+MENU_CHILD_ACTION :: alicorn.Action_ID(0x2201)
+CHILD_CHROME_TITLE :: "Alicorn child chrome probe"
+CHILD_CHROME_HEADER_HEIGHT :: f32(34)
 
 Child_App :: struct {
 	windows: ui.UI_Window_Service,
+	dialogs: ui.UI_Dialog_Service,
+	quit: alicorn.Hosted_Quit_Service,
+	dialogs_available: bool,
 	close_requested: bool,
 	open_failed: bool,
+	// --child-chrome-smoke state. The child owns its own retained chrome nodes,
+	// metrics, layout, menu dispatch, close deferral, and dialog service.
+	chrome_smoke: bool,
+	title: string,
+	started: bool,
+	stopped: bool,
+	header: alicorn.Node_ID,
+	body: alicorn.Node_ID,
+	interactive: alicorn.Node_ID,
+	drag: alicorn.Node_ID,
+	regions: [2]alicorn.Window_Chrome_Region,
+	header_height: f32,
+	metrics_count: int,
+	layout_count: int,
+	menu_count: int,
+	menu_last: alicorn.Action_ID,
+	menu_ok: bool,
+	close_deferred: bool,
+	close_events_pushed: bool,
+	quit_sent: bool,
 }
 
 App :: struct {
@@ -73,6 +100,13 @@ App :: struct {
 	titlebar_selected: u64,
 	titlebar_reorder_count: int,
 	titlebar_pointer_count: int,
+	// --child-chrome-smoke: the child's own menu tree must outlive the open
+	// request because the host borrows its slices for the window lifetime.
+	child_chrome_smoke: bool,
+	child_menu_items: [1]alicorn.Menu_Item,
+	child_menus: [1]alicorn.Menu,
+	// --interactive keeps a fixture open for scripted physical window input.
+	interactive: bool,
 }
 
 render :: proc(app: ^App, ctx: ^ui.UI) {
@@ -305,8 +339,60 @@ wake :: proc(app: ^App, ctx: ui.Application_Context) {
 	ui.invalidate(ctx, "native WebGPU application wake delivered")
 }
 
+child_chrome_render :: proc(child: ^Child_App, ctx: ^ui.UI) {
+	if alicorn.container_begin(
+		ctx, .Root, label="child-chrome-root", key="child-chrome-root",
+		style=alicorn.layout_style(.Column, grow=1, clip=true),
+		color=alicorn.Color{0.04, 0.05, 0.08, 1},
+	) == 0 { return }
+	height := max(child.header_height, CHILD_CHROME_HEADER_HEIGHT)
+	header := alicorn.container_begin(
+		ctx, .Container, label="child-chrome-header", key="child-chrome-header",
+		style=alicorn.layout_style(.Row, height=height, clip=true),
+		color=alicorn.Color{0.125, 0.137, 0.16, 1},
+	)
+	interactive := alicorn.container_begin(
+		ctx, .Container, label="child-chrome-action", key="child-chrome-action",
+		style=alicorn.layout_style(.Row, width=190, height=height),
+	)
+	if ui.button(ctx, "Child action") {
+		alicorn.invalidate_root(ctx.runtime, "child chrome action")
+	}
+	alicorn.container_end(ctx)
+	drag := alicorn.container_begin(
+		ctx, .Container, label="child-chrome-drag", key="child-chrome-drag",
+		style=alicorn.layout_style(.Row, grow=1, height=height),
+	)
+	alicorn.container_end(ctx)
+	alicorn.container_end(ctx)
+	body := alicorn.container_begin(
+		ctx, .Container, label="child-chrome-body", key="child-chrome-body",
+		style=alicorn.layout_style(.Column, grow=1, padding=20, gap=10, clip=true),
+	)
+	alicorn.text(ctx, "Independent retained chrome, menu, dialog, and close policy.")
+	alicorn.text(ctx, fmt.tprintf(
+		"metrics=%d layouts=%d menus=%d deferred=%v started=%v",
+		child.metrics_count, child.layout_count, child.menu_count,
+		child.close_deferred, child.started,
+	))
+	alicorn.container_end(ctx)
+	alicorn.container_end(ctx)
+	child.header = header
+	child.body = body
+	child.interactive = interactive
+	child.drag = drag
+	if child.chrome_smoke && child.close_deferred && !child.quit_sent {
+		child.quit_sent = true
+		ui.ui_quit_request(child.quit)
+	}
+}
+
 auxiliary_render :: proc(data: rawptr, ctx: ^alicorn.UI, _width, _height: int, _dpi: f32) {
 	child := cast(^Child_App)data
+	if child.chrome_smoke {
+		child_chrome_render(child, ctx)
+		return
+	}
 	if ui.column(ctx, padding=24, gap=12) {
 		ui.text(ctx, "Independent retained surface", size=22)
 		ui.text(ctx, "This window has its own focus, input state, and Runtime on the shared WebGPU device.")
@@ -317,38 +403,139 @@ auxiliary_render :: proc(data: rawptr, ctx: ^alicorn.UI, _width, _height: int, _
 	}
 }
 
+child_chrome_metrics :: proc(data: rawptr, _rt: ^alicorn.Runtime, metrics: alicorn.Window_Chrome_Metrics) {
+	child := cast(^Child_App)data
+	child.metrics_count += 1
+	if metrics.header.h > 0 { child.header_height = metrics.header.h }
+}
+
+child_chrome_layout :: proc(data: rawptr, _rt: ^alicorn.Runtime) -> alicorn.Window_Chrome_Layout {
+	child := cast(^Child_App)data
+	child.layout_count += 1
+	child.regions[0] = alicorn.Window_Chrome_Region{node=child.interactive, kind=.Interactive}
+	child.regions[1] = alicorn.Window_Chrome_Region{node=child.drag, kind=.Window_Drag}
+	return alicorn.Window_Chrome_Layout{header=child.header, regions=child.regions[:]}
+}
+
+child_menu_command :: proc(data: rawptr, rt: ^alicorn.Runtime, command: alicorn.Action_ID) {
+	child := cast(^Child_App)data
+	child.menu_count += 1
+	child.menu_last = command
+	child.menu_ok = command == MENU_CHILD_ACTION
+	alicorn.invalidate_root(rt, "child chrome menu command")
+}
+
+child_close_requested :: proc(data: rawptr, rt: ^alicorn.Runtime) -> alicorn.Hosted_Close_Result {
+	child := cast(^Child_App)data
+	if !child.close_deferred {
+		child.close_deferred = true
+		alicorn.invalidate_root(rt, "child chrome close deferred")
+		return .Defer
+	}
+	return .Allow
+}
+
+child_dialog_done :: proc(data: rawptr, _rt: ^alicorn.Runtime, _result: ^alicorn.File_Dialog_Result) {
+	child := cast(^Child_App)data
+	child.dialogs_available = true
+}
+
+child_window_id_by_title :: proc(title: string) -> sdl3.WindowID {
+	count: c.int
+	windows := sdl3.GetWindows(&count)
+	if windows == nil { return 0 }
+	for index in 0..<int(count) {
+		window_title := sdl3.GetWindowTitle(windows[index])
+		if window_title != nil && string(window_title) == title {
+			return sdl3.GetWindowID(windows[index])
+		}
+	}
+	return 0
+}
+
+// child_push_chrome_events queues one child-targeted accelerator and one native
+// close request. The host routes both by window ID: the primary application
+// must ignore them and the child must dispatch its own menu and close policy.
+child_push_chrome_events :: proc(child: ^Child_App) {
+	if child.close_events_pushed { return }
+	window_id := child_window_id_by_title(child.title)
+	if window_id == 0 { return }
+	key_event: sdl3.Event
+	key_event.key = sdl3.KeyboardEvent{
+		commonEvent=sdl3.CommonEvent{type=.KEY_DOWN},
+		windowID=window_id,
+		key=sdl3.K_K,
+		mod=sdl3.KMOD_CTRL|sdl3.KMOD_SHIFT,
+		down=true,
+	}
+	_ = sdl3.PushEvent(&key_event)
+	close_event: sdl3.Event
+	close_event.type = .WINDOW_CLOSE_REQUESTED
+	close_event.window.windowID = window_id
+	_ = sdl3.PushEvent(&close_event)
+	child.close_events_pushed = true
+}
+
 auxiliary_post_wake :: proc(_data: rawptr) -> bool {
 	// The SDL3 host replaces this placeholder with its per-window wake event.
 	return true
 }
 
-auxiliary_initialize :: proc(_data: rawptr, rt: ^alicorn.Runtime) {
+auxiliary_initialize :: proc(data: rawptr, rt: ^alicorn.Runtime) {
+	child := cast(^Child_App)data
+	if child != nil { child.started = true }
 	if !alicorn.text_engine_load_default_fonts(rt) { panic("could not initialize auxiliary text fonts") }
 }
 
 auxiliary_host_services :: proc(data: rawptr, services: alicorn.Hosted_Host_Services) {
 	child := cast(^Child_App)data
+	if child == nil { return }
 	child.windows = services.windows
+	child.dialogs = services.dialogs
+	child.quit = services.quit
+	child.dialogs_available = services.dialogs.show_file != nil
+	if child.chrome_smoke { child_push_chrome_events(child) }
+}
+
+auxiliary_stop :: proc(data: rawptr) {
+	child := cast(^Child_App)data
+	if child != nil { child.stopped = true }
 }
 
 auxiliary_open_failed :: proc(data: rawptr) {
 	child := cast(^Child_App)data
-	child.open_failed = true
+	if child != nil { child.open_failed = true }
 }
 
 open_auxiliary_window :: proc(app: ^App) -> bool {
+	child := &app.child
+	title := CHILD_CHROME_TITLE if child.chrome_smoke else "Alicorn auxiliary window"
 	config := alicorn.Hosted_Runtime_Config{
-		state=rawptr(&app.child),
-		post_wake_data=rawptr(&app.child),
+		state=rawptr(child),
+		post_wake_data=rawptr(child),
 		post_wake=auxiliary_post_wake,
 		render=auxiliary_render,
 		on_initialize=auxiliary_initialize,
 		on_host_services=auxiliary_host_services,
+		on_stop=auxiliary_stop,
+	}
+	if child.chrome_smoke {
+		config.menus = app.child_menus[:]
+		config.menu_presentation = .Labels
+		config.on_menu_command = child_menu_command
+		config.on_close_requested = child_close_requested
+		config.on_dialog = child_dialog_done
+		config.window_chrome_height = CHILD_CHROME_HEADER_HEIGHT
+		config.window_chrome_metrics = child_chrome_metrics
+		config.window_chrome_layout = child_chrome_layout
+		when ODIN_OS == .Windows {
+			config.window_decorations = .Integrated_Title_Bar
+		}
 	}
 	return ui.ui_window_open(app.windows, ui.UI_Window_Description{
-		title="Alicorn auxiliary window",
-		width=560,
-		height=320,
+		title=title,
+		width=760,
+		height=460,
 		config=config,
 		on_open_failed=auxiliary_open_failed,
 	})
@@ -408,6 +595,14 @@ main :: proc() {
 			smoke = true
 			app.open_child_on_services = true
 		}
+		if argument == "--child-chrome-smoke" {
+			smoke = true
+			app.open_child_on_services = true
+			app.child_chrome_smoke = true
+			app.child.chrome_smoke = true
+			app.child.title = CHILD_CHROME_TITLE
+		}
+		if argument == "--interactive" { app.interactive = true }
 		if argument == "--menu-smoke" {
 			app.menu_smoke = true
 			app.menu_expected = [3]alicorn.Action_ID{MENU_CUT, MENU_PALETTE, MENU_SYNC}
@@ -419,6 +614,20 @@ main :: proc() {
 			app.titlebar_header_height = 32
 			app.titlebar_content_end_x = 900
 			smoke = true
+		}
+	}
+	if app.interactive { smoke = false }
+	if app.child_chrome_smoke {
+		app.child_menu_items[0] = alicorn.Menu_Item{
+			kind=.Command,
+			command=MENU_CHILD_ACTION,
+			label="Child Command",
+			state=alicorn.Action_State{enabled=true},
+			shortcut=alicorn.Menu_Shortcut{'K', {.Primary, .Shift}},
+		}
+		app.child_menus[0] = alicorn.Menu{
+			label="Floating",
+			items=app.child_menu_items[:],
 		}
 	}
 	// A Scratchpad-shaped menu tree: four popup menus, a nested recent-files
@@ -506,6 +715,27 @@ main :: proc() {
 			os.exit(1)
 		}
 		fmt.println("menu_smoke PASS", "commands", app.menu_count)
+	}
+	if app.child_chrome_smoke {
+		ok := app.child.started && app.child.stopped && app.child.close_events_pushed &&
+			app.child.close_deferred && app.child.dialogs_available && !app.child.open_failed
+		when ODIN_OS == .Windows {
+			ok = ok && app.child.metrics_count > 0 && app.child.layout_count > 0 &&
+				app.child.header != 0 && app.child.interactive != 0 && app.child.drag != 0 &&
+				app.child.menu_ok && app.child.menu_count == 1
+		}
+		fmt.println(
+			"child_chrome_smoke", "PASS" if ok else "FAIL",
+			"started", app.child.started,
+			"stopped", app.child.stopped,
+			"metrics", app.child.metrics_count,
+			"layouts", app.child.layout_count,
+			"menus", app.child.menu_count,
+			"deferred", app.child.close_deferred,
+			"dialogs", app.child.dialogs_available,
+			"open_failed", app.child.open_failed,
+		)
+		if !ok { os.exit(1) }
 	}
 	if app.titlebar_smoke {
 		ok := app.titlebar_metrics_count > 0 && app.titlebar_metrics_header_h > 0 &&

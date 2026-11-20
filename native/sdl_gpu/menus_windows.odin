@@ -1359,7 +1359,12 @@ win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam:
 		// replace the fallback even when the client dimensions have not changed.
 		if message == win.WM_SIZE || (position != nil &&
 			((position.flags & win.SWP_NOSIZE) == 0 || (position.flags & win.SWP_SHOWWINDOW) != 0)) {
+			was_maximized := state.maximized
 			win32_menu_layout_labels(state)
+			// A caption double-click changes zoom without a matching
+			// WM_NCLBUTTONUP on every system, which would leave the drag gesture
+			// latched and make every later hit test report HTCAPTION.
+			if state.maximized != was_maximized { state.gesture_owner = .None }
 			if state.menu.runtime != nil {
 				_ = win32_menu_sync_window_chrome_metrics(state, state.menu.runtime)
 			}

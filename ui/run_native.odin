@@ -5,8 +5,383 @@ import alicorn "alicorn:runtime"
 import sdl3_clipboard "alicorn:host/sdl3/clipboard"
 import host "alicorn:native/sdl_gpu"
 
+// Run_Native_Window_Service_Context bridges the hosted secondary-window shape
+// onto the reference SDL_GPU host. ui.run exposes Hosted_Window_Service; the
+// reference host exposes Application_Window_Service. Both values describe the
+// same one-child contract, so the adapter keeps one context for the run.
 @(private)
-run_application :: proc(run_state: ^Hosted_Run_State($T), title: string, width, height: int) -> host.Application {
+Run_Native_Window_Service_Context :: struct {
+	windows: host.Application_Window_Service,
+}
+
+// Run_Native_Window_Bridge owns the hosted configuration for one native child
+// window. The native Application borrows it as state; it is released after the
+// application's on_stop, or by on_open_failed when callbacks never started.
+@(private)
+Run_Native_Window_Bridge :: struct {
+	config:          alicorn.Hosted_Runtime_Config,
+	on_open_failed:  alicorn.Hosted_Window_Open_Failed_Proc,
+	service_context: ^Run_Native_Window_Service_Context,
+}
+
+@(private)
+run_native_window_build :: proc(
+	data: rawptr,
+	rt: ^alicorn.Runtime,
+	width, height: int,
+	dpi: f32,
+) -> alicorn.Node_ID {
+	bridge := cast(^Run_Native_Window_Bridge)data
+	if bridge == nil || bridge.config.render == nil { return 0 }
+	ctx, should_build := alicorn.begin_frame(rt)
+	if !should_build { return 0 }
+	root := alicorn.container_begin(
+		&ctx,
+		.Root,
+		label="ui-root",
+		key="alicorn.ui.root",
+		style=alicorn.layout_style(.Column, grow=1),
+	)
+	if root == 0 {
+		alicorn.end_frame(&ctx)
+		return 0
+	}
+	bridge.config.render(bridge.config.state, &ctx, width, height, dpi)
+	alicorn.container_end(&ctx)
+	alicorn.end_frame(&ctx)
+	return root
+}
+
+@(private)
+run_native_window_initialize :: proc(data: rawptr, rt: ^alicorn.Runtime) {
+	bridge := cast(^Run_Native_Window_Bridge)data
+	if bridge != nil && bridge.config.on_initialize != nil {
+		bridge.config.on_initialize(bridge.config.state, rt)
+	}
+}
+
+@(private)
+run_native_window_start :: proc(data: rawptr, _waker: host.Application_Waker) {
+	bridge := cast(^Run_Native_Window_Bridge)data
+	if bridge == nil || bridge.config.on_start == nil { return }
+	// The reference host owns its own wake transport. A hosted child normally
+	// receives a Hosted_Waker from the SDL3/WebGPU host; this adapter cannot
+	// manufacture one from the SDL_GPU waker, so the hosted callback receives an
+	// empty value. The SDL_GPU reference path does not need it.
+	bridge.config.on_start(bridge.config.state, {})
+}
+
+@(private)
+run_native_window_wake :: proc(data: rawptr, rt: ^alicorn.Runtime) {
+	bridge := cast(^Run_Native_Window_Bridge)data
+	if bridge != nil && bridge.config.on_wake != nil {
+		bridge.config.on_wake(bridge.config.state, rt)
+	}
+}
+
+@(private)
+run_native_window_scheduled_wake :: proc(data: rawptr, rt: ^alicorn.Runtime, _class: host.Scheduled_Wake_Class) {
+	bridge := cast(^Run_Native_Window_Bridge)data
+	if bridge != nil && bridge.config.on_scheduled_wake != nil {
+		bridge.config.on_scheduled_wake(bridge.config.state, rt)
+	}
+}
+
+@(private)
+run_native_window_stop :: proc(data: rawptr) {
+	bridge := cast(^Run_Native_Window_Bridge)data
+	if bridge == nil { return }
+	if bridge.config.on_stop != nil { bridge.config.on_stop(bridge.config.state) }
+	free(bridge)
+}
+
+@(private)
+run_native_window_key :: proc(data: rawptr, rt: ^alicorn.Runtime, key: alicorn.Application_Key) -> bool {
+	bridge := cast(^Run_Native_Window_Bridge)data
+	if bridge == nil || bridge.config.on_key == nil { return false }
+	return bridge.config.on_key(
+		bridge.config.state,
+		rt,
+		alicorn.focused_node(rt),
+		alicorn.Hosted_Key_Event{key_code=u32(key), pressed=true},
+	)
+}
+
+@(private)
+run_native_window_text_change :: proc(data: rawptr, rt: ^alicorn.Runtime, change: alicorn.Text_Change) {
+	bridge := cast(^Run_Native_Window_Bridge)data
+	if bridge != nil && bridge.config.on_text_change != nil {
+		bridge.config.on_text_change(bridge.config.state, rt, change)
+	}
+}
+
+@(private)
+run_native_window_text_key :: proc(
+	data: rawptr,
+	rt: ^alicorn.Runtime,
+	owner: Node_ID,
+	event: alicorn.Application_Text_Key_Event,
+) -> bool {
+	bridge := cast(^Run_Native_Window_Bridge)data
+	return bridge != nil && bridge.config.on_text_key != nil &&
+		bridge.config.on_text_key(bridge.config.state, rt, owner, event)
+}
+
+@(private)
+run_native_window_pointer :: proc(
+	data: rawptr,
+	rt: ^alicorn.Runtime,
+	event: alicorn.Pointer_Event,
+	target: Node_ID,
+) {
+	bridge := cast(^Run_Native_Window_Bridge)data
+	if bridge != nil && bridge.config.on_pointer != nil {
+		bridge.config.on_pointer(bridge.config.state, rt, event, target)
+	}
+}
+
+@(private)
+run_native_window_drag :: proc(data: rawptr, rt: ^alicorn.Runtime, event: alicorn.Drag_Event) {
+	bridge := cast(^Run_Native_Window_Bridge)data
+	if bridge != nil && bridge.config.on_drag != nil {
+		bridge.config.on_drag(bridge.config.state, rt, event)
+	}
+}
+
+@(private)
+run_native_window_scroll_capture :: proc(
+	data: rawptr,
+	rt: ^alicorn.Runtime,
+	event: alicorn.Scroll_Event,
+	target: Node_ID,
+) -> bool {
+	bridge := cast(^Run_Native_Window_Bridge)data
+	return bridge != nil && bridge.config.on_scroll_capture != nil &&
+		bridge.config.on_scroll_capture(bridge.config.state, rt, event, target)
+}
+
+@(private)
+run_native_window_scroll :: proc(data: rawptr, rt: ^alicorn.Runtime, event: alicorn.Scroll_Event) {
+	bridge := cast(^Run_Native_Window_Bridge)data
+	if bridge != nil && bridge.config.on_scroll != nil {
+		bridge.config.on_scroll(bridge.config.state, rt, event)
+	}
+}
+
+@(private)
+run_native_window_text_input :: proc(
+	data: rawptr,
+	rt: ^alicorn.Runtime,
+	owner: Node_ID,
+	event: alicorn.Application_Text_Input_Event,
+) {
+	bridge := cast(^Run_Native_Window_Bridge)data
+	if bridge == nil || bridge.config.on_text_input == nil { return }
+	bridge.config.on_text_input(
+		bridge.config.state,
+		rt,
+		owner,
+		alicorn.Hosted_Text_Input_Event{
+			kind=alicorn.Hosted_Text_Input_Kind(event.kind),
+			text=event.text,
+			selection_start_byte=event.selection_start_byte,
+			selection_end_byte=event.selection_end_byte,
+		},
+	)
+}
+
+@(private)
+run_native_window_menu_command :: proc(data: rawptr, rt: ^alicorn.Runtime, command: alicorn.Action_ID) {
+	bridge := cast(^Run_Native_Window_Bridge)data
+	if bridge != nil && bridge.config.on_menu_command != nil {
+		bridge.config.on_menu_command(bridge.config.state, rt, command)
+	}
+}
+
+@(private)
+run_native_window_close_requested :: proc(
+	data: rawptr,
+	rt: ^alicorn.Runtime,
+) -> alicorn.Hosted_Close_Result {
+	bridge := cast(^Run_Native_Window_Bridge)data
+	if bridge != nil && bridge.config.on_close_requested != nil {
+		return bridge.config.on_close_requested(bridge.config.state, rt)
+	}
+	return .Allow
+}
+
+@(private)
+run_native_window_dialog :: proc(
+	data: rawptr,
+	rt: ^alicorn.Runtime,
+	result: ^alicorn.File_Dialog_Result,
+) {
+	bridge := cast(^Run_Native_Window_Bridge)data
+	if bridge != nil && bridge.config.on_dialog != nil {
+		bridge.config.on_dialog(bridge.config.state, rt, result)
+	}
+}
+
+@(private)
+run_native_window_chrome_metrics :: proc(
+	data: rawptr,
+	rt: ^alicorn.Runtime,
+	metrics: alicorn.Window_Chrome_Metrics,
+) {
+	bridge := cast(^Run_Native_Window_Bridge)data
+	if bridge != nil && bridge.config.window_chrome_metrics != nil {
+		bridge.config.window_chrome_metrics(bridge.config.state, rt, metrics)
+	}
+}
+
+@(private)
+run_native_window_chrome_layout :: proc(
+	data: rawptr,
+	rt: ^alicorn.Runtime,
+) -> alicorn.Window_Chrome_Layout {
+	bridge := cast(^Run_Native_Window_Bridge)data
+	if bridge != nil && bridge.config.window_chrome_layout != nil {
+		return bridge.config.window_chrome_layout(bridge.config.state, rt)
+	}
+	return {}
+}
+
+@(private)
+run_native_window_chrome_appearance :: proc(
+	data: rawptr,
+	rt: ^alicorn.Runtime,
+) -> alicorn.Window_Chrome_Appearance {
+	bridge := cast(^Run_Native_Window_Bridge)data
+	if bridge != nil && bridge.config.window_chrome_appearance != nil {
+		return bridge.config.window_chrome_appearance(bridge.config.state, rt)
+	}
+	return {}
+}
+
+@(private)
+run_native_window_services :: proc(data: rawptr, services: host.Application_Services) {
+	bridge := cast(^Run_Native_Window_Bridge)data
+	if bridge == nil || bridge.config.on_host_services == nil { return }
+	ctx := bridge.service_context
+	if ctx == nil { return }
+	bridge.config.on_host_services(
+		bridge.config.state,
+		alicorn.Hosted_Host_Services{
+			windows=alicorn.Hosted_Window_Service{
+				data=rawptr(ctx),
+				open=run_native_window_open,
+				close=run_native_window_close,
+				set_always_on_top=run_native_window_set_always_on_top,
+				set_title=run_native_window_set_title,
+			},
+			dialogs=services.dialogs,
+			quit=services.quit,
+		},
+	)
+}
+
+@(private)
+run_native_window_open :: proc(data: rawptr, description: alicorn.Hosted_Window_Description) -> bool {
+	ctx := cast(^Run_Native_Window_Service_Context)data
+	if ctx == nil || ctx.windows.open == nil || description.config.render == nil { return false }
+	bridge := new(Run_Native_Window_Bridge)
+	if bridge == nil { return false }
+	bridge.config = description.config
+	bridge.on_open_failed = description.on_open_failed
+	bridge.service_context = ctx
+	application := host.Application{
+		state=rawptr(bridge),
+		title=description.title,
+		width=description.width,
+		height=description.height,
+		menus=description.config.menus,
+		menu_presentation=host.Application_Menu_Presentation(description.config.menu_presentation),
+		window_decorations=host.Window_Decoration_Mode(description.config.window_decorations),
+		window_chrome_height=description.config.window_chrome_height,
+		window_chrome_metrics=run_native_window_chrome_metrics,
+		window_chrome_layout=run_native_window_chrome_layout,
+		window_chrome_appearance=run_native_window_chrome_appearance,
+		build=run_native_window_build,
+		interaction_update_policy=.Correct_After_Interaction,
+	}
+	if description.config.on_initialize != nil { application.on_initialize = run_native_window_initialize }
+	if description.config.on_host_services != nil { application.on_services = run_native_window_services }
+	if description.config.on_start != nil { application.on_start = run_native_window_start }
+	if description.config.on_wake != nil { application.on_wake = run_native_window_wake }
+	if description.config.on_scheduled_wake != nil {
+		application.on_scheduled_wake = run_native_window_scheduled_wake
+	}
+	if description.config.on_stop != nil { application.on_stop = run_native_window_stop }
+	if description.config.on_key != nil { application.on_key = run_native_window_key }
+	if description.config.on_text_change != nil { application.on_text_change = run_native_window_text_change }
+	if description.config.on_text_key != nil { application.on_text_key = run_native_window_text_key }
+	if description.config.on_pointer != nil { application.on_pointer = run_native_window_pointer }
+	if description.config.on_drag != nil { application.on_drag = run_native_window_drag }
+	if description.config.on_scroll_capture != nil {
+		application.on_scroll_capture = run_native_window_scroll_capture
+	}
+	if description.config.on_scroll != nil { application.on_scroll = run_native_window_scroll }
+	if description.config.on_text_input != nil { application.on_text_input = run_native_window_text_input }
+	if description.config.on_menu_command != nil {
+		application.on_menu_command = run_native_window_menu_command
+	}
+	if description.config.on_close_requested != nil {
+		application.on_close_requested = run_native_window_close_requested
+	}
+	if description.config.on_dialog != nil { application.on_dialog = run_native_window_dialog }
+	// on_stop is required to release the bridge even when the application does
+	// not install one. It is only invoked after callbacks started.
+	if application.on_stop == nil { application.on_stop = run_native_window_stop }
+	native_description := host.Application_Window_Description{
+		application=application,
+		width=description.width,
+		height=description.height,
+		always_on_top=description.always_on_top,
+		on_open_failed=run_native_window_open_failed,
+	}
+	if !host.application_open_window(ctx.windows, native_description) {
+		free(bridge)
+		return false
+	}
+	return true
+}
+
+@(private)
+run_native_window_open_failed :: proc(data: rawptr) {
+	bridge := cast(^Run_Native_Window_Bridge)data
+	if bridge == nil { return }
+	state := bridge.config.state
+	failed := bridge.on_open_failed
+	free(bridge)
+	if failed != nil { failed(state) }
+}
+
+@(private)
+run_native_window_close :: proc(data: rawptr) {
+	ctx := cast(^Run_Native_Window_Service_Context)data
+	if ctx != nil && ctx.windows.close != nil { ctx.windows.close(ctx.windows.data) }
+}
+
+@(private)
+run_native_window_set_always_on_top :: proc(data: rawptr, always_on_top: bool) -> bool {
+	ctx := cast(^Run_Native_Window_Service_Context)data
+	return ctx != nil && ctx.windows.set_always_on_top != nil &&
+		ctx.windows.set_always_on_top(ctx.windows.data, always_on_top)
+}
+
+@(private)
+run_native_window_set_title :: proc(data: rawptr, title: string) -> bool {
+	ctx := cast(^Run_Native_Window_Service_Context)data
+	return ctx != nil && ctx.windows.set_title != nil &&
+		ctx.windows.set_title(ctx.windows.data, title)
+}
+
+@(private)
+run_application :: proc(
+	run_state: ^Hosted_Run_State($T),
+	title: string,
+	width, height: int,
+) -> host.Application {
 	build :: proc(
 		data: rawptr,
 		rt: ^alicorn.Runtime,
@@ -31,8 +406,19 @@ run_application :: proc(run_state: ^Hosted_Run_State($T), title: string, width, 
 		state := cast(^Hosted_Run_State(T))data
 		backend := cast(^sdl3_clipboard.UI_Clipboard_Backend)state.host_services.clipboard.data
 		if backend != nil { backend.service = services.clipboard }
+		service_context := cast(^Run_Native_Window_Service_Context)state.host_services.windows.data
 		state.host_services.dialogs = services.dialogs
 		state.host_services.quit = services.quit
+		if service_context != nil {
+			service_context.windows = services.windows
+			state.host_services.windows = alicorn.Hosted_Window_Service{
+				data=rawptr(service_context),
+				open=run_native_window_open,
+				close=run_native_window_close,
+				set_always_on_top=run_native_window_set_always_on_top,
+				set_title=run_native_window_set_title,
+			}
+		}
 		if state.on_services != nil { state.on_services(state.app, state.host_services) }
 	}
 	woken :: proc(data: rawptr, rt: ^alicorn.Runtime) {
@@ -224,5 +610,7 @@ run :: proc(
 	}
 	clipboard_backend: sdl3_clipboard.UI_Clipboard_Backend
 	run_state.host_services.clipboard = sdl3_clipboard.UI_Clipboard_Service(&clipboard_backend)
+	window_service: Run_Native_Window_Service_Context
+	run_state.host_services.windows = alicorn.Hosted_Window_Service{data=rawptr(&window_service)}
 	host.Run(run_application(&run_state, title, width, height), smoke=smoke)
 }

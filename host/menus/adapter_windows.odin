@@ -369,3 +369,15 @@ native_menu_adapter_handle_keydown :: proc(
 ) -> bool {
 	return win32_chrome_handle_keydown(adapter, keycode, modifiers)
 }
+
+// Windows chrome hit testing consumes window-logical screen coordinates
+// directly; there is no AppKit hit-test sample stream to reconcile.
+native_menu_adapter_translate_pointer :: proc(
+	adapter: ^Native_Menu_Adapter,
+	pointer: alicorn.Pointer_Event,
+	event: sdl3.Event,
+) -> alicorn.Pointer_Event {
+	return pointer
+}
+
+native_menu_adapter_note_window_hit_test :: proc(adapter: ^Native_Menu_Adapter) {}

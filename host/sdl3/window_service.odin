@@ -257,6 +257,13 @@ sdl3_webgpu_window_create_pending :: proc(
 	child.surface = surface
 	child.configuration = configuration
 	child_config := description.config
+	when ODIN_OS == .Darwin {
+		// AppKit's main menu is process-global, and the reference SDL_GPU host
+		// deliberately leaves secondary windows without their own menu. Mirror
+		// that rather than letting a second adapter replace the primary menu.
+		child_config.menus = nil
+		child_config.menu_presentation = .Labels
+	}
 	child_config.logical_width, child_config.logical_height = lw, lh
 	child_config.pixel_width, child_config.pixel_height = pw, ph
 	child_config.dpi_scale = f32(pw) / f32(lw)

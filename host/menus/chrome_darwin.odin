@@ -18,6 +18,20 @@ import "vendor:sdl3"
 
 Darwin_Titlebar_Gesture_Owner :: enum u8 { None, Client, Alicorn, Native_Control, Window }
 
+DARWIN_TITLEBAR_POINTER_SAMPLE_CAPACITY :: 64
+
+// SDL invokes the Cocoa hit-test callback before it queues the matching SDL
+// pointer event, and during a window drag the SDL event can carry a stale
+// location. Native macOS therefore pairs each hit-test point with the incoming
+// event. The hosted port keeps the same sample ring so drag distance and region
+// ownership do not drift on a physical Mac.
+Darwin_Titlebar_Pointer_Samples :: struct {
+	points:  [DARWIN_TITLEBAR_POINTER_SAMPLE_CAPACITY]sdl3.Point,
+	buttons: [DARWIN_TITLEBAR_POINTER_SAMPLE_CAPACITY]sdl3.MouseButtonFlags,
+	head:    int,
+	count:   int,
+}
+
 Darwin_Titlebar_Geometry :: struct {
 	header:                alicorn.Rect,
 	native_controls:       [3]alicorn.Rect,
@@ -39,6 +53,137 @@ Darwin_Titlebar_State :: struct {
 	hit_test_calls:        u64,
 	draggable_calls:       u64,
 	style_reapplies:       u64,
+	pointer_samples:       Darwin_Titlebar_Pointer_Samples,
+	last_sdl_pointer_point: sdl3.Point,
+	last_sdl_pointer_valid: bool,
+}
+
+darwin_titlebar_pointer_sample_push :: proc(
+	samples: ^Darwin_Titlebar_Pointer_Samples,
+	point: sdl3.Point,
+	buttons: sdl3.MouseButtonFlags,
+) {
+	if samples == nil || samples.count >= len(samples.points) { return }
+	index := (samples.head+samples.count) % len(samples.points)
+	samples.points[index] = point
+	samples.buttons[index] = buttons
+	samples.count += 1
+}
+
+darwin_titlebar_pointer_sample_pop_with_buttons :: proc(
+	samples: ^Darwin_Titlebar_Pointer_Samples,
+) -> (point: sdl3.Point, buttons: sdl3.MouseButtonFlags, ok: bool) {
+	if samples == nil || samples.count <= 0 { return }
+	point = samples.points[samples.head]
+	buttons = samples.buttons[samples.head]
+	samples.head = (samples.head+1) % len(samples.points)
+	samples.count -= 1
+	ok = true
+	return
+}
+
+darwin_titlebar_pointer_sample_pop :: proc(samples: ^Darwin_Titlebar_Pointer_Samples) -> (point: sdl3.Point, ok: bool) {
+	point, _, ok = darwin_titlebar_pointer_sample_pop_with_buttons(samples)
+	return
+}
+
+darwin_titlebar_gesture_cancel :: proc(owner: ^Darwin_Titlebar_Gesture_Owner) {
+	if owner != nil { owner^ = .None }
+}
+
+darwin_titlebar_consume_hit_test_sample :: proc(
+	samples: ^Darwin_Titlebar_Pointer_Samples,
+	owner: ^Darwin_Titlebar_Gesture_Owner,
+) -> bool {
+	_, buttons, ok := darwin_titlebar_pointer_sample_pop_with_buttons(samples)
+	if ok && !(sdl3.MouseButtonFlag.LEFT in buttons) {
+		// Cocoa can consume mouse-up while performing its window drag. The app
+		// must still release its latched gesture owner without SDL's up event.
+		darwin_titlebar_gesture_cancel(owner)
+	}
+	return ok
+}
+
+// SDL queues the corresponding pointer event after invoking Cocoa's hit-test
+// callback, but an initial hover callback can have no SDL event. For press,
+// drag, and release events, match by the native left-button snapshot and drop
+// any earlier unpaired hover samples. This preserves the actual drag distance.
+darwin_titlebar_pointer_sample_pop_matching :: proc(
+	samples: ^Darwin_Titlebar_Pointer_Samples,
+	left_down: bool,
+) -> (point: sdl3.Point, ok: bool) {
+	if samples == nil { return }
+	for samples.count > 0 {
+		index := samples.head
+		point = samples.points[index]
+		buttons := sdl3.MouseButtonFlag.LEFT in samples.buttons[index]
+		samples.head = (samples.head+1) % len(samples.points)
+		samples.count -= 1
+		if buttons == left_down {
+			ok = true
+			return
+		}
+	}
+	return
+}
+
+darwin_titlebar_pointer_use_hit_test_point :: proc(
+	pointer: alicorn.Pointer_Event,
+	point: sdl3.Point,
+	point_valid: bool,
+) -> alicorn.Pointer_Event {
+	result := pointer
+	if point_valid {
+		result.x = f32(point[0])
+		result.y = f32(point[1])
+	}
+	return result
+}
+
+darwin_titlebar_translate_pointer :: proc(
+	adapter: ^Native_Menu_Adapter,
+	pointer: alicorn.Pointer_Event,
+	event: sdl3.Event,
+) -> alicorn.Pointer_Event {
+	if adapter == nil || adapter.platform_data == nil { return pointer }
+	state := cast(^Darwin_Menu_State)adapter.platform_data
+	if !state.titlebar.active { return pointer }
+	left_down := false
+	match_buttons := true
+	if event.type == .MOUSE_MOTION {
+		left_down = sdl3.MouseButtonFlag.LEFT in event.motion.state
+	} else if event.type == .MOUSE_BUTTON_DOWN {
+		left_down = event.button.button == sdl3.BUTTON_LEFT
+	} else if event.type != .MOUSE_BUTTON_UP {
+		match_buttons = false
+	}
+	point, found := darwin_titlebar_pointer_sample_pop_matching(&state.titlebar.pointer_samples, left_down)
+	if !match_buttons { point, found = darwin_titlebar_pointer_sample_pop(&state.titlebar.pointer_samples) }
+	if !found {
+		point = state.titlebar.last_sdl_pointer_point
+		found = state.titlebar.last_sdl_pointer_valid
+	}
+	return darwin_titlebar_pointer_use_hit_test_point(pointer, point, found)
+}
+
+native_menu_adapter_translate_pointer :: proc(
+	adapter: ^Native_Menu_Adapter,
+	pointer: alicorn.Pointer_Event,
+	event: sdl3.Event,
+) -> alicorn.Pointer_Event {
+	if adapter == nil || adapter.platform_data == nil { return pointer }
+	return darwin_titlebar_translate_pointer(adapter, pointer, event)
+}
+
+native_menu_adapter_note_window_hit_test :: proc(adapter: ^Native_Menu_Adapter) {
+	if adapter == nil || adapter.platform_data == nil { return }
+	state := cast(^Darwin_Menu_State)adapter.platform_data
+	if !state.titlebar.active { return }
+	_ = darwin_titlebar_consume_hit_test_sample(
+		&state.titlebar.pointer_samples,
+		&state.titlebar.gesture_owner,
+	)
+	state.titlebar.last_sdl_pointer_valid = false
 }
 
 darwin_titlebar_rect_to_window_logical :: proc(rect, content_bounds: NS.Rect, content_is_flipped: bool) -> alicorn.Rect {
@@ -217,6 +362,9 @@ darwin_titlebar_sdl_hit_test :: proc "c" (
 	if !state.titlebar.active { return .NORMAL }
 	state.titlebar.hit_test_calls += 1
 	buttons := sdl3.GetGlobalMouseState(nil, nil)
+	state.titlebar.last_sdl_pointer_point = area^
+	state.titlebar.last_sdl_pointer_valid = true
+	darwin_titlebar_pointer_sample_push(&state.titlebar.pointer_samples, area^, buttons)
 	result := darwin_titlebar_hit_test(state.titlebar.geometry, area^, buttons, &state.titlebar.gesture_owner)
 	darwin_titlebar_apply_mobility(state.window, result)
 	if result == .DRAGGABLE { state.titlebar.draggable_calls += 1 }
@@ -373,5 +521,7 @@ darwin_titlebar_destroy :: proc(adapter: ^Native_Menu_Adapter) {
 		NS.Window_setMovable(state.window, true)
 	}
 	state.titlebar.gesture_owner = .None
+	state.titlebar.pointer_samples = {}
+	state.titlebar.last_sdl_pointer_valid = false
 	state.titlebar.active = false
 }
