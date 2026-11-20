@@ -296,8 +296,44 @@ shared SDL3 pre-present hook samples layout and metrics in the same frame.
 On Windows, `host/menus` owns one HMENU/subclass construction path for both the
 system menu bar and the integrated band. On macOS, `Content_Title_Bar` uses
 AppKit full-size-content coordination; it is compile-checked but not yet
-validated on a physical Mac in this slice. Secondary-window chrome parity and
-Scratchpad consumption remain slice-4 work.
+validated on a physical Mac in this slice.
+
+### Secondary windows
+
+`Hosted_Window_Description`/`Hosted_Window_Service` mirror the reference
+`Application_Window_Description`/`Application_Window_Service` contract. A
+description carries `title`, `width`, `height`, `always_on_top`, one
+`Hosted_Runtime_Config` (all application callbacks, menus, chrome policy), and
+`on_open_failed`; the service has `open`, `close`, `set_always_on_top`, and
+`set_title`. `ui.run`, `ui/webgpu.run`, and the browser `run` expose the same
+`UI_Host_Services.windows` value. Native hosts defer creation to an event-loop
+safe point.
+
+Each hosted child owns independent retained state:
+
+- Its own `Hosted_Runtime`, viewport, `content_inset_top`, pointer/text/focus
+  state, close-deferral result, dialog bridge, and `on_scheduled_wake` callback.
+  The SDL3/WebGPU loop steps the primary and child and arms the earliest of
+  their deadlines.
+- Its own menu service and accelerator matching. On Windows the per-window
+  HMENU is attached to the child HWND; commands and accelerators are queued and
+  dispatched to that child's `on_menu_command`. On macOS the main menu is
+  process-global, so a hosted child keeps no separate native menu, matching the
+  reference host; its chrome and callbacks remain per-window.
+- Its own decoration policy, chrome metrics/layout/appearance callbacks, chrome
+  regions, and host chrome paint. `Window_Drag` regions in a child are caption
+  gestures for that child only; the content inset is published on the child's
+  Runtime and applied to the child's presenter.
+- Its own `Hosted_Host_Services.dialogs` and `.quit`. A child close request is
+  routed through the child's `on_close_requested`; `.Defer` keeps that child
+  alive and the child's `quit` service completes shutdown.
+
+The SDL_GPU `ui.run` path keeps its reference behavior by bridging a hosted
+description onto `Application_Window_Description`. That bridge preserves menus,
+chrome callbacks (with the hosted application state), dialogs, close deferral,
+and the window service. It cannot manufacture a `Hosted_Waker` from the native
+`Application_Waker`, so a child `on_start` receives an empty hosted waker on the
+reference path; `ui/webgpu.run` supplies the real per-window waker.
 
 
 ## Multiple outputs from one Runtime
@@ -490,15 +526,34 @@ actions, and worker-thread wake coalescing, failed posts, owner-thread rejection
 and shutdown. Run it as part of `odin test runtime`. These tests validate the
 Runtime contract, not a native wxWidgets surface or platform IME/AT integration.
 
-This API does not wrap a wx window in SDL, own a GPU device, provide native
-clipboard/dialog services, or implement a wx event adapter. It establishes a
-single-threaded retained Runtime lifecycle and input boundary so those pieces
-can be prototyped without creating another Runtime per control. The wx fixture
-still needs to validate surface compatibility, event fairness, focus/IME,
-native accessibility, resize/DPI, worker wakes, scheduled motion, and close
-ordering on target platforms. Keep existing wx controls as fallbacks until
-their behavior matches, particularly Audacity's specialized numeric selection
-fields. Audio and DSP callbacks must never enter this UI API.
+Stage A is complete on the native hosted path. `host/sdl3` now supplies one
+per-window implementation of native menus and accelerators, integrated
+titlebar/chrome metrics and regions, file dialogs, deferred close/quit, and one
+secondary window with its own chrome, menus, dialogs, close policy, input, and
+deadline. Both `ui/webgpu.run` and the reference SDL_GPU `ui.run` expose those
+services through `UI_Host_Services` and `Hosted_Window_Description`; the
+reference path translates the hosted description at its boundary. See
+[`webgpu-migration.md`](webgpu-migration.md) for the slice record and
+[`validation/webgpu-chrome-interactive-windows-2026-11-19.md`](validation/webgpu-chrome-interactive-windows-2026-11-19.md)
+for Windows interaction evidence.
+
+This API still does not wrap a wx window in SDL, own a GPU device, or implement
+a wx event adapter. The wx fixture still needs to validate surface
+compatibility, event fairness, focus/IME, native accessibility, resize/DPI,
+worker wakes, scheduled motion, and close ordering on target platforms. Keep
+existing wx controls as fallbacks until their behavior matches, particularly
+Audacity's specialized numeric selection fields. Audio and DSP callbacks must
+never enter this UI API.
+
+What remains before Scratchpad can retire its native-only window path is
+browser-side and physical-platform work, not another hosted API shape: browser
+menus/accelerators and browser dialog/close services are still unimplemented;
+macOS chrome, per-window menu policy, and pointer-sample pairing are
+compile-checked but unrun on a physical Mac; Linux keeps semantic menu metadata
+only; and Snap Layouts, mixed-DPI moves, and trackpad inertia still need
+hands-on Windows records. The hosted `on_scheduled_wake` callback has no wake
+class, unlike the reference `Application_Scheduled_Wake_Proc`; a class-aware
+hosted scheduler remains a mapping gap.
 
 The fixture is separate from plugin editor child-window attachment in
 [#121](https://github.com/Carnival-Science/Alicorn/issues/121) and renderer

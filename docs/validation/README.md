@@ -11,6 +11,10 @@ the current project status.
   — master merge resolution, every shared runtime/host/renderer/tooling change
   with a blast-radius verdict, the two `js_wasm32` regressions found and fixed,
   and the dependency-patch/test-export audit.
+- [WebGPU chrome physical interaction — Windows (2026-11-19)](webgpu-chrome-interactive-windows-2026-11-19.md)
+  — hosted secondary-window parity, scripted drag/maximize/resize/caption
+  checks on D3D12 and SDL_GPU, the chrome bugs found and fixed, and the
+  hands-on items that remain for a human session.
 - [Induced D3D12 backend device removal (2026-11-19)](webgpu-native-backend-removal-windows-2026-11-19.md)
   — rung 3 of the device-loss ladder: a test-only wgpu-native export calls
   `ID3D12Device5::RemoveDevice()` on the live device, the DeviceLost callback

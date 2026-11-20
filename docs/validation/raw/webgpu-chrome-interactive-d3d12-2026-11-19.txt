@@ -1,0 +1,46 @@
+
+Name                                        Status   Detail                                                            
+----                                        ------   ------                                                            
+main window created                         PASS     hwnd=5376064 title='Alicorn · Native Renderer Probe'              
+window focus                                PASS     foreground=True                                                   
+window resized for chrome interaction       PASS     rect=120,120 1100x700                                             
+Window_Drag region maps to HTCAPTION        PASS     point=770,136 WM_NCHITTEST=2 (HTCAPTION=2)                        
+drag-to-move on caption band                PASS     delta=100,50 (expected about +100,+50)                            
+double-click caption maximizes              PASS     IsZoomed=True                                                     
+double-click caption restores               PASS     IsZoomed=False                                                    
+right edge maps to HTRIGHT                  PASS     WM_NCHITTEST=11 (HTRIGHT=11)                                      
+resize by right edge drag                   PASS     width delta=120 (expected about +120)                             
+caption minimize click                      PASS     IsIconic=True                                                     
+restore after minimize                      PASS     visible=True                                                      
+caption maximize click                      PASS     IsZoomed=True                                                     
+caption restore click                       PASS     IsZoomed=False                                                    
+chrome survives theme/settings messages     PASS     alive=True                                                        
+caption close click exits cleanly           PASS     exited=True exit=0                                                
+Snap Layouts flyout (hover maximize button) HANDS-ON requires a human pointer over the caption maximize button; the ...
+theme/contrast visual switch                HANDS-ON setting a live system theme or high-contrast theme changes the ...
+mixed-DPI monitor move (150% to 200%)       HANDS-ON user-owned physical monitor arrangement; WM_DPICHANGED handling...
+trackpad inertia / precision touchpad feel  HANDS-ON requires physical precision-touchpad input; scripted wheel delt...
+
+
+
+backend=d3d12 executable=C:\Users\saman\.codex\worktrees\alicorn-webgpu-migration\alicorn\out\slice4\native_webgpu_ui.exe pid=340212
+[PASS] main window created: hwnd=5376064 title='Alicorn · Native Renderer Probe'
+[PASS] window focus: foreground=True
+[PASS] window resized for chrome interaction: rect=120,120 1100x700
+[PASS] Window_Drag region maps to HTCAPTION: point=770,136 WM_NCHITTEST=2 (HTCAPTION=2)
+[PASS] drag-to-move on caption band: delta=100,50 (expected about +100,+50)
+[PASS] double-click caption maximizes: IsZoomed=True
+[PASS] double-click caption restores: IsZoomed=False
+[PASS] right edge maps to HTRIGHT: WM_NCHITTEST=11 (HTRIGHT=11)
+[PASS] resize by right edge drag: width delta=120 (expected about +120)
+[PASS] caption minimize click: IsIconic=True
+[PASS] restore after minimize: visible=True
+[PASS] caption maximize click: IsZoomed=True
+[PASS] caption restore click: IsZoomed=False
+[PASS] chrome survives theme/settings messages: alive=True
+[PASS] caption close click exits cleanly: exited=True exit=0
+[HANDS-ON] Snap Layouts flyout (hover maximize button): requires a human pointer over the caption maximize button; the flyout and snapped placement are OS-owned
+[HANDS-ON] theme/contrast visual switch: setting a live system theme or high-contrast theme changes the user desktop; message-path survival is covered above
+[HANDS-ON] mixed-DPI monitor move (150% to 200%): user-owned physical monitor arrangement; WM_DPICHANGED handling is compile-tested but not scripted here
+[HANDS-ON] trackpad inertia / precision touchpad feel: requires physical precision-touchpad input; scripted wheel deltas do not exercise OS inertia
+backend=d3d12 failures=0 pass=15 hands_on=4

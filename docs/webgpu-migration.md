@@ -7,6 +7,12 @@ Phase 2 has bounded solid-surface, text-sampling, icon, image, material,
 custom-surface caching, and mixed compositor slices. SDL_GPU remains the only
 complete application renderer and the visual reference.
 
+Stage A of hosted-runtime parity is complete on native SDL3: menus, integrated
+chrome, dialogs, close deferral, and one secondary window with its own chrome
+and services are covered by the shared hosted API and by the reference host.
+Browser menus/dialog/close services and physical macOS/Linux validation remain
+open; see [Stage A slice 4](#stage-a-slice-4-secondary-window-chrome-parity-and-physical-interaction-windows-2026-11-19).
+
 The 2026-11-19 merge of `origin/master` into this branch, every shared-surface
 change with its blast-radius verdict, and the integration regressions found and
 fixed are recorded in
@@ -3302,3 +3308,84 @@ Validation on Windows x64 (NVIDIA RTX 2080 SUPER, D3D12, 2026-11-20):
   path is therefore compile-only: no physical Mac ran this slice, so
   traffic-light placement, drag regions, and fullscreen transitions remain
   unverified.
+
+### Stage A slice 4: secondary-window chrome parity and physical interaction (Windows, 2026-11-19)
+
+Stage A is complete on native SDL3. The hosted stack now covers native menus,
+integrated chrome, dialogs, close deferral, and one secondary window with its
+own chrome and services; what remains is browser-side and physical-platform
+validation.
+
+- `ui/run_native` now bridges `Hosted_Window_Description` onto the reference
+  `Application_Window_Description`. Before this slice, `ui.run` never published
+  `UI_Host_Services.windows` on the SDL_GPU path, so a hosted child request
+  returned `false` silently and the old `--child-smoke` could pass without a
+  child. The bridge preserves menus, chrome callbacks (routed with
+  `Hosted_Runtime_Config.state`), dialogs, close deferral, and the window
+  service. It cannot manufacture a `Hosted_Waker`, so a child `on_start` gets an
+  empty waker on the reference path; `ui/webgpu.run` supplies the real one.
+- A hosted child owns its own `Hosted_Runtime`, content inset, chrome
+  metrics/layout/regions/paint, menu service and accelerator gate, dialog
+  bridge, close result, quit service, input/text/focus state, and scheduled
+  wake. The SDL3/WebGPU loop steps the child, dispatches its dialogs/menus, and
+  arms the earliest primary/child deadline.
+- The reference secondary-window loop now re-syncs `chrome_layout` whenever the
+  child has a pending frame. Previously an app-authored child header never
+  produced drag/interactive regions after its first description.
+- A caption double-click that changes zoom can omit `WM_NCLBUTTONUP`. Both the
+  hosted and reference Win32 adapters now clear a latched `.Window` gesture when
+  the maximized state changes; without this, every later `WM_NCHITTEST`
+  returned `HTCAPTION`.
+- macOS keeps the reference host's secondary-window policy: AppKit's main menu
+  is process-global, so a hosted child leaves menus to the primary window. The
+  hosted macOS titlebar now ports the reference pointer-sample pairing
+  (hit-test point + button snapshot, press/release matching, consumed-event
+  drain, last-point fallback). It is compile-only for `darwin_arm64`.
+- `examples/16_native_webgpu_ui --child-chrome-smoke` opens a 760×460 child with
+  an integrated titlebar, menu, accelerator, chrome metrics/layout, dialog
+  service, and close deferral; it pushes a child-targeted accelerator and close
+  request, completes the deferred close through the child quit service, and
+  asserts the hosted callbacks. It passes on `--backend=d3d12` and
+  `--backend=sdl-gpu`.
+- `tools/validate_native_webgpu_chrome.ps1` drives the integrated titlebar with
+  real `SendInput`/cursor input: the Window_Drag band returns `HTCAPTION` and
+  moves the window, double-click maximizes/restores, the right edge returns
+  `HTRIGHT` and resizes, and the three caption buttons minimize/maximize/restore
+  and close cleanly. Theme/settings message survival is scripted; Snap Layouts,
+  mixed-DPI moves, trackpad inertia, and visual contrast switches are recorded
+  as hands-on. It reports `failures=0 pass=15 hands_on=4` on both D3D12 and
+  SDL_GPU. See
+  [`validation/webgpu-chrome-interactive-windows-2026-11-19.md`](validation/webgpu-chrome-interactive-windows-2026-11-19.md).
+
+Validation on Windows x64 (NVIDIA RTX 2080 SUPER, `fe1dc7f`):
+
+- `tools/test.ps1 -Odin C:\odin\odin.exe` passed: AccessKit 8, runtime 392,
+  host/sdl3 2, host/sdl3/input 8, host/sdl3/clipboard 3, host/sdl3/dialogs 5,
+  host/menus 8, host/web 14, ui 50, testui 13, theme 37, renderer/cpu 22,
+  native/sdl_gpu 169, native/scroll_capture_tests 6, plus the foundation,
+  text-input contract, restoration, and theme CLI checks. `host/menus` also adds
+  three darwin-only pointer-sample tests (compile-checked, not run on Windows).
+- `examples/15_host_owned_sdl_gpu` and `examples/16_native_webgpu_ui` built. The
+  example 16 `--smoke`, `--child-smoke`, `--child-chrome-smoke`, `--menu-smoke`,
+  and `--titlebar-smoke` modes exited 0 on both `--backend=d3d12` and
+  `--backend=sdl-gpu`. Child chrome reported metrics/layouts/menu/deferral on
+  both (`layouts=7` hosted, `layouts=2` reference).
+- `tools/validate_native_webgpu_ui.ps1` reported `failures=0` on D3D12 and
+  Vulkan. Its focus step now attaches to the foreground thread; a terminal
+  window holding activation had produced a one-off spurious failure.
+- `js_wasm32` package-boundary build passed. `host/menus` type-checks for
+  `darwin_arm64`; `native/sdl_gpu` type-checks for `darwin_arm64`. The full
+  `host/sdl3` WebGPU package still cannot be type-checked locally because this
+  Odin install has no macOS wgpu-native archive.
+
+Stage B entry state: Scratchpad should consume the branch tip after this slice
+(`fe1dc7f` plus the docs commit) through `ui/webgpu.run` and
+`Hosted_Window_Description`. Its native `Application_Window_Description`
+fields map directly: `application.state/title/width/height`, `menus`,
+`menu_presentation`, `window_decorations`, `window_chrome_height`,
+`window_chrome_metrics/layout/appearance`, and every `on_*` callback become the
+description's `title/width/height/always_on_top` plus `config`. The hosted
+`on_scheduled_wake` has no wake-class argument, and the hosted clipboard service
+is the shared asynchronous API (bounded request IDs and completion callbacks,
+not the native synchronous clipboard calls); those are the expected consumption
+changes.
