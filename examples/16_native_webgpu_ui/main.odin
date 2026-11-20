@@ -19,9 +19,18 @@ App :: struct {
 	name: ui.Text_Buffer,
 	timing_motion: bool,
 	windows: ui.UI_Window_Service,
+	dialogs: ui.UI_Dialog_Service,
+	quit: alicorn.Hosted_Quit_Service,
+	dialog_available: bool,
+	dialog_accepted: bool,
+	dialog_result: string,
 	child: Child_App,
 	open_child_on_services: bool,
 	child_open_accepted: bool,
+	// --defer-close proves the hosted close/quit handshake without changing the
+	// default behavior driven by validate_native_webgpu_ui.ps1.
+	defer_close_once: bool,
+	close_deferred: bool,
 }
 
 render :: proc(app: ^App, ctx: ^ui.UI) {
@@ -33,6 +42,23 @@ render :: proc(app: ^App, ctx: ^ui.UI) {
 		if ui.button(ctx, "Queue application wake") { ui.wake(app.waker) }
 		ui.text(ctx, fmt.tprintf("Application wake callbacks: %d", app.wake_deliveries))
 		ui.text_field(ctx, "Try native text input", &app.name)
+		if ui.button(ctx, "Open file dialog") {
+			app.dialog_accepted = ui.ui_dialog_show_file(app.dialogs, ui.UI_File_Dialog_Request{
+				kind=.Open_File,
+				title="Alicorn hosted file dialog",
+				accept_label="Choose",
+			})
+			if !app.dialog_accepted { app.dialog_result = "Request was rejected" }
+		}
+		ui.text(ctx, fmt.tprintf(
+			"Hosted dialogs: %s; last result: %s",
+			"available" if app.dialog_available else "unavailable",
+			app.dialog_result,
+		))
+		if app.close_deferred {
+			ui.text(ctx, "Close deferred; quitting through the hosted quit service.")
+			if ui.button(ctx, "Close now") { ui.ui_quit_request(app.quit) }
+		}
 		if ui.button(ctx, "Open auxiliary window") {
 			app.child_open_accepted = open_auxiliary_window(app)
 		}
@@ -120,8 +146,36 @@ open_auxiliary_window :: proc(app: ^App) -> bool {
 	})
 }
 
+dialog_done :: proc(app: ^App, rt: ^alicorn.Runtime, result: ^ui.UI_File_Dialog_Result) {
+	switch result.status {
+	case .Accepted:
+		app.dialog_accepted = true
+		app.dialog_result = "Accepted"
+	case .Cancelled:
+		app.dialog_accepted = false
+		app.dialog_result = "Cancelled"
+	case .Error:
+		app.dialog_accepted = false
+		app.dialog_result = "Error"
+	}
+	alicorn.invalidate_root(rt, "hosted file dialog completed")
+}
+
+close_requested :: proc(app: ^App, rt: ^alicorn.Runtime) -> alicorn.Hosted_Close_Result {
+	if app.defer_close_once {
+		app.defer_close_once = false
+		app.close_deferred = true
+		alicorn.invalidate_root(rt, "hosted close request deferred")
+		return .Defer
+	}
+	return .Allow
+}
+
 services :: proc(app: ^App, value: ui.UI_Host_Services) {
 	app.windows = value.windows
+	app.dialogs = value.dialogs
+	app.quit = value.quit
+	app.dialog_available = value.dialogs.show_file != nil
 	if app.open_child_on_services {
 		app.child_open_accepted = open_auxiliary_window(app)
 	}
@@ -134,13 +188,14 @@ stop :: proc(app: ^App) {
 main :: proc() {
 	name, ok := ui.text_buffer("Type here")
 	if !ok { panic("could not allocate example text buffer") }
-	app := App{name=name}
+	app := App{name=name, dialog_result="none"}
 	smoke := false
 	sdl_gpu_reference := false
 	for argument in os.args {
 		if argument == "--smoke" { smoke = true }
 		if argument == "--backend=sdl-gpu" { sdl_gpu_reference = true }
 		if argument == "--timing-motion" { app.timing_motion = true }
+		if argument == "--defer-close" { app.defer_close_once = true }
 		if argument == "--child-smoke" {
 			smoke = true
 			app.open_child_on_services = true
@@ -148,9 +203,11 @@ main :: proc() {
 	}
 	if sdl_gpu_reference {
 		ui.run(&app, render, title="Alicorn · Native Renderer Probe", on_start=start, on_wake=wake,
-			on_stop=stop, smoke=smoke, on_services=services)
+			on_stop=stop, smoke=smoke, on_services=services, on_dialog=dialog_done,
+			on_close_requested=close_requested)
 	} else {
 		webgpu.run(&app, render, title="Alicorn · Native Renderer Probe", on_start=start, on_wake=wake,
-			on_stop=stop, smoke=smoke, on_services=services)
+			on_stop=stop, smoke=smoke, on_services=services, on_dialog=dialog_done,
+			on_close_requested=close_requested)
 	}
 }

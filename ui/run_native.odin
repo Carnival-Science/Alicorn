@@ -31,6 +31,8 @@ run_application :: proc(run_state: ^Hosted_Run_State($T), title: string, width, 
 		state := cast(^Hosted_Run_State(T))data
 		backend := cast(^sdl3_clipboard.UI_Clipboard_Backend)state.host_services.clipboard.data
 		if backend != nil { backend.service = services.clipboard }
+		state.host_services.dialogs = services.dialogs
+		state.host_services.quit = services.quit
 		if state.on_services != nil { state.on_services(state.app, state.host_services) }
 	}
 	woken :: proc(data: rawptr, rt: ^alicorn.Runtime) {
@@ -62,6 +64,56 @@ run_application :: proc(run_state: ^Hosted_Run_State($T), title: string, width, 
 		state := cast(^Hosted_Run_State(T))data
 		if state.on_pointer != nil { state.on_pointer(state.app, rt, event, target) }
 	}
+	on_drag :: proc(data: rawptr, rt: ^alicorn.Runtime, event: alicorn.Drag_Event) {
+		state := cast(^Hosted_Run_State(T))data
+		if state.on_drag != nil { state.on_drag(state.app, rt, event) }
+	}
+	on_scroll_capture :: proc(
+		data: rawptr,
+		rt: ^alicorn.Runtime,
+		event: alicorn.Scroll_Event,
+		target: Node_ID,
+	) -> bool {
+		state := cast(^Hosted_Run_State(T))data
+		return state.on_scroll_capture != nil && state.on_scroll_capture(state.app, rt, event, target)
+	}
+	on_scroll :: proc(data: rawptr, rt: ^alicorn.Runtime, event: alicorn.Scroll_Event) {
+		state := cast(^Hosted_Run_State(T))data
+		if state.on_scroll != nil { state.on_scroll(state.app, rt, event) }
+	}
+	on_text_input :: proc(
+		data: rawptr,
+		rt: ^alicorn.Runtime,
+		owner: Node_ID,
+		event: alicorn.Application_Text_Input_Event,
+	) {
+		state := cast(^Hosted_Run_State(T))data
+		if state.on_text_input != nil {
+			state.on_text_input(state.app, rt, owner, alicorn.Hosted_Text_Input_Event{
+				kind=alicorn.Hosted_Text_Input_Kind(event.kind),
+				text=event.text,
+				selection_start_byte=event.selection_start_byte,
+				selection_end_byte=event.selection_end_byte,
+			})
+		}
+	}
+	on_scheduled_wake :: proc(data: rawptr, rt: ^alicorn.Runtime, _class: host.Scheduled_Wake_Class) {
+		state := cast(^Hosted_Run_State(T))data
+		if state.on_scheduled_wake != nil { state.on_scheduled_wake(state.app, rt) }
+	}
+	on_menu_command :: proc(data: rawptr, rt: ^alicorn.Runtime, command: host.Application_Command_ID) {
+		state := cast(^Hosted_Run_State(T))data
+		if state.on_menu_command != nil { state.on_menu_command(state.app, rt, command) }
+	}
+	on_close_requested :: proc(data: rawptr, rt: ^alicorn.Runtime) -> host.Application_Close_Result {
+		state := cast(^Hosted_Run_State(T))data
+		if state.on_close_requested != nil { return host.Application_Close_Result(state.on_close_requested(state.app, rt)) }
+		return .Allow
+	}
+	on_dialog :: proc(data: rawptr, rt: ^alicorn.Runtime, result: ^host.File_Dialog_Result) {
+		state := cast(^Hosted_Run_State(T))data
+		if state.on_dialog != nil { state.on_dialog(state.app, rt, result) }
+	}
 
 	application := host.Application{
 		state=rawptr(run_state),
@@ -80,6 +132,14 @@ run_application :: proc(run_state: ^Hosted_Run_State($T), title: string, width, 
 	if run_state.on_text_change != nil { application.on_text_change = on_text_change }
 	if run_state.on_text_key != nil { application.on_text_key = on_text_key }
 	if run_state.on_pointer != nil { application.on_pointer = on_pointer }
+	if run_state.on_drag != nil { application.on_drag = on_drag }
+	if run_state.on_scroll_capture != nil { application.on_scroll_capture = on_scroll_capture }
+	if run_state.on_scroll != nil { application.on_scroll = on_scroll }
+	if run_state.on_text_input != nil { application.on_text_input = on_text_input }
+	if run_state.on_scheduled_wake != nil { application.on_scheduled_wake = on_scheduled_wake }
+	if run_state.on_menu_command != nil { application.on_menu_command = on_menu_command }
+	if run_state.on_close_requested != nil { application.on_close_requested = on_close_requested }
+	if run_state.on_dialog != nil { application.on_dialog = on_dialog }
 	return application
 }
 
@@ -108,6 +168,14 @@ run :: proc(
 	on_pointer: proc(^T, ^alicorn.Runtime, alicorn.Pointer_Event, Node_ID) = nil,
 	on_text_key: proc(^T, ^alicorn.Runtime, Node_ID, alicorn.Application_Text_Key_Event) -> bool = nil,
 	on_services: proc(^T, UI_Host_Services) = nil,
+	on_drag: proc(^T, ^alicorn.Runtime, alicorn.Drag_Event) = nil,
+	on_scroll_capture: proc(^T, ^alicorn.Runtime, alicorn.Scroll_Event, Node_ID) -> bool = nil,
+	on_scroll: proc(^T, ^alicorn.Runtime, alicorn.Scroll_Event) = nil,
+	on_text_input: proc(^T, ^alicorn.Runtime, Node_ID, alicorn.Hosted_Text_Input_Event) = nil,
+	on_scheduled_wake: proc(^T, ^alicorn.Runtime) = nil,
+	on_menu_command: proc(^T, ^alicorn.Runtime, alicorn.Action_ID) = nil,
+	on_close_requested: proc(^T, ^alicorn.Runtime) -> alicorn.Hosted_Close_Result = nil,
+	on_dialog: proc(^T, ^alicorn.Runtime, ^alicorn.File_Dialog_Result) = nil,
 ) {
 	run_state := Hosted_Run_State(T){
 		app=state, render=render, render_overlays=render_overlays,
@@ -115,6 +183,10 @@ run :: proc(
 		on_key=on_key, on_text_change=on_text_change, on_pointer=on_pointer,
 		on_text_key=on_text_key,
 		on_services=on_services,
+		on_drag=on_drag, on_scroll_capture=on_scroll_capture, on_scroll=on_scroll,
+		on_text_input=on_text_input, on_scheduled_wake=on_scheduled_wake,
+		on_menu_command=on_menu_command, on_close_requested=on_close_requested,
+		on_dialog=on_dialog,
 	}
 	clipboard_backend: sdl3_clipboard.UI_Clipboard_Backend
 	run_state.host_services.clipboard = sdl3_clipboard.UI_Clipboard_Service(&clipboard_backend)

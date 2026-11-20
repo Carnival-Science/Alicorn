@@ -318,7 +318,7 @@ native_secondary_window_create :: proc(manager: ^Native_Secondary_Window_Manager
 	callbacks_started = true
 	if application.on_services != nil {
 		application.on_services(application.state, Application_Services{
-			dialogs=Dialog_Service{handle=rawptr(child.dialog_bridge)},
+			dialogs=native_dialog_service(child.dialog_bridge),
 		diagnostics=Application_Diagnostics{
 			data=rawptr(manager.diagnostics),
 			record=native_breadcrumb_application_event,

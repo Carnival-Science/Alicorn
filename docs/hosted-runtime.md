@@ -146,6 +146,49 @@ description, that callback must call `invalidate_root` on its supplied Runtime.
 `on_key` returning `true`, application-owned text input, and pointer button
 callbacks already request a description.
 
+## Application callbacks and host services
+
+`Hosted_Runtime_Config` exposes the full application callback surface used by
+the native SDL_GPU host. Every field is optional and zero-default:
+
+```text
+on_drag              proc(state, rt, Drag_Event)
+on_scroll_capture    proc(state, rt, Scroll_Event, target: Node_ID) -> bool
+on_scroll            proc(state, rt, Scroll_Event)
+on_text_input        proc(state, rt, owner: Node_ID, Hosted_Text_Input_Event)
+on_scheduled_wake    proc(state, rt)
+on_menu_command      proc(state, rt, command: Action_ID)
+on_close_requested   proc(state, rt) -> Hosted_Close_Result
+on_dialog            proc(state, rt, result: ^File_Dialog_Result)
+```
+
+`Hosted_Host_Services` publishes `windows`, `dialogs`, and `quit`:
+
+- `Hosted_Dialog_Service` is an opaque host backend. Submit a
+  `File_Dialog_Request` with `hosted_dialog_show_file`; the host copies the
+  request, presents its native dialog, and calls `hosted_runtime_dialog` on the
+  owner thread when a `File_Dialog_Result` is ready. Result paths and error text
+  are borrowed for `on_dialog`.
+- `Hosted_Quit_Service` completes a close request that `on_close_requested`
+  deferred. Call `hosted_quit_request` after the application finishes its
+  save/discard flow. The host owns teardown and retires the service after
+  `on_stop`.
+- `Hosted_Menu_Command_Proc` matches native
+  `Application_Menu_Command_Proc`; `hosted_runtime_menu_command` routes one
+  command under the native-command cause and invalidates the description.
+
+A host close request is delivered through `hosted_runtime_request_close`. A
+missing callback returns `.Allow`, preserving immediate-close behavior. A
+`.Defer` result means the host must keep the surface alive; the SDL3/WebGPU host
+returns `Close_Deferred` from its event dispatch instead of `Close_Requested`.
+Both native SDL3 hosts share `host/sdl3/dialogs`, so the dialog request,
+copying, callback, and wake policy have one implementation rather than two.
+
+`ui.run_hosted_config` adapts `Hosted_Run_State` to these fields, and
+`ui/webgpu.run` exposes them with the same shapes. The browser host currently
+has no dialog or close-request service; its `hosted` config callbacks remain
+available for future browser integration.
+
 ## Multiple outputs from one Runtime
 
 A host that presents disjoint retained regions into separate native targets can

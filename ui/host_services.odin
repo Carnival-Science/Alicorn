@@ -5,10 +5,36 @@ import alicorn "alicorn:runtime"
 
 // UI_Host_Services contains capabilities supplied by the selected platform
 // host. Unsupported services are nil. Native alicorn:ui/webgpu currently
-// provides one secondary window; browser UI currently has no window service.
+// provides one secondary window, native file dialogs, and a deferred-close quit
+// request; browser UI currently has no window or dialog service.
 UI_Host_Services :: struct {
 	clipboard: clipboard.Clipboard_Service,
 	windows: alicorn.Hosted_Window_Service,
+	dialogs: alicorn.Hosted_Dialog_Service,
+	quit: alicorn.Hosted_Quit_Service,
+}
+
+UI_Dialog_ID :: alicorn.Dialog_ID
+UI_File_Dialog_Kind :: alicorn.File_Dialog_Kind
+UI_Dialog_Filter :: alicorn.Dialog_Filter
+UI_File_Dialog_Request :: alicorn.File_Dialog_Request
+UI_Dialog_Status :: alicorn.Dialog_Status
+UI_File_Dialog_Result :: alicorn.File_Dialog_Result
+UI_Dialog_Service :: alicorn.Hosted_Dialog_Service
+UI_Dialog_Result_Proc :: alicorn.Hosted_Dialog_Proc
+
+// ui_dialog_show_file submits one asynchronous file-dialog request. The host
+// copies the request and later delivers File_Dialog_Result through the
+// application's on_dialog callback. It returns false when no dialog backend is
+// available or the host already has a dialog open.
+ui_dialog_show_file :: proc(service: UI_Dialog_Service, request: UI_File_Dialog_Request) -> bool {
+	return alicorn.hosted_dialog_show_file(service, request)
+}
+
+// ui_quit_request completes a close request that the application deferred from
+// on_close_requested. It is a no-op when the host supplied no quit service.
+ui_quit_request :: proc(service: alicorn.Hosted_Quit_Service) {
+	alicorn.hosted_quit_request(service)
 }
 
 UI_Window_Description :: alicorn.Hosted_Window_Description

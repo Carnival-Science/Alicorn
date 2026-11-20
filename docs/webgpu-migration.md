@@ -3109,3 +3109,55 @@ Renderer selection is now opt-in at build time as well as at runtime:
 The full procedure, import-graph audit, command output, and verification
 matrix are in
 [the corrective-pass record](validation/webgpu-opt-in-corrective-pass-2026-11-19.md).
+
+### Stage A slice 1: hosted close deferral and file dialogs (Windows, 2026-11-19)
+
+Scratchpad's WebGPU dogfood exposed three plumbing gaps between
+`native/sdl_gpu` and the hosted stack. This slice closes them without changing
+default behavior:
+
+- `Hosted_Runtime_Config` now carries `on_menu_command`,
+  `on_close_requested`, and `on_dialog` alongside the existing drag, scroll,
+  text-input, and scheduled-wake callbacks. `Hosted_Run_State` and
+  `run_hosted_config` forward all of them, and `ui/webgpu.run` (plus `ui.run` for
+  parity) accepts the same optional named parameters. Callback shapes match the
+  native `Application` so Scratchpad handlers can move 1:1.
+- `hosted_runtime_request_close` applies `.Allow`/`.Defer` semantics.
+  `Hosted_Host_Services.quit` is the hosted equivalent of
+  `Application_Services.quit`; `hosted_quit_request` completes a deferred close.
+  The SDL3/WebGPU event host returns the new `Close_Deferred` result instead of
+  `Close_Requested` and keeps the window alive. A missing callback still closes
+  immediately.
+- File dialogs are a `Hosted_Host_Services.dialogs` service.
+  `hosted_dialog_show_file` copies a `File_Dialog_Request`; the host delivers a
+  `File_Dialog_Result` through `hosted_runtime_dialog` and `on_dialog`. The
+  request/result vocabulary (`Dialog_ID`, `File_Dialog_Kind`, `Dialog_Filter`,
+  `Dialog_Status`) lives in `runtime/dialogs.odin`, and the headless fake
+  backend moved there too.
+- The SDL3 dialog bridge moved from `native/sdl_gpu/dialogs.odin` to the
+  renderer-agnostic `host/sdl3/dialogs` package. The native host keeps thin
+  aliases plus its breadcrumb adapter; `host/sdl3` constructs the same bridge per
+  window (primary and secondary). There is one `SDL_ShowFileDialogWithProperties`
+  implementation, not two. The browser host leaves `dialogs` and `quit` empty in
+  this slice; the TODO is recorded in `ui/run_webgpu_browser.odin`.
+- `examples/16_native_webgpu_ui` now exposes an "Open file dialog" button and
+  reports `Hosted dialogs: available`; `--defer-close` exercises the deferred
+  close handshake without changing the UIA validator's default close path.
+
+Validation on Windows x64 (NVIDIA RTX 2080 SUPER, D3D12):
+
+- `odin test runtime` passed all 388 tests (new close/menu/dialog/scroll-capture
+  and fake-dialog coverage); `ui` passed 50, `host/sdl3` 2,
+  `host/sdl3/dialogs` 5, `host/web` 14, `host/presentation` 6, `testui` 13,
+  `native/sdl_gpu` 169, and `native/scroll_capture_tests` 6.
+- `examples/15_host_owned_sdl_gpu` and `examples/16_native_webgpu_ui` built;
+  `16_native_webgpu_ui --backend=d3d12 --smoke` exited 0. The `js_wasm32`
+  package-boundary build passed.
+- The native dialog fake fixture built and printed PASS; the SDL_GPU
+  text-input contract and restoration suite passed.
+
+Slices 2 (native menus) and 3 (titlebar chrome) can now use
+`Hosted_Runtime_Config.on_menu_command` and `hosted_runtime_menu_command` for
+command routing, and `Hosted_Host_Services.quit` for close completion. The
+remaining menu/chrome gap is host-side: menu descriptions, accelerators, and
+native chrome metrics/layout are still not part of `Hosted_Host_Services`.

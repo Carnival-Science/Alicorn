@@ -124,7 +124,7 @@ run_application_loop :: proc(
 	defer native_dialog_bridge_release(dialog_bridge)
 	if application_instance.on_services != nil {
 		application_instance.on_services(application_instance.state, Application_Services{
-			dialogs=Dialog_Service{handle=rawptr(dialog_bridge)},
+			dialogs=native_dialog_service(dialog_bridge),
 			diagnostics=Application_Diagnostics{
 				data=rawptr(breadcrumbs),
 				record=native_breadcrumb_application_event,

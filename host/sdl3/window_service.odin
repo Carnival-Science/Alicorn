@@ -14,6 +14,13 @@ SDL3_WebGPU_Secondary_Window :: struct {
 	window: ^sdl3.Window,
 	surface: wgpu.Surface,
 	configuration: wgpu.SurfaceConfiguration,
+	quit_requested: bool,
+}
+
+@(private)
+sdl3_webgpu_window_child_request_quit :: proc(data: rawptr) {
+	child := cast(^SDL3_WebGPU_Secondary_Window)data
+	if child != nil { child.quit_requested = true }
 }
 
 // The first ui.run_webgpu window service intentionally supports one secondary
@@ -254,6 +261,10 @@ sdl3_webgpu_window_create_pending :: proc(
 	child_config.pixel_width, child_config.pixel_height = pw, ph
 	child_config.dpi_scale = f32(pw) / f32(lw)
 	child_config.host_services.windows = sdl3_webgpu_window_service(manager)
+	child_config.host_services.quit = alicorn.Hosted_Quit_Service{
+		data=rawptr(child),
+		request=sdl3_webgpu_window_child_request_quit,
+	}
 	manager.creating = true
 	sdl3_webgpu_window_clear_pending(manager)
 	manager.child = child

@@ -1,10 +1,11 @@
-package alicorn_sdl_gpu
+package sdl3_dialogs
 
 import "core:c"
 import "core:sync"
 import "core:testing"
 import "core:thread"
 import "core:time"
+import alicorn "alicorn:runtime"
 import "vendor:sdl3"
 
 dialog_message_box_test_show :: proc "c" (#by_ptr data: sdl3.MessageBoxData, selected: ^c.int) -> bool {
@@ -58,10 +59,9 @@ test_native_show_file_dialog_survives_synchronous_sdl_error_callback :: proc(t: 
 		return
 	}
 	filters := [1]Dialog_Filter{{"Invalid extension", "bad/path"}}
-	accepted := ShowFileDialog(
-		Dialog_Service{handle=rawptr(bridge)},
-		File_Dialog_Request{id=Dialog_ID(73), kind=.Open_File, filters=filters[:]},
-	)
+	accepted := native_dialog_show_file(rawptr(bridge), File_Dialog_Request{
+		id=Dialog_ID(73), kind=.Open_File, filters=filters[:],
+	})
 	testing.expect(t, accepted, "the dialog request should reach SDL even when SDL reports an inline error")
 	testing.expect(t, len(bridge.completions) == 1,
 		"the invalid-filter callback should complete synchronously on this SDL error path")
@@ -133,4 +133,39 @@ test_native_dialog_shutdown_waits_for_copied_waker :: proc(t: ^testing.T) {
 	completed_after_wake := state.completed
 	sync.mutex_unlock(&state.mutex)
 	testing.expect(t, completed_after_wake, "shutdown should finish once the callback releases its in-flight wake")
+}
+
+
+Dialog_Dispatch_Test_State :: struct {
+	callbacks: int,
+	last_id:   Dialog_ID,
+}
+
+dialog_dispatch_test_callback :: proc(
+	data: rawptr,
+	_rt: ^alicorn.Runtime,
+	result: ^File_Dialog_Result,
+) {
+	state := cast(^Dialog_Dispatch_Test_State)data
+	state.callbacks += 1
+	state.last_id = result.id
+}
+
+@(test)
+test_native_dialog_dispatch_delivers_queued_completion :: proc(t: ^testing.T) {
+	bridge := native_dialog_bridge_make(nil, {})
+	if bridge == nil {
+		testing.expect(t, false, "the native dialog bridge should initialize")
+		return
+	}
+	defer native_dialog_bridge_release(bridge)
+	state := Dialog_Dispatch_Test_State{}
+	sync.mutex_lock(&bridge.mutex)
+	append(&bridge.completions, File_Dialog_Result{id=Dialog_ID(88), status=.Cancelled})
+	sync.mutex_unlock(&bridge.mutex)
+	native_dialog_dispatch(bridge, dialog_dispatch_test_callback, rawptr(&state), nil)
+	testing.expect(t, state.callbacks == 1 && state.last_id == Dialog_ID(88),
+		"the owner-thread dispatch should deliver one queued completion")
+	testing.expect(t, len(bridge.completions) == 0,
+		"dispatching should consume the completion exactly once")
 }

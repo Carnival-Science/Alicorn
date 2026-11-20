@@ -41,6 +41,14 @@ run :: proc(
 	on_pointer: proc(^T, ^alicorn.Runtime, alicorn.Pointer_Event, Node_ID) = nil,
 	on_text_key: proc(^T, ^alicorn.Runtime, Node_ID, alicorn.Application_Text_Key_Event) -> bool = nil,
 	on_services: proc(^T, UI_Host_Services) = nil,
+	on_drag: proc(^T, ^alicorn.Runtime, alicorn.Drag_Event) = nil,
+	on_scroll_capture: proc(^T, ^alicorn.Runtime, alicorn.Scroll_Event, Node_ID) -> bool = nil,
+	on_scroll: proc(^T, ^alicorn.Runtime, alicorn.Scroll_Event) = nil,
+	on_text_input: proc(^T, ^alicorn.Runtime, Node_ID, alicorn.Hosted_Text_Input_Event) = nil,
+	on_scheduled_wake: proc(^T, ^alicorn.Runtime) = nil,
+	on_menu_command: proc(^T, ^alicorn.Runtime, alicorn.Action_ID) = nil,
+	on_close_requested: proc(^T, ^alicorn.Runtime) -> alicorn.Hosted_Close_Result = nil,
+	on_dialog: proc(^T, ^alicorn.Runtime, ^alicorn.File_Dialog_Result) = nil,
 ) {
 	_ = title
 	_ = smoke
@@ -63,6 +71,10 @@ run :: proc(
 		on_text_key=on_text_key,
 		on_pointer=on_pointer,
 		on_services=on_services,
+		on_drag=on_drag, on_scroll_capture=on_scroll_capture, on_scroll=on_scroll,
+		on_text_input=on_text_input, on_scheduled_wake=on_scheduled_wake,
+		on_menu_command=on_menu_command, on_close_requested=on_close_requested,
+		on_dialog=on_dialog,
 	}
 	hosted := run_hosted_config(
 		run_state,
@@ -101,6 +113,11 @@ run :: proc(
 		if start_result == .Resource_Failure { return }
 		panic("ui.run could not start the browser WebGPU host")
 	}
+	// TODO(issue 211): the browser host has no file-dialog or quit service in
+	// this slice. UI_Host_Services.dialogs stays empty so ui_dialog_show_file
+	// reports false; add a <input type=file> bridge when browser dialogs are in
+	// scope. on_close_requested is also not delivered because the page owns the
+	// unload lifecycle.
 	run_state.host_services = UI_Host_Services{
 		clipboard=host.browser_webgpu_run_clipboard_service(&browser_ui_run.runner),
 	}

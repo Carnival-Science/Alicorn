@@ -161,6 +161,29 @@ backing state. All producer calls must finish before `on_stop` returns. Hooks
 default to `nil`, preserving existing simple apps without polling or synthetic
 callbacks. The bridge uses `host.Application` and the existing native loop.
 An optional `smoke=true` uses the host's bounded smoke mode for example tests.
+
+`ui.run` and `ui/webgpu.run` also accept the full input and host-capability hook
+surface. These callbacks run on the application thread and default to `nil`:
+
+| Parameter | Signature | Responsibility |
+| --- | --- | --- |
+| `on_drag` | `proc(app: ^App, rt: ^Runtime, event: alicorn.Drag_Event)` | Adopt application drag state; invalidate explicitly when the next description changes. |
+| `on_scroll_capture` | `proc(app: ^App, rt: ^Runtime, event: alicorn.Scroll_Event, target: Node_ID) -> bool` | Claim a scroll over a nested scroll region before retained scrolling. |
+| `on_scroll` | `proc(app: ^App, rt: ^Runtime, event: alicorn.Scroll_Event)` | Receive scrolling that no retained region or capture handler claimed. |
+| `on_text_input` | `proc(app: ^App, rt: ^Runtime, owner: Node_ID, event: alicorn.Hosted_Text_Input_Event)` | Receive text for an application-owned text-input target. Offsets are UTF-8 bytes. |
+| `on_scheduled_wake` | `proc(app: ^App, rt: ^Runtime)` | Service the one-shot application deadline installed by the hosted runtime. |
+| `on_menu_command` | `proc(app: ^App, rt: ^Runtime, command: alicorn.Action_ID)` | Adopt a host-normalized native menu or accelerator command. |
+| `on_close_requested` | `proc(app: ^App, rt: ^Runtime) -> alicorn.Hosted_Close_Result` | Return `.Allow` to close immediately or `.Defer` to finish app-owned save/discard work. |
+| `on_dialog` | `proc(app: ^App, rt: ^Runtime, result: ^alicorn.File_Dialog_Result)` | Adopt one asynchronous file-dialog completion. Result strings are borrowed for the callback. |
+
+Read `UI_Host_Services.dialogs` and `UI_Host_Services.quit` from `on_services`.
+`ui.ui_dialog_show_file(service, request)` submits an asynchronous
+`UI_File_Dialog_Request` and later invokes `on_dialog`. `ui.ui_quit_request`
+completes a deferred close and lets the host tear down. The native SDL3 host
+provides both services; the browser host currently leaves `dialogs` empty and
+does not deliver close requests, so `ui_dialog_show_file` returns false there.
+The callback names and parameter shapes match `native/sdl_gpu`'s `Application`
+so an application can move handlers between the SDL_GPU and hosted WebGPU paths.
 See [03_async_list](../examples/03_async_list/main.odin) for an app-owned Odin
 thread, mutex-protected completion, typed adoption and explicit shutdown join.
 

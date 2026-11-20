@@ -35,6 +35,14 @@ run :: proc(
 	on_pointer: proc(^T, ^alicorn.Runtime, alicorn.Pointer_Event, alicorn.Node_ID) = nil,
 	on_text_key: proc(^T, ^alicorn.Runtime, alicorn.Node_ID, alicorn.Application_Text_Key_Event) -> bool = nil,
 	on_services: proc(^T, ui.UI_Host_Services) = nil,
+	on_drag: proc(^T, ^alicorn.Runtime, alicorn.Drag_Event) = nil,
+	on_scroll_capture: proc(^T, ^alicorn.Runtime, alicorn.Scroll_Event, alicorn.Node_ID) -> bool = nil,
+	on_scroll: proc(^T, ^alicorn.Runtime, alicorn.Scroll_Event) = nil,
+	on_text_input: proc(^T, ^alicorn.Runtime, alicorn.Node_ID, alicorn.Hosted_Text_Input_Event) = nil,
+	on_scheduled_wake: proc(^T, ^alicorn.Runtime) = nil,
+	on_menu_command: proc(^T, ^alicorn.Runtime, alicorn.Action_ID) = nil,
+	on_close_requested: proc(^T, ^alicorn.Runtime) -> alicorn.Hosted_Close_Result = nil,
+	on_dialog: proc(^T, ^alicorn.Runtime, ^alicorn.File_Dialog_Result) = nil,
 ) {
 	run_state := ui.Hosted_Run_State(T){
 		app=state, render=render, render_overlays=render_overlays,
@@ -42,6 +50,10 @@ run :: proc(
 		on_key=on_key, on_text_change=on_text_change, on_pointer=on_pointer,
 		on_text_key=on_text_key,
 		on_services=on_services,
+		on_drag=on_drag, on_scroll_capture=on_scroll_capture, on_scroll=on_scroll,
+		on_text_input=on_text_input, on_scheduled_wake=on_scheduled_wake,
+		on_menu_command=on_menu_command, on_close_requested=on_close_requested,
+		on_dialog=on_dialog,
 	}
 	clipboard_backend := sdl3_clipboard.UI_Clipboard_Backend{service=sdl3_clipboard.SDL3ClipboardService()}
 	run_state.host_services.clipboard = sdl3_clipboard.UI_Clipboard_Service(&clipboard_backend)

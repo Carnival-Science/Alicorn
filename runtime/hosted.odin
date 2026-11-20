@@ -103,8 +103,23 @@ Hosted_Window_Service :: struct {
 	set_title: Hosted_Window_Set_Title_Proc,
 }
 
+// Hosted_Quit_Service lets an application complete a close request it deferred
+// from on_close_requested after its own save/discard flow has finished. The
+// host owns the resulting shutdown and retires the service after on_stop.
+Hosted_Quit_Request_Proc :: proc(data: rawptr)
+Hosted_Quit_Service :: struct {
+	data:    rawptr,
+	request: Hosted_Quit_Request_Proc,
+}
+
+hosted_quit_request :: proc(service: Hosted_Quit_Service) {
+	if service.request != nil { service.request(service.data) }
+}
+
 Hosted_Host_Services :: struct {
 	windows: Hosted_Window_Service,
+	dialogs: Hosted_Dialog_Service,
+	quit:    Hosted_Quit_Service,
 }
 
 Hosted_Host_Services_Proc :: proc(state: rawptr, services: Hosted_Host_Services)
@@ -124,6 +139,18 @@ hosted_window_set_always_on_top :: proc(service: Hosted_Window_Service, always_o
 hosted_window_set_title :: proc(service: Hosted_Window_Service, title: string) -> bool {
 	return service.set_title != nil && service.set_title(service.data, title)
 }
+
+// Hosted_Menu_Command_Proc receives one host-normalized native command. It
+// matches native/sdl_gpu's Application_Menu_Command_Proc so applications can
+// map menu handlers directly once the host exposes menus.
+Hosted_Menu_Command_Proc :: proc(state: rawptr, rt: ^Runtime, command: Action_ID)
+
+Hosted_Close_Result :: enum { Allow, Defer }
+
+// Hosted_Close_Requested_Proc decides whether a host close request may proceed.
+// Defer keeps the surface alive; the application calls hosted_quit_request when
+// its own save/discard policy completes. Without a callback the host closes.
+Hosted_Close_Requested_Proc :: proc(state: rawptr, rt: ^Runtime) -> Hosted_Close_Result
 
 // Hosted_Runtime_Config describes one host-owned surface. It owns one retained
 // Runtime for every control rendered into that surface. Renderer and native
@@ -156,6 +183,9 @@ Hosted_Runtime_Config :: struct {
 	on_text_input: Hosted_Text_Input_Proc,
 	on_key: Hosted_Key_Proc,
 	on_text_key: Hosted_Text_Key_Proc,
+	on_menu_command: Hosted_Menu_Command_Proc,
+	on_close_requested: Hosted_Close_Requested_Proc,
+	on_dialog: Hosted_Dialog_Proc,
 }
 
 Hosted_Runtime :: struct {
@@ -213,6 +243,9 @@ Hosted_Runtime_State :: struct {
 	on_text_key: Hosted_Text_Key_Proc,
 	on_text_input: Hosted_Text_Input_Proc,
 	on_key: Hosted_Key_Proc,
+	on_menu_command: Hosted_Menu_Command_Proc,
+	on_close_requested: Hosted_Close_Requested_Proc,
+	on_dialog: Hosted_Dialog_Proc,
 	logical_width, logical_height: int,
 	dpi_scale: f32,
 	app_deadline_ns: u64,
@@ -274,6 +307,9 @@ hosted_runtime_init :: proc(host: ^Hosted_Runtime, config: Hosted_Runtime_Config
 		on_text_key=config.on_text_key,
 		on_text_input=config.on_text_input,
 		on_key=config.on_key,
+		on_menu_command=config.on_menu_command,
+		on_close_requested=config.on_close_requested,
+		on_dialog=config.on_dialog,
 		logical_width=config.logical_width,
 		logical_height=config.logical_height,
 		dpi_scale=config.dpi_scale,
@@ -570,6 +606,56 @@ hosted_runtime_scroll :: proc(host: ^Hosted_Runtime, event: Scroll_Event) -> (ha
 	}
 	cause_end(&state.runtime, cause)
 	return handled, .Ok
+}
+
+// hosted_runtime_request_close asks the application whether a host close
+// request may proceed. A missing callback preserves the host's immediate-close
+// behavior. A Defer result requires the host to keep the surface alive until
+// the application completes its policy through Hosted_Quit_Service.
+hosted_runtime_request_close :: proc(
+	host: ^Hosted_Runtime,
+) -> (result: Hosted_Close_Result, status: Hosted_Runtime_Status) {
+	state, access_status := hosted_runtime_get_state(host)
+	if access_status != .Ok { return .Allow, access_status }
+	if state.on_close_requested != nil {
+		result = state.on_close_requested(state.app_state, &state.runtime)
+	}
+	return result, .Ok
+}
+
+// hosted_runtime_menu_command routes one host-normalized command through the
+// application callback under the same native-command cause used by the SDL_GPU
+// host. Hosts call it when their menus, accelerators, or chrome actions fire.
+hosted_runtime_menu_command :: proc(
+	host: ^Hosted_Runtime,
+	command: Action_ID,
+) -> Hosted_Runtime_Status {
+	state, status := hosted_runtime_get_state(host)
+	if status != .Ok { return status }
+	if state.on_menu_command != nil {
+		cause := cause_begin(&state.runtime, .Native_Command, "hosted menu command", command)
+		state.on_menu_command(state.app_state, &state.runtime, command)
+		invalidate_root(&state.runtime, "hosted application menu command")
+		cause_end(&state.runtime, cause)
+	}
+	return .Ok
+}
+
+// hosted_runtime_dialog delivers one host-owned asynchronous dialog completion.
+// The host calls it on the Runtime owner thread after copying the completion out
+// of its event source. Result strings remain borrowed for the callback.
+hosted_runtime_dialog :: proc(
+	host: ^Hosted_Runtime,
+	result: ^File_Dialog_Result,
+) -> Hosted_Runtime_Status {
+	state, status := hosted_runtime_get_state(host)
+	if status != .Ok { return status }
+	if state.on_dialog != nil {
+		cause := cause_begin(&state.runtime, .Async_Wake, "hosted file dialog completed")
+		state.on_dialog(state.app_state, &state.runtime, result)
+		cause_end(&state.runtime, cause)
+	}
+	return .Ok
 }
 
 hosted_runtime_text_input :: proc(

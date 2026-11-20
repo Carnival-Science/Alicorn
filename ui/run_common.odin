@@ -21,6 +21,14 @@ Hosted_Run_State :: struct($T: typeid) {
 	on_text_change: proc(^T, ^alicorn.Runtime, alicorn.Text_Change),
 	on_text_key: proc(^T, ^alicorn.Runtime, Node_ID, alicorn.Application_Text_Key_Event) -> bool,
 	on_pointer: proc(^T, ^alicorn.Runtime, alicorn.Pointer_Event, Node_ID),
+	on_drag: proc(^T, ^alicorn.Runtime, alicorn.Drag_Event),
+	on_scroll_capture: proc(^T, ^alicorn.Runtime, alicorn.Scroll_Event, Node_ID) -> bool,
+	on_scroll: proc(^T, ^alicorn.Runtime, alicorn.Scroll_Event),
+	on_text_input: proc(^T, ^alicorn.Runtime, Node_ID, alicorn.Hosted_Text_Input_Event),
+	on_scheduled_wake: proc(^T, ^alicorn.Runtime),
+	on_menu_command: proc(^T, ^alicorn.Runtime, alicorn.Action_ID),
+	on_close_requested: proc(^T, ^alicorn.Runtime) -> alicorn.Hosted_Close_Result,
+	on_dialog: proc(^T, ^alicorn.Runtime, ^alicorn.File_Dialog_Result),
 	hosted_waker: alicorn.Hosted_Waker,
 }
 
@@ -127,9 +135,54 @@ run_hosted_config :: proc(
 		state := cast(^Hosted_Run_State(T))data
 		if state.on_pointer != nil { state.on_pointer(state.app, rt, event, target) }
 	}
+	drag :: proc(data: rawptr, rt: ^alicorn.Runtime, event: alicorn.Drag_Event) {
+		state := cast(^Hosted_Run_State(T))data
+		if state.on_drag != nil { state.on_drag(state.app, rt, event) }
+	}
+	scroll_capture :: proc(
+		data: rawptr,
+		rt: ^alicorn.Runtime,
+		event: alicorn.Scroll_Event,
+		target: Node_ID,
+	) -> bool {
+		state := cast(^Hosted_Run_State(T))data
+		return state.on_scroll_capture != nil && state.on_scroll_capture(state.app, rt, event, target)
+	}
+	scroll :: proc(data: rawptr, rt: ^alicorn.Runtime, event: alicorn.Scroll_Event) {
+		state := cast(^Hosted_Run_State(T))data
+		if state.on_scroll != nil { state.on_scroll(state.app, rt, event) }
+	}
+	text_input :: proc(
+		data: rawptr,
+		rt: ^alicorn.Runtime,
+		owner: Node_ID,
+		event: alicorn.Hosted_Text_Input_Event,
+	) {
+		state := cast(^Hosted_Run_State(T))data
+		if state.on_text_input != nil { state.on_text_input(state.app, rt, owner, event) }
+	}
+	scheduled_wake :: proc(data: rawptr, rt: ^alicorn.Runtime) {
+		state := cast(^Hosted_Run_State(T))data
+		if state.on_scheduled_wake != nil { state.on_scheduled_wake(state.app, rt) }
+	}
+	menu_command :: proc(data: rawptr, rt: ^alicorn.Runtime, command: alicorn.Action_ID) {
+		state := cast(^Hosted_Run_State(T))data
+		if state.on_menu_command != nil { state.on_menu_command(state.app, rt, command) }
+	}
+	close_requested :: proc(data: rawptr, rt: ^alicorn.Runtime) -> alicorn.Hosted_Close_Result {
+		state := cast(^Hosted_Run_State(T))data
+		if state.on_close_requested != nil { return state.on_close_requested(state.app, rt) }
+		return .Allow
+	}
+	dialog :: proc(data: rawptr, rt: ^alicorn.Runtime, result: ^alicorn.File_Dialog_Result) {
+		state := cast(^Hosted_Run_State(T))data
+		if state.on_dialog != nil { state.on_dialog(state.app, rt, result) }
+	}
 	host_services :: proc(data: rawptr, services: alicorn.Hosted_Host_Services) {
 		state := cast(^Hosted_Run_State(T))data
 		state.host_services.windows = services.windows
+		state.host_services.dialogs = services.dialogs
+		state.host_services.quit = services.quit
 	}
 
 	config := alicorn.Hosted_Runtime_Config{
@@ -153,6 +206,14 @@ run_hosted_config :: proc(
 	if run_state.on_text_change != nil { config.on_text_change = text_change }
 	if run_state.on_text_key != nil { config.on_text_key = text_key }
 	if run_state.on_pointer != nil { config.on_pointer = pointer }
+	if run_state.on_drag != nil { config.on_drag = drag }
+	if run_state.on_scroll_capture != nil { config.on_scroll_capture = scroll_capture }
+	if run_state.on_scroll != nil { config.on_scroll = scroll }
+	if run_state.on_text_input != nil { config.on_text_input = text_input }
+	if run_state.on_scheduled_wake != nil { config.on_scheduled_wake = scheduled_wake }
+	if run_state.on_menu_command != nil { config.on_menu_command = menu_command }
+	if run_state.on_close_requested != nil { config.on_close_requested = close_requested }
+	if run_state.on_dialog != nil { config.on_dialog = dialog }
 	if run_state.render_overlays != nil { config.render_overlays = describe_overlays }
 	return config
 }

@@ -13,6 +13,11 @@ changelogs.
 
 ### Added
 
+- Added hosted close deferral, native file dialogs, native menu-command routing,
+  and the full application callback surface to `Hosted_Runtime_Config`,
+  `ui.run`, and `ui/webgpu.run`. The SDL3/WebGPU host now returns
+  `Close_Deferred` when an application defers a close, and the SDL3 dialog bridge
+  is shared with the native SDL_GPU host through `host/sdl3/dialogs`.
 - Added an opt-in WebGPU presentation and renderer path for native SDL3 hosts
   and browser (Chromium-family) targets. It is selected by build defines
   (`WGPU_SHARED`, `ALICORN_HOST_WEBGPU`) and remains experimental; the SDL_GPU

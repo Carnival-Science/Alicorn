@@ -4,6 +4,7 @@ package sdl3_host
 
 import alicorn "alicorn:runtime"
 import presentation_host "alicorn:host/presentation"
+import sdl3_dialogs "alicorn:host/sdl3/dialogs"
 import "core:c"
 import "core:fmt"
 import "vendor:sdl3"
@@ -23,6 +24,10 @@ SDL3_WebGPU_Application_Event_Result :: enum {
 	Handled,
 	Wake,
 	Close_Requested,
+	// Close_Deferred means the application returned Defer from on_close_requested.
+	// The surface stays alive and the application closes later through its quit
+	// service.
+	Close_Deferred,
 	Failure,
 }
 
@@ -50,6 +55,7 @@ SDL3_WebGPU_Text_Input_State :: struct {
 SDL3_WebGPU_Application :: struct {
 	hosted: alicorn.Hosted_Runtime,
 	presenter: presentation_host.Hosted_Surface_Presenter,
+	dialog_bridge: ^sdl3_dialogs.Native_Dialog_Bridge,
 	accessibility_host: sdl_accessibility.Native_Accessibility_Host,
 	host_waker: sdl_accessibility.Native_Host_Event_Waker,
 	window: ^sdl3.Window,
@@ -80,6 +86,36 @@ sdl3_webgpu_application_post_wake :: proc(data: rawptr) -> bool {
 @(private)
 sdl3_webgpu_application_wake :: proc(data: rawptr) {
 	_ = sdl3_webgpu_application_post_wake(data)
+}
+
+@(private)
+sdl3_webgpu_application_dialog_wake :: proc(data: rawptr) {
+	_ = sdl3_webgpu_application_post_wake(data)
+}
+
+@(private)
+sdl3_webgpu_application_dialog_callback :: proc(
+	data: rawptr,
+	_rt: ^alicorn.Runtime,
+	result: ^alicorn.File_Dialog_Result,
+) {
+	application := cast(^SDL3_WebGPU_Application)data
+	if application == nil || !application.initialized { return }
+	_ = alicorn.hosted_runtime_dialog(&application.hosted, result)
+}
+
+// sdl3_webgpu_application_dispatch_dialogs delivers completed native dialogs on
+// the owner thread. Call it at an event-loop safe point after handling input.
+sdl3_webgpu_application_dispatch_dialogs :: proc(application: ^SDL3_WebGPU_Application) {
+	if application == nil || !application.initialized || application.dialog_bridge == nil { return }
+	rt, status := alicorn.hosted_runtime_borrow(&application.hosted)
+	if status != .Ok { return }
+	sdl3_dialogs.native_dialog_dispatch(
+		application.dialog_bridge,
+		sdl3_webgpu_application_dialog_callback,
+		rawptr(application),
+		rt,
+	)
 }
 
 @(private)
@@ -188,6 +224,14 @@ sdl3_webgpu_application_init :: proc(
 		initialized=true,
 	}
 	if application.window_id == 0 { application^ = {}; return .Window_Failure }
+	application.dialog_bridge = sdl3_dialogs.native_dialog_bridge_make(
+		window,
+		sdl3_dialogs.Dialog_Waker{
+			data=rawptr(application),
+			wake=sdl3_webgpu_application_dialog_wake,
+		},
+	)
+	if application.dialog_bridge == nil { application^ = {}; return .Window_Failure }
 	dpi := f32(pixel_width) / f32(logical_width)
 	config := hosted_config
 	config.logical_width, config.logical_height = logical_width, logical_height
@@ -195,7 +239,9 @@ sdl3_webgpu_application_init :: proc(
 	config.dpi_scale = dpi
 	config.post_wake_data = rawptr(application)
 	config.post_wake = sdl3_webgpu_application_post_wake
+	config.host_services.dialogs = sdl3_dialogs.dialog_service(application.dialog_bridge)
 	if alicorn.hosted_runtime_init(&application.hosted, config) != .Ok {
+		sdl3_dialogs.native_dialog_bridge_release(application.dialog_bridge)
 		application^ = {}
 		return .Runtime_Failure
 	}
@@ -231,6 +277,7 @@ sdl3_webgpu_application_init :: proc(
 			application.accessibility_ready = false
 		}
 		_ = alicorn.hosted_runtime_destroy(&application.hosted)
+		sdl3_dialogs.native_dialog_bridge_release(application.dialog_bridge)
 		application^ = {}
 		return .Presenter_Failure
 	}
@@ -432,6 +479,15 @@ sdl3_webgpu_application_has_in_flight :: proc(application: ^SDL3_WebGPU_Applicat
 		presentation_host.hosted_surface_presenter_has_in_flight(&application.presenter)
 }
 
+@(private)
+sdl3_webgpu_application_request_close :: proc(
+	application: ^SDL3_WebGPU_Application,
+) -> SDL3_WebGPU_Application_Event_Result {
+	result, status := alicorn.hosted_runtime_request_close(&application.hosted)
+	if status != .Ok { return .Failure }
+	return .Close_Deferred if result == .Defer else .Close_Requested
+}
+
 // Route native input to the retained Runtime without exposing SDL types to it.
 sdl3_webgpu_application_handle_event :: proc(
 	application: ^SDL3_WebGPU_Application,
@@ -449,9 +505,9 @@ sdl3_webgpu_application_handle_event :: proc(
 		}
 		return .Wake
 	}
-	if event.type == .QUIT { return .Close_Requested }
+	if event.type == .QUIT { return sdl3_webgpu_application_request_close(application) }
 	if event.type == .WINDOW_CLOSE_REQUESTED && event.window.windowID == application.window_id {
-		return .Close_Requested
+		return sdl3_webgpu_application_request_close(application)
 	}
 	event_window := event_window_id_from_sdl(event)
 	if event_window != 0 && event_window != application.window_id { return .Ignored }
@@ -536,7 +592,13 @@ sdl3_webgpu_application_destroy :: proc(application: ^SDL3_WebGPU_Application) -
 		sdl_accessibility.native_accessibility_host_destroy(&application.accessibility_host)
 		application.accessibility_ready = false
 	}
+	if application.dialog_bridge != nil {
+		sdl3_dialogs.native_dialog_bridge_shutdown(application.dialog_bridge)
+	}
 	if alicorn.hosted_runtime_destroy(&application.hosted) != .Ok { return false }
+	if application.dialog_bridge != nil {
+		sdl3_dialogs.native_dialog_bridge_release(application.dialog_bridge)
+	}
 	application^ = {}
 	return true
 }

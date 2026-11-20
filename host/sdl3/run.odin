@@ -585,6 +585,11 @@ sdl3_webgpu_run_recovery_step :: proc(
 	return false
 }
 
+@(private)
+sdl3_webgpu_run_request_quit :: proc(data: rawptr) {
+	if data != nil { (cast(^bool)data)^ = true }
+}
+
 // sdl3_webgpu_run owns the ordinary SDL3 window and WebGPU bootstrap while
 // reusing the same Hosted_Runtime coordinator and WebGPU surface presenter as
 // the feasibility fixture. It is an opt-in migration path; ui.run remains on
@@ -622,6 +627,7 @@ sdl3_webgpu_run :: proc(
 	if window == nil { return .SDL_Failure }
 	defer sdl3.DestroyWindow(window)
 
+	quit_requested := false
 	state: SDL3_WebGPU_Run_State
 	defer sdl3_webgpu_run_release_state(&state)
 	window_manager: SDL3_WebGPU_Window_Manager
@@ -693,6 +699,10 @@ sdl3_webgpu_run :: proc(
 	application: SDL3_WebGPU_Application
 	application_config := hosted_config
 	application_config.host_services.windows = sdl3_webgpu_window_service(&window_manager)
+	application_config.host_services.quit = alicorn.Hosted_Quit_Service{
+		data=rawptr(&quit_requested),
+		request=sdl3_webgpu_run_request_quit,
+	}
 	if result := sdl3_webgpu_application_init(
 		&application,
 		application_config,
@@ -750,7 +760,7 @@ sdl3_webgpu_run :: proc(
 	inject_loss_after_present := sdl3_webgpu_run_loss_injection_requested()
 	remove_d3d12_device_after_present := sdl3_webgpu_run_d3d12_removal_requested()
 	expect_post_recovery_present := false
-	for {
+	for !quit_requested {
 		now_ns := u64(sdl3.GetTicksNS())
 		state.last_now_ns = now_ns
 		if window_manager.pending && !state.device_lost && !state.recovery_active {
@@ -791,6 +801,14 @@ sdl3_webgpu_run :: proc(
 				if !(state.device_lost && state.recovery_active) { return .Presenter_Failure }
 			case .Suspended, .Retry_Later, .No_Frame, .Reconfigure_Required, .Hidden:
 			}
+		}
+		sdl3_webgpu_application_dispatch_dialogs(&application)
+		if window_manager.child != nil {
+			sdl3_webgpu_application_dispatch_dialogs(&window_manager.child.application)
+		}
+		if quit_requested { return .Ok }
+		if window_manager.child != nil && window_manager.child.quit_requested {
+			window_manager.pending_close = true
 		}
 		#partial switch step.presentation {
 		case .Ok:
@@ -858,22 +876,22 @@ sdl3_webgpu_run :: proc(
 			switch result {
 			case .Close_Requested:
 				return .Ok
+			case .Close_Deferred, .Ignored, .Handled:
 			case .Failure:
 				return .Event_Failure
 			case .Wake:
 				wake_events += 1
-			case .Ignored, .Handled:
 			}
 			if window_manager.child != nil {
 				child_result := sdl3_webgpu_run_dispatch_event(&window_manager.child.application, event)
 				switch child_result {
 				case .Close_Requested:
 					window_manager.pending_close = true
+				case .Close_Deferred, .Ignored, .Handled:
 				case .Failure:
 					return .Event_Failure
 				case .Wake:
 					wake_events += 1
-				case .Ignored, .Handled:
 				}
 			}
 		}
@@ -945,24 +963,25 @@ sdl3_webgpu_run :: proc(
 			switch result {
 			case .Close_Requested:
 				return .Ok
+			case .Close_Deferred, .Ignored, .Handled:
 			case .Failure:
 				return .Event_Failure
 			case .Wake:
 				wake_events += 1
-			case .Ignored, .Handled:
 			}
 			if window_manager.child != nil {
 			child_result := sdl3_webgpu_run_dispatch_event(&window_manager.child.application, event)
 				switch child_result {
 				case .Close_Requested:
 					window_manager.pending_close = true
+				case .Close_Deferred, .Ignored, .Handled:
 				case .Failure:
 					return .Event_Failure
 				case .Wake:
 					wake_events += 1
-				case .Ignored, .Handled:
 				}
 			}
 		}
 	}
+	return .Ok
 }

@@ -181,11 +181,11 @@ Application_Scheduled_Wake_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, cla
 
 Application_Stop_Proc :: proc(state: rawptr)
 
-Application_Menu_Command_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, command: Application_Command_ID)
+Application_Menu_Command_Proc :: alicorn.Hosted_Menu_Command_Proc
 
-Application_Close_Result :: enum {Allow, Defer}
+Application_Close_Result :: alicorn.Hosted_Close_Result
 
-Application_Close_Requested_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime) -> Application_Close_Result
+Application_Close_Requested_Proc :: alicorn.Hosted_Close_Requested_Proc
 
 // Scheduled_Wake_Class distinguishes work that should run at a useful cadence
 // from lower-fidelity work that can wait until the user has been quiet.

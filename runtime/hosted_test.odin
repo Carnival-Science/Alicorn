@@ -23,6 +23,11 @@ Hosted_Test_App :: struct {
 	last_key: Application_Key,
 	text_key_events: int,
 	last_text_key: Application_Text_Navigation_Key,
+	scroll_captures, text_inputs, dialogs, close_requests, menu_commands: int,
+	last_menu_command: Action_ID,
+	last_dialog_status: Dialog_Status,
+	capture_scroll: bool,
+	close_result: Hosted_Close_Result,
 	host: ^Hosted_Runtime,
 }
 
@@ -99,6 +104,35 @@ hosted_test_pointer :: proc(data: rawptr, rt: ^Runtime, event: Pointer_Event, ta
 hosted_test_scroll :: proc(data: rawptr, rt: ^Runtime, event: Scroll_Event) {
 	app := (^Hosted_Test_App)(data)
 	app.scroll_events += 1
+}
+
+hosted_test_scroll_capture :: proc(data: rawptr, rt: ^Runtime, event: Scroll_Event, target: Node_ID) -> bool {
+	app := (^Hosted_Test_App)(data)
+	app.scroll_captures += 1
+	return app.capture_scroll && target != 0
+}
+
+hosted_test_text_input :: proc(data: rawptr, rt: ^Runtime, owner: Node_ID, event: Hosted_Text_Input_Event) {
+	app := (^Hosted_Test_App)(data)
+	app.text_inputs += 1
+}
+
+hosted_test_close_requested :: proc(data: rawptr, rt: ^Runtime) -> Hosted_Close_Result {
+	app := (^Hosted_Test_App)(data)
+	app.close_requests += 1
+	return app.close_result
+}
+
+hosted_test_menu_command :: proc(data: rawptr, rt: ^Runtime, command: Action_ID) {
+	app := (^Hosted_Test_App)(data)
+	app.menu_commands += 1
+	app.last_menu_command = command
+}
+
+hosted_test_dialog :: proc(data: rawptr, rt: ^Runtime, result: ^File_Dialog_Result) {
+	app := (^Hosted_Test_App)(data)
+	app.dialogs += 1
+	app.last_dialog_status = result.status
 }
 
 hosted_test_text_change :: proc(data: rawptr, rt: ^Runtime, change: Text_Change) {
@@ -207,7 +241,11 @@ hosted_test_open :: proc(host: ^Hosted_Runtime, app: ^Hosted_Test_App) -> Hosted
 		on_start=hosted_test_start, on_wake=hosted_test_wake,
 		on_scheduled_wake=hosted_test_scheduled, on_stop=hosted_test_stop, on_pointer=hosted_test_pointer,
 		on_text_change=hosted_test_text_change, on_text_key=hosted_test_text_key,
-		on_scroll=hosted_test_scroll, on_key=hosted_test_key,
+		on_scroll=hosted_test_scroll, on_scroll_capture=hosted_test_scroll_capture,
+		on_text_input=hosted_test_text_input, on_key=hosted_test_key,
+		on_menu_command=hosted_test_menu_command,
+		on_close_requested=hosted_test_close_requested,
+		on_dialog=hosted_test_dialog,
 	})
 }
 
@@ -567,4 +605,97 @@ test_hosted_runtime_worker_wakes_and_teardown :: proc(t: ^testing.T) {
 	testing.expect(t, hosted_runtime_destroy(&host) == .Ok && app.stops == 1)
 	testing.expect(t, !hosted_waker_notify(app.waker) && hosted_runtime_deliver_wake(&host) == .Closed && app.wakes == 1)
 	testing.expect(t, hosted_runtime_destroy(&host) == .Ok && app.stops == 1)
+}
+
+
+@(test)
+test_hosted_runtime_close_requests_allow_defer_and_default :: proc(t: ^testing.T) {
+	host: Hosted_Runtime
+	app: Hosted_Test_App
+	if hosted_test_open(&host, &app) != .Ok { testing.expect(t, false, "open failed"); return }
+	defer hosted_waker_release(&app.waker)
+	defer hosted_runtime_destroy(&host)
+
+	app.close_result = .Defer
+	result, status := hosted_runtime_request_close(&host)
+	testing.expect(t, status == .Ok && result == .Defer && app.close_requests == 1,
+		"a deferring application keeps the hosted surface alive")
+
+	app.close_result = .Allow
+	result, status = hosted_runtime_request_close(&host)
+	testing.expect(t, status == .Ok && result == .Allow && app.close_requests == 2,
+		"an allowing application permits the host to close")
+
+	// A host that omits the callback preserves immediate-close behavior.
+	default_host: Hosted_Runtime
+	default_app: Hosted_Test_App
+	if hosted_runtime_init(&default_host, Hosted_Runtime_Config{
+		state=rawptr(&default_app), logical_width=240, logical_height=120,
+		pixel_width=480, pixel_height=240, dpi_scale=2,
+		post_wake_data=rawptr(&default_app), post_wake=hosted_test_post,
+		render=hosted_test_render, on_initialize=hosted_test_init,
+	}) != .Ok {
+		testing.expect(t, false, "default close host failed to initialize")
+		return
+	}
+	defer hosted_runtime_destroy(&default_host)
+	result, status = hosted_runtime_request_close(&default_host)
+	testing.expect(t, status == .Ok && result == .Allow,
+		"an absent on_close_requested callback defaults to Allow")
+}
+
+@(test)
+test_hosted_runtime_menu_command_and_dialog_delivery :: proc(t: ^testing.T) {
+	host: Hosted_Runtime
+	app: Hosted_Test_App
+	if hosted_test_open(&host, &app) != .Ok { testing.expect(t, false, "open failed"); return }
+	defer hosted_waker_release(&app.waker)
+	defer hosted_runtime_destroy(&host)
+
+	_ = hosted_runtime_step(&host, 1)
+	_ = hosted_runtime_frame_submission_succeeded(&host)
+	if status := hosted_runtime_menu_command(&host, Action_ID(41)); status != .Ok {
+		testing.expect(t, false, "menu command dispatch failed")
+	}
+	testing.expect(t, app.menu_commands == 1 && app.last_menu_command == Action_ID(41),
+		"host-normalized menu commands reach the application callback")
+
+	result := File_Dialog_Result{id=Dialog_ID(9), status=.Accepted, selected_filter=1}
+	if status := hosted_runtime_dialog(&host, &result); status != .Ok {
+		testing.expect(t, false, "dialog delivery failed")
+	}
+	testing.expect(t, app.dialogs == 1 && app.last_dialog_status == .Accepted,
+		"asynchronous dialog completions reach the application callback")
+}
+
+@(test)
+test_hosted_runtime_scroll_capture_and_application_text_input :: proc(t: ^testing.T) {
+	host: Hosted_Runtime
+	app: Hosted_Test_App
+	if hosted_test_open(&host, &app) != .Ok { testing.expect(t, false, "open failed"); return }
+	defer hosted_waker_release(&app.waker)
+	defer hosted_runtime_destroy(&host)
+
+	_ = hosted_runtime_step(&host, 1)
+	rt, _ := hosted_runtime_borrow(&host)
+	if app.scroll == 0 { testing.expect(t, false, "missing scroll region"); return }
+	viewport := scroll_region_state(rt, app.scroll).viewport_bounds
+	app.capture_scroll = true
+	handled, status := hosted_runtime_scroll(&host, Scroll_Event{
+		delta_y=-1,
+		x=viewport.x + viewport.w/2,
+		y=viewport.y + viewport.h/2,
+	})
+	testing.expect(t, status == .Ok && handled && app.scroll_captures == 1 && app.scroll_events == 0,
+		"a capturing application scroll handler claims the event before retained scrolling")
+
+	app.capture_scroll = false
+	handled, status = hosted_runtime_scroll(&host, Scroll_Event{delta_y=-1, x=-1, y=-1})
+	testing.expect(t, status == .Ok && handled && app.scroll_events == 1,
+		"a non-capturing application falls back to the existing on_scroll path")
+
+	_ = focus(rt, app.generic_text_target)
+	testing.expect(t, hosted_runtime_text_input(&host, app.generic_text_target, .Commit, "text") == .Ok &&
+		app.text_inputs == 1,
+		"application-owned text targets receive hosted text-input events")
 }
