@@ -744,6 +744,25 @@ hosted_runtime_advance_presentation :: proc(state: ^Hosted_Runtime_State, now_ns
 // after each bounded batch of input events or one-shot timer. It never waits or
 // polls.
 hosted_runtime_step :: proc(host: ^Hosted_Runtime, now_ns: u64) -> Hosted_Step_Result {
+	return hosted_runtime_advance(host, now_ns, dispatch_application_work=true)
+}
+
+// hosted_runtime_live_step is one presentation opportunity inside a platform
+// modal move/resize loop, where the ordinary host loop cannot run. It advances
+// retained motion, rebuilds an invalidated description, and reports pending
+// presentation exactly like hosted_runtime_step, but it does not dispatch the
+// application tick or application-scheduled wakes: those are host-loop turns,
+// not frame opportunities. The reference SDL_GPU host draws the same line.
+hosted_runtime_live_step :: proc(host: ^Hosted_Runtime, now_ns: u64) -> Hosted_Step_Result {
+	return hosted_runtime_advance(host, now_ns, dispatch_application_work=false)
+}
+
+@(private)
+hosted_runtime_advance :: proc(
+	host: ^Hosted_Runtime,
+	now_ns: u64,
+	dispatch_application_work: bool,
+) -> Hosted_Step_Result {
 	state, status := hosted_runtime_get_state(host)
 	if status != .Ok { return Hosted_Step_Result{status=status} }
 	if now_ns > HOSTED_MAX_MONOTONIC_NS { return Hosted_Step_Result{status=.Invalid_Argument} }
@@ -756,8 +775,10 @@ hosted_runtime_step :: proc(host: ^Hosted_Runtime, now_ns: u64) -> Hosted_Step_R
 	}
 
 	result := Hosted_Step_Result{status=.Ok}
-	hosted_dispatch_tick(state, now_ns)
-	hosted_dispatch_scheduled_wakes(state, now_ns)
+	if dispatch_application_work {
+		hosted_dispatch_tick(state, now_ns)
+		hosted_dispatch_scheduled_wakes(state, now_ns)
+	}
 	if rt.invalidated {
 		result.root = hosted_root_describe(state)
 		result.description_built = true

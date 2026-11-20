@@ -320,17 +320,22 @@ hosted_surface_presenter_step :: proc(
 // The hook runs before encoding so hosted chrome (menu labels, caption state,
 // app-declared hit regions) reflects the current description. It may request a
 // presentation; render_required is re-evaluated after it returns.
+//
+// live selects the modal move/resize path: the Runtime advances retained motion
+// and an invalidated description, but application ticks and scheduled wakes wait
+// for the next ordinary host-loop turn. The presentation boundary is identical.
 hosted_surface_presenter_step_with_hook :: proc(
 	presenter: ^Hosted_Surface_Presenter,
 	now_ns: u64,
 	hook_data: rawptr,
 	hook: Hosted_Surface_Pre_Present_Proc,
+	live := false,
 ) -> (step: alicorn.Hosted_Step_Result, presentation: Hosted_Surface_Result) {
 	state := hosted_surface_state(presenter)
 	if state == nil { return alicorn.Hosted_Step_Result{status=.Closed}, .Invalid_Input }
 	timing_start: time.Tick
 	if state.timing_enabled { timing_start = time.tick_now() }
-	step = alicorn.hosted_runtime_step(state.hosted, now_ns)
+	step = alicorn.hosted_runtime_live_step(state.hosted, now_ns) if live else alicorn.hosted_runtime_step(state.hosted, now_ns)
 	if step.status != .Ok { return step, .Invalid_Input }
 	if hook != nil {
 		hook(hook_data)
@@ -468,6 +473,16 @@ hosted_surface_timing_buffer_destroy :: proc(state: ^hosted_surface_presenter_st
 hosted_surface_presenter_has_in_flight :: proc(presenter: ^Hosted_Surface_Presenter) -> bool {
 	state := hosted_surface_state(presenter)
 	return state != nil && webgpu_renderer.WebGPU_Presenter_In_Flight(&state.renderer) > 0
+}
+
+// hosted_surface_presenter_poll retires finished submissions without waiting.
+// A host loop that is blocked inside a platform modal move/resize loop calls
+// this from its live frame path so queue completion callbacks still run and the
+// presenter's two-frame budget does not stay saturated.
+hosted_surface_presenter_poll :: proc(presenter: ^Hosted_Surface_Presenter) {
+	state := hosted_surface_state(presenter)
+	if state == nil || state.device == nil { return }
+	_ = wgpu.DevicePoll(state.device, false)
 }
 
 @(private)

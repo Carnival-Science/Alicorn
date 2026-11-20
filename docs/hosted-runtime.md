@@ -568,6 +568,64 @@ scale is retained until a nonzero drawable size returns. Call
 `hosted_runtime_set_renderable(false)` while the surface cannot present, then
 restore it and step with the current monotonic time when it becomes renderable.
 
+### Live resize and window movement
+
+Interactive sizing is not an ordinary event turn. On Windows the platform runs a
+modal loop from the moment the pointer grabs a frame edge or caption until
+release, and the host's `WaitEventTimeout`/`PollEvent` call does not return.
+A host that only reacts to queued `WINDOW_RESIZED` events therefore shows the
+frame captured at grab time, scaled into the live window, for the whole drag.
+macOS behaves similarly inside Cocoa's live-resize session.
+
+The shared SDL3 host layer owns the mechanism that keeps frames flowing:
+`host/sdl3/live_resize` (package `sdl3_live_resize`). It is renderer-neutral and
+installs:
+
+- an SDL event watch that services `WINDOW_EXPOSED` (`data1 == 1`) by calling the
+  host's render callback directly. SDL documents that this one event may be
+  redrawn from a watcher, and it arrives on the main thread;
+- on Windows, `SDL_SetWindowsMessageHook` tracking `WM_ENTERSIZEMOVE`,
+  `WM_EXITSIZEMOVE`, `WM_MOVING`, `WM_WINDOWPOSCHANGED`, `WM_SIZE`, and
+  `WM_SHOWWINDOW`, plus one `SetTimer` (17 ms) on the moving HWND while the left
+  button is held;
+- re-entrancy guards for both entry points. An exposure or timer tick that lands
+  while a frame is encoding is coalesced into the outer call's bounded second
+  pass, and a timer callback nested inside a present is dropped with a counter;
+- slot identity for a primary and one secondary window, so each window keeps its
+  own move state and timer; and
+- the counters hosts publish as live-resize telemetry.
+
+Hosts implement `live_resize.Ops`: `window`, `renderable`, `has_work`, and
+`render(slot, now_ns, cause)`. `has_work` gates timer installation, which is why a
+plain window move with no retained motion does not spin: the timer stops as soon
+as the visible slots settle, and `WM_EXITSIZEMOVE` (or the release reconciliation
+that covers an exit message the modal loop consumed) retires the move state.
+
+A live frame must do two things in this order: adopt the live geometry
+(logical and pixel size, reconfigure the surface) and then run one presentation
+opportunity. Presenting a rebuilt description into the previous swapchain size is
+what produces the stretched last frame. In `host/sdl3` the live frame is
+`sdl3_webgpu_application_live_step`, which calls
+`hosted_runtime_live_step` rather than `hosted_runtime_step`.
+
+`hosted_runtime_live_step` advances retained motion, rebuilds an invalidated
+description (so an application-owned root is re-laid out at the live size), and
+reports pending presentation. It deliberately does **not** dispatch `on_tick` or
+application-scheduled wakes: those are host-loop turns, and running arbitrary
+application work from inside a platform modal loop is not part of the contract.
+`on_after_frame` still runs for each description it completes, because that
+callback belongs to the description pass.
+
+Hosts that own a device must also retire submissions while the modal loop holds
+the thread. `hosted_surface_presenter_poll` drains finished queue work without
+waiting, so the two-frame presentation budget does not stay saturated and a
+`Retry_Later` can clear on the next live tick.
+
+`native/sdl_gpu` uses the same core: its `window_move_windows.odin` is now an
+adapter that supplies the reference renderer's frame through `live_resize.Ops`,
+and its host telemetry reads the shared counters. Both renderers therefore run
+one implementation of windowing, scheduling, and modal-loop dispatch.
+
 Before shutdown, stop accepting native events, cancel host timers, and prevent
 new renderer submissions. Ensure submitted frames no longer borrow Runtime
 paint buffers. Then call `hosted_runtime_destroy` on the owning UI thread. It

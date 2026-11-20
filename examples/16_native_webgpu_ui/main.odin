@@ -118,6 +118,20 @@ App :: struct {
 	workbench_material: alicorn.Material_ID,
 	// --interactive keeps a fixture open for scripted physical window input.
 	interactive: bool,
+	// --live-resize-smoke keeps a continuously animated probe on the titlebar
+	// fixture and accounts every description the host builds while the window is
+	// being dragged. It is the fixture half of the scripted live-resize check:
+	// intermediate widths prove the modal loop rebuilt layout instead of
+	// presenting the pre-drag frame once the drag ended.
+	live_resize_smoke: bool,
+	live_motion_phase: bool,
+	live_render_frames: int,
+	live_size_changes: int,
+	live_last_width: int,
+	live_min_width: int,
+	live_max_width: int,
+	live_widths: [128]int,
+	live_width_count: int,
 	// --services-smoke proves the hosted scheduler, synchronous clipboard, file
 	// drop, and tick callbacks through ui.run on both renderer paths.
 	services_smoke: bool,
@@ -138,6 +152,7 @@ App :: struct {
 }
 
 render :: proc(app: ^App, ctx: ^ui.UI) {
+	live_resize_record(app, ctx)
 	if app.titlebar_smoke {
 		titlebar_render(app, ctx)
 		return
@@ -206,6 +221,63 @@ render :: proc(app: ^App, ctx: ^ui.UI) {
 }
 
 TITLEBAR_SMOKE_TAB_DRAG :: alicorn.Drag_Type(0x746162)
+
+// live_resize_record accounts each description the host builds while the
+// live-resize fixture is running. Width changes are the signal that matters: a
+// host that only re-lays out after the drag reports one jump from the pre-drag
+// width to the final width, while a host that rebuilds inside the modal loop
+// reports the intermediate sizes the user actually dragged through.
+live_resize_record :: proc(app: ^App, ctx: ^ui.UI) {
+	if app == nil || !app.live_resize_smoke || ctx == nil || ctx.runtime == nil { return }
+	width := int(ctx.runtime.viewport.w + 0.5)
+	if width <= 0 { return }
+	app.live_render_frames += 1
+	if app.live_min_width == 0 || width < app.live_min_width { app.live_min_width = width }
+	app.live_max_width = max(app.live_max_width, width)
+	if app.live_last_width == width { return }
+	app.live_last_width = width
+	app.live_size_changes += 1
+	if app.live_width_count < len(app.live_widths) {
+		app.live_widths[app.live_width_count] = width
+		app.live_width_count += 1
+	}
+}
+
+// live_resize_report prints the fixture-side evidence. distinct widths are the
+// intermediate logical sizes the description was built at; size_changes counts
+// every width transition, which is larger when the host tracks a drag live.
+live_resize_report :: proc(app: ^App) -> bool {
+	if app == nil || !app.live_resize_smoke { return true }
+	unique_widths := 0
+	for index in 0..<app.live_width_count {
+		seen := false
+		for earlier in 0..<index {
+			if app.live_widths[earlier] == app.live_widths[index] { seen = true; break }
+		}
+		if !seen { unique_widths += 1 }
+	}
+	ok := app.live_size_changes >= 4 && unique_widths >= 4 && app.live_render_frames >= 8
+	fmt.println(
+		"live_resize_smoke", "PASS" if ok else "FAIL",
+		"frames", app.live_render_frames,
+		"size_changes", app.live_size_changes,
+		"distinct_widths", unique_widths,
+		"min_width", app.live_min_width,
+		"max_width", app.live_max_width,
+	)
+	return ok
+}
+
+// live_resize_after_frame keeps the animated probe alive. Motion owners settle
+// after one response, so the fixture re-arms the opposite target whenever the
+// runtime reports no active owner. The host must keep presenting during a modal
+// move for this animation to remain visible while the window is dragged.
+live_resize_after_frame :: proc(app: ^App, rt: ^alicorn.Runtime) {
+	if app == nil || rt == nil || !app.live_resize_smoke { return }
+	if alicorn.motion_activity(rt).active_owners > 0 { return }
+	app.live_motion_phase = !app.live_motion_phase
+	alicorn.invalidate_root(rt, "live-resize smoke motion ping-pong")
+}
 
 workbench_render :: proc(app: ^App, ctx: ^ui.UI) {
 	if alicorn.container_begin(
@@ -366,6 +438,31 @@ titlebar_render :: proc(app: ^App, ctx: ^ui.UI) {
 		app.titlebar_reorder_count,
 		app.titlebar_pointer_count,
 	))
+	if app.live_resize_smoke {
+		if ui.row(ctx, height=24, label="live-resize-motion-probe") {
+			marker := alicorn.container_begin(
+				ctx,
+				.Container,
+				label="live-resize-motion-marker",
+				key="live-resize-motion-marker",
+				style=ui.layout_style(.Row, width=24, height=16),
+				color=ui.rgb(0x4EA6C7),
+			)
+			offset := f64(-200) if app.live_motion_phase else f64(200)
+			_ = ui.motion(
+				ctx,
+				marker,
+				ui.Motion_Target{translation=ui.Motion_Vector2{offset, 0}, has_translation=true},
+				.Reveal,
+				ui.Motion_Vector2{-offset, 0},
+			)
+			alicorn.container_end(ctx)
+		}
+		alicorn.text(ctx, fmt.tprintf(
+			"live resize: width=%d frames=%d size_changes=%d",
+			app.live_last_width, app.live_render_frames, app.live_size_changes,
+		))
+	}
 	alicorn.container_end(ctx)
 	alicorn.container_end(ctx)
 	app.titlebar_header = header
@@ -810,6 +907,16 @@ main :: proc() {
 			app.workbench_smoke = true
 			smoke = true
 		}
+		if argument == "--live-resize-smoke" {
+			app.live_resize_smoke = true
+			app.titlebar_smoke = true
+			app.titlebar_order = [2]u64{1, 2}
+			app.titlebar_selected = 1
+			app.titlebar_header_height = 32
+			app.titlebar_content_end_x = 900
+			app.interactive = true
+			smoke = false
+		}
 	}
 	if app.interactive { smoke = false }
 	// The services smoke owns its quit: it completes only after the scheduler,
@@ -894,6 +1001,10 @@ main :: proc() {
 	scheduled_proc: proc(^App, ^alicorn.Runtime, alicorn.Scheduled_Wake_Class)
 	file_drop_proc: proc(^App, ^alicorn.Runtime, string)
 	tick_proc: proc(^App, ^alicorn.Runtime)
+	after_frame_proc: proc(^App, ^alicorn.Runtime)
+	if app.live_resize_smoke {
+		after_frame_proc = live_resize_after_frame
+	}
 	if app.services_smoke {
 		scheduled_proc = services_scheduled_wake
 		file_drop_proc = services_file_drop
@@ -908,6 +1019,7 @@ main :: proc() {
 			window_chrome_layout=chrome_layout, on_pointer=pointer_proc,
 			on_drag=drag_proc, on_scheduled_wake=scheduled_proc,
 			on_file_drop=file_drop_proc, on_tick=tick_proc,
+			on_after_frame=after_frame_proc,
 			on_initialize=example_initialize)
 	} else {
 		webgpu.run(&app, render, title="Alicorn · Native Renderer Probe", on_start=start, on_wake=wake,
@@ -918,6 +1030,7 @@ main :: proc() {
 			window_chrome_layout=chrome_layout, on_pointer=pointer_proc,
 			on_drag=drag_proc, on_scheduled_wake=scheduled_proc,
 			on_file_drop=file_drop_proc, on_tick=tick_proc,
+			on_after_frame=after_frame_proc,
 			on_initialize=example_initialize)
 	}
 	if app.services_smoke {
@@ -979,5 +1092,8 @@ main :: proc() {
 			"reorders", app.titlebar_reorder_count,
 		)
 		if !ok { os.exit(1) }
+	}
+	if app.live_resize_smoke {
+		if !live_resize_report(&app) { os.exit(1) }
 	}
 }

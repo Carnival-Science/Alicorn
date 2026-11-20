@@ -42,6 +42,8 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin test host\sdl3 "-collection:alicorn=$RepoRoot" @($AccessKit.CompilerArguments) -out:out\alicorn_sdl3_host_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $Odin test host\sdl3\live_resize "-collection:alicorn=$RepoRoot" -out:out\alicorn_sdl3_live_resize_tests.exe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin test host\sdl3\input "-collection:alicorn=$RepoRoot" -out:out\alicorn_sdl3_input_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin test host\sdl3\clipboard "-collection:alicorn=$RepoRoot" -out:out\alicorn_sdl3_clipboard_tests.exe

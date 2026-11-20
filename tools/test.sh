@@ -36,6 +36,8 @@ alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
 	test host/sdl3 "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_sdl3_host_tests"
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+	test host/sdl3/live_resize "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_sdl3_live_resize_tests"
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
 	test host/sdl3/input "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_sdl3_input_tests"
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
 	test host/sdl3/clipboard "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_sdl3_clipboard_tests"

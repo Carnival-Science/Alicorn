@@ -3900,3 +3900,150 @@ The callback's Down/Up invalidation now comes from
 - True sRGB output (both hosts encoding linear theme values into an sRGB target)
   is a separate, deliberate contract change; it must land on SDL_GPU, hosted
   WebGPU, and both image-texture paths together.
+
+## Stage C slice 1: live resize and window movement parity (2026-11-20)
+
+Real Scratchpad testing on the hosted WebGPU build reported the P0 parity gap for
+this stage: resizing the window only landed when the mouse was released, and
+during the drag the window showed the pre-drag frame stretched into the live
+size. The SDL_GPU reference resized live and continuously.
+
+### What the reference host actually did
+
+`native/sdl_gpu` never waited for a queued resize event during an interactive
+drag. The platform owns a modal move/size loop between the pointer grab and
+release, so the host's `SDL_WaitEventTimeout` does not return. The reference host
+had two entry points that run inside that loop:
+
+- `native_live_resize_event_watch` on `WINDOW_EXPOSED` with `data1 == 1`. SDL
+  documents that this one event may be redrawn from the watcher callback and
+  delivers it on the main thread.
+- `native_live_resize_windows_message_hook` + `SetTimer(17 ms)` on the moving
+  HWND. The hook tracks `WM_ENTERSIZEMOVE`/`WM_EXITSIZEMOVE` (and counts
+  `WM_MOVING`/`WM_WINDOWPOSCHANGED`); the timer gives every renderable slot a
+  display-like presentation opportunity. `WM_EXITSIZEMOVE` can be consumed by
+  the modal loop before SDL's hook sees it, so the first ordinary host-loop turn
+  after the pointer is up reconciles any leftover move state.
+
+Both paths are re-entrant with respect to the host frame path, because a present
+can pump messages: a nested exposure sets a pending flag that the outer call
+services in one bounded second pass, and a timer callback re-entered from inside
+a present is dropped and counted. The Windows timer is only installed while a
+slot has renderable work, so a static window does not spin during a move.
+
+Per-window scheduling was already slot-shaped: the primary window and the single
+secondary window each had their own motion scheduler, timing, and move state; the
+timer serviced whichever slot the modal loop was moving.
+
+### What moved and what stayed
+
+The scheduling/windowing mechanism moved into `host/sdl3/live_resize`
+(package `sdl3_live_resize`) so both renderers use one implementation:
+
+- SDL event watch registration and the `WINDOW_EXPOSED` filter and dispatch;
+- the Windows message hook, per-HWND timer, move-state machine, release
+  reconciliation, and HWND lookup;
+- per-slot identity (`Primary`, `Secondary`) with move/timer state;
+- the re-entrancy guards and the counters every host publishes as telemetry.
+
+Renderers supply `live_resize.Ops`: `window`, `renderable`, `has_work`, and
+`render(slot, now_ns, cause)`. `render` is the only place frame policy lives, so
+the reference renderer keeps its "timer ticks only sample when the retained
+motion scheduler is due" rule while the hosted renderer keeps its
+"rebuild description + present" rule.
+
+`native/sdl_gpu/window_move_windows.odin` is now a thin adapter over that core:
+it supplies the slot window/renderability/work probes, routes the render callback
+into `native_live_resize_present_if_due`, republishes slots when a secondary
+window opens or closes, and publishes the shared counters under the historical
+telemetry names. The native event watch, message hook, timer, guards, and
+`move_*` per-window fields were deleted rather than kept as a second copy. The
+169 native tests and its smokes are the regression guard for that switch.
+
+### Hosted wiring
+
+`host/sdl3/live_resize_host.odin` installs the core for the primary application
+and the optional secondary window. Its render callback:
+
+1. polls the presenter (`hosted_surface_presenter_poll`) so queue completions
+   retire while the modal loop owns the thread;
+2. adopts the live geometry (`sdl3_webgpu_application_resize`) - this is the step
+   whose absence produced the stretched last frame, because a rebuilt description
+   was being presented into the previous swapchain size;
+3. runs `sdl3_webgpu_application_live_step`, which calls the new
+   `hosted_runtime_live_step`.
+
+`hosted_runtime_live_step` is one presentation opportunity inside a modal loop:
+it advances retained motion, rebuilds an invalidated description (application-
+owned root contract), runs `on_after_frame` for that pass, and reports pending
+presentation. It does not dispatch `on_tick` or application-scheduled wakes -
+those are ordinary host-loop turns. `sdl3_webgpu_application_step` gained a
+`step_in_progress` guard so a tick that lands while a step is running can never
+start a second description, and `hosted_surface_presenter_step_with_hook` gained
+a `live` parameter that selects the live runtime step.
+
+`host/sdl3/run.odin` installs the core after the presenter exists, republishes
+slot identity every loop turn (a secondary window may be created, destroyed, or
+replumbed by device recovery), reconciles leftover modal state, and releases the
+core before the application is destroyed. The install path's `defer`s are
+deliberately outside the `if` block that tests installation: defers are
+block-scoped, and the first version released the core at the end of the
+installation `if`.
+
+### Fixtures and scripted evidence
+
+- `examples/16_native_webgpu_ui --live-resize-smoke` keeps an animated retained
+  motion probe on the titlebar fixture and accounts every description the host
+  builds: frame count, width transitions, and the distinct logical widths seen.
+  A host that only re-lays out after release reports 1-2 width transitions; a
+  host that tracks the drag reports the intermediate sizes. It exits with
+  `live_resize_smoke PASS/FAIL` and a non-zero status on failure.
+- `tools/validate_native_webgpu_resize.ps1` performs real `SendInput` caption and
+  edge drags and counts `live_resize_frame` trace lines from a dedicated reader
+  thread (PowerShell event handlers cannot be used here: they are marshalled onto
+  the runspace that is busy inside the drag, so counting would be deferred past
+  the release). It asserts mid-drag frames, that the drawable tracked the live
+  client size, and that drawable and live client aspects agree. `-Mode
+  application` runs the same drags against a real consumer build (Scratchpad).
+- The hosted host prints `webgpu_live_resize frames ... expose_events ...
+  move_timer_wakes ...` at shutdown behind the `--test-live-resize-trace` test
+  seam, mirroring the reference host's telemetry line.
+
+### Validation (Windows x64, RTX 2080 SUPER, `9b31260` + this slice)
+
+- Hosted fixture, D3D12: 79 frames during the resize drag with pixel widths
+  stepping 1105 -> 1240, 24 frames during the caption move drag, drawable and
+  live client both 1240x700 (0.00 % aspect delta). Vulkan is equivalent (78
+  frames). The pre-fix build reports 0 mid-drag frames and 3 distinct widths.
+- Reference `--backend=sdl-gpu` with the same fixture: 120 exposures and 26
+  modal-loop redraws, 26 distinct widths from the shared fixture accounting.
+- Scratchpad (`b458d6e`, candidate root this branch): 24 mid-drag frames on both
+  hosted backends (D3D12 and Vulkan) with 0.00 % aspect delta and 24 frames
+  during the caption drag; `smoke --renderer=webgpu --backend=d3d12`,
+  `--backend=vulkan`, and `--renderer=sdl-gpu` pass both legs
+  (`publication_rendered`, `wake_observed`, `ordered_shutdown`,
+  `session_restore`).
+- Suites: runtime, host/sdl3 (plus the new host/sdl3/live_resize 9 tests),
+  host/sdl3/input, clipboard, dialogs, host/menus, host/web, host/diagnostics,
+  host/presentation, renderer/webgpu, renderer/cpu, ui, testui, theme,
+  native/sdl_gpu (169), native/scroll_capture_tests, `odin build tests` and
+  `out/alicorn_tests.exe`, and the accessibility contract fixture all pass. All
+  examples build, example 16 passes its six smokes on D3D12, Vulkan, and
+  SDL_GPU (18/18), and `--test-diagnostics-sequence --diagnostics` still writes
+  three five-artifact bundles.
+- Full numbers, trace excerpts, and the before/after comparison are in
+  [`validation/webgpu-live-resize-windows-2026-11-20.md`](validation/webgpu-live-resize-windows-2026-11-20.md).
+
+### Residual work
+
+- Interactive DPI transitions (`WM_DPICHANGED` mid-drag) re-read logical and
+  pixel metrics together on every live frame, but no scripted mixed-DPI monitor
+  arrangement exists in this environment; the founder's cross-monitor drag is the
+  confirming check.
+- The shared core owns windowing/scheduling for both SDL3 renderers now. The
+  remaining consolidation is outside this slice: the reference host still owns
+  its own frame encoder and end-of-frame bookkeeping around the core, and the
+  browser host has no modal move/resize loop to hook.
+- Live frames do not run `on_tick` or scheduled wakes by design; applications
+  that animate from `on_tick` rather than retained motion will hold their last
+  pose during a modal drag, exactly as on the reference host.

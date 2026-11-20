@@ -323,6 +323,17 @@ The host waits for events when idle. Worker completions can wake it through an
 opaque `Application_Waker`; the UI remains on the window thread. The runtime
 does not create application threads or observe external state.
 
+Interactive window sizing is the one case where the platform does not return to
+the host's wait. Windows (and macOS live-resize sessions) run a modal loop while
+the pointer holds a frame edge or caption, so event polling only resumes on
+release. Both SDL3 renderers therefore share one dispatch core,
+`host/sdl3/live_resize`: an SDL event watch for direct `WINDOW_EXPOSED` redraws,
+a Windows message hook and per-window timer for the modal move/size loop, slot
+state for a primary and one secondary window, and the re-entrancy guards that
+keep a frame from nesting inside another. Renderers plug their frame policy in
+through `Ops`; the windowing, scheduling, and input mechanism is not duplicated
+per backend. See [`hosted-runtime.md`](hosted-runtime.md#live-resize-and-window-movement).
+
 Applications that need delayed refreshes can use the host's two-slot
 `Application_Scheduler`. A slot is either `Frequent` or `Opportunistic`; each
 class owns one replaceable deadline, and callbacks run on the UI thread with a

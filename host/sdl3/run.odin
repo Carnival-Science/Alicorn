@@ -289,6 +289,17 @@ sdl3_webgpu_run_loss_injection_requested :: proc() -> bool {
 	return false
 }
 
+// sdl3_webgpu_run_live_resize_trace_requested enables one line per frame the
+// modal move/size loop presents. The scripted drag fixture parses those lines to
+// prove frames land during a drag; it is a test seam, not a product feature.
+@(private)
+sdl3_webgpu_run_live_resize_trace_requested :: proc() -> bool {
+	for argument in os.args {
+		if argument == "--test-live-resize-trace" { return true }
+	}
+	return false
+}
+
 // sdl3_webgpu_run_diagnostics_test_requested enables a deterministic host
 // self-test for the shared diagnostics wiring. It invokes the same F10/F11/F12
 // handlers the window dispatches, so automated validation does not depend on
@@ -775,6 +786,22 @@ sdl3_webgpu_run :: proc(
 	state.application = &application
 	defer sdl3_webgpu_run_destroy_application(&application, &state)
 	defer sdl3_webgpu_run_destroy_windows(rawptr(&state))
+	// The shared live-resize core owns the modal move/size loop hooks for the
+	// primary window and the optional secondary window. It is installed after the
+	// presenter exists and released before the application is destroyed.
+	live_resize: SDL3_WebGPU_Live_Resize
+	live_resize_installed := sdl3_webgpu_live_resize_install(
+		&live_resize, &application, &window_manager, sdl3_webgpu_run_live_resize_trace_requested(),
+	)
+	if !live_resize_installed {
+		fmt.eprintln(
+			"[alicorn-webgpu] live resize hook unavailable; modal move/size rendering will wait for release",
+		)
+	}
+	defer if live_resize_installed {
+		sdl3_webgpu_live_resize_report(&live_resize)
+		sdl3_webgpu_live_resize_release(&live_resize)
+	}
 	timing_enabled := sdl3_webgpu_run_timing_requested()
 	smoke_hold_ns := sdl3_webgpu_run_smoke_hold_ns()
 	if timing_enabled {
@@ -860,6 +887,10 @@ sdl3_webgpu_run :: proc(
 		if window_manager.pending_close && window_manager.child != nil {
 			_ = sdl3_webgpu_window_destroy(&window_manager)
 		}
+		// Republish slot identity and finish any modal-loop cleanup SDL's message
+		// hook did not observe before this turn.
+		sdl3_webgpu_live_resize_sync_windows(&live_resize)
+		sdl3_webgpu_live_resize_reconcile(&live_resize)
 		if window_manager.child == nil { child_did_present = false }
 		if state.device_lost && !state.recovery_active {
 			fmt.eprintln("[alicorn-webgpu] WebGPU device lost without recovery", state.device_loss_reason)

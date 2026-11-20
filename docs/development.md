@@ -9,7 +9,10 @@ native starter app, use [Getting Started](getting-started.md).
 runtime/          retained runtime and lower-level public API
 ui/               convenience API for ordinary native application UI
 native/sdl_gpu/   SDL3 / SDL_GPU host and compositor
+host/sdl3/        shared SDL3 windowing, events, live resize, dialogs, accessibility
+host/presentation shared hosted-surface presenter (WebGPU)
 host/diagnostics/ shared, renderer-neutral developer diagnostics
+host/menus/       shared native menu model and platform adapters
 examples/         numbered native application lessons
 tests/fixtures/   focused runtime and lifecycle validation applications
 tests/            deterministic foundation tests
@@ -50,7 +53,6 @@ For focused work:
 ```
 
 ### Headless application interaction tests
-
 Import `alicorn:testui` to drive an application's normal render procedure and
 callbacks against Alicorn's retained runtime without opening SDL or creating a
 GPU device. The harness supports typed key/text/pointer/scroll input, semantic
@@ -67,6 +69,28 @@ would catch a missing reveal request.
 
 The scripts accept `-Odin PATH` on PowerShell and `--odin PATH` on Unix-like
 shells. They otherwise use `ALICORN_ODIN`, then `odin` on `PATH`.
+
+### Physical window validation
+
+Two Windows runners drive real `SendInput` input against
+`examples/16_native_webgpu_ui` and assert host behavior that a headless test
+cannot reach:
+
+```powershell
+.\tools\validate_native_webgpu_chrome.ps1 -Executable out\example16\16_native_webgpu_ui.exe -Backend d3d12
+.\tools\validate_native_webgpu_resize.ps1 -Executable out\example16\16_native_webgpu_ui.exe -Backend d3d12
+```
+
+The chrome runner covers hit testing, caption drag/maximize/minimize, edge
+resize, and theme-message survival. The resize runner adds
+`--live-resize-smoke` and `--test-live-resize-trace` and proves that frames are
+presented *during* a modal move/resize drag: it counts per-frame trace lines from
+a dedicated reader thread, compares the drawable size and aspect with the live
+client rectangle, and cross-checks the fixture's own width accounting. Run it
+with `-Mode application -ExtraArguments '--renderer=webgpu'` against a consumer
+build (Scratchpad) for the same drags without fixture chrome. The mechanism it
+exercises is shared with `native/sdl_gpu`; see
+[`hosted-runtime.md`](hosted-runtime.md#live-resize-and-window-movement).
 
 ### Linux NixOS/Mango validation
 

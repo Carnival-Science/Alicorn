@@ -25,8 +25,6 @@ Native_Secondary_Window_Queued_Event :: struct {
 Native_Secondary_Window :: struct {
 	active: bool,
 	presentation_suspended: bool,
-	live_resize_rendering: bool,
-	live_resize_pending: bool,
 	closing: bool,
 	claimed: bool,
 	callbacks_started: bool,
@@ -67,9 +65,6 @@ Native_Secondary_Window :: struct {
 	last_user_interaction_ns: u64,
 	drag_autoscroll_deadline_ns: u64,
 	last_tick_ns: u64,
-	move_active: bool,
-	move_timer_active: bool,
-	move_hwnd: rawptr,
 	timing: Native_Host_Timing,
 	flight_recorder: Native_Flight_Recorder,
 	host_scratch: Native_Host_Scratch,
@@ -395,9 +390,7 @@ native_secondary_window_gpu_release_safe :: proc(
 native_secondary_window_destroy :: proc(manager: ^Native_Secondary_Window_Manager, wait_for_gpu := true) {
 	if manager == nil || manager.child == nil { return }
 	child := manager.child
-	when ODIN_OS == .Windows {
-		native_live_resize_windows_secondary_destroy(child)
-	}
+	native_live_resize_secondary_destroy(child)
 	if child.runtime != nil && child.window != nil && child.motion_scheduler.active {
 		activity := alicorn.motion_activity(child.runtime)
 		native_breadcrumb_motion_window_state(
@@ -705,23 +698,16 @@ native_secondary_window_render :: proc(
 	return true
 }
 
+// native_secondary_window_live_resize_redraw runs one bounded secondary live
+// frame. Dispatch ordering and re-entrancy are owned by the shared live-resize
+// core, which may call this twice when an exposure lands during a present.
 native_secondary_window_live_resize_redraw :: proc(
 	manager: ^Native_Secondary_Window_Manager,
 	child: ^Native_Secondary_Window,
 	request_presentation := true,
 ) {
 	if manager == nil || child == nil || !child.active || child.runtime == nil { return }
-	if child.live_resize_rendering {
-		child.live_resize_pending = true
-		return
-	}
-	child.live_resize_rendering = true
-	defer child.live_resize_rendering = false
-	for _ in 0..<2 {
-		child.live_resize_pending = false
-		native_secondary_window_live_resize_redraw_once(manager, child, request_presentation)
-		if !child.live_resize_pending { return }
-	}
+	native_secondary_window_live_resize_redraw_once(manager, child, request_presentation)
 }
 
 native_secondary_window_live_resize_redraw_once :: proc(

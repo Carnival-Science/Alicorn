@@ -80,6 +80,11 @@ SDL3_WebGPU_Application :: struct {
 	accessibility_ready: bool,
 	presenter_device_lost: bool,
 	chrome_redraw_pending: bool,
+	// step_in_progress serializes ordinary and modal-loop presentation. A
+	// Windows modal move loop can dispatch a live-resize tick from inside a GPU
+	// call that pumps messages; that nested tick must not start a second
+	// description while the outer one is running.
+	step_in_progress: bool,
 	diagnostics: ^SDL3_Diagnostics,
 }
 
@@ -594,9 +599,9 @@ sdl3_webgpu_application_set_visible :: proc(
 	return presentation_host.hosted_surface_presenter_set_visible(&application.presenter, visible)
 }
 
-// Step after a bounded SDL event batch or scheduled wake. Retry_Later receives
-// one bounded 60 Hz deadline; the host should use SDL_WaitEventTimeout for that
-// deadline and continue to pump WGPU callbacks while work is in flight.
+// sdl3_webgpu_application_step is one ordinary host-loop turn. The live-resize
+// paths use sdl3_webgpu_application_live_step instead so a modal move/size loop
+// cannot re-enter presentation while an ordinary step is already running.
 sdl3_webgpu_application_step :: proc(
 	application: ^SDL3_WebGPU_Application,
 	now_ns: u64,
@@ -604,6 +609,36 @@ sdl3_webgpu_application_step :: proc(
 	if application == nil || !application.initialized {
 		return {status=.Closed, presentation=.Invalid_Input}
 	}
+	if application.step_in_progress { return {status=.Ok, presentation=.No_Frame} }
+	application.step_in_progress = true
+	defer application.step_in_progress = false
+	return sdl3_webgpu_application_present(application, now_ns, live=false)
+}
+
+// sdl3_webgpu_application_live_step performs one bounded presentation
+// opportunity for a live resize/move: geometry is re-read by the caller, the
+// surface is already configured, and the Runtime is asked for the current
+// description plus retained motion. Application ticks and scheduled wakes are
+// left to the next ordinary host-loop turn.
+sdl3_webgpu_application_live_step :: proc(
+	application: ^SDL3_WebGPU_Application,
+	now_ns: u64,
+) -> SDL3_WebGPU_Application_Step {
+	if application == nil || !application.initialized {
+		return {status=.Closed, presentation=.Invalid_Input}
+	}
+	if application.step_in_progress { return {status=.Ok, presentation=.No_Frame} }
+	application.step_in_progress = true
+	defer application.step_in_progress = false
+	return sdl3_webgpu_application_present(application, now_ns, live=true)
+}
+
+@(private)
+sdl3_webgpu_application_present :: proc(
+	application: ^SDL3_WebGPU_Application,
+	now_ns: u64,
+	live: bool,
+) -> SDL3_WebGPU_Application_Step {
 	if application.presenter.state == nil || application.presenter_device_lost {
 		return {status=.Ok, presentation=.No_Frame}
 	}
@@ -612,6 +647,7 @@ sdl3_webgpu_application_step :: proc(
 		now_ns,
 		rawptr(application),
 		sdl3_webgpu_application_pre_present,
+		live=live,
 	)
 	if step.status != .Ok { return {status=step.status, presentation=presentation} }
 	if !sdl3_webgpu_application_sync_text_input(application) {
