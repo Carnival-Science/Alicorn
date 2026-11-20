@@ -43,7 +43,14 @@ OUT_ROOT="$REPO_ROOT/out/native-package"
 SDL_ROOT="$OUT_ROOT/sdl-3.4.20"
 # Packages must not embed developer-machine rpaths and keep the static link
 # contract. The shared wgpu-native selection is for build/test consumers that
-# also link AccessKit; the packaged 01_hello does not import wgpu.
+# also link AccessKit.
+#
+# Evidence boundary: the default metadata packages 01_hello, an SDL_GPU
+# consumer that does not import wgpu at all. A green run here proves the
+# EXISTING packaging contract has not regressed (static SDL3, no leaked rpath).
+# It is NOT evidence that a production WebGPU application packages with static
+# wgpu-native plus AccessKit. Desktop acceptance still requires packaging and
+# launching an actual WebGPU consumer; see docs/webgpu-migration.md Phase 4.
 ALICORN_DARWIN_STATIC_WGPU=1
 export ALICORN_DARWIN_STATIC_WGPU
 alicorn_build_pinned_macos_sdl "$SDL_LINKAGE" "$SDL_ROOT"
