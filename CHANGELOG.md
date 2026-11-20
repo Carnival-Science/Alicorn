@@ -45,6 +45,17 @@ changelogs.
   Stops resolve through ordinary core or namespaced theme color roles, share the
   existing surface vertex-color path, and preserve the solid-fill fast path.
 
+### Fixed
+
+- Fixed hosted WebGPU first-frame rejection for workbench-like scenes. An
+  analytic-relief paper surface whose connected tab opens its top edge at the
+  surface's left coordinate reserved two split quads but emitted only one; the
+  WebGPU solid pass treated that conservative reservation as an exact vertex
+  contract and returned `Render_Failure` before submitting. It now uses the
+  emitted count and grows the vertex buffer only when emission exceeds the
+  reservation. Hosted D3D12 and Vulkan both present the workbench, and encode
+  failures now log their stage instead of surfacing only as `Presenter_Failure`.
+
 ### Validation
 
 - Added explicit analytic-motion coverage for 30/60/144 Hz sampling, a missed

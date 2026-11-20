@@ -854,7 +854,16 @@ sdl3_webgpu_run :: proc(
 		     .Surface_Acquire_Failure, .Present_Failure:
 			// Likewise for the primary presenter: if the backend loss surfaced
 			// during this step, recovery (not the host loop) owns the outcome.
-			if !(state.device_lost && state.recovery_active) { return .Presenter_Failure }
+			if !(state.device_lost && state.recovery_active) {
+				fmt.eprintln(
+					"[alicorn-webgpu] primary presentation failed",
+					"result", step.presentation,
+					"steps", steps,
+					"frames_presented", presentations,
+					"device_lost", state.device_lost,
+				)
+				return .Presenter_Failure
+			}
 		case .Suspended, .Retry_Later, .No_Frame, .Reconfigure_Required, .Hidden:
 			// A minimized surface or temporary acquisition failure is retried
 			// under the coordinator's bounded deadline.

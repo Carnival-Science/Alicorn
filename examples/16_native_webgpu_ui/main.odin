@@ -108,6 +108,14 @@ App :: struct {
 	child_chrome_smoke: bool,
 	child_menu_items: [1]alicorn.Menu_Item,
 	child_menus: [1]alicorn.Menu,
+	// --workbench-smoke reproduces the Scratchpad workbench paint that failed
+	// first presentation on the hosted WebGPU path: a connected tab opening a
+	// rectangular analytic-relief paper surface (negative optical height) with
+	// an edge gap that starts exactly at the paper's left edge. The shared CPU
+	// preflight counts that split edge conservatively; the renderer must treat
+	// it as a reservation, not an exact vertex contract.
+	workbench_smoke: bool,
+	workbench_material: alicorn.Material_ID,
 	// --interactive keeps a fixture open for scripted physical window input.
 	interactive: bool,
 	// --services-smoke proves the hosted scheduler, synchronous clipboard, file
@@ -132,6 +140,10 @@ App :: struct {
 render :: proc(app: ^App, ctx: ^ui.UI) {
 	if app.titlebar_smoke {
 		titlebar_render(app, ctx)
+		return
+	}
+	if app.workbench_smoke {
+		workbench_render(app, ctx)
 		return
 	}
 	if ui.column(ctx, padding=24, gap=12) {
@@ -189,6 +201,85 @@ render :: proc(app: ^App, ctx: ^ui.UI) {
 }
 
 TITLEBAR_SMOKE_TAB_DRAG :: alicorn.Drag_Type(0x746162)
+
+workbench_render :: proc(app: ^App, ctx: ^ui.UI) {
+	if alicorn.container_begin(
+		ctx, .Root, label="workbench-smoke-root", key="workbench-smoke-root",
+		style=alicorn.layout_style(.Column, grow=1, clip=true),
+		color=alicorn.Color{0.16, 0.16, 0.14, 1},
+	) == 0 { return }
+	// The tab strip and paper share a left edge and abut vertically, so the
+	// selected connected tab opens the paper's top optical edge starting at
+	// the surface's own left coordinate.
+	tabs_width := f32(640)
+	header := alicorn.container_begin(
+		ctx, .Container, label="workbench-smoke-tabs", key="workbench-smoke-tabs",
+		style=alicorn.layout_style(.Row, width=tabs_width, height=32, clip=true),
+	)
+	items := [2]alicorn.Tab_Bar_Item{
+		{key=alicorn.key_string("workbench-tab-main"), label="main.odin", selected=true},
+		{key=alicorn.key_string("workbench-tab-notes"), label="notes.md", selected=false},
+	}
+	options := alicorn.DEFAULT_TAB_BAR_OPTIONS
+	options.height = 32
+	options.min_tab_width = 160
+	options.max_tab_width = 160
+	options.gap = 0
+	options.presentation = .Compact
+	options.appearance = .Connected
+	result := alicorn.tab_bar(
+		ctx, alicorn.key_string("workbench-smoke-tab-bar"), items[:], options,
+		alicorn.layout_style(.Row, width=tabs_width, height=32),
+	)
+	alicorn.container_end(ctx)
+	paper := alicorn.surface_begin(
+		ctx,
+		alicorn.surface_core_color_role(.Surface),
+		key=alicorn.key_string("workbench-smoke-paper"),
+		label="workbench-smoke-paper",
+		style=alicorn.layout_style(.Column, width=tabs_width, grow=1, padding=12, gap=4, clip=true),
+		material=app.workbench_material,
+		physical_height=-0.75,
+		fill=alicorn.Color{0.94, 0.92, 0.86, 1},
+		open_top_edge=result.selected_tab,
+	)
+	// Editor-like content: a selected row, gutter-ish rounded material rows,
+	// and ordinary text. These exercise the same shared surface/text lanes as
+	// the Scratchpad workbench without depending on its frontend.
+	alicorn.container_begin(
+		ctx, .Container, label="workbench-smoke-selected-row", key="workbench-smoke-selected-row",
+		style=alicorn.layout_style(.Row, height=22),
+		color=alicorn.Color{0.865, 0.748, 0.556, 0.38},
+	)
+	alicorn.container_end(ctx)
+	for index in 0..<8 {
+		alicorn.container_begin(
+			ctx, .Container,
+			label="workbench-smoke-row", key=alicorn.key_string(fmt.tprintf("workbench-smoke-row-%d", index)),
+			style=alicorn.layout_style(.Row, height=22, gap=8),
+		)
+		alicorn.text(ctx, fmt.tprintf("    %d\tif document.open {", index+1),
+			key=alicorn.key_string(fmt.tprintf("workbench-smoke-row-text-%d", index)))
+		alicorn.container_end(ctx)
+	}
+	side := alicorn.surface_begin(
+		ctx,
+		alicorn.surface_core_color_role(.Subtle_Surface),
+		key=alicorn.key_string("workbench-smoke-side"),
+		label="workbench-smoke-side",
+		style=alicorn.layout_style(.Row, width=180, height=80, padding=8),
+		shape=alicorn.Surface_Shape{kind=.Rounded_Rectangle, corner_radius=6},
+		material=app.workbench_material,
+		physical_height=1,
+		fill=alicorn.Color{0.87, 0.85, 0.78, 1},
+	)
+	alicorn.text(ctx, "workspace", key=alicorn.key_string("workbench-smoke-side-text"))
+	alicorn.surface_end(ctx)
+	alicorn.surface_end(ctx)
+	alicorn.container_end(ctx)
+	app.titlebar_header = header
+	app.titlebar_body = paper
+}
 
 titlebar_render :: proc(app: ^App, ctx: ^ui.UI) {
 	if alicorn.container_begin(
@@ -309,6 +400,16 @@ titlebar_drag :: proc(app: ^App, rt: ^alicorn.Runtime, event: alicorn.Drag_Event
 	}
 	app.titlebar_reorder_count += 1
 	alicorn.invalidate_root(rt, "titlebar smoke tabs reordered")
+}
+
+example_initialize :: proc(app: ^App, rt: ^alicorn.Runtime) {
+	if app == nil || rt == nil || !app.workbench_smoke { return }
+	app.workbench_material = alicorn.style_material_register(rt, alicorn.Style_Material{
+		kind=.Analytic_Relief,
+		bevel_width=1,
+		bevel_strength=0.36,
+		inner_shadow_strength=0.18,
+	})
 }
 
 start :: proc(app: ^App, waker: ui.Application_Waker) {
@@ -695,6 +796,10 @@ main :: proc() {
 			app.titlebar_content_end_x = 900
 			smoke = true
 		}
+		if argument == "--workbench-smoke" {
+			app.workbench_smoke = true
+			smoke = true
+		}
 	}
 	if app.interactive { smoke = false }
 	// The services smoke owns its quit: it completes only after the scheduler,
@@ -792,7 +897,8 @@ main :: proc() {
 			window_chrome_height=chrome_h, window_chrome_metrics=chrome_metrics,
 			window_chrome_layout=chrome_layout, on_pointer=pointer_proc,
 			on_drag=drag_proc, on_scheduled_wake=scheduled_proc,
-			on_file_drop=file_drop_proc, on_tick=tick_proc)
+			on_file_drop=file_drop_proc, on_tick=tick_proc,
+			on_initialize=example_initialize)
 	} else {
 		webgpu.run(&app, render, title="Alicorn · Native Renderer Probe", on_start=start, on_wake=wake,
 			on_stop=stop, smoke=smoke, on_services=services, on_dialog=dialog_done,
@@ -801,7 +907,8 @@ main :: proc() {
 			window_chrome_height=chrome_h, window_chrome_metrics=chrome_metrics,
 			window_chrome_layout=chrome_layout, on_pointer=pointer_proc,
 			on_drag=drag_proc, on_scheduled_wake=scheduled_proc,
-			on_file_drop=file_drop_proc, on_tick=tick_proc)
+			on_file_drop=file_drop_proc, on_tick=tick_proc,
+			on_initialize=example_initialize)
 	}
 	if app.services_smoke {
 		ok := app.scheduler_armed && app.scheduled_frequent >= 1 &&

@@ -2,6 +2,7 @@ package presentation_host
 
 import "core:mem"
 import "base:runtime"
+import "core:fmt"
 import "core:time"
 import alicorn "alicorn:runtime"
 import "vendor:wgpu"
@@ -463,6 +464,15 @@ hosted_surface_present_pending :: proc(
 		state.configuration.width, state.configuration.height,
 		state.scale_x, state.scale_y, true, state.clear_color,
 	); result != .Ok {
+		// Encode failures used to become a silent Render_Failure at the host's
+		// presentation switch. Name the stage and the retained command count so a
+		// content-specific renderer rejection is diagnosable from the console.
+		fmt.eprintln(
+			"[alicorn-webgpu] frame encode failed",
+			"result", result,
+			"commands", len(display.commands),
+			"revision", display.revision,
+		)
 		return .Render_Failure
 	}
 	command := wgpu.CommandEncoderFinish(encoder)

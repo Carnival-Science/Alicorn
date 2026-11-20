@@ -3479,3 +3479,66 @@ Validation on Windows x64 (NVIDIA RTX 2080 SUPER, `af28167`):
   auxiliary window lifecycle.
 - `odin check ui -target:js_wasm32` and `odin check host/web -target:js_wasm32`
   passed; `git diff --check` passed.
+
+### Stage B2: hosted workbench first-present fix (Windows, 2026-11-20)
+
+Scratchpad's hosted WebGPU smoke presented its start screen and settings
+scene but failed the first frame of every open-document workbench scene:
+`Presenter_Failure` with `frames_presented=0`. The same session presented on
+SDL_GPU. The Vulkan hosted path initialized its adapter and device but never
+completed a first present.
+
+The failure was an encode rejection, not a surface or blend problem. The
+workbench paper is a rectangular analytic-relief surface whose connected tab
+opens the top optical edge with a gap beginning at the surface's left
+coordinate. The shared CPU preflight `Solid_Surface_Vertex_Count` reserves two
+quads for that split edge, while `Append_Material_Surface` correctly omits the
+zero-width left piece. The WebGPU solid path treated the preflight as an exact
+vertex contract (`len != required` -> `Resource_Failure`) and returned
+`Render_Failure` before submitting the first frame. SDL_GPU only used the count
+to reserve a dynamic array, so it was unaffected. The same encode rejection
+explains the Vulkan no-present observation; both backends now pass.
+
+Changes:
+
+- `renderer/webgpu/solid.odin` treats the CPU count as an allocation
+  reservation. A smaller emitted mesh is accepted; a larger one grows the
+  vertex buffer before upload. The equality assertion is removed.
+- `host/presentation/surface_presenter.odin` logs the encode result, command
+  count, and display revision when frame encoding is rejected. `host/sdl3/run.odin`
+  logs the presentation result, step count, and frames presented. These paths
+  previously discarded the stage, leaving only `Presenter_Failure`.
+- `examples/16_native_webgpu_ui --workbench-smoke` reproduces the workbench
+  paint: connected tabs, a rectangular negative-height analytic-relief paper
+  with a left-edge top gap, editor-like text rows, a selected row, and a rounded
+  relief sidebar. Before the fix the fixture failed at
+  `frame encode failed result Resource_Failure commands 20 revision 2`; after
+  the fix it exits 0 on D3D12, Vulkan, and SDL_GPU.
+- `renderer/cpu/solid_test.odin` records that the material preflight is an
+  upper bound (66 reserved, 54 emitted) for a left-edge gap, so a renderer must
+  not require exact equality.
+
+Validation is recorded below after the full suite and Scratchpad end-to-end run.
+
+Validation on Windows x64 (NVIDIA RTX 2080 SUPER, this branch):
+
+- Alicorn suites: runtime 399, host/sdl3 3, host/sdl3/input 8,
+  host/sdl3/clipboard 3, host/sdl3/dialogs 5, host/menus 8, host/web 14,
+  host/presentation 6, renderer/webgpu 6, ui 50, testui 13, theme 37,
+  renderer/cpu 23 (including the new preflight test), native/sdl_gpu 169, and
+  native/scroll_capture_tests 6. All passed. `tools/test.ps1` itself stopped at
+  its AccessKit native UIA stage (`Accessible Button missing`); the same UIA
+  check passed standalone with `UIA PASS` immediately afterward, and the
+  Alicorn suites above were run individually with the same arguments.
+- `examples/16_native_webgpu_ui` built and its `--smoke`,
+  `--workbench-smoke`, `--titlebar-smoke`, `--child-chrome-smoke`,
+  `--menu-smoke`, and `--services-smoke` modes passed on both
+  `--backend=d3d12` and `--backend=vulkan`; `--workbench-smoke` also passed on
+  `--backend=sdl-gpu`. Both hosted backends reported `frames_presented=1` for
+  the workbench fixture.
+- Scratchpad's dual-renderer frontend (`codex/issue-211-webgpu-frontend` at
+  `bfb2aed`, candidate root this branch) passed `smoke --renderer=webgpu` on
+  both `--backend=d3d12` and `--backend=vulkan`, including the restored
+  two-document workbench session: `publication_rendered`, `wake_observed`,
+  `ordered_shutdown`, and `session_restore` were all true for the clean and
+  recovery launches. No Scratchpad source or lock file was changed.
