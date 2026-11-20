@@ -8,7 +8,24 @@ on:
     - cron: '17 4 * * 1'
   push:
     branches:
+      - master
       - codex/webgpu-phase0-feasibility
+    paths:
+      - 'examples/15_webgpu_feasibility/**'
+      - 'renderer/webgpu/**'
+      - 'host/sdl3/**'
+      - 'host/presentation/**'
+      - 'tools/build_native_release.sh'
+      - 'tools/common.sh'
+      - 'tools/accesskit.sh'
+      - 'tools/validate_wgpu_native_device_loss_macos.sh'
+      - 'tools/setup_macos_odin.sh'
+      - 'tools/setup_macos_wgpu_native.sh'
+      - 'tools/macos_sdl.sh'
+      - 'dependencies/odin-accesskit.json'
+      - 'dependencies/webgpu-toolchain.md'
+      - '.github/workflows/webgpu-macos.yml'
+  pull_request:
     paths:
       - 'examples/15_webgpu_feasibility/**'
       - 'renderer/webgpu/**'

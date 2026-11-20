@@ -7,6 +7,11 @@ Phase 2 has bounded solid-surface, text-sampling, icon, image, material,
 custom-surface caching, and mixed compositor slices. SDL_GPU remains the only
 complete application renderer and the visual reference.
 
+The 2026-11-19 merge of `origin/master` into this branch, every shared-surface
+change with its blast-radius verdict, and the integration regressions found and
+fixed are recorded in
+[the integration review](validation/webgpu-integration-review-2026-11-19.md).
+
 ## Architecture inventory
 
 The current path is `application -> ui -> runtime retained state and ordered paint

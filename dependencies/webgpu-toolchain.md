@@ -257,6 +257,30 @@ This is a local workaround, not an upstream Odin fix. The controlled Promise
 regression does not simulate browser driver loss; genuine loss, callback
 retirement, and resource recovery remain separate Phase 0/3 acceptance work.
 
+## Patch pins
+
+The three local wgpu-native patches are pinned by content. They apply in this
+order to the unmodified `v29.0.1.1` commit
+`6aed50955d934ac36049ba8d002034841633ae02`, and are applied only by the
+documented runbooks (there is no automatic dependency bootstrap for them):
+
+| Patch | SHA-256 |
+| --- | --- |
+| `dependencies/patches/wgpu-native-v29.0.1.1-device-lost-callback.patch` | `AE569A401C4014B96567F7BF459DF938ECAE96174C2C39E94336D86AE9243D5E` |
+| `dependencies/patches/wgpu-native-v29.0.1.1-device-loss-routing.patch` | `81AB7D4F69A17F02FA7D9333E928C735BA0D5887EAE9EB9ED68E161C86D474F5` |
+| `dependencies/patches/wgpu-native-v29.0.1.1-test-remove-d3d12-device.patch` | `22CBD1A12355A1DA317EAE1BA636283FF9B4E4EEDD26215184FE1BE5366871AF` |
+
+Verify before applying:
+
+```powershell
+Get-FileHash dependencies\patches\*.patch -Algorithm SHA256
+```
+
+The `test-remove-d3d12-device` patch adds a validation-only export. It is never
+part of a production build: Alicorn references it only through the
+`ALICORN_WEBGPU_TEST_D3D12_REMOVE_DEVICE` define (default `false`) and a runtime
+`dynlib` lookup, so default binaries contain no native-device accessor.
+
 ## Reproducible local checks
 
 ```powershell

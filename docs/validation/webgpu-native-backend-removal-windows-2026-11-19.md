@@ -123,7 +123,13 @@ From the repository root in PowerShell. Build the patched library from the
 pinned source (the same steps as the callback record, with all three patches):
 
 ```powershell
+Get-FileHash dependencies\patches\*.patch -Algorithm SHA256
+# Expected (dependencies/webgpu-toolchain.md, "Patch pins"):
+#   device-lost-callback      AE569A40...9243D5E
+#   device-loss-routing       81AB7D4F...C474F5
+#   test-remove-d3d12-device  22CBD1A1...6871AF
 $source = Join-Path $PWD 'out\wgpu-native-v29.0.1.1'
+git -C $source rev-parse HEAD  # must be 6aed50955d934ac36049ba8d002034841633ae02
 git -C $source checkout -- .
 git -C $source apply dependencies\patches\wgpu-native-v29.0.1.1-device-lost-callback.patch
 git -C $source apply dependencies\patches\wgpu-native-v29.0.1.1-device-loss-routing.patch
