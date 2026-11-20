@@ -134,7 +134,7 @@ sdl3_webgpu_application_key_down :: proc(
 	if control_tab {
 		key, mapped := application_key_from_sdl(event.key, event.mod, text_focused)
 		if mapped {
-			_, key_status := alicorn.hosted_runtime_key(&application.hosted, alicorn.Hosted_Key_Event{
+			_, key_status := alicorn.hosted_runtime_application_key(&application.hosted, key, alicorn.Hosted_Key_Event{
 				key_code=u32(key), pressed=true, repeat=event.repeat,
 				modifiers=pointer_modifiers_from_sdl(event.mod),
 				text_input_focused=text_focused,
@@ -147,7 +147,7 @@ sdl3_webgpu_application_key_down :: proc(
 
 	if key, mapped := application_key_from_sdl(event.key, event.mod, text_focused); mapped &&
 		(!text_focused || alicorn.application_key_can_preempt_text_field(key, composition_active)) {
-		key_handled, key_status := alicorn.hosted_runtime_key(&application.hosted, alicorn.Hosted_Key_Event{
+		key_handled, key_status := alicorn.hosted_runtime_application_key(&application.hosted, key, alicorn.Hosted_Key_Event{
 			key_code=u32(key), pressed=true, repeat=event.repeat,
 			modifiers=pointer_modifiers_from_sdl(event.mod),
 			text_input_focused=text_focused,

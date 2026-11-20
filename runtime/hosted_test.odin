@@ -117,6 +117,74 @@ hosted_test_key :: proc(data: rawptr, _rt: ^Runtime, _owner: Node_ID, event: Hos
 	return true
 }
 
+// Hosted_Key_Route_Test_State isolates the opaque-versus-typed key contract.
+// It owns one focusable descendant of an interaction scope that registers Find,
+// so a numeric key_code collision would be observable as queued scope input.
+Hosted_Key_Route_Test_State :: struct {
+	scope_owner: Node_ID,
+	button:      Node_ID,
+	key_events:  int,
+	last_code:   u32,
+}
+
+hosted_key_route_init :: proc(_data: rawptr, rt: ^Runtime) {
+	_ = text_engine_load_default_fonts(rt)
+}
+
+hosted_key_route_post :: proc(_data: rawptr) -> bool {
+	return true
+}
+
+hosted_key_route_render :: proc(data: rawptr, ui: ^UI, _width, _height: int, _dpi: f32) {
+	state := (^Hosted_Key_Route_Test_State)(data)
+	state.scope_owner = container_begin(
+		ui,
+		.Container,
+		label="hosted-key-scope",
+		key="hosted-key-scope",
+		style=layout_style(.Column),
+	)
+	state.button, _ = button_ex(
+		ui,
+		"Target",
+		key="hosted-key-target",
+		style=layout_style(width=120, height=30),
+	)
+	container_end(ui)
+	_ = interaction_scope_register(
+		ui.runtime,
+		state.scope_owner,
+		rawptr(state),
+		Interaction_Scope_Options{keys={.Find}},
+	)
+}
+
+hosted_key_route_key :: proc(data: rawptr, _rt: ^Runtime, _owner: Node_ID, event: Hosted_Key_Event) -> bool {
+	state := (^Hosted_Key_Route_Test_State)(data)
+	state.key_events += 1
+	state.last_code = event.key_code
+	return false
+}
+
+hosted_key_route_open :: proc(
+	host: ^Hosted_Runtime,
+	state: ^Hosted_Key_Route_Test_State,
+) -> Hosted_Runtime_Status {
+	return hosted_runtime_init(host, Hosted_Runtime_Config{
+		state=rawptr(state),
+		logical_width=240,
+		logical_height=240,
+		pixel_width=480,
+		pixel_height=480,
+		dpi_scale=2,
+		post_wake_data=rawptr(state),
+		post_wake=hosted_key_route_post,
+		render=hosted_key_route_render,
+		on_initialize=hosted_key_route_init,
+		on_key=hosted_key_route_key,
+	})
+}
+
 hosted_test_text_key :: proc(
 	data: rawptr,
 	_rt: ^Runtime,
@@ -205,7 +273,7 @@ test_hosted_window_service_optional_and_forwards :: proc(t: ^testing.T) {
 }
 
 @(test)
-test_hosted_runtime_key_respects_text_and_composition_precedence :: proc(t: ^testing.T) {
+test_hosted_runtime_application_key_respects_text_and_composition_precedence :: proc(t: ^testing.T) {
 	host: Hosted_Runtime
 	app: Hosted_Test_App
 	if hosted_test_open(&host, &app) != .Ok { testing.expect(t, false, "open failed"); return }
@@ -215,22 +283,63 @@ test_hosted_runtime_key_respects_text_and_composition_precedence :: proc(t: ^tes
 	rt, _ := hosted_runtime_borrow(&host)
 	_ = focus(rt, app.field)
 
-	handled, status := hosted_runtime_key(&host, Hosted_Key_Event{
+	handled, status := hosted_runtime_application_key(&host, .Left, Hosted_Key_Event{
 		key_code=u32(Application_Key.Left), pressed=true, text_input_focused=true,
 	})
 	testing.expect(t, status == .Ok && !handled && app.key_events == 0,
 		"ordinary navigation remains with a focused text field")
-	handled, status = hosted_runtime_key(&host, Hosted_Key_Event{
+	handled, status = hosted_runtime_application_key(&host, .Find, Hosted_Key_Event{
 		key_code=u32(Application_Key.Find), pressed=true, text_input_focused=true,
 	})
 	testing.expect(t, status == .Ok && handled && app.key_events == 1 && app.last_key == .Find,
 		"an explicit application shortcut can preempt text focus")
-	handled, status = hosted_runtime_key(&host, Hosted_Key_Event{
+	handled, status = hosted_runtime_application_key(&host, .Escape, Hosted_Key_Event{
 		key_code=u32(Application_Key.Escape), pressed=true,
 		text_input_focused=true, composition_active=true,
 	})
 	testing.expect(t, status == .Ok && !handled && app.key_events == 1,
 		"Escape stays with IME while composition is active")
+}
+
+@(test)
+test_hosted_runtime_opaque_key_code_never_preempts_application_keys :: proc(t: ^testing.T) {
+	host: Hosted_Runtime
+	state: Hosted_Key_Route_Test_State
+	if hosted_key_route_open(&host, &state) != .Ok {
+		testing.expect(t, false, "open failed")
+		return
+	}
+	defer hosted_runtime_destroy(&host)
+	_ = hosted_runtime_step(&host, 1)
+	rt, _ := hosted_runtime_borrow(&host)
+	testing.expect(t, focus(rt, state.button),
+		"the interaction-scope target should accept focus")
+
+	// An external host's own numeric key codes are opaque. Even a value that
+	// happens to equal a real Application_Key ordinal must not reach the
+	// focused scope's Find registration.
+	for external_code in ([]u32{0x000F_0000, u32(Application_Key.Find)}) {
+		handled, status := hosted_runtime_key(&host, Hosted_Key_Event{
+			key_code=external_code, pressed=true,
+		})
+		testing.expect(t, status == .Ok && !handled,
+			"an opaque key is only offered to the application callback")
+		testing.expect(t, len(rt.interaction_events) == 0,
+			"an opaque numeric key must not preempt an interaction scope")
+	}
+	testing.expect(t, state.key_events == 2 && state.last_code == u32(Application_Key.Find),
+		"both opaque events should still reach the application key callback")
+
+	handled, status := hosted_runtime_application_key(&host, .Find, Hosted_Key_Event{
+		key_code=0x000F_0000, pressed=true,
+	})
+	testing.expect(t, status == .Ok && handled,
+		"the typed application-key route should consume the registered key")
+	testing.expect(t, len(rt.interaction_events) == 1 &&
+		rt.interaction_events[0].event.key == .Find,
+		"the typed route should queue the key for the focused scope")
+	testing.expect(t, state.key_events == 2,
+		"a consumed scope key should not also reach the application callback")
 }
 
 @(test)

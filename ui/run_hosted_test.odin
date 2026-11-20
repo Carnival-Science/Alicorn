@@ -92,7 +92,7 @@ run_hosted_config_test_post_wake :: proc(data: rawptr) -> bool {
 @(test)
 test_shared_ui_run_adapts_to_hosted_runtime :: proc(t: ^testing.T) {
 	app := Run_Hosted_Config_Test_App{}
-	state := Run_State(Run_Hosted_Config_Test_App){
+	state := Hosted_Run_State(Run_Hosted_Config_Test_App){
 		app=&app,
 		render=run_hosted_config_test_render,
 		render_overlays=run_hosted_config_test_render,
@@ -140,12 +140,12 @@ test_shared_ui_run_adapts_to_hosted_runtime :: proc(t: ^testing.T) {
 		"a delivered wake should reach the application and explicitly invalidate the shared description")
 	_ = alicorn.hosted_runtime_frame_submission_succeeded(&session)
 
-	handled, key_status := alicorn.hosted_runtime_key(&session, alicorn.Hosted_Key_Event{
+	handled, key_status := alicorn.hosted_runtime_application_key(&session, alicorn.Application_Key.Find, alicorn.Hosted_Key_Event{
 		key_code=u32(alicorn.Application_Key.Find),
 		pressed=true,
 	})
 	testing.expect(t, key_status == .Ok && handled && app.keys == 1,
-		"host-mapped Application_Key ordinals should reach the existing ui.run callback")
+		"host-mapped Application_Key values should reach the existing ui.run callback")
 	third := alicorn.hosted_runtime_step(&session, 6)
 	testing.expect(t, third.status == .Ok && third.description_built)
 	_ = alicorn.hosted_runtime_frame_submission_succeeded(&session)

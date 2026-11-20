@@ -37,9 +37,12 @@ Hosted_Text_Key_Proc :: proc(
 ) -> bool
 
 // Hosted_Key_Event carries one host-normalized key transition. key_code is
-// deliberately opaque to Runtime; the host owns platform mapping and reports
-// whether text focus or IME composition retains the key. Application dispatch
-// then shares Alicorn's interaction-scope preemption policy.
+// opaque to Runtime: Alicorn never interprets SDL, wx, or platform key
+// constants, and an external host's numeric key space cannot preempt text or
+// interaction scopes. A host that has translated a key into Alicorn's
+// Application_Key vocabulary passes that value to
+// hosted_runtime_application_key. The opaque event still reaches on_key so the
+// application retains its own shortcut policy.
 Hosted_Key_Event :: struct {
 	key_code: u32,
 	pressed: bool,
@@ -511,14 +514,35 @@ hosted_runtime_pointer :: proc(host: ^Hosted_Runtime, event: Pointer_Event) -> (
 }
 
 // hosted_runtime_key delivers a native key transition to the app callback on
-// the owning UI thread. The host retains platform policy: it decides whether
-// the event belongs to IME, a text owner, focus traversal, activation, or an
-// application shortcut, and calls the matching runtime helper as needed.
+// the owning UI thread. key_code remains opaque: Runtime does not interpret
+// host key constants, so an external host's own numeric values can never
+// trigger Alicorn text-field or interaction-scope preemption. The host retains
+// platform policy and calls hosted_runtime_application_key when it has
+// translated a key into the Application_Key vocabulary.
 hosted_runtime_key :: proc(host: ^Hosted_Runtime, event: Hosted_Key_Event) -> (handled: bool, status: Hosted_Runtime_Status) {
 	state, access_status := hosted_runtime_get_state(host)
 	if access_status != .Ok { return false, access_status }
-	if event.pressed && event.key_code <= u32(Application_Key.Return) {
-		key := Application_Key(event.key_code)
+	if state.on_key == nil { return false, .Ok }
+	focused_owner := focused_node(&state.runtime)
+	handled = state.on_key(state.app_state, &state.runtime, focused_owner, event)
+	if handled { invalidate_root(&state.runtime, "hosted application key callback") }
+	return handled, .Ok
+}
+
+// hosted_runtime_application_key delivers one key the host has explicitly
+// mapped to Alicorn's Application_Key vocabulary. The typed key enables the
+// shared interaction-scope preemption policy and the text-field/IME guard;
+// the accompanying Hosted_Key_Event still reaches on_key for application
+// shortcuts, with its key_code remaining opaque. Hosts that have not adopted
+// Application_Key must use hosted_runtime_key instead.
+hosted_runtime_application_key :: proc(
+	host: ^Hosted_Runtime,
+	key: Application_Key,
+	event: Hosted_Key_Event,
+) -> (handled: bool, status: Hosted_Runtime_Status) {
+	state, access_status := hosted_runtime_get_state(host)
+	if access_status != .Ok { return false, access_status }
+	if event.pressed {
 		if event.text_input_focused && !application_key_can_preempt_text_field(key, event.composition_active) {
 			return false, .Ok
 		}

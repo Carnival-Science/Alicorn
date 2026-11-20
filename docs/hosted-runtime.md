@@ -238,6 +238,7 @@ Call these from the host's UI thread, in native event order:
 | Pointer motion/button/cancel | `hosted_runtime_pointer` |
 | Scroll or trackpad delta | `hosted_runtime_scroll` |
 | Key transition for app shortcuts | `hosted_runtime_key` |
+| Key transition mapped to `Application_Key` | `hosted_runtime_application_key` |
 | Text navigation/edit key for an application-owned editor | `hosted_runtime_text_key` |
 | Focus traversal | `hosted_runtime_focus_traverse` |
 | Enter/Space activation | `hosted_runtime_activate` |
@@ -254,12 +255,22 @@ unclaimed events go to the retained regions and then `on_scroll`.
 
 The host maps native key and modifier conventions. `Hosted_Key_Event.key_code`
 is an opaque host-normalized value; Alicorn does not interpret SDL, wx, or
-platform key constants. The key callback receives the current focused owner
-and whether the event is pressed or repeating. It should return `true` when
-it consumes the event; Alicorn then invalidates the application description.
-For Tab and activation keys, route through the focus/activation helpers when
-the host's IME and application shortcut policy allows it. The host remains
-responsible for not stealing keys from an active IME composition.
+platform key constants. `hosted_runtime_key` only delivers that event to the
+application key callback, so an external host's own numeric key space cannot
+preempt a text field or an interaction scope.
+
+A host that has already translated a key into Alicorn's `Application_Key`
+vocabulary calls `hosted_runtime_application_key(host, key, event)` with the
+typed value. The typed route applies the shared interaction-scope preemption
+policy and the text-field/IME guard; if neither consumes the key, the
+accompanying event, whose `key_code` remains opaque, reaches the application
+callback. The SDL3 native host uses this route for its translated shortcuts.
+The callback receives the current focused owner and whether the event is
+pressed or repeating. It should return `true` when it consumes the event;
+Alicorn then invalidates the application description. For Tab and activation
+keys, route through the focus/activation helpers when the host's IME and
+application shortcut policy allows it. The host remains responsible for not
+stealing keys from an active IME composition.
 
 Map editor navigation and deletion keys to `Application_Text_Key_Event` and
 pass them to `hosted_runtime_text_key`. A focused application-owned
