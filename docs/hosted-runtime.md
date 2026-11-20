@@ -186,10 +186,21 @@ if status == .Ok && snapshot.pending {
 ```
 
 The revision argument is required. A stale acknowledgement is rejected and
-cannot clear a newer update. `frame_submission_succeeded` remains the
-whole-display acknowledgement for hosts that submit the complete Runtime
-display in one operation; per-target hosts should acknowledge each output with
-its exact snapshot revision.
+cannot clear a newer update. Acknowledge only after the target's submission
+has succeeded. For a synchronous wx paint target, that is after its paint
+callback completes successfully; for a GPU target, it is after the command
+buffer is successfully submitted for that target. SDL defines
+[`SDL_SubmitGPUCommandBuffer`](https://wiki.libsdl.org/SDL3/SDL_SubmitGPUCommandBuffer)
+as submission for GPU processing; this receipt does not mean GPU work has
+retired or that pixels have reached physical scanout. Manage GPU resources with
+the presenter's fence/retirement path. A failed target submission must leave
+its snapshot pending.
+
+`frame_submission_succeeded` remains the whole-display acknowledgement for a
+host that submits the complete Runtime display in one operation. Do not call it
+after submitting only one of several targets: it acknowledges every currently
+visible output. Per-target hosts acknowledge each output with its exact
+snapshot revision.
 
 `presentation_output_bind_root` accepts a root while it is being described and
 rejects overlapping output subtrees. Retained paint changes and custom-surface
@@ -204,6 +215,12 @@ block visible outputs from reaching idle. Restoring an output publishes its
 current retained contents as a new pending revision. Unregister a permanently
 removed target; if its retained root disappears first, Alicorn detaches that
 root after the next description and drops its obsolete pending frame.
+
+An output ID belongs to one Runtime and remains valid until that output is
+unregistered or the Runtime is destroyed. IDs are not reused. If a native
+target is recreated, unregister the old output and register a new one before
+binding the new target's root. Visibility and acknowledgement changes belong on
+the Runtime's UI thread and do not create another timer or polling loop.
 
 The display-command accessor still returns the complete borrowed Runtime
 display. A multi-target host is responsible for routing or clipping those

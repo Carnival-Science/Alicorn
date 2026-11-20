@@ -112,14 +112,14 @@ python3 tools/test_package_macos.py
 ```
 
 The destination must not already exist; the bootstrap never reuses an installed
-SDK. Other native prerequisites, including SDL3 `3.4.18`, still apply.
+SDK. Other native prerequisites, including SDL3 `3.4.20`, still apply.
 
 The November migration updates Alicorn for the new Darwin framework bindings,
 escape analysis, and `core:image.Image.pixels` representation. Keep default
 atomic-order analysis enabled. Run `-vet-atomic-access` separately as an
 additional audit; it is stricter and is not part of the normal build flags.
-The native SDL version guard remains in place until the supported SDL 3.4.18
-runtime has passed native validation.
+The native SDL version guard enforces SDL 3.4.20 on macOS. The pinned shared
+runtime is built from the verified upstream source archive during native CI.
 
 ## Native diagnostics
 

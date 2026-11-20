@@ -16,19 +16,9 @@ Also install the native platform tools:
 - **Windows:** Visual Studio or Build Tools with **Desktop development with
   C++**, including MSVC and a Windows SDK. Use an Odin distribution with its
   `vendor/sdl3` package and `SDL3.dll`.
-- **macOS:** Xcode Command Line Tools (`xcode-select --install`), Homebrew
-  `cmake`, `pkgconf`, and SDL3 build tools. Install them with
-  `brew install cmake pkgconf sdl3`, then build Alicorn's checksum-pinned SDL
-  runtime from the repository root:
-
-  ```sh
-  sh tools/setup_macos_sdl3.sh
-  SDL3_PREFIX="$PWD/out/native-package/sdl-3.4.18/shared/prefix"
-  export ALICORN_SDL3_PREFIX="$SDL3_PREFIX"
-  export DYLD_LIBRARY_PATH="$SDL3_PREFIX/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
-  ```
-
-  The native host requires SDL 3.4.18 and checks the loaded runtime at startup.
+- **macOS:** Xcode Command Line Tools (`xcode-select --install`) and SDL3
+  `3.4.20` (`brew install sdl3`). Keep the SDL3 version at `3.4.20`; the host
+  checks it when it starts.
 - **Linux:** a Wayland session, Vulkan-capable SDL3 development and library
   outputs, Fontconfig, `pkg-config`, and a C compiler. `vulkan-tools` and
   `wayland-utils` are recommended for host inventory. On NixOS, the

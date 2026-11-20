@@ -91,6 +91,16 @@ if ui.column(ctx, padding=12, gap=8) {
 }
 ```
 
+`ui.row`, `ui.column`, `ui.panel`, and other deferred-scope helpers must be
+invoked directly in the block that describes their children. Do not wrap their
+opening calls in procedures or describe children after the invocation block.
+These helpers open an `@(deferred_in_out)` scope that closes at the end of the
+invocation block, not at the end of the enclosing procedure. The compiler accepts
+the wrapped form, but the children then lay out as siblings in the parent and a
+padded fit-content container measures padding only. See the
+[#206 research record](research/issue-206-fit-content-panel.md) for the full
+evidence.
+
 Odin's [deferred procedure attributes](https://odin-lang.org/docs/attributes/)
 close the scope at the end of the surrounding lexical scope. An early `return`,
 `break`, or `continue` still closes it. Keep a scoped call as the direct
@@ -236,6 +246,48 @@ The built-in decoder is intentionally small: PNG and QOI only, bounded to
 128 MiB encoded input and 64 MiB decoded RGBA8 data. Alicorn does not search OS
 font locations or infer licenses. Keep third-party attribution with the
 application's distributed assets.
+
+## Place labels at surface-local coordinates
+
+Rulers, meters, timelines, and similar visualizations often need labels at
+domain positions rather than in a row of fixed-width cells. `ui.positioned_text`
+places an ordinary text node at explicit logical coordinates owned by its
+parent's content box:
+
+```odin
+time_to_pixel :: proc(time, start, duration, width: f32) -> f32 {
+	return (time-start)/duration*width
+}
+
+if ui.column(ctx, key="ruler", width=900, height=44, clip=true) {
+	ticks = alicorn.gpu_geometry_surface(ctx, "ruler-ticks",
+		ui.layout_style(width=-1, height=44), dpi_scale)
+	for second in 0 ..= 60 {
+		x := time_to_pixel(f32(second), 0, 60, 900)
+		ui.positioned_text(ctx, fmt.tprintf("%ds", second), x, 8,
+			key=u64(second), size=11)
+	}
+}
+```
+
+The same transform drives the retained tick geometry and the labels, so there
+is no spacer cell or separate label-row layout to keep in sync. Choose
+`horizontal = .Center` or `.End` when the coordinate denotes a tick rather than
+a leading edge; `vertical = .Baseline` aligns text on its shaped baseline.
+`width`, `height`, and `max_width` are optional hard constraints, and
+`clip = true` clips to the owner's rectangle.
+
+Positioned labels are ordinary retained Text nodes. Their shaping is retained
+across moves, and a label edit does not rebuild a retained geometry surface.
+They are decorative by default and are not hit-testable, so they do not steal
+pointer gestures or enter tab order. Pass `decorative = false` when a label is
+meaningful standalone information that should appear as `Static_Text`.
+
+A positioned child does not size a fit-content owner. Give the owner a definite
+height (as above) instead of relying on its labels. `alicorn.position_child`
+exposes the same placement seam for non-text children, and the lower-level
+runtime API remains the place to combine it with custom-surface geometry
+updates.
 
 ## Select a value
 

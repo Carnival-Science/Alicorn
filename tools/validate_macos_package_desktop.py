@@ -20,9 +20,17 @@ import time
 import uuid
 from typing import Any
 
-from package_macos import sha256, validate_smoke_output
+from package_macos import (
+    SDL_SOURCE,
+    SDL_SOURCE_SHA256,
+    SDL_VERSION,
+    sha256,
+    validate_smoke_output,
+)
 
-REQUIRED_SDL_VERSION = "3.4.18"
+REQUIRED_SDL_VERSION = SDL_VERSION
+REQUIRED_SDL_SOURCE = SDL_SOURCE
+REQUIRED_SDL_SOURCE_SHA256 = SDL_SOURCE_SHA256
 PROC_PIDPATHINFO_MAXSIZE = 1024
 
 
@@ -198,15 +206,17 @@ def audit_app(app: pathlib.Path, linkage: str) -> dict[str, Any]:
         raise RuntimeError(f"Expected {linkage} SDL, package reports {host.get('sdlLinkage')!r}")
     if host.get("sdlVersion") != REQUIRED_SDL_VERSION:
         raise RuntimeError(f"Package SDL version is not {REQUIRED_SDL_VERSION}")
+    if (
+        host.get("sdlSource") != REQUIRED_SDL_SOURCE
+        or host.get("sdlSourceSha256") != REQUIRED_SDL_SOURCE_SHA256
+    ):
+        raise RuntimeError("Package manifest lacks the pinned SDL source provenance")
     if linkage == "shared":
         shared = host.get("sdlRuntime", {})
         if shared.get("detectedVersion") != REQUIRED_SDL_VERSION:
             raise RuntimeError("Shared package manifest lacks a verified SDL runtime version")
         if not shared.get("inputSha256") or not shared.get("inputFilename"):
             raise RuntimeError("Shared package manifest lacks input identity and hash")
-    elif not host.get("sdlSource") or not host.get("sdlSourceSha256"):
-        raise RuntimeError("Static package manifest lacks pinned SDL source provenance")
-
     bundled_dependencies = manifest.get("dependencies", {}).get("bundled", [])
     bundled_sdl = [
         dependency

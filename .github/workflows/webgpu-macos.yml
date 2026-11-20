@@ -20,7 +20,7 @@ on:
       - 'tools/validate_wgpu_native_device_loss_macos.sh'
       - 'tools/setup_macos_odin.sh'
       - 'tools/setup_macos_wgpu_native.sh'
-      - 'tools/setup_macos_sdl3.sh'
+      - 'tools/macos_sdl.sh'
       - 'dependencies/odin-accesskit.json'
       - 'dependencies/webgpu-toolchain.md'
       - '.github/workflows/webgpu-macos.yml'
@@ -61,14 +61,14 @@ jobs:
         shell: bash
         run: sh tools/setup_macos_wgpu_native.sh "$ODIN_ROOT"
 
-      - name: Build checksum-pinned SDL3 for the native fixture
+      - name: Build pinned SDL3 for the native fixture
         shell: bash
         run: |
           brew install cmake pkgconf
-          sdl_prefix="$RUNNER_TEMP/alicorn-sdl3"
-          sh tools/setup_macos_sdl3.sh "$sdl_prefix"
-          echo "ALICORN_SDL3_PREFIX=$sdl_prefix/prefix" >> "$GITHUB_ENV"
-          echo "DYLD_LIBRARY_PATH=$sdl_prefix/prefix/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+          source tools/macos_sdl.sh
+          alicorn_build_pinned_macos_sdl shared "$RUNNER_TEMP/alicorn-sdl"
+          echo "ALICORN_SDL_LINK_FLAGS=-L$ALICORN_MACOS_SDL_PREFIX/lib -Wl,-rpath,$ALICORN_MACOS_SDL_PREFIX/lib" >> "$GITHUB_ENV"
+          echo "DYLD_LIBRARY_PATH=$ALICORN_MACOS_SDL_PREFIX/lib" >> "$GITHUB_ENV"
 
       # Paired link-contract guard:
       #   * native fixtures build against the shared wgpu-native dylib, because

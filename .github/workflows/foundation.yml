@@ -30,6 +30,35 @@ jobs:
         run: |
           ./tools/validate_effects.ps1 -Odin odin | Tee-Object -FilePath out/retained-effects-d3d12.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Validate dense retained point markers through Direct3D 12 readback
+        shell: pwsh
+        run: |
+          ./tools/validate_point_markers.ps1 -Odin odin -Driver direct3d12 | Tee-Object -FilePath out/point-markers-d3d12.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload point-marker Direct3D 12 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: point-markers-d3d12
+          path: out/point-markers-d3d12.txt
+          retention-days: 7
+
+      - name: Validate host-owned presenter swapchain failure recovery through Direct3D 12
+        shell: pwsh
+        run: |
+          ./tools/native_sdl_gpu.ps1 -Odin odin -PresentationValidation | Tee-Object -FilePath out/presentation-validation-d3d12.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload presenter Direct3D 12 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: presenter-d3d12
+          path: out/presentation-validation-d3d12.txt
+          retention-days: 7
+
       - name: Upload retained-effects Direct3D 12 evidence
         if: always()
         uses: actions/upload-artifact@v4

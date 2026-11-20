@@ -74,10 +74,15 @@ main :: proc() {
 		f32(pixel_width)/960,
 		f32(pixel_height)/640,
 	) {
-		_ = sdl3.CancelGPUCommandBuffer(command)
+		// Encode_Window guarantees that a false return happened before it
+		// acquired a non-nil swapchain texture, so command-buffer cancellation is
+		// still valid here.
+		if !sdl3.CancelGPUCommandBuffer(command) { FAIL("SDL command-buffer cancellation failed") }
 		_ = host.Sdl_GPU_Presenter_Cancel_Frame(&presenter)
-		FAIL("Alicorn display-list preparation or swapchain acquisition failed")
+		FAIL("Alicorn window preparation or pre-acquisition step failed")
 	}
+	// Success means the command buffer owns a swapchain texture; it must be
+	// submitted and cannot be canceled through either SDL or the presenter.
 	fence := sdl3.SubmitGPUCommandBufferAndAcquireFence(command)
 	if fence == nil { FAIL("SDL_GPU frame submission failed") }
 	submission, submitted := host.Sdl_GPU_Presenter_Submission_Succeeded(&presenter, fence)

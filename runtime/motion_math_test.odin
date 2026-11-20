@@ -14,6 +14,59 @@ MOTION_TEST_CONFIG :: Motion_Config{
 	velocity_tolerance=0.001,
 }
 
+Motion_Cadence_Samples :: struct {
+	before_stall: Motion_Scalar_Sample,
+	after_stall: Motion_Scalar_Sample,
+	status: Motion_Status,
+}
+
+motion_test_cadence_path :: proc(frames_per_second: i64) -> Motion_Cadence_Samples {
+	config := Motion_Config{omega=11, position_tolerance=0.001, velocity_tolerance=0.01}
+	response, status := motion_scalar_create(
+		-14, 3, 2.5, config, Motion_Time(-1_000_000_000),
+	)
+	if status != .Ok { return Motion_Cadence_Samples{status=status} }
+	frame_ns := 1_000_000_000/frames_per_second
+	target_change := Motion_Time(-750_000_000)
+	for sample_ns := i64(response.start_time)+frame_ns; sample_ns < i64(target_change); sample_ns += frame_ns {
+		if motion_scalar_sample(response, Motion_Time(sample_ns)).status != .Ok {
+			return Motion_Cadence_Samples{status=.Invalid_Response}
+		}
+	}
+	if motion_scalar_sample(response, target_change).status != .Ok {
+		return Motion_Cadence_Samples{status=.Invalid_Response}
+	}
+	response, status = motion_scalar_settle(response, 8, target_change)
+	if status != .Ok { return Motion_Cadence_Samples{status=status} }
+	before_stall_at := Motion_Time(i64(target_change)+150_000_000)
+	for sample_ns := i64(target_change)+frame_ns; sample_ns < i64(before_stall_at); sample_ns += frame_ns {
+		if motion_scalar_sample(response, Motion_Time(sample_ns)).status != .Ok {
+			return Motion_Cadence_Samples{status=.Invalid_Response}
+		}
+	}
+	before_stall := motion_scalar_sample(response, before_stall_at)
+	after_stall := motion_scalar_sample(response, Motion_Time(i64(before_stall_at)+200_000_000))
+	if before_stall.status != .Ok || after_stall.status != .Ok {
+		return Motion_Cadence_Samples{status=.Invalid_Response}
+	}
+	return Motion_Cadence_Samples{
+		before_stall=before_stall,
+		after_stall=after_stall,
+		status=.Ok,
+	}
+}
+
+motion_test_scalar_response_equal :: proc(a, b: Motion_Scalar_Response) -> bool {
+	return a.initialized == b.initialized && a.mode == b.mode &&
+		a.presented_0 == b.presented_0 && a.target == b.target &&
+		a.residual_0 == b.residual_0 && a.velocity_0 == b.velocity_0 &&
+		a.config.omega == b.config.omega &&
+		a.config.position_tolerance == b.config.position_tolerance &&
+		a.config.velocity_tolerance == b.config.velocity_tolerance &&
+		a.start_time == b.start_time && a.settle_after_ns == b.settle_after_ns &&
+		a.deadline_established == b.deadline_established
+}
+
 @(test)
 test_motion_scalar_matches_closed_form_and_retargets_continuously :: proc(t: ^testing.T) {
 	response, status := motion_scalar_create(10, 0, 0, MOTION_TEST_CONFIG, Motion_Time(0))
@@ -90,6 +143,65 @@ test_motion_irregular_samples_and_repeated_retargets :: proc(t: ^testing.T) {
 	testing.expect(t, long_stall.status == .Ok && long_stall.settled && !long_stall.active &&
 		long_stall.value == response.target && long_stall.velocity == 0,
 		"a long unsampled stall should retire directly to the exact target")
+}
+
+@(test)
+test_motion_sampling_cadence_and_long_stall_are_invariant :: proc(t: ^testing.T) {
+	// Compare normal 30/60/144 Hz sampling paths with a fixed target-change
+	// timestamp and a deliberately missed 200 ms interval. Every path must
+	// produce the same f64 presentation at the same absolute timestamps.
+	reference := motion_test_cadence_path(30)
+	cadences := [2]i64{60, 144}
+	for frames_per_second in cadences {
+		actual := motion_test_cadence_path(frames_per_second)
+		if actual.status != .Ok || reference.status != .Ok {
+			testing.expect(t, false, "all cadence fixtures should produce valid samples")
+			continue
+		}
+		testing.expect(t,
+			motion_test_near(actual.before_stall.value, reference.before_stall.value, 1e-10) &&
+			motion_test_near(actual.before_stall.velocity, reference.before_stall.velocity, 1e-10) &&
+			motion_test_near(actual.after_stall.value, reference.after_stall.value, 1e-10) &&
+			motion_test_near(actual.after_stall.velocity, reference.after_stall.velocity, 1e-10),
+			"sampling cadence and a 200 ms stall must not change the analytic response")
+	}
+}
+
+@(test)
+test_motion_one_thousand_unchanged_targets_do_not_rebase_or_drift :: proc(t: ^testing.T) {
+	config := Motion_Config{omega=20, position_tolerance=0.001, velocity_tolerance=0.001}
+	response, status := motion_scalar_create(4, -3, 11, config, Motion_Time(-2_000_000_000))
+	if status != .Ok { testing.expect(t, false, "the scalar response should initialize"); return }
+	original := response
+	for index in 0..<1000 {
+		at := Motion_Time(-2_000_000_000+i64(index)*1_000_000)
+		unchanged, retarget_status := motion_scalar_settle(response, original.target, at)
+		testing.expect(t, retarget_status == .Ok && motion_test_scalar_response_equal(unchanged, original),
+			"reassigning the same target must preserve every response field")
+		response = unchanged
+	}
+	check_at := Motion_Time(-500_000_000)
+	before := motion_scalar_sample(original, check_at)
+	after := motion_scalar_sample(response, check_at)
+	testing.expect(t, before.status == .Ok && after.status == .Ok &&
+		before.value == after.value && before.velocity == after.velocity && before.active == after.active,
+		"one thousand unchanged target assignments must not drift the later presentation")
+
+	translation, translation_status := motion_translation_create(
+		Motion_Vector2{4, -2}, Motion_Vector2{-3, 5}, Motion_Vector2{11, -6}, config,
+		Motion_Time(-2_000_000_000),
+	)
+	if translation_status != .Ok { testing.expect(t, false, "the translation response should initialize"); return }
+	original_translation := translation
+	for index in 0..<1000 {
+		at := Motion_Time(-2_000_000_000+i64(index)*1_000_000)
+		unchanged, retarget_status := motion_translation_settle(translation, Motion_Vector2{-3, 5}, at)
+		testing.expect(t, retarget_status == .Ok &&
+			motion_test_scalar_response_equal(unchanged.x, original_translation.x) &&
+			motion_test_scalar_response_equal(unchanged.y, original_translation.y),
+			"unchanged 2D targets must leave both component responses untouched")
+		translation = unchanged
+	}
 }
 
 @(test)

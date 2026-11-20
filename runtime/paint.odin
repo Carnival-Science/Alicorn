@@ -238,6 +238,12 @@ compose_subtree :: proc(
 	if part_visible {
 		for cached_command in node.paint {
 			command := cached_command
+			if presentation.has_surface_color && command.semantic_surface_fill {
+				if surface, ok := command.payload.(Surface_Paint); ok {
+					surface.fill = presentation.surface_color
+					command.payload = surface
+				}
+			}
 			command.opacity *= presentation.opacity
 			command.translation[0] += presentation.translation[0]
 			command.translation[1] += presentation.translation[1]
@@ -443,6 +449,7 @@ update_paint :: proc(rt: ^Runtime) {
 							top_edge_gap=semantic_surface_top_edge_gap(rt, node, semantic_surface_style),
 						)
 						surface_command.semantic_surface_gradient = resolved_surface.gradient.axis != .None
+						surface_command.semantic_surface_fill = true
 						append(&node.paint, surface_command)
 					}
 				} else if node.paint_background {
@@ -727,6 +734,14 @@ update_paint :: proc(rt: ^Runtime) {
 					marker = Rect{node.bounds.x+2, marker_y, maxf(node.bounds.w-4, 0), 2}
 				}
 				append(&node.paint, paint_surface_command(node.id, marker, node.clip, style_environment_color(rt, node.style_environment, .Accent)))
+			}
+			if node.placement.valid && node.placement.opacity != 1 {
+				// Positioned opacity applies to every product the child emits,
+				// including span backgrounds and decorations. Renderers already
+				// consume Paint_Command.opacity for ordinary text commands.
+				for &command in node.paint {
+					command.opacity *= node.placement.opacity
+				}
 			}
 			rt.stats.paint_updates += 1
 			dirty_set(&node.dirty, .Composite, true)

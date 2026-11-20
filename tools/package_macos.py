@@ -17,9 +17,9 @@ import subprocess
 import sys
 import tempfile
 
-SDL_VERSION = "3.4.18"
-SDL_SOURCE = "https://github.com/libsdl-org/SDL/releases/download/release-3.4.18/SDL3-3.4.18.tar.gz"
-SDL_SOURCE_SHA256 = "9c75cf16330322c217dedd2e0609f1124f1b54b8633e763467b4684d0f4334a3"
+SDL_VERSION = "3.4.20"
+SDL_SOURCE = "https://github.com/libsdl-org/SDL/releases/download/release-3.4.20/SDL3-3.4.20.tar.gz"
+SDL_SOURCE_SHA256 = "f3bb06f55bed9557227a700af2ea62e49497ebdf58037732a731a5fb3ef8581f"
 
 
 def run(*args: str, capture: bool = False) -> str:
@@ -36,8 +36,7 @@ def sha256(path: pathlib.Path) -> str:
 
 
 def sdl_source_provenance() -> dict[str, str]:
-    # This provenance applies only to the static build, which links the pinned
-    # SDL source archive. Shared packages record their actual dylib input.
+    # Release builds use the same pinned SDL archive for either linkage mode.
     return {
         "sdlSource": SDL_SOURCE,
         "sdlSourceSha256": SDL_SOURCE_SHA256,
@@ -396,7 +395,12 @@ def package(args: argparse.Namespace) -> None:
             "alicornRevision": git_revision,
             "sdlVersion": sdl_version,
             "sdlLinkage": args.linkage,
-            **(sdl_source_provenance() if args.linkage == "static" else sdl_runtime_manifest),
+            **(
+                sdl_source_provenance()
+                if args.linkage == "static" or args.sdl_runtime_provider == "pinned-source"
+                else {}
+            ),
+            **sdl_runtime_manifest,
             "license": {
                 "path": "Contents/Resources/SDL-LICENSE.txt",
                 "sha256": sha256(resources / "SDL-LICENSE.txt"),
@@ -481,7 +485,7 @@ def main() -> None:
         "--sdl-runtime-provider",
         choices=("unknown", "homebrew", "pinned-source"),
         default="unknown",
-        help="Declared origin of the shared SDL input; the input hash and runtime version are verified.",
+        help="Declared origin of the shared SDL input; pinned-source also records the verified source archive.",
     )
     parser.add_argument("--output", type=pathlib.Path, required=True)
     parser.add_argument("--smoke-test", action="store_true")

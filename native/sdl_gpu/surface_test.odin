@@ -127,7 +127,7 @@ test_waveform_mesh_fits_exact_runtime_sample_limit :: proc(t: ^testing.T) {
 
 @(test)
 test_dense_sample_marker_mesh_fits_retained_budget :: proc(t: ^testing.T) {
-	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 720, 360})
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 1280, 360})
 	defer alicorn.destroy_runtime(&rt)
 	alicorn.invalidate_root(&rt, "dense sample marker mesh capacity test")
 	ui, should_build := alicorn.begin_frame(&rt)
@@ -136,7 +136,7 @@ test_dense_sample_marker_mesh_fits_retained_budget :: proc(t: ^testing.T) {
 		return
 	}
 	alicorn.container_begin(&ui, .Root, label="dense-marker-root")
-	surface := alicorn.gpu_geometry_surface(&ui, "dense-marker-surface", alicorn.layout_style(width=640, height=240), 1)
+	surface := alicorn.gpu_geometry_surface(&ui, "dense-marker-surface", alicorn.layout_style(width=1280, height=240), 1)
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 
@@ -146,12 +146,12 @@ test_dense_sample_marker_mesh_fits_retained_budget :: proc(t: ^testing.T) {
 	defer delete(markers)
 	for i in 0..<len(segments) {
 		segments[i] = alicorn.GPU_Surface_Line_Segment{
-			start={f32(i), 100}, end={f32(i+1), 101}, thickness=1, color={0.25, 0.8, 0.95, 1},
+			start={f32(i*3), 100}, end={f32((i+1)*3), 101}, thickness=1, color={0.25, 0.8, 0.95, 1},
 		}
 	}
 	for i in 0..<len(markers) {
 		markers[i] = alicorn.GPU_Surface_Point_Marker{
-			center={f32(i), 100}, diameter=4, color={1, 0.85, 0.2, 1},
+			center={f32(i*3), 100}, diameter=4, color={1, 0.85, 0.2, 1},
 		}
 	}
 	testing.expect(t, alicorn.gpu_surface_update_geometry_with_markers(
@@ -174,5 +174,64 @@ test_dense_sample_marker_mesh_fits_retained_budget :: proc(t: ^testing.T) {
 		last_marker_first_vertex := 426*6 + 426*6
 		testing.expect(t, renderer.vertices[last_marker_first_vertex].uv == [2]f32{0, 0},
 			"marker quads should follow connecting segments so sample points remain visually prominent")
+	}
+}
+
+@(test)
+test_1920px_dense_sample_marker_mesh_fits_retained_budget :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 1920, 120})
+	defer alicorn.destroy_runtime(&rt)
+	alicorn.invalidate_root(&rt, "1,920px dense sample marker mesh capacity test")
+	ui, should_build := alicorn.begin_frame(&rt)
+	if !should_build {
+		testing.expect(t, false, "initial geometry surface tree should build")
+		return
+	}
+	alicorn.container_begin(&ui, .Root, label="dense-marker-1920-root")
+	surface := alicorn.gpu_geometry_surface(&ui, "dense-marker-1920-surface", alicorn.layout_style(width=1920, height=64), 1)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+
+	segments := make([]alicorn.GPU_Surface_Line_Segment, 639)
+	defer delete(segments)
+	markers := make([]alicorn.GPU_Surface_Point_Marker, 640)
+	defer delete(markers)
+	for i in 0..<len(segments) {
+		segments[i] = alicorn.GPU_Surface_Line_Segment{
+			start={f32(i*3), 24}, end={f32((i+1)*3), 25}, thickness=1, color={0.25, 0.8, 0.95, 1},
+		}
+	}
+	for i in 0..<len(markers) {
+		markers[i] = alicorn.GPU_Surface_Point_Marker{
+			center={f32(i*3), 24}, diameter=4, color={1, 0.85, 0.2, 1},
+		}
+	}
+	testing.expect(t, alicorn.gpu_surface_update_geometry_with_markers(&rt, surface, segments, nil, markers),
+		"640 sample markers and 639 connected segments should fit at a 1,920px viewport")
+	node := rt.nodes[surface]
+	command := alicorn.paint_geometry_command(surface, node.bounds, node.clip, alicorn.paint_geometry_handle_for_node(node))
+	renderer := Native_Surface_Renderer{
+		runtime=&rt,
+		vertices=make([dynamic]Native_Text_Vertex, 0, alicorn.GPU_SURFACE_MAX_VERTICES),
+	}
+	defer delete(renderer.vertices)
+	testing.expect(t, native_surface_rebuild_mesh(&renderer, command, 1, 1),
+		"native mesh should expand the full 1,920px retained marker batch")
+	expected_vertices := (639 + 640) * alicorn.GPU_SURFACE_POINT_MARKER_VERTICES
+	testing.expect(t, expected_vertices == 7674 && len(renderer.vertices) == expected_vertices &&
+		expected_vertices <= alicorn.GPU_SURFACE_MAX_VERTICES,
+		"the 1,920px viewport should expand to 7,674 of the 8,192 permitted vertices")
+	if len(renderer.vertices) > 0 {
+		last_marker_first_vertex := 639*6 + 639*6
+		testing.expect(t, renderer.vertices[last_marker_first_vertex].uv == [2]f32{0, 0},
+			"the final compact marker should follow all connecting segments in paint order")
+	}
+	testing.expect(t, native_surface_rebuild_mesh(&renderer, command, 1.25, 1.25),
+		"fractional-DPI mesh rebuilding should also accept the full dense batch")
+	if len(renderer.vertices) == expected_vertices {
+		last := renderer.vertices[len(renderer.vertices)-4]
+		testing.expect(t, surface_test_near(last.position.x, (1917+2)*1.25) &&
+			surface_test_near(last.position.y, (24+2)*1.25),
+			"fractional-DPI geometry should scale the final marker without changing its logical center")
 	}
 }

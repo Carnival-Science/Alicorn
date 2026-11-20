@@ -35,6 +35,7 @@ Motion_Mode :: alicorn.Motion_Mode
 Motion_Intent :: alicorn.Motion_Intent
 Motion_Target :: alicorn.Motion_Target
 Motion_Clip_Policy :: alicorn.Motion_Clip_Policy
+Motion_Interaction_Policy :: alicorn.Motion_Interaction_Policy
 Motion_Theme_Policy :: alicorn.Motion_Theme_Policy
 Motion_Reduced_Motion_Policy :: alicorn.Motion_Reduced_Motion_Policy
 Motion_Owner_Handle :: alicorn.Motion_Owner_Handle
@@ -44,6 +45,9 @@ Motion_Tick_Result :: alicorn.Motion_Tick_Result
 Motion_Vector2 :: alicorn.Motion_Vector2
 Style_Transition :: alicorn.Style_Transition
 Style_Transition_Easing :: alicorn.Style_Transition_Easing
+Positioned_Horizontal :: alicorn.Positioned_Horizontal
+Positioned_Vertical :: alicorn.Positioned_Vertical
+Positioned_Placement :: alicorn.Positioned_Placement
 
 @(private)
 DEFAULT_CHECKBOX_STYLE :: Layout_Style{
@@ -137,6 +141,21 @@ motion_translation :: proc(
 ) -> Motion_Runtime_Status {
 	if ctx == nil || ctx.runtime == nil { return .Invalid_Runtime }
 	return alicorn.motion_target_translation(ctx.runtime, handle, target, config, mode, at)
+}
+
+// motion_surface_color retargets a solid semantic-surface fill in linear-sRGB.
+// The target must preserve the current straight-alpha value. Motion remains a
+// paint property and does not change layout, hit testing, or semantic bounds.
+motion_surface_color :: proc(
+	ctx: ^UI,
+	handle: Motion_Owner_Handle,
+	target: Color,
+	config: Motion_Config,
+	mode: Motion_Mode,
+	at: Motion_Time,
+) -> Motion_Runtime_Status {
+	if ctx == nil || ctx.runtime == nil { return .Invalid_Runtime }
+	return alicorn.motion_target_surface_color(ctx.runtime, handle, target, config, mode, at)
 }
 
 // motion_tick samples opted-in properties at an injected monotonic timestamp.
@@ -506,6 +525,55 @@ text :: proc(
 	if size > 0 { effective_text_style.font_size = size }
 	id := alicorn.text(ui, value, key, style=style, loc=loc, font=font, text_style=effective_text_style, color=color)
 	if id != 0 && !decorative { _ = alicorn.semantic_static_text(ui) }
+	return id
+}
+
+// positioned_text describes one ordinary Text node at explicit owner-local
+// logical coordinates. It is decorative by default because ruler and scale
+// labels repeat adjacent tick geometry; pass decorative=false to export a
+// meaningful Static_Text entity instead. Coordinates are relative to the
+// owner's content box, so a zero-padded visualization owner shares its origin
+// with full-bleed custom-surface geometry. Positioned labels do not consume
+// flow space or size a fit-content owner.
+positioned_text :: proc(
+	ui: ^UI,
+	value: string,
+	x, y: f32,
+	key: UI_Key = alicorn.UI_Unkeyed{},
+	size: f32 = 0,
+	color: Color = DEFAULT_COLOR,
+	loc := #caller_location,
+	style: alicorn.Layout_Style = alicorn.DEFAULT_STYLE,
+	font: alicorn.Font_Role = .UI,
+	text_style: alicorn.Text_Style = alicorn.DEFAULT_TEXT_STYLE,
+	decorative: bool = true,
+	width: f32 = -1,
+	height: f32 = -1,
+	max_width: f32 = -1,
+	horizontal: alicorn.Positioned_Horizontal = .Start,
+	vertical: alicorn.Positioned_Vertical = .Top,
+	clip: bool = false,
+	opacity: f32 = 1,
+) -> alicorn.Node_ID {
+	effective_text_style := text_style
+	if size > 0 { effective_text_style.font_size = size }
+	// Hard boxes and wrap limits stay ordinary layout inputs on the Text node.
+	resolved_style := style
+	if width >= 0 { resolved_style.width = width }
+	if height >= 0 { resolved_style.height = height }
+	if max_width >= 0 { resolved_style.max_width = max_width }
+	id := alicorn.text(ui, value, key, style=resolved_style, loc=loc, font=font, text_style=effective_text_style, color=color)
+	if id == 0 { return 0 }
+	placement := alicorn.positioned(
+		x,
+		y,
+		horizontal=horizontal,
+		vertical=vertical,
+		clip=clip,
+		opacity=opacity,
+	)
+	if !alicorn.position_child(ui, id, placement, loc) { return 0 }
+	if !decorative { _ = alicorn.semantic_static_text(ui) }
 	return id
 }
 

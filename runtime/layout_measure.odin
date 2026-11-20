@@ -204,6 +204,7 @@ layout_measure_content_signature :: proc(rt: ^Runtime, node: ^Node) -> u64 {
 	for child_id in node.children {
 		child, ok := rt.nodes[child_id]
 		if !ok || child == nil || !child.active { continue }
+		if child.placement.valid { continue }
 		state := rt.measure_states[child_id]
 		h = hash_mix(h, u64(child_id))
 		h = hash_mix(h, child.layout_hash)
@@ -329,6 +330,8 @@ layout_measure_content_height :: proc(rt: ^Runtime, node: ^Node, constraints: La
 		for child_id in node.children {
 			child, ok := rt.nodes[child_id]
 			if !ok || child == nil || !child.active { continue }
+			// Positioned children own explicit placement, not flow space.
+			if child.placement.valid { continue }
 			realized_children += 1
 			child_constraints := layout_content_child_constraints(rt, node, child, constraints)
 			measured := layout_measure_node(rt, child, child_constraints)
@@ -347,6 +350,7 @@ layout_measure_content_height :: proc(rt: ^Runtime, node: ^Node, constraints: La
 		for child_id in node.children {
 			child, ok := rt.nodes[child_id]
 			if !ok || child == nil || !child.active { continue }
+			if child.placement.valid { continue }
 			append(&children, child_id)
 			// Resolve an intrinsic main-axis ideal first. This pass deliberately
 			// leaves non-explicit widths unbounded so a wrapped label does not
@@ -397,6 +401,18 @@ layout_measure_content_height :: proc(rt: ^Runtime, node: ^Node, constraints: La
 	padding := layout_unit_extent(maxf(node.style.padding, 0))
 	total = layout_content_add_units(total, padding)
 	total = layout_content_add_units(total, padding)
+	// A fit-content container with no realized children measures its padding.
+	// This is a valid container state, and it is also the observable result
+	// when a scoped helper's children were described outside the invocation
+	// block (the reported "dark strip"). Report the state without assigning
+	// intent.
+	if realized_children == 0 {
+		record_trace(rt, .Measure, node.id, fmt.tprintf(
+			"fit-content container has no realized children: measured height is padding only (%.3f) for %s",
+			layout_unit_to_f32(Layout_Unit(total)),
+			node.label,
+		))
+	}
 	return Layout_Unit(total)
 }
 
@@ -412,6 +428,7 @@ layout_measure_content_dependencies :: proc(
 	for child_id in node.children {
 		child, ok := rt.nodes[child_id]
 		if !ok || child == nil || !child.active { continue }
+		if child.placement.valid { continue }
 		child_state := rt.measure_states[child_id]
 		if .Width_To_Height in child_state.result.input_axis_dependencies {
 			dependencies += {.Width_To_Height}

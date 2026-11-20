@@ -58,8 +58,8 @@ native_run_application :: proc(
 		sdl3.VERSIONNUM_MICRO(linked_sdl_version),
 	)
 	when ODIN_OS == .Darwin {
-		if linked_sdl_version != sdl3.VERSIONNUM(3, 4, 18) {
-			fail("macOS requires SDL3 3.4.18")
+		if linked_sdl_version != sdl3.VERSIONNUM(3, 4, 20) {
+			fail("macOS requires SDL3 3.4.20")
 		}
 	}
 	title := application.title

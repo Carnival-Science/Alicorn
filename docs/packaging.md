@@ -6,10 +6,11 @@ icon, extra resources/libraries, signing, notarization, installers, update
 channels, and publication.
 
 The tools intentionally stay small and platform-specific. The regular
-`native_hello` scripts remain the fast shared-SDL development path. Release
-packaging can build the pinned SDL source statically, build `01_hello`, create a
-Windows folder package or macOS `.app`, audit native dependencies, and optionally
-launch the finished artifact from an empty working directory.
+`native_hello` scripts remain the fast shared-SDL development path. On macOS,
+the release helper builds the pinned SDL source for static or shared linkage.
+The release tools build `01_hello`, create a Windows folder package or macOS
+`.app`, audit native dependencies, and optionally launch the finished artifact
+from an empty working directory.
 
 ## Prerequisites
 
@@ -20,9 +21,10 @@ launch the finished artifact from an empty working directory.
 - macOS packaging additionally uses Python 3, `pkg-config` (for SDL's exported
   static link flags), `otool`, `install_name_tool`, and `plutil` (provided by the
   Apple developer tools).
-- The release helper downloads SDL `3.4.18` from the official release asset and
-  verifies its pinned SHA-256 before using it. It does not modify the installed
-  Odin SDK. Static SDL outputs and the SDK overlay live under ignored `out/`.
+- The macOS release helper downloads SDL `3.4.20` from the official release asset
+  and verifies its pinned SHA-256 before building either linkage mode. It does
+  not depend on the installed Homebrew SDL version or modify the Odin SDK. SDL
+  build outputs and the SDK overlay live under ignored `out/`.
 
 ## Build the proof application
 
@@ -75,21 +77,15 @@ the Chromium/Electron geometric conventions used by integrated captions.
 For shared SDL packaging, use `-SDLLinkage Shared` on Windows or
 `--sdl-linkage shared` on macOS. Shared mode copies SDL beside the Windows EXE
 or into `Contents/Frameworks/SDL3.dylib` in the macOS bundle and rewrites the
-macOS install name to a bundle-relative `@rpath`. The ordinary development
-commands remain unchanged:
+macOS install name to a bundle-relative `@rpath`. macOS shared and static
+packages record the pinned SDL source URL and checksum; Homebrew formula updates
+do not change the release input. The ordinary development commands remain
+unchanged:
 
-On macOS, shared packaging requires SDL 3.4.18. To avoid Homebrew's moving SDL
-version, build the checksum-pinned runtime and set `ALICORN_SDL3_PREFIX` before
-packaging:
-
-```sh
-brew install cmake pkgconf
-sh tools/setup_macos_sdl3.sh
-export ALICORN_SDL3_PREFIX="$PWD/out/native-package/sdl-3.4.18/shared/prefix"
-```
-
-The package manifest records the pinned source URL and archive checksum as well
-as the hash of the exact dylib that was bundled.
+On macOS, packaging builds the checksum-pinned SDL 3.4.20 source itself
+(`tools/macos_sdl.sh`), so Homebrew formula updates do not change the release
+input. The package manifest records the pinned source URL and archive checksum
+as well as the hash of the exact dylib that was bundled.
 
 ```powershell
 .\tools\native_hello.ps1

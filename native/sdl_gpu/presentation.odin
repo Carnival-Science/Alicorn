@@ -31,6 +31,12 @@ Sdl_GPU_Submission :: struct {
 	display_revision: u64,
 }
 
+presenter_encode_failure_point :: enum {
+	None,
+	Before_Render,
+	After_Background_Clear,
+}
+
 sdl_gpu_presenter_internal_state :: struct {
 	allocator:       mem.Allocator,
 	device:          ^sdl3.GPUDevice,
@@ -48,6 +54,7 @@ sdl_gpu_presenter_internal_state :: struct {
 	completed:       u64,
 	pending_revision: u64,
 	frame_pending:   bool,
+	swapchain_acquired: bool,
 	surface_mask_was_initialized:   bool,
 	solid_white_was_initialized:   bool,
 }
@@ -207,10 +214,25 @@ Sdl_GPU_Presenter_Encode :: proc(
 	scale_x, scale_y: f32,
 	clear_background := false,
 ) -> bool {
+	return sdl_gpu_presenter_encode_with_failure(
+		presenter, command, target, width, height, scale_x, scale_y,
+		clear_background, .None,
+	)
+}
+
+sdl_gpu_presenter_encode_with_failure :: proc(
+	presenter: ^Sdl_GPU_Presenter,
+	command: ^sdl3.GPUCommandBuffer,
+	target: ^sdl3.GPUTexture,
+	width, height: sdl3.Uint32,
+	scale_x, scale_y: f32,
+	clear_background: bool,
+	failure_point: presenter_encode_failure_point,
+) -> bool {
 	state := sdl_gpu_presenter_state(presenter)
 	if state == nil || command == nil || target == nil || width == 0 || height == 0 ||
 		scale_x <= 0 || scale_y <= 0 || scale_x != scale_x || scale_y != scale_y ||
-		state.frame_pending {
+		state.frame_pending || state.swapchain_acquired {
 		return false
 	}
 
@@ -226,6 +248,7 @@ Sdl_GPU_Presenter_Encode :: proc(
 	state.surface_mask_was_initialized = state.surface.shape_mask_initialized
 	state.solid_white_was_initialized = state.solid.white_initialized
 	state.frame_pending = true
+	if failure_point == .Before_Render { return false }
 	return draw_display_list(
 		command,
 		target,
@@ -238,6 +261,7 @@ Sdl_GPU_Presenter_Encode :: proc(
 		scale_x,
 		scale_y,
 		clear_background=clear_background,
+		validation_fail_after_background_clear=failure_point == .After_Background_Clear,
 	)
 }
 
@@ -246,7 +270,9 @@ Sdl_GPU_Presenter_Encode :: proc(
 // synchronously into a presenter-owned texture. Only after that succeeds does
 // this procedure acquire the swapchain texture and issue a single SDL blit.
 // Thus every false return occurs before a drawable swapchain texture is held,
-// and the caller may cancel the command buffer before Cancel_Frame.
+// and the caller may cancel the command buffer before Cancel_Frame. A true
+// return means a non-nil swapchain texture was acquired; the command buffer
+// must be submitted and cannot be canceled.
 //
 // The window must already be claimed by the presenter's device. Its current
 // drawable pixel dimensions and swapchain format are queried before rendering;
@@ -259,8 +285,20 @@ Sdl_GPU_Presenter_Encode_Window :: proc(
 	window: ^sdl3.Window,
 	logical_to_pixel_x, logical_to_pixel_y: f32,
 ) -> bool {
+	return sdl_gpu_presenter_encode_window_with_failure(
+		presenter, command, window, logical_to_pixel_x, logical_to_pixel_y, .None,
+	)
+}
+
+sdl_gpu_presenter_encode_window_with_failure :: proc(
+	presenter: ^Sdl_GPU_Presenter,
+	command: ^sdl3.GPUCommandBuffer,
+	window: ^sdl3.Window,
+	logical_to_pixel_x, logical_to_pixel_y: f32,
+	failure_point: presenter_encode_failure_point,
+) -> bool {
 	state := sdl_gpu_presenter_state(presenter)
-	if state == nil || command == nil || window == nil || state.frame_pending ||
+	if state == nil || command == nil || window == nil || state.frame_pending || state.swapchain_acquired ||
 		logical_to_pixel_x <= 0 || logical_to_pixel_y <= 0 ||
 		logical_to_pixel_x != logical_to_pixel_x || logical_to_pixel_y != logical_to_pixel_y {
 		return false
@@ -272,7 +310,7 @@ Sdl_GPU_Presenter_Encode_Window :: proc(
 	}
 	width, height := sdl3.Uint32(pixel_width), sdl3.Uint32(pixel_height)
 	if !sdl_gpu_presenter_ensure_window_target(state, width, height) { return false }
-	if !Sdl_GPU_Presenter_Encode(
+	if !sdl_gpu_presenter_encode_with_failure(
 		presenter,
 		command,
 		state.window_target,
@@ -280,7 +318,8 @@ Sdl_GPU_Presenter_Encode_Window :: proc(
 		state.window_target_height,
 		logical_to_pixel_x,
 		logical_to_pixel_y,
-		clear_background=true,
+		true,
+		failure_point,
 	) {
 		return false
 	}
@@ -299,6 +338,7 @@ Sdl_GPU_Presenter_Encode_Window :: proc(
 	// SDL_BlitGPUTexture returns void. Keep this as the only operation after a
 	// non-nil swapchain target is acquired; no renderer preparation or error path
 	// follows it.
+	state.swapchain_acquired = true
 	sdl3.BlitGPUTexture(command, sdl3.GPUBlitInfo{
 		source=sdl3.GPUBlitRegion{
 			texture=state.window_target,
@@ -317,14 +357,15 @@ Sdl_GPU_Presenter_Encode_Window :: proc(
 	return true
 }
 
-// Cancel a frame after the host has canceled the command buffer. If a submit
-// attempt failed ambiguously, first wait for GPU idle before canceling so its
-// transfer buffers cannot still be in use. Pending glyph uploads remain dirty
-// for retry; unsubmitted image uploads and speculative clear/mask state are
-// rolled back so the next frame can retry safely.
+// Cancel a frame only after the host has canceled a command buffer that has
+// not acquired a non-nil swapchain texture. After Encode_Window returns true,
+// the command buffer must be submitted and this procedure rejects cancellation.
+// For an offscreen submit failure with ambiguous GPU ownership, wait for GPU
+// idle before canceling. Pending glyph uploads remain dirty for retry;
+// unsubmitted image uploads and speculative clear/mask state are rolled back.
 Sdl_GPU_Presenter_Cancel_Frame :: proc(presenter: ^Sdl_GPU_Presenter) -> bool {
 	state := sdl_gpu_presenter_state(presenter)
-	if state == nil || !state.frame_pending { return false }
+	if state == nil || !state.frame_pending || state.swapchain_acquired { return false }
 	clear(&state.text.pending_dirty)
 	native_image_release_unsubmitted(&state.solid.images)
 	// This resets the recorded command only; the renderer keeps the transfer
@@ -333,6 +374,7 @@ Sdl_GPU_Presenter_Cancel_Frame :: proc(presenter: ^Sdl_GPU_Presenter) -> bool {
 	if !state.solid_white_was_initialized { state.solid.white_initialized = false }
 	state.pending_revision = 0
 	state.frame_pending = false
+	state.swapchain_acquired = false
 	return true
 }
 
@@ -366,6 +408,7 @@ Sdl_GPU_Presenter_Submission_Succeeded :: proc(
 	}
 	state.pending_revision = 0
 	state.frame_pending = false
+	state.swapchain_acquired = false
 	return submission, true
 }
 

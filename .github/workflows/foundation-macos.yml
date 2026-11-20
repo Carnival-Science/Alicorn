@@ -23,14 +23,17 @@ jobs:
         shell: bash
         run: sh tools/setup_macos_wgpu_native.sh "$ODIN_ROOT"
 
-      - name: Build checksum-pinned SDL3 for native host checks
+      - name: Install SDL build tools
+        run: brew install cmake
+
+      - name: Build pinned SDL3 for native host checks
         shell: bash
         run: |
-          brew install cmake pkgconf sdl3
-          sdl_prefix="$RUNNER_TEMP/alicorn-sdl3"
-          sh tools/setup_macos_sdl3.sh "$sdl_prefix"
-          echo "ALICORN_SDL3_PREFIX=$sdl_prefix/prefix" >> "$GITHUB_ENV"
-          echo "DYLD_LIBRARY_PATH=$sdl_prefix/prefix/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+          set -euo pipefail
+          source tools/macos_sdl.sh
+          alicorn_build_pinned_macos_sdl shared "$RUNNER_TEMP/alicorn-sdl"
+          echo "ALICORN_SDL_LINK_FLAGS=-L$ALICORN_MACOS_SDL_PREFIX/lib -Wl,-rpath,$ALICORN_MACOS_SDL_PREFIX/lib" >> "$GITHUB_ENV"
+          echo "DYLD_LIBRARY_PATH=$ALICORN_MACOS_SDL_PREFIX/lib" >> "$GITHUB_ENV"
 
       - name: Install wasm-ld for Odin js_wasm32 linking
         shell: bash
@@ -73,6 +76,20 @@ jobs:
         run: |
           set -o pipefail
           sh tools/validate_effects.sh | tee out/retained-effects-metal.txt
+
+      - name: Validate dense retained point markers through Metal readback
+        shell: bash
+        run: |
+          set -o pipefail
+          sh tools/validate_point_markers.sh --driver=metal | tee out/point-markers-metal.txt
+
+      - name: Upload point-marker Metal evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: point-markers-metal
+          path: out/point-markers-metal.txt
+          retention-days: 7
 
       - name: Upload retained-effects Metal evidence
         if: always()

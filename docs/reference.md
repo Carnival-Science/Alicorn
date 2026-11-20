@@ -31,9 +31,12 @@ main :: proc() {
 ```
 
 `ui.row`, `ui.column`, `ui.panel`, and `ui.layout` are lexical scopes. Use each directly in
-an `if` condition so Odin closes the scope at the end of that block. Stable
-keys are optional for one-off controls and should be supplied for repeated
-items that can reorder. `ui.run` selects the native host's bounded corrective
+an `if` condition so Odin closes the scope at the end of that block. Describe
+their children in that same block: wrapping the opening call in a procedure or
+describing children after the block leaves them as siblings in the parent, and
+a padded fit-content scope then measures only its padding. Stable keys are
+optional for one-off controls and should be supplied for repeated items that
+can reorder. `ui.run` selects the native host's bounded corrective
 description policy for consumed UI actions; render may run again after an
 interaction, so keep unrelated side effects out of the description.
 
@@ -52,6 +55,7 @@ the caller's source location.
 | `ui.checkbox` | Takes `^bool` and adopts only a real activation into application state. |
 | `ui.slider_f32` | Takes `^f32` plus `minimum`, `maximum`, and optional `step`; adopts only user-produced values, not initial range normalization. |
 | `ui.icon`, `ui.icon_button` | Font-independent icon and named icon button helpers. |
+| `ui.positioned_text` | Places one Text label at explicit owner-local `x`, `y` coordinates with `horizontal`, `vertical`, `width`, `height`, `max_width`, `clip`, and `opacity`. Decorative by default; pass `decorative=false` for a Static_Text entity. See [Positioned labels](#positioned-labels). |
 
 Create persistent edit storage with `ui.text_buffer(initial)` and release it
 with `ui.text_buffer_destroy`. The buffer owns its text through an allocator
@@ -79,6 +83,58 @@ with the same `UI`.
 See [Getting Started](getting-started.md) for the first window and the
 [application guide](guide.md) for sizing defaults and the progressive path to
 identity, virtual collections, regions, async wakes, surfaces, and diagnostics.
+
+### Positioned labels
+
+`ui.positioned_text` authors an ordinary `.Text` node whose placement is
+explicit instead of consuming flow space. Coordinates are logical units
+relative to the owner's content box (its bounds inset by padding), so a
+zero-padded visualization owner shares one origin between a full-bleed custom
+surface's retained geometry and its labels:
+
+```odin
+if ui.column(ctx, key="ruler", width=900, height=44, clip=true) {
+	ticks = alicorn.gpu_geometry_surface(ctx, "ruler-ticks",
+		ui.layout_style(width=-1, height=44), dpi_scale)
+	for second in 0 ..= 60 {
+		// The application owns this one time-to-pixel transform and applies it
+		// to both retained ticks and their labels.
+		x := f32(second)/60*900
+		ui.positioned_text(ctx, fmt.tprintf("%ds", second), x, 8,
+			key=u64(second), size=11)
+	}
+}
+```
+
+Placement options are independent of text shaping:
+
+- `horizontal` is `.Start`, `.Center`, or `.End`; it decides whether `x` is
+  the label's leading edge, center, or trailing edge.
+- `vertical` is `.Top`, `.Middle`, `.Bottom`, or `.Baseline`. `.Baseline` uses
+  the shaped text baseline; a child with no retained baseline product falls
+  back to its bottom edge, matching Row baseline alignment for non-text
+  visuals.
+- `width` and `height` are hard boxes; omitting them measures the child.
+  `max_width` bounds wrapping or ellipsis. A supplied width is a measurement
+  input for that child only.
+- `clip=true` intersects the label with its owner's rectangle; `false`
+  inherits the owner's effective clip exactly like a flow child.
+- `opacity` scales every paint command the label emits.
+
+Positioned children are ordinary retained nodes: they reuse text shaping,
+`Paint_Command`, clipping, and the semantic model. Text labels are not
+hit-testable unless they are an explicit text-input target, so decorative
+labels never intercept pointer gestures and never enter tab order.
+`decorative=false` exports the same `Static_Text` entity as `ui.text`.
+
+A positioned child does not contribute to a fit-content owner's measured size.
+Give such an owner a definite width or height (or keep ordinary flow content in
+it); otherwise the owner measures its padding and flow content only.
+
+The lower-level runtime seam is `alicorn.position_child(ui, id,
+alicorn.positioned(x, y, ...))`, which can position any already-described
+direct child, not just text. `.Grid`, `.Split`, adaptive owners, and context
+menus keep their specialized layout policy and do not honor placement.
 
 ### Typed lifecycle and worker wakes
 
@@ -159,13 +215,21 @@ command buffer, claimed window, and logical-to-pixel scales. It completes all
 fallible rendering into a presenter-owned offscreen texture before acquiring
 the swapchain texture, then records a single final blit. Every false return
 occurs before a non-nil swapchain texture is acquired, so the host may cancel
-the command buffer and then call `Sdl_GPU_Presenter_Cancel_Frame`. The lower
-level `Sdl_GPU_Presenter_Encode` accepts an arbitrary target and is for
-offscreen targets only; do not pass it an acquired swapchain texture.
+the command buffer and then call `Sdl_GPU_Presenter_Cancel_Frame` when a frame
+is pending. A true return means a drawable swapchain texture is held: submit
+that command buffer and do not cancel it. `Cancel_Frame` rejects cancellation
+after acquisition. The lower-level `Sdl_GPU_Presenter_Encode` accepts an
+arbitrary target and is for offscreen targets only; do not pass it an acquired
+swapchain texture.
 
 The host submits the command buffer, then passes the acquired fence to
 `Sdl_GPU_Presenter_Submission_Succeeded`; this transfers fence ownership to the
-presenter and returns a `Sdl_GPU_Submission` token. Use
+presenter and returns a `Sdl_GPU_Submission` token. For offscreen encoding, if
+a submit failure leaves GPU ownership ambiguous, wait for GPU idle before
+canceling the presenter frame. A window frame that returned successfully has
+already acquired a swapchain texture and cannot be rolled back through
+`Cancel_Frame`; treat a subsequent native submission failure as a host/GPU
+failure. Use
 `Sdl_GPU_Presenter_Wait` or `Sdl_GPU_Presenter_Poll` to retire submitted work,
 and `Sdl_GPU_Presenter_Destroy` before destroying the Runtime or device.
 Call presenter functions on the Runtime's owning host thread. The host must
@@ -1361,6 +1425,29 @@ system file drops or arbitrary MIME payloads.
   application-owned.
 - `Runtime_Config` optionally configures persistent and scratch backing
   allocators when calling `new_runtime`.
+- The analytic motion kernel stores scalar and 2D responses by value and
+  accepts an explicit `Motion_Time` in signed monotonic nanoseconds. Sampling
+  evaluates the critically damped residual directly, without integrating
+  frames:
+
+  ```text
+  R(t) = (r0 + (v0 + omega*r0) * t) * exp(-omega*t)
+  P(t) = target + R(t)
+  ```
+
+  Between explicit target changes, the target is stationary. `Settle` samples
+  the old response at the supplied time, then rebases the residual while
+  preserving presented position and velocity; assigning its current target is
+  an exact no-op. `Direct` follows each supplied target without spring lag, and
+  `Snap` commits one target immediately. `omega` is reciprocal seconds.
+  Position and velocity tolerances use the animated property's units, and both
+  must be satisfied before settlement. The runtime uses a conservative bound
+  on both residual envelopes, not an exact spring-settlement time; a response
+  without a certified bounded deadline stays active for the host's bounded
+  fallback. The sampler uses `f64` math and has no allocator calls. Numerical
+  tests use stated absolute tolerances, so replay aims for numerical agreement
+  rather than bit-identical `exp` results across platforms. Underdamped springs
+  and continuously moving-target velocity are not part of this response model.
 - The beginner-facing `ui.motion` declaration queues a target and response
   intent during the node's description; Alicorn applies it after reconciliation
   has the complete current subtree and style environment. The application
@@ -1385,41 +1472,58 @@ system file drops or arbitrary MIME payloads.
   the last target. Failed deferred applications are reported in runtime
   diagnostics.
 - `Style_Theme.motion_policy` controls default settling responses separately
-  for translation and opacity. An unset policy resolves to the library default
-  without animating any node implicitly; applications still opt in with
-  `ui.motion`. Reduce Motion snaps spatial changes by default. A theme may opt
-  into an opacity-only response; while Reduce Motion is active, Alicorn accepts
+  for translation, opacity, and semantic-surface color. An unset policy
+  resolves to the library default without animating any node implicitly;
+  applications still opt in with `ui.motion`. Reduce Motion snaps spatial and
+  color changes by default. A theme may opt into an opacity-only response;
+  while Reduce Motion is active, Alicorn accepts
   it only when its conservative settlement bound is established and no longer
   than 250 ms. A slower or uncertified fade snaps and records the rewrite. The
   preference is reevaluated on each description, so enabling Reduce Motion
-  mid-flight snaps spatial motion (or uses the bounded opacity response)
-  deterministically.
+  mid-flight snaps spatial and color motion (or uses the bounded opacity
+  response) deterministically.
 - Low-level retained motion remains available. It is bound to a live `Node_ID` through
   `motion_owner_begin`; the returned handle carries a process-unique runtime
   lifetime identity and runtime-local owner generation, so cross-runtime use,
   retirement, release, and identity reuse invalidate old handles.
   `motion_owner_release` cancels and removes an owner's sidecar while keeping
-  the node alive; it resets presentation to neutral translation and opacity on
-  the next composition. Commit a different resting presentation before release
-  if snapping back to neutral is not appropriate. Omitting a motion declaration
-  from a later description leaves a still-retained owner moving toward its last
+  the node alive; it resets translation and opacity and restores style-resolved
+  semantic-surface fill on the next composition. Commit a different resting
+  presentation before release if snapping back to neutral is not appropriate.
+  Omitting a motion declaration from a later description leaves a still-retained owner moving toward its last
   target; omission is not cancellation. Retiring its node removes the record.
-  `motion_opacity`
-  and `motion_translation` accept typed targets, a `Motion_Config`, an
-  explicit `Settle` / `Direct` / `Snap` mode, and an injected `Motion_Time`.
-  The first `Settle` starts from neutral presentation (opacity 1, translation
-  zero); use `Snap` for an initial state that should already be at its target.
+  `motion_opacity`, `motion_translation`, and `motion_surface_color` accept
+  typed targets, a `Motion_Config`, an explicit `Settle` / `Direct` / `Snap`
+  mode, and an injected `Motion_Time`. The first `Settle` starts opacity at 1
+  and translation at zero; color starts from the resolved semantic-surface
+  fill. Use `Snap` for an initial state that should already be at its target.
   `motion_presentation` reports target and last-presented values separately.
   Translation accumulates through painted descendants in parent-local logical
-  units; opacity multiplies through the subtree. Target layout, clips, hit
-  regions, and accessibility bounds remain unchanged in this initial policy.
-  Reveal is limited to structurally noninteractive subtrees. Visual opacity
-  does not defer semantic or accessibility exposure, so reveal must not hide
-  essential instructions or controls.
+  units; opacity multiplies through the subtree. A typed surface-color target
+  affects only the solid semantic-surface fill command owned by that node.
+  `Color` channels are normalized linear-sRGB, so RGB interpolation is
+  componentwise in linear light; straight alpha remains constant and must equal
+  the currently resolved fill alpha. RGB and alpha must remain in `[0,1]`;
+  gradients and non-surface paint are unsupported. Color motion may require
+  renderer paint/material upload work and is not a compositor-only guarantee.
+  `Motion_Interaction_Policy.Target_Static` is the explicit initial interaction
+  contract: layout, clips, hit regions, semantic/accessibility bounds, and focus
+  identity remain at their logical target geometry. Pointer-down capture stays
+  latched to that logical target, and release activation uses the ordinary
+  logical hit target. Parent-local translations are composed before the host
+  applies DPI scaling. Reparenting drops the old owner's motion sidecar so no
+  old-parent residual transfers into new local coordinates.
+  Reveal is a paint-only entrance intent, distinct from an exit/tombstone
+  lifecycle. It is limited to structurally noninteractive subtrees. Visual
+  opacity does not defer semantic or accessibility exposure, so reveal must
+  not hide essential instructions or controls; it never removes nodes or
+  defers their hit/accessibility registration.
   `motion_tick` samples the retained responses and requests a presentation-only
-  frame when visible values change. A custom host can flush that work with
-  `begin_presentation_frame` / `end_presentation_frame`; these frames do not
-  call application description, reconciliation, measurement, or layout. The
+  frame when visible values change. Motion-only frames do not invoke app
+  description, reconciliation, measurement, or layout; translation/opacity
+  composition remains retained, while color changes still update the surface
+  paint value and may require backend upload. A custom host flushes that work
+  with `begin_presentation_frame` / `end_presentation_frame`. The
   SDL host schedules one coalesced presentation deadline per native window and
   samples at a bounded display-like cadence using its monotonic nanosecond
   clock. `Application_Services.motion_clock` supplies that same clock through

@@ -2,7 +2,9 @@
 
 **Status: bounded SDL_GPU host-owned presentation proof complete on Windows.**
 
-The #204 recovery path is implemented; native failure-injection validation remains open.
+The #204 recovery path and D3D12 failure-injection validation are implemented
+in the Windows foundation workflow. Local macOS execution still requires a
+display-capable session.
 The wx/Audacity integration and native plugin-window work remain separate in
 [#196](https://github.com/Carnival-Science/Alicorn/issues/196) and
 [#121](https://github.com/Carnival-Science/Alicorn/issues/121).
@@ -62,10 +64,12 @@ The offscreen frame contract is:
    fences and waits for the oldest before accepting another encoded frame when
    the queue is full. Destroying the presenter waits for all of its submitted
    work before releasing renderer resources.
-5. If encoding fails, the host cancels its command buffer and then calls
-   `Sdl_GPU_Presenter_Cancel_Frame`. If a submit attempt fails without a clear
-   guarantee that no work was queued, it first waits for GPU idle. Pending
-   atlas/image work is retried or discarded without acknowledging the Runtime.
+5. If offscreen encoding fails, the host cancels its command buffer and then
+   calls `Sdl_GPU_Presenter_Cancel_Frame`. If an offscreen submit attempt fails
+   without a clear guarantee that no work was queued, it first waits for GPU
+   idle. Pending atlas/image work is retried or discarded without acknowledging
+   the Runtime. A successfully encoded window frame has already acquired a
+   drawable swapchain texture; it must be submitted and cannot be canceled.
 
 ### Swapchain-safe window encoding (#204)
 
@@ -81,13 +85,21 @@ texture; that remains a cancellable result because no drawable target was
 acquired. Once a non-nil swapchain texture is acquired, the only remaining GPU
 operation is `SDL_BlitGPUTexture`, whose API has no failure return. The
 presenter therefore has no false-return path after acquiring a drawable target.
-Encoding or acquisition failure can cancel the command buffer, leave the prior
-visible frame untouched, and retry without acknowledging the Runtime revision.
-The existing submission-success path still controls frame acknowledgement.
+Encoding or acquisition failure occurs before a drawable swapchain texture is
+acquired. The host can cancel the command buffer, leave the prior visible frame
+untouched, and retry without acknowledging the Runtime revision. The presenter
+records acquired-window ownership and rejects `Cancel_Frame` until a successful
+submission is accepted. The existing submission-success path still controls
+frame acknowledgement.
 
-The external fixture and compile check exercise the new call path. Native
-failure injection across renderer preparation, resize, acquisition, and retry
-has not yet been run; #204 remains open until that validation is recorded.
+The external fixture exercises the successful window path. The
+`--presentation-validation` fixture injects failures before renderer work and
+after the offscreen background clear for both offscreen and window presentation.
+It verifies that the command buffer is canceled only before swapchain
+acquisition, the Runtime revision remains pending, the prior target readback is
+unchanged, and a valid retry succeeds. It also verifies that the presenter
+rejects cancellation after successful window acquisition. This fixture runs in
+the Windows D3D12 foundation job.
 
 A caller-owned offscreen target must use the format supplied at presenter
 creation and remain alive until its submission token completes. The window path
@@ -100,8 +112,8 @@ The minimal external consumer in
 [`examples/15_host_owned_sdl_gpu/main.odin`](../../examples/15_host_owned_sdl_gpu/main.odin)
 creates its own SDL window and GPU device, authors one ordinary Runtime frame,
 encodes it through `Sdl_GPU_Presenter_Encode_Window`, submits it, then blocks in
-its own event wait.
-It does not call `Run` or the standalone application loop.
+its own event wait. It cancels the command buffer only on the pre-acquisition
+false-return path. It does not call `Run` or the standalone application loop.
 
 ## Acetate integration boundary
 

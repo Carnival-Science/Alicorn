@@ -21,9 +21,11 @@ Baseline for comparison:
   `fa10eee280c8786758e3ff0b8fdd9355e1c9447b1f0b8c72764e25ee4ebc3e22`). Export
   `ALICORN_ODIN=/absolute/fresh/odin/odin`. The Windows record uses a different
   nightly (`08539cd`); record the exact compiler version in your evidence.
-- SDL3 3.4.18, shared: `sh tools/setup_macos_sdl3.sh`. It installs under
-  `out/native-package/sdl-3.4.18/shared/prefix`; export
-  `ALICORN_SDL3_PREFIX="$PWD/out/native-package/sdl-3.4.18/shared/prefix"`.
+- SDL3 3.4.20, shared, from the checksum-pinned source. `. tools/macos_sdl.sh`
+  then `alicorn_build_pinned_macos_sdl shared "$PWD/out/native-package/sdl-3.4.20"`;
+  the prefix lands at `out/native-package/sdl-3.4.20/prefix-shared`. Export
+  `ALICORN_SDL_LINK_FLAGS="-L$PWD/out/native-package/sdl-3.4.20/prefix-shared/lib -Wl,-rpath,$PWD/out/native-package/sdl-3.4.20/prefix-shared/lib"`
+  and `DYLD_LIBRARY_PATH="$PWD/out/native-package/sdl-3.4.20/prefix-shared/lib"`.
 - wgpu-native `v29.0.1.1`: `sh tools/setup_macos_wgpu_native.sh "$("$ALICORN_ODIN" root)"`.
   It hash-verifies `wgpu-macos-aarch64-release.zip`
   (`a5797a37…3e`) and installs the static archive **and** dylib package.
@@ -51,8 +53,10 @@ From the repository root:
 ```sh
 export ALICORN_ODIN=/absolute/fresh/odin/odin
 . tools/common.sh
-sh tools/setup_macos_sdl3.sh
-export ALICORN_SDL3_PREFIX="$PWD/out/native-package/sdl-3.4.18/shared/prefix"
+. tools/macos_sdl.sh
+alicorn_build_pinned_macos_sdl shared "$PWD/out/native-package/sdl-3.4.20"
+export ALICORN_SDL_LINK_FLAGS="-L$PWD/out/native-package/sdl-3.4.20/prefix-shared/lib -Wl,-rpath,$PWD/out/native-package/sdl-3.4.20/prefix-shared/lib"
+export DYLD_LIBRARY_PATH="$PWD/out/native-package/sdl-3.4.20/prefix-shared/lib"
 sh tools/setup_macos_wgpu_native.sh "$("$ALICORN_ODIN" root)"
 
 sh examples/15_webgpu_feasibility/build.sh --odin "$ALICORN_ODIN"

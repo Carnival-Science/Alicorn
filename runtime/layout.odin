@@ -856,9 +856,36 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 			}
 		}
 	}
-	if count == 0 { return }
 	if inner.w < 0 { inner.w = 0 }
 	if inner.h < 0 { inner.h = 0 }
+	// Explicitly positioned children do not consume flow space or contribute to
+	// the owner's fit-content measurement. Partition once so the ordinary flow
+	// path below sees only participating children; positioned placement then
+	// reuses the same measure/finalize/semantic contract after the flow settles.
+	positioned_children: []Node_ID
+	has_positioned := false
+	if layout_parent_supports_positioned_children(parent) && parent_has_positioned_children(rt, children) {
+		flow := make([dynamic]Node_ID, 0, count, allocator=rt.scratch_allocator)
+		positioned := make([dynamic]Node_ID, 0, count, allocator=rt.scratch_allocator)
+		defer delete(flow)
+		defer delete(positioned)
+		for id in children {
+			child := rt.nodes[id]
+			if child != nil && child.placement.valid {
+				append(&positioned, id)
+			} else {
+				append(&flow, id)
+			}
+		}
+		children = flow[:]
+		positioned_children = positioned[:]
+		count = len(children)
+		has_positioned = len(positioned_children) > 0
+	}
+	if count == 0 {
+		if has_positioned { layout_positioned_children(rt, parent, inner, positioned_children) }
+		return
+	}
 	if parent.kind == .Context_Menu_Overlay {
 		context_menu_layout_children(rt, parent, children[:])
 		return
@@ -1036,6 +1063,9 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 		main_offset_units += main_units + gap_units + layout_distribution_gap(Layout_Unit(free_units), count, index, distribution)
 	}
 	delete(main_sizes, rt.scratch_allocator)
+	if has_positioned {
+		layout_positioned_children(rt, parent, inner, positioned_children)
+	}
 }
 
 layout_tree :: proc(rt: ^Runtime) {

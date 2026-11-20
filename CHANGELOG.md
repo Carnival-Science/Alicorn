@@ -6,8 +6,22 @@ changelogs.
 
 ## [Unreleased]
 
+### Changed
+
+- Updated Alicorn's pinned native SDL version to 3.4.20 across macOS builds,
+  Windows static-link preparation, runtime validation, and package provenance.
+
 ### Added
 
+- Added an opt-in WebGPU presentation and renderer path for native SDL3 hosts
+  and browser (Chromium-family) targets. It is selected by build defines
+  (`WGPU_SHARED`, `ALICORN_HOST_WEBGPU`) and remains experimental; the SDL_GPU
+  renderer remains the default and complete production path. See
+  [the migration plan](docs/webgpu-migration.md).
+- Added typed retained color motion for solid semantic-surface fills. The
+  response interpolates Alicorn's linear-sRGB channels with constant straight
+  alpha, keeps target hit/accessibility geometry static, and snaps on reparent
+  or when its semantic-surface fill binding is removed.
 - Added `Sdl_GPU_Presenter_Encode_Window`, which prepares a frame in an owned
   offscreen target before acquiring the swapchain and only blits after
   acquisition. Encoding failures remain cancellable, and successful submission
@@ -25,6 +39,25 @@ changelogs.
 - Added opt-in horizontal and vertical two-stop gradients to semantic surfaces.
   Stops resolve through ordinary core or namespaced theme color roles, share the
   existing surface vertex-color path, and preserve the solid-fill fast path.
+
+### Validation
+
+- Added explicit analytic-motion coverage for 30/60/144 Hz sampling, a missed
+  200 ms interval, and 1,000 unchanged-target assignments. The reference now
+  documents the response equation, retarget and settlement contracts, numeric
+  precision expectations, and unsupported spring variants. See
+  [issue #137 research](docs/research/issue-137-analytic-residual-motion.md).
+- Added a `Hosted_Runtime` conformance fixture for two independent presentation
+  targets. It covers output-local description changes, shared resize, failed
+  submission, visibility, stale acknowledgements, target removal/recreation,
+  and idle behavior. See
+  [issue #205 research](docs/research/issue-205-multisurface-presentation.md).
+- Added dense point-marker GPU readback and cost fixtures for 1,280px and
+  1,920px sample views. The readback uses an analytic ellipse oracle and checks
+  overlap, clipping, and fractional DPI on Metal and D3D12. Corrected wxRect
+  center alignment passed all hosted readback cases; native pixel parity and
+  isolated GPU execution timing remain open acceptance checks. See
+  [issue #201 research](docs/research/issue-201-dense-retained-markers.md).
 
 ## [0.2.1] — 2026-11-10
 

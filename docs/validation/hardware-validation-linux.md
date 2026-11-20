@@ -26,9 +26,9 @@ Baseline:
     Export `ALICORN_ODIN=/absolute/fresh/odin/odin`.
   - wgpu-native: `sh tools/setup_linux_wgpu_native.sh "$("$ALICORN_ODIN" root)"`
     hash-verifies `wgpu-linux-x86_64-release.zip` (`95a4d90c…ec5a`).
-  - SDL3: distro package (`libsdl3-dev`, 3.2+) or a shared build of 3.4.18. If
-    you build your own, export `ALICORN_SDL3_PREFIX`; `tools/common.sh` adds the
-    `-L`/`rpath` flags.
+  - SDL3: distro package (`libsdl3-dev`) or a shared build of 3.4.20. If you
+    build your own, export `ALICORN_SDL_LINK_FLAGS` with the `-L`/`rpath` flags;
+    `tools/common.sh` appends them to every native link.
   - `lld`/`wasm-ld` only for the optional browser target.
 - For the native UI binary, AccessKit's Linux release is resolved by
   `tools/common.sh` (`alicorn_accesskit_linker_flags`).
@@ -50,7 +50,8 @@ alicorn_odin_with_linker_flags "$ALICORN_ODIN" \
 ```
 
 The native UI path needs the shared wgpu-native library; `tools/common.sh` adds
-`-define:WGPU_SHARED=true` automatically on POSIX when it is not already set.
+`-define:WGPU_SHARED=true` automatically on macOS (Darwin) when it is not
+already set. On Linux pass it explicitly, as above.
 
 ## Wayland session (required)
 

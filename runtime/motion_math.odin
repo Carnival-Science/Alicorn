@@ -34,13 +34,16 @@ Motion_Intent :: enum { Settle, Direct, Snap, Reveal }
 Motion_Reduced_Motion_Policy :: enum { Snap, Opacity_Fade }
 
 // Motion_Theme_Policy stores property-specific tolerances in the units of the
-// animated property: logical units for translation and [0,1] for opacity.
+// animated property: logical units, normalized opacity, and linear-sRGB values.
 // A zero/undefined policy on an older custom theme resolves to the library
-// default, so existing themes gain no implicit motion behavior.
+// default. Newly added per-property fields may also be omitted by old themes.
 Motion_Theme_Policy :: struct {
 	defined: bool,
 	translation: Motion_Config,
 	opacity: Motion_Config,
+	// Semantic-surface fill colors use linear-sRGB Color values; straight alpha
+	// is kept constant during the response.
+	surface_color: Motion_Config,
 	reduced_motion: Motion_Reduced_Motion_Policy,
 	reduced_opacity: Motion_Config,
 }
@@ -49,6 +52,7 @@ DEFAULT_MOTION_THEME_POLICY :: Motion_Theme_Policy{
 	defined=true,
 	translation=Motion_Config{omega=18, position_tolerance=0.1, velocity_tolerance=0.5},
 	opacity=Motion_Config{omega=18, position_tolerance=0.001, velocity_tolerance=0.01},
+	surface_color=Motion_Config{omega=18, position_tolerance=0.001, velocity_tolerance=0.01},
 	reduced_motion=.Snap,
 	reduced_opacity=Motion_Config{omega=18, position_tolerance=0.001, velocity_tolerance=0.01},
 }
@@ -111,14 +115,41 @@ Motion_Clip_Policy :: enum u8 {
 	Follow_Visual,
 }
 
+// Motion_Interaction_Policy makes the initial hit/accessibility contract
+// explicit. Presentation transforms never alter logical input or semantic
+// bounds; pointer-down capture remains attached to the logical target.
+Motion_Interaction_Policy :: enum u8 {
+	Target_Static,
+}
+
 // Motion_Target declares only the properties the caller wants to animate.
 // It intentionally contains values rather than a retained owner/handle.
 Motion_Target :: struct {
 	translation: Motion_Vector2,
 	opacity: f64,
+	surface_color: Color,
 	clip_policy: Motion_Clip_Policy,
+	interaction_policy: Motion_Interaction_Policy,
 	has_translation: bool,
 	has_opacity: bool,
+	has_surface_color: bool,
+}
+
+// Surface color motion is limited to solid semantic-surface fills. Channels
+// use Alicorn's normalized linear-sRGB representation and componentwise
+// interpolation; straight alpha remains constant for the entire response.
+Motion_Color_Response :: struct {
+	r, g, b: Motion_Scalar_Response,
+}
+
+Motion_Color_Sample :: struct {
+	value: Color,
+	raw: [3]f64,
+	velocity: [3]f64,
+	active: bool,
+	settled: bool,
+	deadline_established: bool,
+	status: Motion_Status,
 }
 
 // The two components share the same config, mode, and timestamps. They keep
@@ -149,14 +180,28 @@ motion_config_valid :: proc(config: Motion_Config) -> bool {
 		number_is_finite(config.velocity_tolerance) && config.velocity_tolerance > 0
 }
 
+motion_config_is_unset :: proc(config: Motion_Config) -> bool {
+	return config.omega == 0 && config.position_tolerance == 0 && config.velocity_tolerance == 0
+}
+
 motion_theme_policy_valid :: proc(policy: Motion_Theme_Policy) -> bool {
 	if !policy.defined { return true }
 	if (policy.reduced_motion != .Snap && policy.reduced_motion != .Opacity_Fade) ||
 		!motion_config_valid(policy.translation) || !motion_config_valid(policy.opacity) ||
+		(!motion_config_is_unset(policy.surface_color) && !motion_config_valid(policy.surface_color)) ||
 		!motion_config_valid(policy.reduced_opacity) {
 		return false
 	}
 	return true
+}
+
+motion_theme_policy_with_defaults :: proc(policy: Motion_Theme_Policy) -> Motion_Theme_Policy {
+	if !policy.defined { return DEFAULT_MOTION_THEME_POLICY }
+	resolved := policy
+	if motion_config_is_unset(resolved.surface_color) {
+		resolved.surface_color = DEFAULT_MOTION_THEME_POLICY.surface_color
+	}
+	return resolved
 }
 
 // motion_log_sum_positive returns log(exp(log_a)+exp(log_b)) without forming

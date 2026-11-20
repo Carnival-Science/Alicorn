@@ -98,12 +98,7 @@ jobs:
           path: .deps/accesskit
           key: accesskit-c-0.23.1-${{ runner.os }}-${{ runner.arch }}
       - name: Install packaging tools
-        shell: bash
-        run: |
-          brew install cmake pkgconf
-          sdl_prefix="$RUNNER_TEMP/alicorn-sdl3"
-          sh tools/setup_macos_sdl3.sh "$sdl_prefix"
-          echo "ALICORN_SDL3_PREFIX=$sdl_prefix/prefix" >> "$GITHUB_ENV"
+        run: brew install cmake pkgconf
       - name: Build and smoke-test static SDL package
         shell: bash
         run: bash tools/build_native_release.sh --odin "$(command -v odin)" --sdl-linkage static --output out/native-package/macos-static

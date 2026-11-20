@@ -88,13 +88,11 @@ alicorn_odin_with_linker_flags() {
 			fi
 		fi
 	fi
-	if [ -n "${ALICORN_SDL3_PREFIX:-}" ] &&
-	   [ -z "${ALICORN_SKIP_SDL3_PREFIX_LINKER_FLAGS:-}" ]; then
-		alicorn_sdl3_linker_flags="-L$ALICORN_SDL3_PREFIX/lib -Wl,-rpath,$ALICORN_SDL3_PREFIX/lib"
+	if [ -n "${ALICORN_SDL_LINK_FLAGS:-}" ]; then
 		if [ -n "$alicorn_linker_flags" ]; then
-			alicorn_linker_flags="$alicorn_linker_flags $alicorn_sdl3_linker_flags"
+			alicorn_linker_flags="$alicorn_linker_flags $ALICORN_SDL_LINK_FLAGS"
 		else
-			alicorn_linker_flags=$alicorn_sdl3_linker_flags
+			alicorn_linker_flags=$ALICORN_SDL_LINK_FLAGS
 		fi
 	fi
 	alicorn_binding_root=$(alicorn_accesskit_binding_root) || return $?
