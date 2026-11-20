@@ -4,6 +4,7 @@ import "core:fmt"
 import "core:os"
 import alicorn "alicorn:runtime"
 import ui "alicorn:ui"
+import webgpu "alicorn:ui/webgpu"
 
 Child_App :: struct {
 	windows: ui.UI_Window_Service,
@@ -149,7 +150,7 @@ main :: proc() {
 		ui.run(&app, render, title="Alicorn · Native Renderer Probe", on_start=start, on_wake=wake,
 			on_stop=stop, smoke=smoke, on_services=services)
 	} else {
-		ui.run_webgpu(&app, render, title="Alicorn · Native Renderer Probe", on_start=start, on_wake=wake,
+		webgpu.run(&app, render, title="Alicorn · Native Renderer Probe", on_start=start, on_wake=wake,
 			on_stop=stop, smoke=smoke, on_services=services)
 	}
 }

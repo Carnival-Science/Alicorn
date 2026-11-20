@@ -4,7 +4,7 @@ import "core:c"
 import "core:strings"
 import alicorn "../../runtime"
 import "vendor:sdl3"
-import sdl_host "alicorn:host/sdl3"
+import sdl_host "alicorn:host/sdl3/input"
 
 Native_Text_Input_State :: struct {
 	active: bool,

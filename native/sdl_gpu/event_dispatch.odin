@@ -3,7 +3,7 @@ package alicorn_sdl_gpu
 import "core:fmt"
 import alicorn "../../runtime"
 import "vendor:sdl3"
-import sdl_host "alicorn:host/sdl3"
+import sdl_host "alicorn:host/sdl3/input"
 
 native_scroll_event_from_sdl :: proc(wheel: sdl3.MouseWheelEvent, modifiers: alicorn.Input_Modifiers) -> alicorn.Scroll_Event {
 	return sdl_host.scroll_event_from_sdl(wheel, modifiers)

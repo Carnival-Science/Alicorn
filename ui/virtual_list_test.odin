@@ -30,7 +30,7 @@ test_scoped_virtual_list_bounds_realization_and_preserves_fractional_scrolling :
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 240, 160})
 	defer alicorn.destroy_runtime(&rt)
 	app := UI_List_Test_App{count=10_000}
-	state := Run_State(UI_List_Test_App){app=&app, render=ui_list_test_render}
+	state := Hosted_Run_State(UI_List_Test_App){app=&app, render=ui_list_test_render}
 	application := run_application(&state, "List", 240, 160)
 	root := application.build(application.state, &rt, 240, 160, 1)
 	testing.expect(t, root != 0 && app.first == 0 && app.last == 6 && len(rt.nodes) < 20 && !rt.hard_error,

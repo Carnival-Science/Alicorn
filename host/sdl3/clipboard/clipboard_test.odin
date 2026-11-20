@@ -1,6 +1,6 @@
 #+build !js
 
-package sdl3_host
+package sdl3_clipboard
 
 import "core:mem"
 import "core:strings"

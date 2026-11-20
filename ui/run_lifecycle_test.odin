@@ -11,6 +11,7 @@ import "core:testing"
 import alicorn "alicorn:runtime"
 import host "alicorn:native/sdl_gpu"
 import clipboard "alicorn:host/clipboard"
+import sdl3_clipboard "alicorn:host/sdl3/clipboard"
 
 Run_Wake_Test_Queue :: struct {
 	available: sync.Sema,
@@ -149,7 +150,7 @@ test_typed_wake_adopts_result_with_explicit_invalidation_and_returns_to_idle :: 
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 240, 120})
 	defer alicorn.destroy_runtime(&rt)
 	app := Run_Lifecycle_Test_App{}
-	state := Run_State(Run_Lifecycle_Test_App){app=&app, render=run_lifecycle_test_render,
+	state := Hosted_Run_State(Run_Lifecycle_Test_App){app=&app, render=run_lifecycle_test_render,
 		on_initialize=run_lifecycle_test_initialize,
 		on_start=run_lifecycle_test_start, on_wake=run_lifecycle_test_wake, on_stop=run_lifecycle_test_stop}
 	application := run_application(&state, "Async test", 240, 120)
@@ -191,7 +192,7 @@ test_typed_wake_adopts_result_with_explicit_invalidation_and_returns_to_idle :: 
 @(test)
 test_typed_stop_joins_a_worker_that_wakes_during_shutdown :: proc(t: ^testing.T) {
 	app := Run_Lifecycle_Test_App{}
-	state := Run_State(Run_Lifecycle_Test_App){app=&app, render=run_lifecycle_test_render,
+	state := Hosted_Run_State(Run_Lifecycle_Test_App){app=&app, render=run_lifecycle_test_render,
 		on_start=run_lifecycle_test_start, on_stop=run_lifecycle_test_stop}
 	application := run_application(&state, "Shutdown test", 240, 120)
 	queue := Run_Wake_Test_Queue{live=true}
@@ -205,7 +206,7 @@ test_typed_stop_joins_a_worker_that_wakes_during_shutdown :: proc(t: ^testing.T)
 @(test)
 test_runner_keeps_optional_hooks_absent_and_preserves_simple_app_policy :: proc(t: ^testing.T) {
 	app := Run_Lifecycle_Test_App{}
-	state := Run_State(Run_Lifecycle_Test_App){app=&app, render=run_lifecycle_test_render}
+	state := Hosted_Run_State(Run_Lifecycle_Test_App){app=&app, render=run_lifecycle_test_render}
 	application := run_application(&state, "Simple test", 240, 120)
 	testing.expect(t, application.on_initialize == nil && application.on_start == nil && application.on_wake == nil && application.on_stop == nil && application.on_tick == nil && application.on_text_key == nil &&
 		application.interaction_update_policy == .Correct_After_Interaction,
@@ -217,7 +218,7 @@ test_runner_keeps_optional_hooks_absent_and_preserves_simple_app_policy :: proc(
 @(test)
 test_native_ui_run_forwards_application_owned_text_keys :: proc(t: ^testing.T) {
 	app := Run_Lifecycle_Test_App{}
-	state := Run_State(Run_Lifecycle_Test_App){app=&app, render=run_lifecycle_test_render,
+	state := Hosted_Run_State(Run_Lifecycle_Test_App){app=&app, render=run_lifecycle_test_render,
 		on_text_key=run_lifecycle_test_text_key}
 	application := run_application(&state, "Editor test", 240, 120)
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 240, 120})
@@ -233,12 +234,12 @@ test_native_ui_run_forwards_application_owned_text_keys :: proc(t: ^testing.T) {
 test_native_ui_run_injects_sdl3_clipboard_service_before_use :: proc(t: ^testing.T) {
 	app := Run_Lifecycle_Test_App{}
 	backend := Run_Clipboard_Integration_Backend{text="copied from SDL3"}
-	sdl3_clipboard: Run_SDL3_Clipboard_Backend
-	state := Run_State(Run_Lifecycle_Test_App){
+	clipboard_backend: sdl3_clipboard.UI_Clipboard_Backend
+	state := Hosted_Run_State(Run_Lifecycle_Test_App){
 		app=&app,
 		render=run_lifecycle_test_render,
 		on_services=run_lifecycle_test_services,
-		host_services=UI_Host_Services{clipboard=run_sdl3_clipboard_service(&sdl3_clipboard)},
+		host_services=UI_Host_Services{clipboard=sdl3_clipboard.UI_Clipboard_Service(&clipboard_backend)},
 	}
 	application := run_application(&state, "Clipboard service test", 240, 120)
 	native_services := host.Application_Services{

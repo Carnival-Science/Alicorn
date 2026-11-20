@@ -2,11 +2,12 @@ package ui
 
 import alicorn "alicorn:runtime"
 
-// Run_State contains the application description shared by platform hosts.
-// Keeping this independent of native/sdl_gpu lets compile-time host adapters
-// reuse the exact same root and overlay composition.
-@(private)
-Run_State :: struct($T: typeid) {
+// Hosted_Run_State contains the application description shared by platform
+// hosts. Keeping this independent of native/sdl_gpu lets compile-time host
+// adapters reuse the exact same root and overlay composition. Opt-in host
+// packages such as alicorn:ui/webgpu construct this value directly so the
+// default SDL_GPU path never imports their WebGPU code.
+Hosted_Run_State :: struct($T: typeid) {
 	app: ^T,
 	render: proc(^T, ^UI),
 	render_overlays: proc(^T, ^UI),
@@ -24,7 +25,7 @@ Run_State :: struct($T: typeid) {
 }
 
 @(private)
-run_describe :: proc(state: ^Run_State($T), ctx: ^UI) -> alicorn.Node_ID {
+run_describe :: proc(state: ^Hosted_Run_State($T), ctx: ^UI) -> alicorn.Node_ID {
 	root := alicorn.container_begin(
 		ctx,
 		.Root,
@@ -40,7 +41,7 @@ run_describe :: proc(state: ^Run_State($T), ctx: ^UI) -> alicorn.Node_ID {
 }
 
 @(private)
-run_application_key :: proc(state: ^Run_State($T), rt: ^alicorn.Runtime, key: alicorn.Application_Key) -> bool {
+run_application_key :: proc(state: ^Hosted_Run_State($T), rt: ^alicorn.Runtime, key: alicorn.Application_Key) -> bool {
 	return state != nil && state.on_key != nil && state.on_key(state.app, rt, key)
 }
 
@@ -59,11 +60,13 @@ run_hosted_unused_post_wake :: proc(_data: rawptr) -> bool {
 
 // run_hosted_config adapts the target-neutral ui.run description and lifecycle
 // hooks to an embedding host's Hosted_Runtime. The caller owns both the config
-// inputs and Run_State lifetime; Run_State must remain valid until
-// hosted_runtime_destroy returns. A host maps only its application-level keys
-// into Application_Key ordinals before calling hosted_runtime_key.
+// inputs and Hosted_Run_State lifetime; Hosted_Run_State must remain valid until
+// hosted_runtime_destroy returns. A host that translates an event into
+// Alicorn's key vocabulary calls hosted_runtime_application_key; this adapter
+// then receives the opaque Hosted_Key_Event and converts the built-in host's
+// ordinal key_code for the ui.run on_key callback.
 run_hosted_config :: proc(
-	run_state: ^Run_State($T),
+	run_state: ^Hosted_Run_State($T),
 	logical_width, logical_height, pixel_width, pixel_height: int,
 	dpi_scale: f32,
 	post_wake_data: rawptr,
@@ -73,19 +76,19 @@ run_hosted_config :: proc(
 	if run_state == nil || run_state.render == nil || post_wake == nil { return {} }
 
 	describe :: proc(data: rawptr, ctx: ^alicorn.UI, _width, _height: int, _dpi: f32) {
-		state := cast(^Run_State(T))data
+		state := cast(^Hosted_Run_State(T))data
 		state.render(state.app, ctx)
 	}
 	describe_overlays :: proc(data: rawptr, ctx: ^alicorn.UI, _width, _height: int, _dpi: f32) {
-		state := cast(^Run_State(T))data
+		state := cast(^Hosted_Run_State(T))data
 		if state.render_overlays != nil { state.render_overlays(state.app, ctx) }
 	}
 	initialize :: proc(data: rawptr, rt: ^alicorn.Runtime) {
-		state := cast(^Run_State(T))data
+		state := cast(^Hosted_Run_State(T))data
 		if state.on_initialize != nil { state.on_initialize(state.app, rt) }
 	}
 	start :: proc(data: rawptr, waker: alicorn.Hosted_Waker) {
-		state := cast(^Run_State(T))data
+		state := cast(^Hosted_Run_State(T))data
 		state.hosted_waker = waker
 		if state.on_services != nil { state.on_services(state.app, state.host_services) }
 		if state.on_start != nil {
@@ -93,19 +96,22 @@ run_hosted_config :: proc(
 		}
 	}
 	wake :: proc(data: rawptr, rt: ^alicorn.Runtime) {
-		state := cast(^Run_State(T))data
+		state := cast(^Hosted_Run_State(T))data
 		if state.on_wake != nil { state.on_wake(state.app, Application_Context(rt)) }
 	}
 	stop :: proc(data: rawptr) {
-		state := cast(^Run_State(T))data
+		state := cast(^Hosted_Run_State(T))data
 		if state.on_stop != nil { state.on_stop(state.app) }
 	}
 	key :: proc(data: rawptr, rt: ^alicorn.Runtime, _owner: Node_ID, event: alicorn.Hosted_Key_Event) -> bool {
+		// The built-in native host maps each Application_Key to its ordinal
+		// before the typed hosted_runtime_application_key call. External hosts
+		// keep key_code opaque and dispatch it through their own on_key policy.
 		if !event.pressed || event.key_code > u32(alicorn.Application_Key.Return) { return false }
-		return run_application_key(cast(^Run_State(T))data, rt, alicorn.Application_Key(event.key_code))
+		return run_application_key(cast(^Hosted_Run_State(T))data, rt, alicorn.Application_Key(event.key_code))
 	}
 	text_change :: proc(data: rawptr, rt: ^alicorn.Runtime, change: alicorn.Text_Change) {
-		state := cast(^Run_State(T))data
+		state := cast(^Hosted_Run_State(T))data
 		if state.on_text_change != nil { state.on_text_change(state.app, rt, change) }
 	}
 	text_key :: proc(
@@ -114,15 +120,15 @@ run_hosted_config :: proc(
 		owner: alicorn.Node_ID,
 		event: alicorn.Application_Text_Key_Event,
 	) -> bool {
-		state := cast(^Run_State(T))data
+		state := cast(^Hosted_Run_State(T))data
 		return state.on_text_key != nil && state.on_text_key(state.app, rt, owner, event)
 	}
 	pointer :: proc(data: rawptr, rt: ^alicorn.Runtime, event: alicorn.Pointer_Event, target: Node_ID) {
-		state := cast(^Run_State(T))data
+		state := cast(^Hosted_Run_State(T))data
 		if state.on_pointer != nil { state.on_pointer(state.app, rt, event, target) }
 	}
 	host_services :: proc(data: rawptr, services: alicorn.Hosted_Host_Services) {
-		state := cast(^Run_State(T))data
+		state := cast(^Hosted_Run_State(T))data
 		state.host_services.windows = services.windows
 	}
 

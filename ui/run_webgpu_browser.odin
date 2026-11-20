@@ -48,9 +48,9 @@ run :: proc(
 		panic("ui.run requires one live application, a valid state pointer, and a render callback")
 	}
 	js.set_document_title(title)
-	run_state := new(Run_State(T), allocator=context.allocator)
+	run_state := new(Hosted_Run_State(T), allocator=context.allocator)
 	if run_state == nil { panic("ui.run could not allocate persistent browser callback state") }
-	run_state^ = Run_State(T){
+	run_state^ = Hosted_Run_State(T){
 		app=state,
 		render=render,
 		render_overlays=render_overlays,
@@ -75,7 +75,7 @@ run :: proc(
 		run_hosted_unused_post_wake,
 	)
 	initialize :: proc(data: rawptr, rt: ^alicorn.Runtime) {
-		app := cast(^Run_State(T))data
+		app := cast(^Hosted_Run_State(T))data
 		if app.on_initialize != nil { app.on_initialize(app.app, rt) }
 		if !alicorn.text_engine_load_default_fonts(rt) {
 			panic("Alicorn's bundled UI fonts could not be initialized in the browser")

@@ -184,7 +184,7 @@ test_typed_runner_closes_main_root_before_describing_modal_overlay :: proc(t: ^t
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 240, 140})
 	defer alicorn.destroy_runtime(&rt)
 	app := Run_Overlay_Test_App{}
-	run_state := Run_State(Run_Overlay_Test_App){
+	run_state := Hosted_Run_State(Run_Overlay_Test_App){
 		app=&app,
 		render=run_overlay_test_render,
 		render_overlays=run_overlay_test_overlays,
@@ -223,7 +223,7 @@ test_typed_runner_keeps_keyed_identity_and_warm_description_allocations_stable :
 	defer alicorn.destroy_runtime(&direct_rt)
 	app := Run_Identity_Test_App{}
 	direct_app := Run_Identity_Test_App{}
-	run_state := Run_State(Run_Identity_Test_App){app=&app, render=run_identity_test_render}
+	run_state := Hosted_Run_State(Run_Identity_Test_App){app=&app, render=run_identity_test_render}
 	ctx, should_build := alicorn.begin_frame(&rt)
 	if !should_build { testing.expect(t, false, "identity fixture should describe its first frame"); return }
 	root := run_describe(&run_state, &ctx)

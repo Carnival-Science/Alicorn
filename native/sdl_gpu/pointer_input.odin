@@ -2,7 +2,7 @@ package alicorn_sdl_gpu
 
 import alicorn "../../runtime"
 import "vendor:sdl3"
-import sdl_host "alicorn:host/sdl3"
+import sdl_host "alicorn:host/sdl3/input"
 
 // native_route_focused_control_key is kept separate from the event loop so the
 // platform key convention for retained controls can be verified headlessly.

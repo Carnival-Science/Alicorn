@@ -1,6 +1,6 @@
 #+build !js
 
-package sdl3_host
+package sdl3_input
 
 import alicorn "alicorn:runtime"
 import "vendor:sdl3"

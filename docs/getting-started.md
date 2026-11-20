@@ -36,6 +36,28 @@ installation. The native AccessKit adapter is currently Windows/macOS only.
 See [dependency and external consumer usage](../dependencies/README.md) for
 manual builds.
 
+### Native WebGPU builds are opt-in and need wgpu-native
+
+The default `ui.run` path, examples 01–14, and the headless checks render with
+SDL_GPU and do **not** need wgpu-native. The opt-in native WebGPU entry lives in
+`alicorn:ui/webgpu`; the WebGPU examples (`15_webgpu_feasibility`,
+`16_native_webgpu_ui`) require the pinned wgpu-native `v29.0.1.1` library that
+matches Odin's `vendor:wgpu` bindings. Install it into the Odin distribution:
+
+- **Windows:** the official Odin Windows archive already contains
+  `vendor/wgpu/lib/wgpu-windows-x86_64-msvc-release/`.
+- **Linux x86_64:** run
+  `sh tools/setup_linux_wgpu_native.sh "$(odin root)"` (or pass the absolute
+  Odin root).
+- **macOS arm64:** run
+  `sh tools/setup_macos_wgpu_native.sh "$(odin root)"`.
+
+If the library is missing, compiling a WebGPU consumer fails with a
+`Could not find the compiled WGPU Native library` panic. SDL_GPU consumers are
+unaffected. See
+[dependencies/webgpu-toolchain.md](../dependencies/webgpu-toolchain.md) for the
+pin and hashes.
+
 Put the directory containing `odin` on `PATH`. In a new terminal, verify it:
 
 ```text

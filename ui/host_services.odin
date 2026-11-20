@@ -4,8 +4,8 @@ import clipboard "alicorn:host/clipboard"
 import alicorn "alicorn:runtime"
 
 // UI_Host_Services contains capabilities supplied by the selected platform
-// host. Unsupported services are nil. Native ui.run_webgpu currently provides
-// one secondary window; browser UI currently has no window service.
+// host. Unsupported services are nil. Native alicorn:ui/webgpu currently
+// provides one secondary window; browser UI currently has no window service.
 UI_Host_Services :: struct {
 	clipboard: clipboard.Clipboard_Service,
 	windows: alicorn.Hosted_Window_Service,
