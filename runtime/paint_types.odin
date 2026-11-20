@@ -87,6 +87,7 @@ Icon_ID :: enum {
 	Search,
 	Settings,
 	Terminal,
+	More_Horizontal,
 	Count,
 }
 

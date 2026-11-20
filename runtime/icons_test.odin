@@ -99,3 +99,35 @@ test_icon_tint_change_preserves_measurement_layout_and_mask_identity :: proc(t: 
 	testing.expect(t, rt.stats.measure_requests == measures && rt.stats.layout_nodes_visited == layouts,
 		"an icon tint change should perform no measurement or layout work")
 }
+
+// The Pinned "more actions" control used U+22EF HORIZONTAL MIDLINE ELLIPSIS,
+// which the bundled faces do not cover. The semantic replacement is the
+// font-independent More_Horizontal icon. This pins the control shape a consumer
+// can adopt without depending on any system fallback face.
+@(test)
+test_more_horizontal_icon_button_needs_no_text_glyph :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 120, 60})
+	defer destroy_runtime(&rt)
+	ui, build := begin_frame(&rt)
+	if !build { testing.expect(t, false, "more-actions fixture should begin a frame"); return }
+	container_begin_simple(&ui, .Root, label="more-root", key=key_string("more-root"), style=layout_style(.Row, width=64, height=40))
+	_, _ = icon_button(&ui, "More actions", .More_Horizontal, key=key_string("pinned-more"), style=layout_style(.Row, width=32, height=32))
+	container_end(&ui)
+	end_frame(&ui)
+	found := false
+	for _, &node in rt.nodes {
+		if node.icon_id != .More_Horizontal { continue }
+		found = true
+		icon_paint, text_paint := false, false
+		for command in node.paint {
+			if painted, ok := command.payload.(Icon_Paint); ok && painted.id == .More_Horizontal { icon_paint = true }
+			if paint_command_is_text(command) { text_paint = true }
+		}
+		semantic, semantic_found := semantic_node_lookup(&rt, semantic_visual_id(node.id))
+		testing.expect(t, icon_paint && !text_paint && node.text_run_valid == false,
+			"the more-actions control must paint a coverage mask and no text run")
+		testing.expect(t, semantic_found && semantic.role == .Button && semantic.label == "More actions",
+			"the icon-only control must still expose the explicit accessible name")
+	}
+	testing.expect(t, found, "the More_Horizontal icon button should be retained")
+}

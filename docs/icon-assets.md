@@ -1,6 +1,6 @@
 # Built-in icon assets
 
-Alicorn's 14 `Icon_ID` identities use Reicon's **filled** artwork, pinned to
+Alicorn's 15 `Icon_ID` identities use Reicon's **filled** artwork, pinned to
 `580d777a3c8d3dbcb66115eb2ef5dfab550e68b6`. `assets/icons/reicon/sources.json`
 records the upstream category/name, source-data and SVG hashes, and license.
 The vendored SVGs and complete MIT license are checked in. Application package
@@ -31,14 +31,14 @@ verifies source-data, artwork and license hashes before using them.
 
 The deterministic descending-size shelf packer uses 1024-pixel-wide pages and
 two transparent pixels around each icon. The current two R8 pages total
-**1,572,864 bytes**. Row pitches are multiples of 256 bytes and staging offsets
+**1,835,008 bytes**. Row pitches are multiples of 256 bytes and staging offsets
 are multiples of 512 bytes. The generated manifest records packing version,
 dimensions, provenance and page SHA-256 checksums.
 
 The contact sheet's columns follow `Icon_ID`: Check, Chevron Down, Chevron
 Right, Close, Minus, Radio Selected, Warning, Info, Folder Closed, Folder Open,
-File, Search, Settings, Terminal. Rows show 12, 16, 20, 24 and 32 physical
-pixels, each against dark and light surfaces.
+File, Search, Settings, Terminal, More Horizontal. Rows show 12, 16, 20, 24 and
+32 physical pixels, each against dark and light surfaces.
 
 ![Generated filled icon contact sheet](../assets/icons/generated/contact_sheet.png)
 

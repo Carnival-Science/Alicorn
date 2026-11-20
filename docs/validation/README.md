@@ -7,6 +7,10 @@ the current project status.
 
 ## Current acceptance and platform limits
 
+- [Hosted font parity and the Pinned U+22EF control (2026-11-20)](issue-211-hosted-font-parity-ellipsis-windows-2026-11-20.md)
+  – shared desktop font seeding across the SDL_GPU reference and hosted WebGPU,
+  the per-run face/glyph diagnostics, the semantic `More_Horizontal` icon
+  provision, and the byte-identical post-fix Scratchpad pinned frame.
 - [WebGPU branch integration review (2026-11-19)](webgpu-integration-review-2026-11-19.md)
   — master merge resolution, every shared runtime/host/renderer/tooling change
   with a blast-radius verdict, the two `js_wasm32` regressions found and fixed,

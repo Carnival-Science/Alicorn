@@ -1328,7 +1328,10 @@ ordinary layout; the surrounding control or adjacent text remains responsible
 for its accessible name. `icon_button(ui, accessible_label, icon_id, key,
 style)` creates an icon-only button with an explicit semantic name. Available
 IDs include check, chevrons, close, minus, radio, warning, info, folder-open and
-folder-closed, file, search, settings, and terminal. Icon paint is theme tinted
+folder-closed, file, search, settings, terminal, and more-horizontal.
+`More_Horizontal` is the font-independent three-dot "more actions" affordance:
+use it instead of a text glyph such as U+22EF HORIZONTAL MIDLINE ELLIPSIS, which
+the bundled faces do not cover. Icon paint is theme tinted
 and sized at the host rendering boundary. Each integer physical size from 8
 through 64 pixels has its own offline rasterization; sizes outside that range
 resample the nearest endpoint. Atlas pages are uploaded once per device

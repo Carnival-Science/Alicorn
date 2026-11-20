@@ -4196,3 +4196,59 @@ the insertion marker remains the drop target's own paint below the copy.
   example a virtualized row that retired in the same frame) still falls back to
   the label card; with the descendant-label resolution it now shows that row's
   text instead of an empty rectangle.
+
+## Stage C slice 3: hosted font-initialization parity and the Pinned U+22EF control (2026-11-20)
+
+Real Scratchpad testing found the Pinned card's "more actions" button drawn as a
+missing-glyph box on the hosted WebGPU build. The control is a text button
+labelled U+22EF HORIZONTAL MIDLINE ELLIPSIS
+(`frontends/alicorn/pinned_surface.odin:998-1004`).
+
+What each backend actually resolved on the same restored pinned scene:
+
+| Build | Stack | U+22EF |
+| --- | --- | --- |
+| hosted before | bundled Atkinson only, 0 fallback faces | `.notdef`, primary face 1, glyph 0 |
+| SDL_GPU before | bundled + 5 DirectWrite faces + NotoSansJP-VF | face 10, glyph 17470 |
+| both after | the same shared desktop stack | face 10, glyph 17470 |
+
+The five DirectWrite startup faces do not cover U+22EF; the reference's success
+came from the optional `C:/Windows/Fonts/NotoSansJP-VF.ttf` fallback.
+`segoeui.ttf` does not cover it either, so a Windows machine without Noto Sans JP
+boxes the glyph on the reference too. This was an initialization-parity gap with
+an incidental reference-side cover, not a Runa coverage bug.
+
+Changes:
+
+- The native font seeding moved from `native/sdl_gpu/fonts*.odin` into a shared
+  `alicorn:host/fonts` package. `load_default_fonts` installs bundled defaults,
+  the bounded Windows DirectWrite startup mappings, and the optional UI and
+  monospace fallbacks. The SDL_GPU reference, `ui.run`'s native path, and the
+  hosted SDL3/WebGPU `ui/webgpu.run` all call it. `native/sdl_gpu/fonts.odin`
+  keeps aliases for the existing validation fixtures. The browser path remains
+  bundled-only (`#+build !js`) and is documented as such.
+- `runtime/inspector.odin` records `faces=[...] unresolved=...` on every text
+  run, including button labels, plus a bounded
+  `text fallback glyphs: [start,end)face=N gid=N` line. This made the actual
+  face/glyph visible in both F12 bundles and is the regression surface for
+  future fallback work.
+- Alicorn now provides the semantic alternative for the control: a 15th
+  built-in `More_Horizontal` icon (Reicon `ui/more-h`, pinned revision,
+  regenerated atlas). `icon_button(ui, "More actions", .More_Horizontal, ...)`
+  paints a tinted coverage mask with no text run and keeps the explicit
+  accessible name. The Pinned control should adopt it rather than depend on a
+  system face; the exact Scratchpad-side change is listed in the validation
+  record.
+
+Validation: the post-fix hosted frame is byte-identical to the SDL_GPU
+reference for the same pinned scene (0 of 2,914,752 channels differ). The
+pre-fix hosted frame differed in exactly the two `pinned-more` rectangles (642
+channels, 214 pixels, bbox `(1176,96)-(1193,304)`). Runtime, host/fonts, ui,
+native, and host suites pass; example 16's seven smokes exit 0 on D3D12, Vulkan,
+and SDL_GPU; Scratchpad's webgpu D3D12, webgpu Vulkan, and sdl-gpu smokes all
+report `publication_rendered`, `wake_observed`, `ordered_shutdown`, and
+`session_restore` true.
+
+Full evidence, coverage probes, the exact Scratchpad change list, and harness
+limits are in
+[`validation/issue-211-hosted-font-parity-ellipsis-windows-2026-11-20.md`](validation/issue-211-hosted-font-parity-ellipsis-windows-2026-11-20.md).

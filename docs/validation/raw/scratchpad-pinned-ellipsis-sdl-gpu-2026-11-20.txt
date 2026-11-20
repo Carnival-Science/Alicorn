@@ -1,0 +1,25 @@
+Scratchpad Pinned 'more actions' run: SDL_GPU reference, same branch
+
+Node: 2878610403890425800 parent=2424677012584049746 kind=Button source=C:/Users/saman/.codex/worktrees/scratchpad-issue211-validate/frontends/alicorn/pinned_surface.odin:999:17 component=button key="pinned-more" scope="" bounds=(1169.0,87.0 32.0x32.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Default selected=false hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label="⋯"
+  text run: valid=true bytes=3 paint-spans=0 style-spans=0 faces=[10] unresolved=false
+  text fallback glyphs: [0,3)face=10 gid=17470
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.870,0.840,0.760,0.000) text=(0.430,0.420,0.370,1.000) indicator=None/Text
+  applied transforms: | focus-mode=always
+
+Node: 4212129381012320565 parent=11296730744541350509 kind=Button source=C:/Users/saman/.codex/worktrees/scratchpad-issue211-validate/frontends/alicorn/pinned_surface.odin:999:17 component=button key="pinned-more" scope="" bounds=(1169.0,281.0 32.0x32.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Default selected=false hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label="⋯"
+  text run: valid=true bytes=3 paint-spans=0 style-spans=0 faces=[10] unresolved=false
+  text fallback glyphs: [0,3)face=10 gid=17470
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.870,0.840,0.760,0.000) text=(0.430,0.420,0.370,1.000) indicator=None/Text
+  applied transforms: | focus-mode=always
+
+text run lines=114 unresolved=true lines=0 text fallback glyphs lines=2

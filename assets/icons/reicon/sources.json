@@ -89,6 +89,12 @@
       "source": "it/terminal-square",
       "file": "terminal.svg",
       "sha256": "a569353a0a7c38eca0ddd35dd87a76b330d0e8bc18ef10ee2b9e83d2991a055b"
+    },
+    {
+      "id": "More_Horizontal",
+      "source": "ui/more-h",
+      "file": "more_horizontal.svg",
+      "sha256": "0ef47be105a614bd75420c52c80a22c81d5a687319a31a2a3c4ddde7c0a6d0a3"
     }
   ],
   "source_sha256": "3c0120e90356446fbb500a14510455747c86928d7859c1d21739df568cede57e",

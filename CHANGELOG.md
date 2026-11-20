@@ -13,6 +13,12 @@ changelogs.
 
 ### Added
 
+- Added a shared `alicorn:host/fonts` seeding facility and the 15th built-in
+  `More_Horizontal` icon. The SDL_GPU reference, `ui.run`'s native path, and
+  hosted `ui/webgpu.run` now install the same bundled and platform/DirectWrite
+  font stack, and `icon_button(ui, "More actions", .More_Horizontal, ...)`
+  provides a font-independent three-dot control. The browser path remains
+  bundled-only.
 - Added hosted close deferral, native file dialogs, native menu-command routing,
   and the full application callback surface to `Hosted_Runtime_Config`,
   `ui.run`, and `ui/webgpu.run`. The SDL3/WebGPU host now returns
@@ -47,6 +53,14 @@ changelogs.
 
 ### Fixed
 
+- Fixed hosted font-initialization parity. The hosted WebGPU path loaded only
+  the bundled default faces, while the SDL_GPU reference also seeded bounded
+  DirectWrite and optional system fallbacks. Text outside the bundled coverage
+  (for example U+22EF HORIZONTAL MIDLINE ELLIPSIS in Scratchpad's Pinned "more
+  actions" button) therefore boxed only on the hosted build. Both desktop hosts
+  now call `host/fonts.load_default_fonts`, and the inspector records each
+  text run's resolved face list, unresolved-coverage marker, and fallback glyph
+  ids. The same pinned Scratchpad frame is byte-identical on both hosts.
 - Fixed tab drag reorder previews on both hosts. A tab bar that enabled
   `drag_type` but left `Tab_Bar_Options.drag_preview_mode` at its default drew
   an empty 96x28 card while dragging, because a tab is a composed control whose
