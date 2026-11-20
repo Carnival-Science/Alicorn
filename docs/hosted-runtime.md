@@ -552,8 +552,10 @@ macOS chrome, per-window menu policy, and pointer-sample pairing are
 compile-checked but unrun on a physical Mac; Linux keeps semantic menu metadata
 only; and Snap Layouts, mixed-DPI moves, and trackpad inertia still need
 hands-on Windows records. The hosted `on_scheduled_wake` callback has no wake
-class, unlike the reference `Application_Scheduled_Wake_Proc`; a class-aware
-hosted scheduler remains a mapping gap.
+class, unlike the reference `Application_Scheduled_Wake_Proc`, and
+`Hosted_Host_Services` publishes only `windows`, `dialogs`, and `quit`; a
+hosted scheduler/motion-clock/diagnostics/file-drag service and child clipboard
+handoff remain mapping gaps for consumers that need them.
 
 The fixture is separate from plugin editor child-window attachment in
 [#121](https://github.com/Carnival-Science/Alicorn/issues/121) and renderer
