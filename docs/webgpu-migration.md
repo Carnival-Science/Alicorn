@@ -3289,8 +3289,8 @@ Validation on Windows x64 (NVIDIA RTX 2080 SUPER, D3D12, 2026-11-20):
   `16_native_webgpu_ui` ran `--smoke`, `--child-smoke`, `--menu-smoke`, and the
   new `--titlebar-smoke` to exit 0 on both `--backend=d3d12` and
   `--backend=sdl-gpu`. The titlebar smoke reported one delivered metrics
-  snapshot, declared layouts, `header_h=32`, usable span `8..575`, and a PASS on
-  both hosts.
+  snapshot, declared layouts, `header_h=32`, usable span `269..575` with visible
+  menu labels, and a PASS on both hosts.
 - `tools/validate_native_webgpu_ui.ps1 -Backend d3d12` reported
   `failures=0`, including the UIA tree, text field patterns, physical text
   input, Tab order, UIA Invoke, wake delivery, auxiliary open/resize/close, and

@@ -461,6 +461,11 @@ main :: proc() {
 		// visible, so the same policy is safe to exercise here.
 		presentation = .Hidden
 	}
+	if app.titlebar_smoke {
+		// The integrated fixture reserves measured label space and exercises the
+		// visible-label band; Scratchpad's Hidden policy is covered by tests.
+		presentation = .Labels
+	}
 	decorations := alicorn.Window_Decoration_Mode.System
 	chrome_h: f32
 	chrome_metrics: alicorn.Window_Chrome_Metrics_Proc
