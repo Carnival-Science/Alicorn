@@ -4360,3 +4360,169 @@ report `publication_rendered`, `wake_observed`, `ordered_shutdown` and
   current pass's anchor. The trace and the exact rectangle are in the record.
 - The founder's hands-on judgement of whether the measured separation is
   acceptable decides between options A-D.
+
+## Stage C slice 5: retained motion scheduling parity (2026-11-20)
+
+The founder acceptance for this slice is "no frozen animations or unnecessary
+idle rendering" on the hosted WebGPU path. The investigation compared how the
+reference `native/sdl_gpu` host schedules retained motion with what
+`runtime/hosted.odin` did, then measured both halves of the acceptance on real
+windows and in the runtime suite.
+
+### How the reference host schedules motion
+
+`native/sdl_gpu` owns one `Native_Motion_Scheduler_State` per window. Each host
+loop turn calls `native_motion_scheduler_advance`, which:
+
+1. reads `motion_activity` (active owners/properties, unestablished deadlines);
+2. calls `native_motion_scheduler_prepare`, which **consumes a due demand
+   exactly once**: the first active turn arms `now + 16.67 ms`, later turns only
+   sample when `now >= next_deadline`; a hidden/minimized/occluded window drops
+   its deadline and records a suspension, and restoring asks for one immediate
+   current-time sample;
+3. when due, calls `motion_tick(at)` once and then re-arms the deadline
+   (`native_motion_scheduler_finish_sample`), applying the bounded 5 s
+   uncertified snap;
+4. publishes the earliest deadline to the event wait (`Primary_Motion`,
+   `Child_Motion` per window).
+
+Crucially, an ordinary turn that is *not* due still updates the injected motion
+clock (`native_motion_clock_set_current_time`, before every description) but
+does not sample or request a frame. Retained-paint flushes that start a hover
+transition re-arm the first deadline with a second `prepare` pass after the
+frame. `native_application_build_until_stable` also injects the clock before
+every description.
+
+### What the hosted runtime did
+
+`hosted_runtime_advance_presentation` called `motion_tick(now)` on **every**
+step. That is correct for "the animation never freezes when the description does
+not change" - a 40-frame settle run reproduced on the hosted step - but it made
+the animation's sampling rate equal to the host's loop rate instead of the
+display cadence. A 1 ms pointer/completion-wake storm presented 200 frames in
+400 ms where the reference host presents ~24. Every one of those frames costs a
+surface acquire, encode, submit and present, which is exactly the "unnecessary
+rendering" half of the acceptance.
+
+The second half was a pre-existing hosted loop defect that the gating would have
+made much worse. `host/sdl3/run.odin` computed its wait with
+`ceil((next_wake-now)/1 ms)` and called `SDL_WaitEventTimeout` directly. SDL3's
+Windows backend truncates the *remaining* nanosecond timeout to milliseconds, so
+a remainder below 1 ms becomes a zero-millisecond OS wait and the host re-enters
+its loop. Before this slice the published deadline slid forward on every step,
+which hid the effect; with a fixed deadline the last fraction of every sampling
+interval spun. `native/sdl_gpu` already had
+`native_event_wait_windows_timeout_ms` for this reason; the hosted host did not.
+
+### Changes
+
+- `runtime/hosted.odin`: `Hosted_Runtime_State.motion_deadline_ns` is the
+  surface's retained-motion deadline.
+  - `hosted_motion_sample_due` gates sampling: no active owner clears the
+    deadline, an unarmed deadline samples (first response or restore), otherwise
+    only `now >= deadline` samples.
+  - A non-sampling step calls `motion_clock_set_time(now)` so a description in
+    that step still resolves `ui.motion` targets at the current time, without
+    sampling or requesting presentation (the reference host's pre-description
+    clock update).
+  - A sample re-arms `now + HOSTED_MOTION_SAMPLE_INTERVAL_NS` while owners remain
+    active and clears the deadline when the response settles.
+  - `hosted_motion_deadline` arms the first deadline for a response started by
+    this step's description or retained-paint flush, and
+    `hosted_runtime_next_deadline` publishes it. A hidden surface drops the
+    deadline, so restoration samples once at the current time instead of
+    replaying the gap. `hosted_runtime_live_step` shares the same deadline.
+- `host/sdl3/run.odin`: `sdl3_webgpu_run_wait_timeout_ms` adds one millisecond
+  of slack to a positive wait timeout on Windows, mirroring the reference host.
+- `benchmarks/workload_matrix/main.odin`: the fixture did not compile against
+  the current `ui.run` signature (positional `state`/`render` mixed with named
+  arguments, and `ui.run_webgpu`, which does not exist). It now calls
+  `ui.run`/`ui/webgpu.run` with named arguments. This is the harness used for the
+  real-window numbers below.
+
+### Fixtures
+
+`runtime/hosted_motion_test.odin` (six tests):
+
+- `test_hosted_motion_runs_to_settlement_without_description_changes`: one
+  description requests an opacity response; every following frame is
+  presentation-only, the cadence is re-armed from each sample's own time, the
+  response settles on its exact target, and a second of subsequent host turns
+  presents and describes nothing.
+- `test_hosted_motion_samples_on_its_cadence_not_on_host_turns`: 250 host turns
+  at 1 ms yield the display cadence (8-24 frames) and terminate; the storm
+  cannot stretch the response.
+- `test_hosted_motion_hidden_surface_drops_and_restores_its_deadline`: a hidden
+  surface publishes no frame/wake and does not advance the pose; restore samples
+  once and re-arms.
+- `test_hosted_tick_turns_do_not_present_settled_frames`: an installed `on_tick`
+  keeps its 16.67 ms turn cadence with zero presented frames and one description.
+- `test_hosted_motion_windows_schedule_independently`: two `Hosted_Runtime`
+  sessions stepped from one shared loop; an animating child presents its
+  bounded run while the settled primary presents zero frames, and vice versa.
+- `test_hosted_live_step_shares_the_motion_deadline`: modal-loop steps honour
+  the same cadence, do not dispatch ticks, and progress to settlement.
+
+### Measured results (Windows x64, RTX 2080 SUPER)
+
+Retained-motion matrix scenario (`benchmarks/workload_matrix`, one
+`ui.motion` reveal, `--frames=1 --smoke --smoke-hold-ms=1200`), hosted
+`frames_presented` from `--timings`:
+
+| Scenario | SDL_GPU reference submits | Hosted before | Hosted after |
+| --- | ---: | ---: | ---: |
+| `transform` D3D12 | 36 | 40 (steps 784) | 37 (steps 93-103) |
+| `transform` Vulkan | - | 43 (recorded) | 37 (steps 90) |
+| `multiwindow` D3D12 | 29 | 36 (steps 671) | 36 (steps 94) |
+| `multiwindow` Vulkan | - | 67 (recorded) | 35 (steps 93) |
+| `settled` D3D12 | 1 | 1 (steps 525-1138) | 1 (steps 7) |
+
+`steps` is hosted host-loop turns, not frames: after the change the loop runs
+about one turn per presented frame plus the bounded 250 ms device-loss poll, and
+the 1.2 s idle window presents nothing. The same binary with the wait slack
+disabled by environment for the A/B (probe build, not committed) reported 5256
+turns for `transform` and 642 for `settled`, isolating the quantization defect.
+
+Runtime seam, `storm-paced frames` probe before the gating: 200 frames over
+400 ms of 1 ms turns; after: 23 frames, still settling on its target.
+
+### Validation
+
+All suites pass: runtime 418 (six new hosted motion tests), host/fonts 5,
+host/sdl3 7, live_resize 9, input 8, clipboard 3, dialogs 5, host/menus 8,
+host/web 14, host/diagnostics 9, host/presentation 7, renderer/webgpu 8,
+renderer/cpu 23, ui 50, testui 13, theme 37, native/sdl_gpu 166,
+scroll_capture 6, accessibility contract 1, `odin build tests` and
+`out/alicorn_tests.exe`. `examples/16_native_webgpu_ui` passes its seven smokes
+(`--smoke`, `--workbench-smoke`, `--titlebar-smoke`, `--child-chrome-smoke`,
+`--menu-smoke`, `--services-smoke`, `--tab-drag-smoke`) on D3D12, Vulkan and
+SDL_GPU (21/21). Scratchpad (`codex/issue-211-webgpu-frontend` at `b458d6e`,
+read-only, candidate root this branch, no Scratchpad source or lock change)
+builds and passes `smoke --renderer=webgpu --backend=d3d12`, `--backend=vulkan`
+and `--renderer=sdl-gpu`. Full numbers and the before/after probe are in
+[`validation/issue-211-motion-scheduling-windows-2026-11-20.md`](validation/issue-211-motion-scheduling-windows-2026-11-20.md).
+
+### Residual work
+
+- **C4 describe-turn residual: not closed; scheduled.** The JSON-scene status
+  cue difference is not a motion-scheduling artifact. Both hosts run the same
+  three-pass startup turn and the same one-pass follow-up; the reference then
+  takes one more host turn whose description finds the caret anchor. That turn
+  is not a stabilization pass (hosted would run it inside the same step if the
+  application were still invalidated), and it cannot be synthesized by the
+  runtime without inventing a description the application did not request. The
+  traced cause is an application-state read: `editor_focus_needs_status_cue`
+  runs before the virtual list realizes the caret row, so the first pass of a
+  turn sees the previous anchor. The fix belongs either in Scratchpad (realize
+  the caret row before the status strip, or invalidate when the anchor is newly
+  resolved) or in a future host slice that identifies the remaining reference
+  turn's invalidation source (the startup pixel-resize event is the leading
+  candidate: SDL_GPU applies it after the first description, the hosted host
+  adopts the same metrics before its first step). The exact rectangle and trace
+  remain in `validation/issue-211-theme-fidelity-windows-2026-11-20.md`.
+- Hover and scroll still start style transitions from retained paint; they now
+  inherit the same deadline and settle to zero frames, but the interactive
+  hover-then-idle case is covered by the runtime fixture rather than a scripted
+  OS pointer run (this automation session cannot deliver synthetic pointer
+  motion to a real window, as recorded in earlier slices). The founder's
+  hands-on hover/scroll is the confirming check.

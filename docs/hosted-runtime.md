@@ -171,6 +171,45 @@ the reference host's event loop. Hidden steps can still process model
 invalidation, but never report `render_required`. Restoration requests a
 retained presentation and samples the current monotonic time, without replaying
 missed ticks.
+
+### Retained motion scheduling
+
+Each `Hosted_Runtime` owns one retained-motion deadline, exactly like the
+reference host's per-window motion scheduler. `next_wake_ns` publishes it while
+a response is active; a settled surface publishes no motion deadline at all.
+
+- Only a step at or after the deadline samples retained motion. A step caused by
+  an unrelated event, a tick, a worker wake, or a queue-completion notification
+  refreshes the injected motion clock (so `ui.motion` targets in an upcoming
+  description resolve against the current time) but does not resample or
+  present retained poses. Re-sampling on every host turn would let pointer
+  storms and submission-completion wakes drive an animation faster than the
+  display cadence; the reference host produces one sample per deadline.
+- A response started by a description, an `on_after_frame` hook, or retained
+  interaction paint arms its first deadline in the same step, before
+  `next_wake_ns` is returned.
+- A sample that changes a presented value requests one presentation-only frame
+  (`render_required`); no application description is rebuilt. The final sample
+  settles the response and clears the deadline, so the next step reports neither
+  work nor a wake.
+- `hosted_runtime_live_step` (the platform modal move/resize path) shares the
+  same deadline and cadence. It advances retained motion, rebuilds an
+  invalidated description, and reports presentation, but does not dispatch
+  `on_tick` or application scheduled wakes.
+- A host that quantizes its wait (for example SDL3 on Windows, which truncates a
+  remaining nanosecond timeout to milliseconds) must not turn a sub-millisecond
+  remainder into a zero-length wait: that re-enters the host loop for the final
+  fraction of every sampling interval. `host/sdl3/run.odin` adds one millisecond
+  of slack, mirroring `native/sdl_gpu`'s
+  `native_event_wait_windows_timeout_ms`.
+
+`runtime/hosted_motion_test.odin` pins the contract: a response presents a
+bounded run of frames without any description change, a 1 ms host-turn storm
+yields the display cadence rather than one frame per turn, a settled surface
+presents nothing for a second of host turns, a tick-only surface presents
+nothing, a hidden surface drops its deadline and samples once on restore, two
+sessions schedule independently, and live steps share the same deadline.
+
 The Runtime cannot observe arbitrary application memory. If `on_wake`,
 `on_scheduled_wake`, `on_drag`, or `on_scroll` changes data used by the next
 description, that callback must call `invalidate_root` on its supplied Runtime.

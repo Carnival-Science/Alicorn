@@ -11,6 +11,7 @@ import alicorn "alicorn:runtime"
 import host "alicorn:host/sdl3"
 import sdl_gpu "alicorn:native/sdl_gpu"
 import ui "alicorn:ui"
+import webgpu "alicorn:ui/webgpu"
 
 // The workload matrix drives SDL_GPU and WebGPU through identical description
 // and retained-motion sequences. One scene file is compiled into both host
@@ -662,8 +663,8 @@ main :: proc() {
 
 	if sdl_reference {
 		ui.run(
-			&app,
-			run_render,
+			state=&app,
+			render=run_render,
 			title="Alicorn workload matrix",
 			width=WORKLOAD_WINDOW_WIDTH,
 			height=WORKLOAD_WINDOW_HEIGHT,
@@ -674,9 +675,9 @@ main :: proc() {
 		)
 		return
 	}
-	ui.run_webgpu(
-		&app,
-		run_render,
+	webgpu.run(
+		state=&app,
+		render=run_render,
 		title="Alicorn workload matrix",
 		width=WORKLOAD_WINDOW_WIDTH,
 		height=WORKLOAD_WINDOW_HEIGHT,

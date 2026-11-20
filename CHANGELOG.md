@@ -53,6 +53,19 @@ changelogs.
 
 ### Fixed
 
+- Fixed hosted retained-motion scheduling. `Hosted_Runtime` sampled motion on
+  every step, so pointer storms and submission-completion wakes drove an
+  animation faster than the display cadence (a 1 ms turn storm presented 200
+  frames in 400 ms where the reference host presents ~24). It now owns one
+  motion deadline per surface: only a due step samples, a non-sampling step
+  refreshes the injected clock so `ui.motion` targets still resolve at the
+  current time, a response started by a description or retained-paint flush arms
+  its first deadline in the same step, and a settled surface publishes no
+  deadline. `hosted_runtime_live_step` shares the deadline. The hosted SDL3 loop
+  also adds one millisecond of wait slack on Windows, matching
+  `native/sdl_gpu`'s `native_event_wait_windows_timeout_ms`, so a sub-millisecond
+  deadline remainder no longer becomes a zero-length OS wait: a settled window
+  went from 525-1138 idle loop turns per 1.2 s to 7.
 - Fixed hosted font-initialization parity. The hosted WebGPU path loaded only
   the bundled default faces, while the SDL_GPU reference also seeded bounded
   DirectWrite and optional system fallbacks. Text outside the bundled coverage
@@ -97,6 +110,13 @@ changelogs.
 
 ### Validation
 
+- Added six hosted motion-scheduling conformance tests and a real-window
+  retained-motion matrix run. A settle response presents a bounded run of frames
+  with no re-description, a 1 ms host-turn storm keeps the display cadence,
+  settled and tick-only surfaces present nothing, hidden surfaces drop their
+  deadline and sample once on restore, and two sessions schedule independently.
+  See
+  [the motion-scheduling record](docs/validation/issue-211-motion-scheduling-windows-2026-11-20.md).
 - Added explicit analytic-motion coverage for 30/60/144 Hz sampling, a missed
   200 ms interval, and 1,000 unchanged-target assignments. The reference now
   documents the response equation, retarget and settlement contracts, numeric

@@ -371,6 +371,12 @@ Hosted_Runtime_State :: struct {
 	has_tick: bool,
 	drag_deadline_ns: u64,
 	last_step_ns: u64,
+	// motion_deadline_ns is this surface's retained-motion sampling deadline.
+	// Like the reference host's per-window motion scheduler, a host-loop turn
+	// caused by an unrelated event advances the motion clock but must not
+	// resample or repaint retained motion before the deadline is due. Zero
+	// means no response is armed or the surface is not renderable.
+	motion_deadline_ns: u64,
 	uncertified_motion_since_ns: u64,
 	has_step_time: bool,
 	motion_uncertified_timing: bool,
@@ -686,6 +692,39 @@ hosted_deadline_after :: proc(now_ns, interval_ns: u64) -> u64 {
 	return now_ns + min(interval_ns, HOSTED_MAX_MONOTONIC_NS-now_ns)
 }
 
+// hosted_motion_sample_due reports whether this presentation opportunity may
+// sample retained motion. The reference host owns one deadline per window and
+// samples only when it is due or when a response has no armed deadline yet
+// (its first sample, or the restore sample after a hidden gap). Sampling on
+// every host-loop turn would let pointer storms and queue-completion wakes
+// drive the animation faster than the display cadence and present frames the
+// reference host never produces.
+hosted_motion_sample_due :: proc(state: ^Hosted_Runtime_State, now_ns: u64) -> bool {
+	if state == nil || !state.renderable { return false }
+	activity := motion_activity(&state.runtime)
+	if activity.active_owners <= 0 {
+		state.motion_deadline_ns = 0
+		return false
+	}
+	if state.motion_deadline_ns == 0 { return true }
+	return now_ns >= state.motion_deadline_ns
+}
+
+// hosted_motion_deadline reports the sampling deadline this surface should
+// publish to its host loop. A response started by this step's description or
+// retained paint flush arms its first deadline here, exactly like the
+// reference host's post-paint `native_motion_scheduler_prepare` pass.
+hosted_motion_deadline :: proc(state: ^Hosted_Runtime_State, now_ns: u64) -> u64 {
+	if state == nil { return 0 }
+	// An armed deadline already means a response is active; it is cleared by the
+	// sample that settles it or by a hidden surface.
+	if state.motion_deadline_ns != 0 { return state.motion_deadline_ns }
+	activity := motion_activity(&state.runtime)
+	if activity.active_owners <= 0 { return 0 }
+	state.motion_deadline_ns = hosted_deadline_after(now_ns, HOSTED_MOTION_SAMPLE_INTERVAL_NS)
+	return state.motion_deadline_ns
+}
+
 hosted_runtime_next_deadline :: proc(state: ^Hosted_Runtime_State, now_ns: u64) -> u64 {
 	if state == nil { return 0 }
 	deadline: u64
@@ -698,36 +737,47 @@ hosted_runtime_next_deadline :: proc(state: ^Hosted_Runtime_State, now_ns: u64) 
 	deadline = hosted_deadline_min(deadline, tooltip_next_deadline(&state.runtime))
 	deadline = hosted_deadline_min(deadline, notice_next_deadline(&state.runtime))
 	deadline = hosted_deadline_min(deadline, state.drag_deadline_ns)
-	activity := motion_activity(&state.runtime)
-	if activity.active_owners > 0 {
-		next := hosted_deadline_after(now_ns, HOSTED_MOTION_SAMPLE_INTERVAL_NS)
-		deadline = hosted_deadline_min(deadline, next)
-	}
+	deadline = hosted_deadline_min(deadline, hosted_motion_deadline(state, now_ns))
 	return deadline
 }
 
 hosted_runtime_advance_presentation :: proc(state: ^Hosted_Runtime_State, now_ns: u64) -> Hosted_Runtime_Status {
-	if !state.renderable { return .Ok }
+	if !state.renderable {
+		// A hidden or non-drawable surface drops its motion deadline. Restoring
+		// it samples once at the current time instead of replaying the gap.
+		state.motion_deadline_ns = 0
+		return .Ok
+	}
 	rt := &state.runtime
-	motion := motion_tick(rt, Motion_Time(i64(now_ns)))
-	if motion.status != .Ok { return .Motion_Failed }
-	_ = tooltip_advance(rt, now_ns)
-	_ = notice_advance(rt, now_ns)
-	if motion.unestablished_deadlines > 0 {
-		if !state.motion_uncertified_timing {
-			state.motion_uncertified_timing = true
-			state.uncertified_motion_since_ns = now_ns if now_ns != 0 else 1
-		} else if now_ns >= state.uncertified_motion_since_ns &&
-			now_ns-state.uncertified_motion_since_ns >= HOSTED_UNCERTIFIED_MOTION_LIMIT_NS {
-			snapped := motion_snap_unestablished(rt, Motion_Time(i64(now_ns)))
-			if snapped.status != .Ok { return .Motion_Failed }
+	if hosted_motion_sample_due(state, now_ns) {
+		motion := motion_tick(rt, Motion_Time(i64(now_ns)))
+		if motion.status != .Ok { return .Motion_Failed }
+		if motion.unestablished_deadlines > 0 {
+			if !state.motion_uncertified_timing {
+				state.motion_uncertified_timing = true
+				state.uncertified_motion_since_ns = now_ns if now_ns != 0 else 1
+			} else if now_ns >= state.uncertified_motion_since_ns &&
+				now_ns-state.uncertified_motion_since_ns >= HOSTED_UNCERTIFIED_MOTION_LIMIT_NS {
+				snapped := motion_snap_unestablished(rt, Motion_Time(i64(now_ns)))
+				if snapped.status != .Ok { return .Motion_Failed }
+				state.motion_uncertified_timing = false
+				state.uncertified_motion_since_ns = 0
+			}
+		} else {
 			state.motion_uncertified_timing = false
 			state.uncertified_motion_since_ns = 0
 		}
+		activity := motion_activity(rt)
+		state.motion_deadline_ns = hosted_deadline_after(now_ns, HOSTED_MOTION_SAMPLE_INTERVAL_NS) if activity.active_owners > 0 else 0
 	} else {
-		state.motion_uncertified_timing = false
-		state.uncertified_motion_since_ns = 0
+		// Not a motion sample: refresh the injected clock so a description in
+		// this step resolves `ui.motion` targets against the current time. This
+		// mirrors the reference host's pre-description clock update, which does
+		// not sample or request presentation.
+		_ = motion_clock_set_time(rt, Motion_Time(i64(now_ns)), .Native_Monotonic)
 	}
+	_ = tooltip_advance(rt, now_ns)
+	_ = notice_advance(rt, now_ns)
 	if !drag_autoscroll_can_step(rt) {
 		state.drag_deadline_ns = 0
 	} else if state.drag_deadline_ns == 0 {

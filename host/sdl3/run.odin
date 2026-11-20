@@ -111,6 +111,21 @@ sdl3_webgpu_run_adapter_callback :: proc "c" (
 	sdl3_webgpu_run_request_device(state)
 }
 
+// SDL's Windows backend converts the remaining nanosecond timeout to a Win32
+// millisecond wait by truncating it. Once a deadline is a fraction of a
+// millisecond away, the OS wait becomes zero milliseconds and the host
+// re-enters its loop for the last fraction of every sampling interval. One
+// millisecond of slack keeps deadline waits event-driven with a bounded late
+// wake. This mirrors native/sdl_gpu's
+// native_event_wait_windows_timeout_ms, which exists for the same reason.
+@(private)
+sdl3_webgpu_run_wait_timeout_ms :: proc(timeout_ms: int) -> int {
+	when ODIN_OS == .Windows {
+		if timeout_ms > 0 && timeout_ms < 0x7fff_ffff { return timeout_ms+1 }
+	}
+	return timeout_ms
+}
+
 @(private)
 sdl3_webgpu_run_request_device :: proc(state: ^SDL3_WebGPU_Run_State) {
 	if state == nil || state.adapter == nil { return }
@@ -1146,6 +1161,7 @@ sdl3_webgpu_run :: proc(
 			hold_timeout := int(min(u64(1000), (remaining+999_999)/1_000_000))
 			if timeout_ms < 0 || hold_timeout < timeout_ms { timeout_ms = hold_timeout }
 		}
+		if timeout_ms > 0 { timeout_ms = sdl3_webgpu_run_wait_timeout_ms(timeout_ms) }
 		if timeout_ms == 0 { zero_timeout_iterations += 1; continue }
 		if timeout_ms < 0 {
 			_ = sdl3.WaitEvent(&event)
