@@ -88,7 +88,8 @@ alicorn_odin_with_linker_flags() {
 			fi
 		fi
 	fi
-	if [ -n "${ALICORN_SDL_LINK_FLAGS:-}" ]; then
+	if [ -n "${ALICORN_SDL_LINK_FLAGS:-}" ] &&
+	   [ -z "${ALICORN_SKIP_SDL_LINK_FLAGS:-}" ]; then
 		if [ -n "$alicorn_linker_flags" ]; then
 			alicorn_linker_flags="$alicorn_linker_flags $ALICORN_SDL_LINK_FLAGS"
 		else

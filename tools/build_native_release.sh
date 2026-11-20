@@ -80,7 +80,9 @@ if [ -n "$SDL_LINK_FLAGS" ]; then
 else
 	LINK_FLAGS="$ACCESSKIT_LINK_FLAGS"
 fi
-alicorn_odin_with_linker_flags "$ODIN" "$LINK_FLAGS" \
+# The packaging link flags are explicit; do not let a CI-wide development
+# rpath (ALICORN_SDL_LINK_FLAGS) leak into the bundled executable.
+ALICORN_SKIP_SDL_LINK_FLAGS=1 alicorn_odin_with_linker_flags "$ODIN" "$LINK_FLAGS" \
 	build "$APP_PACKAGE" "-collection:alicorn=$REPO_ROOT" "-out:$BUILT" -o:speed
 
 # Fail fast if the shared build/test selection leaks its developer-machine
