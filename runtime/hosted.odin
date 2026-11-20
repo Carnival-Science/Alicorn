@@ -183,6 +183,7 @@ Hosted_Runtime_Config :: struct {
 	// chrome_paint appends host-owned chrome commands after application paint
 	// during presentation. Width and height include the chrome band.
 	chrome_paint: Hosted_Chrome_Paint_Proc,
+	chrome_paint_data: rawptr,
 	// content_inset_top reserves host-owned chrome above the application
 	// viewport. The host updates it with hosted_runtime_set_content_inset when
 	// native geometry changes.
@@ -279,6 +280,7 @@ Hosted_Runtime_State :: struct {
 	window_chrome_layout: Window_Chrome_Layout_Proc,
 	window_chrome_appearance: Window_Chrome_Appearance_Proc,
 	chrome_paint: Hosted_Chrome_Paint_Proc,
+	chrome_paint_data: rawptr,
 	logical_width, logical_height: int,
 	window_logical_width, window_logical_height: int,
 	content_inset_top: f32,
@@ -367,6 +369,7 @@ hosted_runtime_init :: proc(host: ^Hosted_Runtime, config: Hosted_Runtime_Config
 		window_chrome_layout=config.window_chrome_layout,
 		window_chrome_appearance=config.window_chrome_appearance,
 		chrome_paint=config.chrome_paint,
+		chrome_paint_data=config.chrome_paint_data,
 		logical_width=config.logical_width,
 		logical_height=hosted_app_logical_height(config.logical_height, inset_top),
 		window_logical_width=config.logical_width,
@@ -587,8 +590,8 @@ hosted_runtime_resize :: proc(
 	} else if dpi_changed {
 		invalidate_root(rt, "hosted surface DPI changed")
 	}
-	if pixel_width > 0 && pixel_height > 0 && logical_width > 0 && next_height > 0 {
-		_ = set_presentation_scale(rt, f32(pixel_width)/f32(logical_width), f32(pixel_height)/f32(next_height))
+	if pixel_width > 0 && pixel_height > 0 && logical_width > 0 && logical_height > 0 {
+		_ = set_presentation_scale(rt, f32(pixel_width)/f32(logical_width), f32(pixel_height)/f32(logical_height))
 	}
 	return .Ok
 }
@@ -664,6 +667,32 @@ hosted_runtime_pointer :: proc(host: ^Hosted_Runtime, event: Pointer_Event) -> (
 // trigger Alicorn text-field or interaction-scope preemption. The host retains
 // platform policy and calls hosted_runtime_application_key when it has
 // translated a key into the Application_Key vocabulary.
+// hosted_runtime_pointer_cancel cancels a captured application interaction
+// when host chrome takes pointer ownership. It mirrors the native host's
+// explicit pointer-cancel path without changing window focus.
+hosted_runtime_pointer_cancel :: proc(host: ^Hosted_Runtime) -> Hosted_Runtime_Status {
+	state, status := hosted_runtime_get_state(host)
+	if status != .Ok { return status }
+	rt := &state.runtime
+	captured := rt.captured_node
+	drag_was_active := drag_is_active(rt)
+	if captured == 0 && !drag_was_active { return .Ok }
+	cancel_cause := pointer_cause_begin(rt, .Cancel)
+	_ = cancel_pointer_capture(rt)
+	state.drag_deadline_ns = 0
+	if drag_was_active && drag_is_active(rt) { _ = drag_cancel(rt) }
+	if drag_event, pending := drag_event_take(rt); pending && state.on_drag != nil {
+		state.on_drag(state.app_state, rt, drag_event)
+	}
+	if state.on_pointer != nil {
+		cancelled := Pointer_Event{kind=.Cancel}
+		if key, ok := node_identity_key(rt, captured); ok { cancelled.target_key = key }
+		state.on_pointer(state.app_state, rt, cancelled, captured)
+	}
+	cause_end(rt, cancel_cause)
+	return .Ok
+}
+
 hosted_runtime_key :: proc(host: ^Hosted_Runtime, event: Hosted_Key_Event) -> (handled: bool, status: Hosted_Runtime_Status) {
 	state, access_status := hosted_runtime_get_state(host)
 	if access_status != .Ok { return false, access_status }
@@ -1007,7 +1036,7 @@ hosted_runtime_presentation_list :: proc(
 	chrome: []Paint_Command
 	if has_chrome {
 		chrome = state.chrome_paint(
-			state.app_state,
+			state.chrome_paint_data,
 			rt,
 			f32(state.window_logical_width),
 			f32(state.window_logical_height),

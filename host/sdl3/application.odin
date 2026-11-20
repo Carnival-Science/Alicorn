@@ -8,6 +8,7 @@ import sdl3_dialogs "alicorn:host/sdl3/dialogs"
 import host_menus "alicorn:host/menus"
 import "core:c"
 import "core:fmt"
+import "core:mem"
 import "vendor:sdl3"
 import "vendor:wgpu"
 import sdl_accessibility "alicorn:host/sdl3/accessibility"
@@ -46,6 +47,7 @@ SDL3_WebGPU_Text_Input_State :: struct {
 	window_focused: bool,
 	last_area: alicorn.Text_Input_Area,
 	last_area_valid: bool,
+	content_inset_top: f32,
 }
 
 // SDL3_WebGPU_Application joins an SDL-owned window/event identity, one
@@ -76,6 +78,7 @@ SDL3_WebGPU_Application :: struct {
 	initialized: bool,
 	accessibility_ready: bool,
 	presenter_device_lost: bool,
+	chrome_redraw_pending: bool,
 }
 
 @(private)
@@ -116,6 +119,59 @@ sdl3_webgpu_application_menu_command :: proc(
 	application := cast(^SDL3_WebGPU_Application)data
 	if application == nil || !application.initialized { return }
 	_ = alicorn.hosted_runtime_menu_command(&application.hosted, command)
+}
+
+@(private)
+sdl3_webgpu_application_chrome_redraw :: proc(data: rawptr) {
+	application := cast(^SDL3_WebGPU_Application)data
+	if application == nil || !application.initialized { return }
+	application.chrome_redraw_pending = true
+	if application.hosted.state != nil {
+		_ = alicorn.hosted_runtime_request_presentation(&application.hosted, "host chrome paint changed")
+	}
+	_ = sdl3_webgpu_application_post_wake(application)
+}
+
+@(private)
+sdl3_webgpu_application_chrome_paint :: proc(
+	data: rawptr,
+	_rt: ^alicorn.Runtime,
+	width, height: f32,
+	allocator: mem.Allocator,
+) -> []alicorn.Paint_Command {
+	application := cast(^SDL3_WebGPU_Application)data
+	if application == nil || !application.initialized { return nil }
+	return host_menus.native_menu_adapter_chrome_paint(
+		&application.menu_adapter, width, height, allocator,
+	)
+}
+
+@(private)
+sdl3_webgpu_application_sync_chrome :: proc(application: ^SDL3_WebGPU_Application) {
+	if application == nil || !application.initialized { return }
+	host_menus.native_menu_adapter_sync_chrome(&application.menu_adapter)
+}
+
+// sdl3_webgpu_application_pre_present refreshes host chrome after the Runtime
+// description and before frame encoding, matching the native host's ordering.
+@(private)
+sdl3_webgpu_application_pre_present :: proc(data: rawptr) {
+	application := cast(^SDL3_WebGPU_Application)data
+	if application == nil || !application.initialized { return }
+	sdl3_webgpu_application_sync_chrome(application)
+	application.chrome_redraw_pending = false
+	if !sdl3_webgpu_application_sync_text_input(application) {
+		// A failed platform text-area update must not corrupt presentation;
+		// the next focus sync retries it.
+	}
+}
+
+@(private)
+sdl3_webgpu_application_content_inset :: proc(application: ^SDL3_WebGPU_Application) -> f32 {
+	if application == nil || application.hosted.state == nil { return 0 }
+	inset, status := alicorn.hosted_runtime_content_inset(&application.hosted)
+	if status != .Ok { return 0 }
+	return inset
 }
 
 // sdl3_webgpu_application_dispatch_menus delivers commands queued by native
@@ -192,7 +248,7 @@ sdl3_webgpu_application_accessibility_sync :: proc(
 	sdl_accessibility.native_accessibility_sync(
 		&application.accessibility_host,
 		rt,
-		0,
+		sdl3_webgpu_application_content_inset(application),
 		f32(pw)/f32(lw),
 		f32(ph)/f32(lh),
 	)
@@ -273,7 +329,21 @@ sdl3_webgpu_application_init :: proc(
 		rawptr(application),
 		menu_command,
 	)
-	if !host_menus.native_menu_adapter_prepare(&application.menu_adapter, window, &application.menu_service) {
+	chrome_config := host_menus.Menu_Chrome_Config{
+		decorations=hosted_config.window_decorations,
+		title=string(sdl3.GetWindowTitle(window)),
+		chrome_height=hosted_config.window_chrome_height,
+		menu_presentation=hosted_config.menu_presentation,
+		metrics=hosted_config.window_chrome_metrics,
+		layout=hosted_config.window_chrome_layout,
+		appearance=hosted_config.window_chrome_appearance,
+		callback_state=hosted_config.state,
+		request_redraw=sdl3_webgpu_application_chrome_redraw,
+		request_redraw_data=rawptr(application),
+	}
+	if !host_menus.native_menu_adapter_prepare(
+		&application.menu_adapter, window, &application.menu_service, chrome_config,
+	) {
 		sdl3_dialogs.native_dialog_bridge_release(application.dialog_bridge)
 		application^ = {}
 		return .Runtime_Failure
@@ -297,8 +367,17 @@ sdl3_webgpu_application_init :: proc(
 	config.dpi_scale = dpi
 	config.post_wake_data = rawptr(application)
 	config.post_wake = sdl3_webgpu_application_post_wake
+	config.chrome_paint = sdl3_webgpu_application_chrome_paint
+	config.chrome_paint_data = rawptr(application)
 	config.host_services.dialogs = sdl3_dialogs.dialog_service(application.dialog_bridge)
 	if alicorn.hosted_runtime_init(&application.hosted, config) != .Ok {
+		sdl3_dialogs.native_dialog_bridge_release(application.dialog_bridge)
+		application^ = {}
+		return .Runtime_Failure
+	}
+	application.menu_adapter.hosted = &application.hosted
+	if !host_menus.native_menu_adapter_activate_chrome(&application.menu_adapter) {
+		_ = alicorn.hosted_runtime_destroy(&application.hosted)
 		sdl3_dialogs.native_dialog_bridge_release(application.dialog_bridge)
 		application^ = {}
 		return .Runtime_Failure
@@ -473,7 +552,10 @@ sdl3_webgpu_application_resize :: proc(application: ^SDL3_WebGPU_Application) ->
 	result := presentation_host.hosted_surface_presenter_resize(
 		&application.presenter, lw, lh, pw, ph, dpi,
 	)
-	if result == .Ok || result == .Suspended { application.dpi_scale = dpi }
+	if result == .Ok || result == .Suspended {
+		application.dpi_scale = dpi
+		sdl3_webgpu_application_sync_chrome(application)
+	}
 	return result
 }
 
@@ -509,7 +591,12 @@ sdl3_webgpu_application_step :: proc(
 	if application.presenter.state == nil || application.presenter_device_lost {
 		return {status=.Ok, presentation=.No_Frame}
 	}
-	step, presentation := presentation_host.hosted_surface_presenter_step(&application.presenter, now_ns)
+	step, presentation := presentation_host.hosted_surface_presenter_step_with_hook(
+		&application.presenter,
+		now_ns,
+		rawptr(application),
+		sdl3_webgpu_application_pre_present,
+	)
 	if step.status != .Ok { return {status=step.status, presentation=presentation} }
 	if !sdl3_webgpu_application_sync_text_input(application) {
 		return {status=.Invalid_Argument, presentation=presentation}

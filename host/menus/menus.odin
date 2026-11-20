@@ -85,11 +85,33 @@ menu_service_try_shortcut :: proc(
 	return true
 }
 
+// Menu_Chrome_Config carries the host's native chrome policy to the platform
+// adapter. It is platform-neutral: Windows implements the integrated band,
+// macOS coordinates full-size content, and Linux keeps system decorations.
+// Callbacks borrow the application state for the adapter lifetime.
+Menu_Chrome_Config :: struct {
+	decorations:       alicorn.Window_Decoration_Mode,
+	title:             string,
+	chrome_height:     f32,
+	menu_presentation: alicorn.Menu_Presentation,
+	metrics:           alicorn.Window_Chrome_Metrics_Proc,
+	layout:            alicorn.Window_Chrome_Layout_Proc,
+	appearance:        alicorn.Window_Chrome_Appearance_Proc,
+	callback_state:    rawptr,
+	// request_redraw runs when host chrome paint or geometry changes outside
+	// application invalidation (hover, active state, DPI measurement).
+	request_redraw:      proc(data: rawptr),
+	request_redraw_data: rawptr,
+}
+
 // Native_Menu_Adapter owns one platform menu representation for one window.
 // platform_data is host-private (HWND/HMENU or NSMenu/selectors).
 Native_Menu_Adapter :: struct {
 	window:          ^sdl3.Window,
 	service:         ^Menu_Service,
+	hosted:          ^alicorn.Hosted_Runtime,
+	chrome:          Menu_Chrome_Config,
+	chrome_active:   bool,
 	platform_data:   rawptr,
 	pending_command: alicorn.Action_ID,
 	has_pending:     bool,

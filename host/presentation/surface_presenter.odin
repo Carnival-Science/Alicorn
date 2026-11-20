@@ -86,6 +86,10 @@ Hosted_Surface_Result :: enum {
 }
 
 Hosted_Surface_Wake_Proc :: proc(data: rawptr)
+// Hosted_Surface_Pre_Present_Proc runs on the owner thread after the Runtime
+// step and before frame encoding. Hosts use it to refresh host-owned chrome
+// geometry/paint against the freshly described tree in the same frame.
+Hosted_Surface_Pre_Present_Proc :: proc(data: rawptr)
 
 // Hosted_Surface_Presenter binds one Hosted_Runtime to a host-created WebGPU
 // surface. The embedding host still owns adapter/device/queue/surface creation,
@@ -276,12 +280,29 @@ hosted_surface_presenter_step :: proc(
 	presenter: ^Hosted_Surface_Presenter,
 	now_ns: u64,
 ) -> (step: alicorn.Hosted_Step_Result, presentation: Hosted_Surface_Result) {
+	return hosted_surface_presenter_step_with_hook(presenter, now_ns, nil, nil)
+}
+
+// hosted_surface_presenter_step_with_hook is step plus a pre-present callback.
+// The hook runs before encoding so hosted chrome (menu labels, caption state,
+// app-declared hit regions) reflects the current description. It may request a
+// presentation; render_required is re-evaluated after it returns.
+hosted_surface_presenter_step_with_hook :: proc(
+	presenter: ^Hosted_Surface_Presenter,
+	now_ns: u64,
+	hook_data: rawptr,
+	hook: Hosted_Surface_Pre_Present_Proc,
+) -> (step: alicorn.Hosted_Step_Result, presentation: Hosted_Surface_Result) {
 	state := hosted_surface_state(presenter)
 	if state == nil { return alicorn.Hosted_Step_Result{status=.Closed}, .Invalid_Input }
 	timing_start: time.Tick
 	if state.timing_enabled { timing_start = time.tick_now() }
 	step = alicorn.hosted_runtime_step(state.hosted, now_ns)
 	if step.status != .Ok { return step, .Invalid_Input }
+	if hook != nil {
+		hook(hook_data)
+		step.render_required = state.visible && state.drawable && alicorn.frame_needs_submission(state.runtime)
+	}
 	if !step.render_required {
 		// An input event that produced no requested presentation has no visible
 		// response to time. Do not carry its marker into an unrelated later frame.

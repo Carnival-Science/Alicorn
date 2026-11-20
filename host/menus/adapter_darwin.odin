@@ -34,6 +34,7 @@ Darwin_Menu_State :: struct {
 	selector:              NS.SEL,
 	update_selector:       NS.SEL,
 	bindings:              [dynamic]Darwin_Menu_Binding,
+	titlebar:              Darwin_Titlebar_State,
 }
 
 darwin_active_adapter: ^Native_Menu_Adapter
@@ -262,11 +263,13 @@ native_menu_adapter_prepare :: proc(
 	adapter: ^Native_Menu_Adapter,
 	window: ^sdl3.Window,
 	service: ^Menu_Service,
+	chrome_config: Menu_Chrome_Config = {},
 ) -> bool {
 	if adapter == nil || window == nil || service == nil { return false }
 	if adapter.prepared { return true }
 	adapter.window = window
 	adapter.service = service
+	adapter.chrome = chrome_config
 	if len(service.menus) == 0 {
 		adapter.prepared = true
 		return true
@@ -366,6 +369,7 @@ native_menu_adapter_destroy :: proc(adapter: ^Native_Menu_Adapter) {
 	if adapter == nil { return }
 	if adapter.platform_data != nil {
 		state := cast(^Darwin_Menu_State)adapter.platform_data
+		darwin_titlebar_destroy(adapter)
 		if darwin_active_adapter == adapter { darwin_active_adapter = nil }
 		if state.application != nil {
 			NS.Application_setMainMenu(state.application, state.previous_main_menu)
@@ -380,6 +384,7 @@ native_menu_adapter_destroy :: proc(adapter: ^Native_Menu_Adapter) {
 		free(state)
 	}
 	adapter.platform_data = nil
+	adapter.chrome_active = false
 	adapter.prepared = false
 	adapter.has_pending = false
 	adapter.pending_command = {}

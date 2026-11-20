@@ -114,6 +114,20 @@ run_application :: proc(run_state: ^Hosted_Run_State($T), title: string, width, 
 		state := cast(^Hosted_Run_State(T))data
 		if state.on_dialog != nil { state.on_dialog(state.app, rt, result) }
 	}
+	chrome_metrics :: proc(data: rawptr, rt: ^alicorn.Runtime, metrics: alicorn.Window_Chrome_Metrics) {
+		state := cast(^Hosted_Run_State(T))data
+		if state.window_chrome_metrics != nil { state.window_chrome_metrics(state.app, rt, metrics) }
+	}
+	chrome_layout :: proc(data: rawptr, rt: ^alicorn.Runtime) -> alicorn.Window_Chrome_Layout {
+		state := cast(^Hosted_Run_State(T))data
+		if state.window_chrome_layout != nil { return state.window_chrome_layout(state.app, rt) }
+		return {}
+	}
+	chrome_appearance :: proc(data: rawptr, rt: ^alicorn.Runtime) -> alicorn.Window_Chrome_Appearance {
+		state := cast(^Hosted_Run_State(T))data
+		if state.window_chrome_appearance != nil { return state.window_chrome_appearance(state.app, rt) }
+		return {}
+	}
 
 	application := host.Application{
 		state=rawptr(run_state),
@@ -124,9 +138,9 @@ run_application :: proc(run_state: ^Hosted_Run_State($T), title: string, width, 
 		menu_presentation=host.Application_Menu_Presentation(run_state.menu_presentation),
 		window_decorations=host.Window_Decoration_Mode(run_state.window_decorations),
 		window_chrome_height=run_state.window_chrome_height,
-		window_chrome_metrics=run_state.window_chrome_metrics,
-		window_chrome_layout=run_state.window_chrome_layout,
-		window_chrome_appearance=run_state.window_chrome_appearance,
+		window_chrome_metrics=chrome_metrics,
+		window_chrome_layout=chrome_layout,
+		window_chrome_appearance=chrome_appearance,
 		build=build,
 		interaction_update_policy=.Correct_After_Interaction,
 	}

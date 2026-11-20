@@ -54,9 +54,32 @@ App :: struct {
 	menu_last:   alicorn.Action_ID,
 	menu_expected: [3]alicorn.Action_ID,
 	menu_seen:     [3]alicorn.Action_ID,
+	// --titlebar-smoke exercises the integrated titlebar contract shared by the
+	// SDL_GPU reference host and the WebGPU hosted host: app-authored header,
+	// declared interactive/drag regions, and native metrics.
+	titlebar_smoke: bool,
+	titlebar_header: alicorn.Node_ID,
+	titlebar_body: alicorn.Node_ID,
+	titlebar_tabs_region: alicorn.Node_ID,
+	titlebar_blank: alicorn.Node_ID,
+	titlebar_regions: [2]alicorn.Window_Chrome_Region,
+	titlebar_header_height: f32,
+	titlebar_content_start_x: f32,
+	titlebar_content_end_x: f32,
+	titlebar_metrics_count: int,
+	titlebar_layout_count: int,
+	titlebar_metrics_header_h: f32,
+	titlebar_order: [2]u64,
+	titlebar_selected: u64,
+	titlebar_reorder_count: int,
+	titlebar_pointer_count: int,
 }
 
 render :: proc(app: ^App, ctx: ^ui.UI) {
+	if app.titlebar_smoke {
+		titlebar_render(app, ctx)
+		return
+	}
 	if ui.column(ctx, padding=24, gap=12) {
 		ui.text(ctx, "Native WebGPU UI", size=24)
 		ui.text(ctx, "The retained runtime and surface presenter are shared with the browser host.")
@@ -109,6 +132,129 @@ render :: proc(app: ^App, ctx: ^ui.UI) {
 			}
 		}
 	}
+}
+
+TITLEBAR_SMOKE_TAB_DRAG :: alicorn.Drag_Type(0x746162)
+
+titlebar_render :: proc(app: ^App, ctx: ^ui.UI) {
+	if alicorn.container_begin(
+		ctx, .Root, label="titlebar-smoke-root", key="titlebar-smoke-root",
+		style=alicorn.layout_style(.Column, grow=1, clip=true),
+		color=alicorn.Color{0.04, 0.05, 0.08, 1},
+	) == 0 { return }
+	height := max(app.titlebar_header_height, 32)
+	header := alicorn.container_begin(
+		ctx, .Container, label="titlebar-smoke-header", key="titlebar-smoke-header",
+		style=alicorn.layout_style(.Row, height=height, clip=true),
+		color=alicorn.Color{0.125, 0.137, 0.16, 1},
+	)
+	leading := max(app.titlebar_content_start_x, 8)
+	_ = alicorn.container_begin(ctx, .Container, label="titlebar-leading-inset", key="titlebar-leading-inset",
+		style=alicorn.layout_style(.Row, width=leading, height=height))
+	alicorn.container_end(ctx)
+	tab_width := 300
+	tabs_region := alicorn.container_begin(
+		ctx, .Container, label="titlebar-tabs-region", key="titlebar-tabs-region",
+		style=alicorn.layout_style(.Row, width=f32(tab_width), height=height, clip=true),
+	)
+	items: [2]alicorn.Tab_Bar_Item
+	item_ids: [2]u64
+	count := 0
+	for tab_id in app.titlebar_order {
+		if tab_id == 0 || tab_id > 2 { continue }
+		items[count] = alicorn.Tab_Bar_Item{
+			key=alicorn.key_string("titlebar-tab-one") if tab_id == 1 else alicorn.key_string("titlebar-tab-two"),
+			label="Alicorn Overview" if tab_id == 1 else "Connected Input Probe",
+			selected=app.titlebar_selected == tab_id,
+			closable=false,
+		}
+		item_ids[count] = tab_id
+		count += 1
+	}
+	options := alicorn.DEFAULT_TAB_BAR_OPTIONS
+	options.height = height
+	options.min_tab_width = 130
+	options.max_tab_width = 160
+	options.gap = 0
+	options.presentation = .Compact
+	options.appearance = .Connected
+	options.animate_drag_reorder = true
+	options.drag_type = TITLEBAR_SMOKE_TAB_DRAG
+	result := alicorn.tab_bar(
+		ctx, alicorn.key_string("titlebar-smoke-tabs"), items[:count], options,
+		alicorn.layout_style(.Row, width=f32(tab_width), height=height, compress_weight=1),
+	)
+	if result.item_index >= 0 && result.item_index < count && result.action == .Select {
+		app.titlebar_selected = item_ids[result.item_index]
+		alicorn.invalidate_root(ctx.runtime, "titlebar smoke tab selected")
+	}
+	alicorn.container_end(ctx)
+	blank := alicorn.container_begin(
+		ctx, .Container, label="titlebar-drag-region", key="titlebar-drag-region",
+		style=alicorn.layout_style(.Row, grow=1, height=height),
+	)
+	alicorn.container_end(ctx)
+	trailing := max(app.titlebar_content_end_x-f32(tab_width)-leading, 0)
+	if trailing > 0 {
+		_ = alicorn.container_begin(ctx, .Container, label="titlebar-caption-reservation", key="titlebar-caption-reservation",
+			style=alicorn.layout_style(.Row, width=trailing, height=height))
+		alicorn.container_end(ctx)
+	}
+	alicorn.container_end(ctx)
+	body := alicorn.container_begin(
+		ctx, .Container, label="titlebar-smoke-body", key="titlebar-smoke-body",
+		style=alicorn.layout_style(.Column, grow=1, padding=20, gap=10, clip=true),
+	)
+	alicorn.text(ctx, "Alicorn-rendered connected tabs share the native titlebar band.")
+	alicorn.text(ctx, "Drag a tab onto its sibling to reorder; drag blank band space to move the window.")
+	alicorn.text(ctx, fmt.tprintf(
+		"metrics=%d header=%0.1fpt usable=%0.1f..%0.1f reorders=%d pointers=%d",
+		app.titlebar_metrics_count,
+		app.titlebar_metrics_header_h,
+		app.titlebar_content_start_x,
+		app.titlebar_content_end_x,
+		app.titlebar_reorder_count,
+		app.titlebar_pointer_count,
+	))
+	alicorn.container_end(ctx)
+	alicorn.container_end(ctx)
+	app.titlebar_header = header
+	app.titlebar_tabs_region = tabs_region
+	app.titlebar_blank = blank
+	app.titlebar_body = body
+}
+
+titlebar_metrics :: proc(data: rawptr, _rt: ^alicorn.Runtime, metrics: alicorn.Window_Chrome_Metrics) {
+	app := cast(^App)data
+	app.titlebar_metrics_count += 1
+	app.titlebar_metrics_header_h = metrics.header.h
+	app.titlebar_header_height = max(metrics.header.h, 1)
+	app.titlebar_content_start_x = metrics.content_start_x
+	app.titlebar_content_end_x = metrics.content_end_x
+}
+
+titlebar_layout :: proc(data: rawptr, _rt: ^alicorn.Runtime) -> alicorn.Window_Chrome_Layout {
+	app := cast(^App)data
+	app.titlebar_regions[0] = alicorn.Window_Chrome_Region{node=app.titlebar_tabs_region, kind=.Interactive}
+	app.titlebar_regions[1] = alicorn.Window_Chrome_Region{node=app.titlebar_blank, kind=.Window_Drag}
+	app.titlebar_layout_count += 1
+	return alicorn.Window_Chrome_Layout{header=app.titlebar_header, regions=app.titlebar_regions[:]}
+}
+
+titlebar_pointer :: proc(app: ^App, _rt: ^alicorn.Runtime, _event: alicorn.Pointer_Event, _target: alicorn.Node_ID) {
+	app.titlebar_pointer_count += 1
+}
+
+titlebar_drag :: proc(app: ^App, rt: ^alicorn.Runtime, event: alicorn.Drag_Event) {
+	if event.drag_type != TITLEBAR_SMOKE_TAB_DRAG { return }
+	if event.kind != .Dropped || event.target.value == 0 || event.source.value == event.target.value { return }
+	if event.position == .Before {
+		app.titlebar_order = [2]u64{event.source.value, event.target.value}
+	} else if event.position == .After {
+		app.titlebar_order = [2]u64{event.target.value, event.source.value}
+	}
+	app.titlebar_reorder_count += 1
+	alicorn.invalidate_root(rt, "titlebar smoke tabs reordered")
 }
 
 start :: proc(app: ^App, waker: ui.Application_Waker) {
@@ -266,6 +412,14 @@ main :: proc() {
 			app.menu_smoke = true
 			app.menu_expected = [3]alicorn.Action_ID{MENU_CUT, MENU_PALETTE, MENU_SYNC}
 		}
+		if argument == "--titlebar-smoke" {
+			app.titlebar_smoke = true
+			app.titlebar_order = [2]u64{1, 2}
+			app.titlebar_selected = 1
+			app.titlebar_header_height = 32
+			app.titlebar_content_end_x = 900
+			smoke = true
+		}
 	}
 	// A Scratchpad-shaped menu tree: four popup menus, a nested recent-files
 	// submenu, accelerators, separators, checked and disabled items, plus one
@@ -307,16 +461,39 @@ main :: proc() {
 		// visible, so the same policy is safe to exercise here.
 		presentation = .Hidden
 	}
+	decorations := alicorn.Window_Decoration_Mode.System
+	chrome_h: f32
+	chrome_metrics: alicorn.Window_Chrome_Metrics_Proc
+	chrome_layout: alicorn.Window_Chrome_Layout_Proc
+	if app.titlebar_smoke {
+		decorations = .Integrated_Title_Bar
+		when ODIN_OS == .Darwin { decorations = .Content_Title_Bar }
+		chrome_h = 32
+		chrome_metrics = titlebar_metrics
+		chrome_layout = titlebar_layout
+	}
+	pointer_proc: proc(^App, ^alicorn.Runtime, alicorn.Pointer_Event, alicorn.Node_ID)
+	drag_proc: proc(^App, ^alicorn.Runtime, alicorn.Drag_Event)
+	if app.titlebar_smoke {
+		pointer_proc = titlebar_pointer
+		drag_proc = titlebar_drag
+	}
 	if sdl_gpu_reference {
 		ui.run(&app, render, title="Alicorn · Native Renderer Probe", on_start=start, on_wake=wake,
 			on_stop=stop, smoke=smoke, on_services=services, on_dialog=dialog_done,
 			on_close_requested=close_requested, menus=menus[:], menu_presentation=presentation,
-			on_menu_command=menu_command)
+			on_menu_command=menu_command, window_decorations=decorations,
+			window_chrome_height=chrome_h, window_chrome_metrics=chrome_metrics,
+			window_chrome_layout=chrome_layout, on_pointer=pointer_proc,
+			on_drag=drag_proc)
 	} else {
 		webgpu.run(&app, render, title="Alicorn · Native Renderer Probe", on_start=start, on_wake=wake,
 			on_stop=stop, smoke=smoke, on_services=services, on_dialog=dialog_done,
 			on_close_requested=close_requested, menus=menus[:], menu_presentation=presentation,
-			on_menu_command=menu_command)
+			on_menu_command=menu_command, window_decorations=decorations,
+			window_chrome_height=chrome_h, window_chrome_metrics=chrome_metrics,
+			window_chrome_layout=chrome_layout, on_pointer=pointer_proc,
+			on_drag=drag_proc)
 	}
 	if app.menu_smoke {
 		if !app.menu_ok {
@@ -324,5 +501,19 @@ main :: proc() {
 			os.exit(1)
 		}
 		fmt.println("menu_smoke PASS", "commands", app.menu_count)
+	}
+	if app.titlebar_smoke {
+		ok := app.titlebar_metrics_count > 0 && app.titlebar_metrics_header_h > 0 &&
+			app.titlebar_layout_count > 0 && app.titlebar_tabs_region != 0 && app.titlebar_blank != 0
+		fmt.println(
+			"titlebar_smoke", "PASS" if ok else "FAIL",
+			"metrics", app.titlebar_metrics_count,
+			"layouts", app.titlebar_layout_count,
+			"header_h", app.titlebar_metrics_header_h,
+			"usable_x", app.titlebar_content_start_x, app.titlebar_content_end_x,
+			"pointer_events", app.titlebar_pointer_count,
+			"reorders", app.titlebar_reorder_count,
+		)
+		if !ok { os.exit(1) }
 	}
 }

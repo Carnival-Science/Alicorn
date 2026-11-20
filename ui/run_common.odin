@@ -194,6 +194,20 @@ run_hosted_config :: proc(
 		state.host_services.dialogs = services.dialogs
 		state.host_services.quit = services.quit
 	}
+	chrome_metrics :: proc(data: rawptr, rt: ^alicorn.Runtime, metrics: alicorn.Window_Chrome_Metrics) {
+		state := cast(^Hosted_Run_State(T))data
+		if state.window_chrome_metrics != nil { state.window_chrome_metrics(state.app, rt, metrics) }
+	}
+	chrome_layout :: proc(data: rawptr, rt: ^alicorn.Runtime) -> alicorn.Window_Chrome_Layout {
+		state := cast(^Hosted_Run_State(T))data
+		if state.window_chrome_layout != nil { return state.window_chrome_layout(state.app, rt) }
+		return {}
+	}
+	chrome_appearance :: proc(data: rawptr, rt: ^alicorn.Runtime) -> alicorn.Window_Chrome_Appearance {
+		state := cast(^Hosted_Run_State(T))data
+		if state.window_chrome_appearance != nil { return state.window_chrome_appearance(state.app, rt) }
+		return {}
+	}
 
 	config := alicorn.Hosted_Runtime_Config{
 		state=rawptr(run_state),
@@ -207,9 +221,9 @@ run_hosted_config :: proc(
 		menu_presentation=run_state.menu_presentation,
 		window_decorations=run_state.window_decorations,
 		window_chrome_height=run_state.window_chrome_height,
-		window_chrome_metrics=run_state.window_chrome_metrics,
-		window_chrome_layout=run_state.window_chrome_layout,
-		window_chrome_appearance=run_state.window_chrome_appearance,
+		window_chrome_metrics=chrome_metrics,
+		window_chrome_layout=chrome_layout,
+		window_chrome_appearance=chrome_appearance,
 		on_host_services=host_services,
 		post_wake_data=post_wake_data,
 		post_wake=post_wake,

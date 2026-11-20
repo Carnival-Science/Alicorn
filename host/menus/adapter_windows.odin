@@ -14,6 +14,11 @@ import "vendor:sdl3"
 // accelerator text are snapshotted here; EnableMenuItem/CheckMenuItem refresh
 // reads the borrowed Action_State whenever a popup opens. Selection is queued
 // from the window subclass so the host dispatches it at a safe point.
+//
+// Integrated title bars use the same state and subclass: top-level labels move
+// into the authored band, caption controls and chrome regions are hit-tested
+// there, and DWM extends over a client-area frame. host/menus therefore owns a
+// single Win32 construction path for both presentations.
 
 foreign import comctl32 "system:Comctl32.lib"
 foreign comctl32 {
@@ -51,6 +56,7 @@ Win32_Menu_State :: struct {
 	bindings:  [dynamic]Win32_Menu_Binding,
 	installed: bool,
 	attached:  bool,
+	chrome:    Win32_Chrome_State,
 }
 
 win32_menu_state :: proc(data: win.DWORD_PTR) -> ^Win32_Menu_State {
@@ -145,15 +151,36 @@ win32_menu_subclass :: proc "system" (
 	context = runtime.default_context()
 	state := win32_menu_state(ref_data)
 	if state == nil { return win.DefSubclassProc(hwnd, message, wparam, lparam) }
+	state.hwnd = hwnd
+	state.chrome.hwnd = hwnd
+	integrated := state.chrome.frame_enabled
+	dwm_result: win.LRESULT
+	dwm_handled := false
+	if message == win.WM_NCHITTEST || message == win.WM_NCMOUSEMOVE || message == win.WM_NCMOUSELEAVE ||
+		message == win.WM_NCLBUTTONDOWN || message == win.WM_NCLBUTTONUP || message == win.WM_NCLBUTTONDBLCLK ||
+		message == win.WM_NCRBUTTONDOWN || message == win.WM_NCRBUTTONUP || message == win.WM_NCRBUTTONDBLCLK {
+		dwm_handled = DwmDefWindowProc(hwnd, message, wparam, lparam, &dwm_result) != false
+	}
+	if integrated {
+		if result, handled := win32_chrome_handle_message(
+			&state.chrome, message, wparam, lparam, dwm_handled, dwm_result,
+		); handled {
+			return result
+		}
+	}
+	if dwm_handled { return dwm_result }
 	if message == win.WM_COMMAND {
 		command_id := u32(uintptr(wparam) & 0xffff)
 		if command_id > 0 && int(command_id) < len(state.commands) {
 			native_menu_adapter_queue(state.adapter, state.commands[command_id])
+			win32_chrome_exit_mode(&state.chrome, -1)
 			return 0
 		}
 	}
 	if message == win.WM_INITMENUPOPUP { win32_menu_refresh_state(state) }
-	return win.DefSubclassProc(hwnd, message, wparam, lparam)
+	result := win.DefSubclassProc(hwnd, message, wparam, lparam)
+	win32_chrome_post_message(&state.chrome, message, wparam, lparam)
+	return result
 }
 
 @(private)
@@ -163,8 +190,19 @@ win32_menu_state_destroy :: proc(state: ^Win32_Menu_State) {
 		if state.attached { _ = win.SetMenu(state.hwnd, nil) }
 		_ = win.DestroyMenu(state.root)
 	}
+	win32_chrome_destroy_masks(&state.chrome)
+	if state.adapter != nil && state.adapter.hosted != nil {
+		if rt, status := alicorn.hosted_runtime_borrow(state.adapter.hosted); status == .Ok {
+			alicorn.runtime_host_text_run_release(rt, u64(WIN32_CHROME_TITLE_NODE))
+			alicorn.runtime_host_text_run_release(rt, u64(WIN32_CHROME_ELLIPSIS_NODE))
+			for i in 0..<len(state.chrome.labels) {
+				alicorn.runtime_host_text_run_release(rt, u64(WIN32_CHROME_LABEL_NODE_BASE+alicorn.Node_ID(i)))
+			}
+		}
+	}
 	if state.commands != nil { delete(state.commands) }
 	if state.bindings != nil { delete(state.bindings) }
+	if state.chrome.labels != nil { delete(state.chrome.labels) }
 	allocator := state.allocator
 	free(state, allocator=allocator)
 }
@@ -173,12 +211,14 @@ native_menu_adapter_prepare :: proc(
 	adapter: ^Native_Menu_Adapter,
 	window: ^sdl3.Window,
 	service: ^Menu_Service,
+	chrome_config: Menu_Chrome_Config = {},
 ) -> bool {
 	if adapter == nil || window == nil || service == nil { return false }
 	if adapter.prepared { return true }
 	adapter.window = window
 	adapter.service = service
-	if len(service.menus) == 0 {
+	adapter.chrome = chrome_config
+	if len(service.menus) == 0 && chrome_config.decorations == .System {
 		adapter.prepared = true
 		return true
 	}
@@ -195,12 +235,28 @@ native_menu_adapter_prepare :: proc(
 		free(state, allocator=state.allocator)
 		return false
 	}
+	state.chrome = Win32_Chrome_State{
+		adapter=adapter, menu_state=state, hwnd=hwnd, window=window, allocator=state.allocator,
+		active=true, windows_11=win32_caption_windows_11(),
+		hovered=-1, active_menu=-1, caption_hovered=-1, caption_pressed=-1,
+		frame_enabled=chrome_config.decorations == .Integrated_Title_Bar,
+		last_inset=-1,
+	}
 	state.root = win.CreateMenu()
 	if state.root == nil {
-		delete(state.commands)
-		free(state, allocator=state.allocator)
+		win32_menu_state_destroy(state)
 		return false
 	}
+	if chrome_config.decorations != .System {
+		state.chrome.labels = make([]Win32_Chrome_Label, len(service.menus), allocator=state.allocator)
+		if len(service.menus) > 0 && state.chrome.labels == nil {
+			win32_menu_state_destroy(state)
+			return false
+		}
+		for &label, i in state.chrome.labels { label.host_node = WIN32_CHROME_LABEL_NODE_BASE+alicorn.Node_ID(i) }
+	}
+	state.chrome.title.host_node = WIN32_CHROME_TITLE_NODE
+	state.chrome.ellipsis.host_node = WIN32_CHROME_ELLIPSIS_NODE
 	for &description, index in service.menus {
 		popup: win.HMENU
 		flags := win.UINT(WIN32_MF_POPUP)
@@ -236,6 +292,12 @@ native_menu_adapter_prepare :: proc(
 			win32_menu_state_destroy(state)
 			return false
 		}
+		if chrome_config.decorations != .System {
+			label := &state.chrome.labels[index]
+			label.text = description.label
+			label.popup = popup
+			if description.command != alicorn.Action_ID(0) { label.direct_menu = &description }
+		}
 		if description.command != alicorn.Action_ID(0) {
 			append(&state.bindings, Win32_Menu_Binding{
 				menu=state.root, position=win.UINT(index), top_menu=&description, is_command=true,
@@ -244,12 +306,19 @@ native_menu_adapter_prepare :: proc(
 	}
 	win.SetWindowSubclass(hwnd, win32_menu_subclass, MENU_ADAPTER_SUBCLASS_ID, win.DWORD_PTR(uintptr(state)))
 	state.installed = true
-	if !win.SetMenu(hwnd, state.root) {
-		win32_menu_state_destroy(state)
-		return false
+	if chrome_config.decorations == .System {
+		if !win.SetMenu(hwnd, state.root) {
+			win32_menu_state_destroy(state)
+			return false
+		}
+		state.attached = true
+		_ = DrawMenuBar(hwnd)
+	} else if state.chrome.frame_enabled {
+		if !win32_chrome_reapply_frame(&state.chrome) {
+			win32_menu_state_destroy(state)
+			return false
+		}
 	}
-	state.attached = true
-	_ = DrawMenuBar(hwnd)
 	adapter.platform_data = rawptr(state)
 	adapter.prepared = true
 	return true
@@ -266,7 +335,32 @@ native_menu_adapter_destroy :: proc(adapter: ^Native_Menu_Adapter) {
 		win32_menu_state_destroy(cast(^Win32_Menu_State)adapter.platform_data)
 	}
 	adapter.platform_data = nil
+	adapter.chrome_active = false
 	adapter.prepared = false
 	adapter.has_pending = false
 	adapter.pending_command = {}
+}
+
+native_menu_adapter_activate_chrome :: proc(adapter: ^Native_Menu_Adapter) -> bool {
+	return win32_chrome_activate(adapter)
+}
+
+native_menu_adapter_sync_chrome :: proc(adapter: ^Native_Menu_Adapter) {
+	_ = win32_chrome_sync(adapter)
+}
+
+native_menu_adapter_chrome_paint :: proc(
+	adapter: ^Native_Menu_Adapter,
+	width, height: f32,
+	allocator := context.temp_allocator,
+) -> []alicorn.Paint_Command {
+	return win32_chrome_paint(adapter, width, height, allocator)
+}
+
+native_menu_adapter_handle_keydown :: proc(
+	adapter: ^Native_Menu_Adapter,
+	keycode: int,
+	modifiers: sdl3.Keymod,
+) -> bool {
+	return win32_chrome_handle_keydown(adapter, keycode, modifiers)
 }
