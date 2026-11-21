@@ -4711,3 +4711,135 @@ remaining confirmation is physical. On the machine with two displays:
 8. **Both directions:** repeat A→B, B→A, and a resize that starts on one monitor
    and ends on the other. Watch for stale text, a blank/black frame, or a lost
    surface. Record the monitor scales and any mismatch against this checklist.
+
+## Stage D slice 1: topmost floating-window re-entry position (Windows, 2026-11-20)
+
+Stage D opened with a founder-reported regression on the hosted build: a
+secondary topmost window "shifts to the left and up when the mouse re-enters
+it". This was a recurrence of a defect already fixed for the reference host in
+`bae58e9` ("preserve topmost window position on mouse entry"), which the hosted
+chrome port never carried over. Stage D slice 1 moves the fix into shared
+platform infrastructure, restores it on both hosts, and adds the regression
+coverage the original fix relied on.
+
+### Mechanism and the original discrimination logic
+
+SDL promotes an `ALWAYS_ON_TOP` window on mouse entry. `WIN_OnWindowEnter`
+(`SDL_windowswindow.c`, release 3.4.20) calls
+
+```c
+WIN_SetWindowPositionInternal(window, copybits | SWP_NOSIZE | SWP_NOACTIVATE,
+                              SDL_WINDOWRECT_CURRENT);
+```
+
+and `WIN_SetWindowPositionInternal` derives the requested origin with
+`WIN_AdjustWindowRect`, which adds the **standard** `AdjustWindowRectExForDpi`
+caption/border inset. An Alicorn integrated title bar answers `WM_NCCALCSIZE`
+with a full-client rectangle, so that inset is already inside the window
+rectangle. SDL adds it a second time and Windows moves the window down/right, so
+the next entry computes from the moved position and the window walks up and to
+the left by the caption and border inset (observed 8 px left, 31 px up).
+
+`bae58e9` intercepted `WM_WINDOWPOSCHANGING` in the native
+`native/sdl_gpu/menus_windows.odin` subclass and set `SWP_NOMOVE` only when the
+request was SDL's promotion. The discrimination was the important part, because
+a false positive freezes a legitimate move:
+
+- the integrated frame is active and the SDL window has `.ALWAYS_ON_TOP`;
+- the request has `SWP_NOSIZE | SWP_NOACTIVATE` and none of
+  `SWP_NOMOVE | SWP_NOZORDER | SWP_FRAMECHANGED`;
+- the requested origin equals `SDL_GetWindowPosition() + standard-frame inset`
+  from `AdjustWindowRectExForDpi`, with a nonzero inset. Windows may replace
+  `HWND_TOPMOST` with an insertion HWND before the message is delivered, so the
+  z-order target is deliberately not inspected.
+
+Explicit moves and placements keep `SWP_NOZORDER`; resizes, always-on-top
+toggles, DPI changes, and frame changes keep `SWP_NOMOVE` or
+`SWP_FRAMECHANGED`; and the coordinate signature excludes everything else.
+
+### What the hosted path was missing
+
+The Stage A slice 3 hosted port mirrored the native chrome in
+`host/menus/chrome_windows.odin` (WM_NCCALCSIZE, WM_NCHITTEST, caption
+controls, DWM frame, chrome regions) but its `win32_chrome_handle_message`
+never looked at `WM_WINDOWPOSCHANGING`. `host/menus/adapter_windows.odin`
+installs the subclass for hosted primary and secondary windows, so every hosted
+topmost window was exposed to the drift; the native host was protected only
+because it still carried its own copy of the predicate.
+
+### Shared implementation
+
+New package `host/sdl3/window_frame` owns the predicate for both hosts,
+matching the `host/sdl3/live_resize` precedent ("both renderers one host"):
+
+- `Context{hwnd, window, frame_enabled, menu_attached}` carries only what both
+  subclasses know; `menu_attached` mirrors the `bMenu` value SDL's own
+  adjustment derives.
+- `standard_frame_inset` exposes the origin offset SDL would add.
+- `preserve_topmost_promotion_position` applies the discrimination above and
+  sets `SWP_NOMOVE` in place.
+
+`native/sdl_gpu/menus_windows.odin` now delegates to the shared predicate and
+keeps only its own `windows.json` counter (`topmost_promotions_preserved`).
+The hosted chrome calls it from the new `WM_WINDOWPOSCHANGING` branch before
+`DefSubclassProc` and counts the preserved promotions on
+`Win32_Chrome_State`. There is one implementation, and the native 168-test
+suite plus the hosted regression exercise it from both sides.
+
+### Validation
+
+- `host/sdl3/window_frame`: a predicate test proves acceptance of the exact
+  promotion shape and rejection of explicit placement (`SWP_NOZORDER`), resize
+  (`SWP_NOMOVE`), frame/DPI change (`SWP_FRAMECHANGED`), the unadjusted client
+  origin, a half-inset origin, a system-decorated context, a non-topmost
+  window, and a nil request.
+- `host/menus/chrome_windows_test.odin`: port of the native
+  `test_integrated_topmost_window_mouse_entry_preserves_native_rectangle`
+  regression. Eight real SDL mouse-entry messages must preserve the HWND
+  rectangle, must not activate the window, and must increment the counter;
+  explicit move and resize still change geometry; topmost off/on entries add
+  eight more preserved promotions (16 total). Hosted suites: host/menus 9.
+- `native/sdl_gpu`: 168 tests pass with the shim, including the original
+  regression and the `windows.json` counter.
+- Negative control: with the shared predicate's `SWP_NOMOVE` temporarily
+  removed, the new physical runner reports `entry 0 rect=884,408,1668,907
+  delta=(-8,-31)` (the founder's exact symptom). Restoring the line makes every
+  entry `delta=(0,0)`.
+- `examples/16_native_webgpu_ui` gained `--topmost-child-smoke`: an
+  integrated-chrome `ALWAYS_ON_TOP` child that stays open.
+  `tools/validate_native_webgpu_topmost.ps1` moves the real cursor out of and
+  back into that child four times and asserts the rectangle and topmost state.
+  Passes on D3D12, Vulkan, and SDL_GPU with `delta=(0,0)` on every entry.
+- Example 16 `--child-chrome-smoke` and `--titlebar-smoke` pass on D3D12,
+  Vulkan, and SDL_GPU; the hosted 10-test chrome suite (`host/menus` 9 +
+  `host/sdl3/window_frame` 1) passes; Scratchpad `b458d6e` passes
+  `smoke --renderer=webgpu --backend=d3d12`, `--backend=vulkan`, and
+  `--renderer=sdl-gpu` (clean and recovery legs each).
+
+Suites: runtime 419, host/fonts 5, host/sdl3 8, live_resize 9, window_frame 1,
+input 8, clipboard 3, dialogs 5, host/menus 9, host/web 14, host/diagnostics 9,
+host/presentation 7, renderer/webgpu 8, renderer/cpu 23, ui 50, testui 13,
+theme 37, native/sdl_gpu 168, scroll_capture 6, accessibility contract 1,
+`odin build tests`/`out/alicorn_tests.exe` (foundation PASS). As in the previous
+slices, `tools/test.ps1` on this machine stops at the pinned AccessKit dependency
+check's `odin test accesskit` stage before the Alicorn suites run, so every
+Alicorn stage was run individually with the same compiler arguments. Raw logs
+and the negative-control record are in
+[`validation/issue-211-topmost-reentry-windows-2026-11-20.md`](validation/issue-211-topmost-reentry-windows-2026-11-20.md).
+
+### Founder's hands-on re-entry checklist
+
+The automated runner uses the fixture child; the founder's exact Scratchpad
+floating window still needs a physical pass:
+
+1. On Windows 10 22H2 with the hosted build, open Scratchpad and detach a
+   document into a floating window (drag the tab out and release outside the
+   window), then enable its "On top" action.
+2. Move the pointer out of the floating window, then re-enter it from each side
+   (left, right, top, bottom) at least four times each.
+3. The window rectangle must not change by even one pixel, must not activate on
+   hover, and must remain above the main window.
+4. Also move and resize the floating window deliberately; those must still
+   work, and a DPI change while dragging must still re-lay out the chrome.
+5. Repeat once with the window partially off-screen and once on a second
+   monitor at a different scale.

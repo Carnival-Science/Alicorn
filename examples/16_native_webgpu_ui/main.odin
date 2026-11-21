@@ -25,6 +25,7 @@ MENU_ABOUT        :: alicorn.Action_ID(0x210A)
 MENU_SYNC         :: alicorn.Action_ID(0x210B)
 MENU_CHILD_ACTION :: alicorn.Action_ID(0x2201)
 CHILD_CHROME_TITLE :: "Alicorn child chrome probe"
+TOPMOST_CHILD_TITLE :: "Alicorn topmost child probe"
 CHILD_CHROME_HEADER_HEIGHT :: f32(34)
 CLIPBOARD_SMOKE_TEXT :: "alicorn hosted services smoke"
 DROP_SMOKE_PATH :: "C:\\alicorn\\services-smoke.txt"
@@ -40,6 +41,9 @@ Child_App :: struct {
 	// --child-chrome-smoke state. The child owns its own retained chrome nodes,
 	// metrics, layout, menu dispatch, close deferral, and dialog service.
 	chrome_smoke: bool,
+	// --topmost-child-smoke reuses the integrated-chrome child without the
+	// synthetic accelerator/close events so the window stays open.
+	topmost_smoke: bool,
 	title: string,
 	started: bool,
 	stopped: bool,
@@ -74,6 +78,11 @@ App :: struct {
 	child: Child_App,
 	open_child_on_services: bool,
 	child_open_accepted: bool,
+	// --topmost-child-smoke holds an ALWAYS_ON_TOP child window with integrated
+	// chrome so a scripted mouse re-entry can prove SDL's automatic promotion
+	// no longer moves it. It is the physical half of the
+	// host/sdl3/window_frame regression test.
+	topmost_child_smoke: bool,
 	// --defer-close proves the hosted close/quit handshake without changing the
 	// default behavior driven by validate_native_webgpu_ui.ps1.
 	defer_close_once: bool,
@@ -893,7 +902,7 @@ auxiliary_open_failed :: proc(data: rawptr) {
 
 open_auxiliary_window :: proc(app: ^App) -> bool {
 	child := &app.child
-	title := CHILD_CHROME_TITLE if child.chrome_smoke else "Alicorn auxiliary window"
+	title := TOPMOST_CHILD_TITLE if app.topmost_child_smoke else (CHILD_CHROME_TITLE if child.chrome_smoke else "Alicorn auxiliary window")
 	config := alicorn.Hosted_Runtime_Config{
 		state=rawptr(child),
 		post_wake_data=rawptr(child),
@@ -903,7 +912,7 @@ open_auxiliary_window :: proc(app: ^App) -> bool {
 		on_host_services=auxiliary_host_services,
 		on_stop=auxiliary_stop,
 	}
-	if child.chrome_smoke {
+	if child.chrome_smoke || child.topmost_smoke {
 		config.menus = app.child_menus[:]
 		config.menu_presentation = .Labels
 		config.on_menu_command = child_menu_command
@@ -921,6 +930,7 @@ open_auxiliary_window :: proc(app: ^App) -> bool {
 		width=760,
 		height=460,
 		config=config,
+		always_on_top=app.topmost_child_smoke,
 		on_open_failed=auxiliary_open_failed,
 	})
 }
@@ -1045,6 +1055,16 @@ main :: proc() {
 			app.child.chrome_smoke = true
 			app.child.title = CHILD_CHROME_TITLE
 		}
+		if argument == "--topmost-child-smoke" {
+			// Physical half of the topmost re-entry regression: keep an
+			// integrated-chrome ALWAYS_ON_TOP child open until a scripted
+			// mouse re-entry asserts that its rectangle never moves.
+			app.topmost_child_smoke = true
+			app.open_child_on_services = true
+			app.child.topmost_smoke = true
+			app.child.title = TOPMOST_CHILD_TITLE
+			app.interactive = true
+		}
 		if argument == "--interactive" { app.interactive = true }
 		if argument == "--services-smoke" { app.services_smoke = true }
 		if argument == "--menu-smoke" {
@@ -1102,7 +1122,7 @@ main :: proc() {
 	// clipboard, and file-drop callbacks have all run, so the bounded --smoke
 	// first-present exit must not stop it early.
 	if app.services_smoke { smoke = false }
-	if app.child_chrome_smoke {
+	if app.child_chrome_smoke || app.topmost_child_smoke {
 		app.child_menu_items[0] = alicorn.Menu_Item{
 			kind=.Command,
 			command=MENU_CHILD_ACTION,

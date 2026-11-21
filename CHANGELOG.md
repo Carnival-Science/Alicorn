@@ -16,9 +16,19 @@ changelogs.
   X/Y scales from the drawable. Hosted and native live-resize paths now
   invalidate descriptions when display scale changes without a logical-size
   change.
+- The Win32 topmost-promotion guard that preserves an integrated-frame window's
+  rectangle on mouse entry now lives in the shared `alicorn:host/sdl3/window_frame`
+  package. The hosted WebGPU chrome had dropped it; the native SDL_GPU host now
+  delegates to the same predicate instead of carrying a private copy.
 
 ### Added
 
+- Added `tools/validate_native_webgpu_topmost.ps1` and the example 16
+  `--topmost-child-smoke` fixture. The runner hovers the real cursor in and out
+  of an `ALWAYS_ON_TOP` integrated-chrome child and asserts its Win32 rectangle
+  never moves; without the guard it reproduces the historical `(-8,-31)` drift.
+  A hosted port of the native `bae58e9` regression and a predicate test cover
+  the same behavior through message injection.
 - Added `sdl3_webgpu_application_apply_metrics`,
   `hosted_surface_presenter_metrics`, a two-window DPI transition fixture, and
   `tools/validate_native_webgpu_dpi.ps1`. The fixture posts synthetic

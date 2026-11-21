@@ -9,7 +9,7 @@ native starter app, use [Getting Started](getting-started.md).
 runtime/          retained runtime and lower-level public API
 ui/               convenience API for ordinary native application UI
 native/sdl_gpu/   SDL3 / SDL_GPU host and compositor
-host/sdl3/        shared SDL3 windowing, events, live resize, dialogs, accessibility
+host/sdl3/        shared SDL3 windowing, events, live resize, frame geometry, dialogs, accessibility
 host/presentation shared hosted-surface presenter (WebGPU)
 host/diagnostics/ shared, renderer-neutral developer diagnostics
 host/menus/       shared native menu model and platform adapters
@@ -79,6 +79,7 @@ cannot reach:
 ```powershell
 .\tools\validate_native_webgpu_chrome.ps1 -Executable out\example16\16_native_webgpu_ui.exe -Backend d3d12
 .\tools\validate_native_webgpu_resize.ps1 -Executable out\example16\16_native_webgpu_ui.exe -Backend d3d12
+.\tools\validate_native_webgpu_topmost.ps1 -Executable out\example16\16_native_webgpu_ui.exe -Backend d3d12
 ```
 
 The chrome runner covers hit testing, caption drag/maximize/minimize, edge
@@ -91,6 +92,10 @@ with `-Mode application -ExtraArguments '--renderer=webgpu'` against a consumer
 build (Scratchpad) for the same drags without fixture chrome. The mechanism it
 exercises is shared with `native/sdl_gpu`; see
 [`hosted-runtime.md`](hosted-runtime.md#live-resize-and-window-movement).
+The topmost runner adds `--topmost-child-smoke`, hovers the real cursor in and out of
+an `ALWAYS_ON_TOP` integrated-chrome child, and asserts the window rectangle
+never moves; without the shared `WM_WINDOWPOSCHANGING` guard
+(`host/sdl3/window_frame`) it reports the historical `(-8,-31)` drift.
 
 ### Matched renderer/backend capture comparison
 

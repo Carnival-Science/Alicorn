@@ -8,6 +8,7 @@ import "core:mem"
 import win "core:sys/windows"
 import alicorn "alicorn:runtime"
 import cpu_renderer "alicorn:renderer/cpu"
+import window_frame "alicorn:host/sdl3/window_frame"
 import "vendor:sdl3"
 
 // The Windows integrated-titlebar adapter is the hosted sibling of
@@ -121,6 +122,10 @@ Win32_Chrome_State :: struct {
 	dark_frame_valid:        bool,
 	last_inset:              f32,
 	last_layout_revision:    u64,
+	// SDL promotes an ALWAYS_ON_TOP window on mouse entry with a
+	// standard-frame-adjusted origin that disagrees with the integrated
+	// frame. These are the promotions whose rectangle was preserved.
+	topmost_promotions_preserved: u64,
 }
 
 win32_chrome_application_owns_header :: proc(state: ^Win32_Chrome_State) -> bool {
@@ -1141,6 +1146,22 @@ win32_chrome_cancel_input :: proc(state: ^Win32_Chrome_State) {
 	state.alt_menu_pending = false
 }
 
+win32_chrome_preserve_topmost_promotion_position :: proc(
+	state: ^Win32_Chrome_State,
+	position: ^win.WINDOWPOS,
+) -> bool {
+	if state == nil || position == nil { return false }
+	attached := state.menu_state != nil && state.menu_state.attached
+	preserved := window_frame.preserve_topmost_promotion_position(window_frame.Context{
+		hwnd=state.hwnd,
+		window=state.window,
+		frame_enabled=state.frame_enabled,
+		menu_attached=attached,
+	}, position)
+	if preserved { state.topmost_promotions_preserved += 1 }
+	return preserved
+}
+
 // win32_chrome_handle_message returns handled=true when the chrome adapter
 // consumed the message. Callers run DwmDefWindowProc first for non-client
 // messages and pass its result in for hit-test merging.
@@ -1164,6 +1185,15 @@ win32_chrome_handle_message :: proc(
 	} else if (message == win.WM_NCLBUTTONDOWN || message == win.WM_NCLBUTTONDBLCLK) &&
 		wparam == win.WPARAM(win.HTCAPTION) {
 		state.gesture_owner = .Window
+	}
+
+	if integrated && message == win.WM_WINDOWPOSCHANGING {
+		// SDL re-asserts an ALWAYS_ON_TOP window's position on mouse entry
+		// using the standard frame inset the integrated frame already covers.
+		// Strip the move here and let DefSubclassProc apply the rest of the
+		// request unchanged.
+		position := cast(^win.WINDOWPOS)uintptr(lparam)
+		_ = win32_chrome_preserve_topmost_promotion_position(state, position)
 	}
 
 	if integrated && message == win.WM_NCCALCSIZE {

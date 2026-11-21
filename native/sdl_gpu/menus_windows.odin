@@ -10,6 +10,7 @@ import "core:fmt"
 import sdl3 "vendor:sdl3"
 import alicorn "../../runtime"
 import cpu_renderer "../../renderer/cpu"
+import window_frame "alicorn:host/sdl3/window_frame"
 
 foreign import dwmapi "system:Dwmapi.lib"
 foreign dwmapi {
@@ -1131,32 +1132,20 @@ win32_menu_set_active :: proc(state: ^Win32_Menu_State, active: bool) -> bool {
 }
 
 win32_menu_preserve_topmost_promotion_position :: proc(state: ^Win32_Menu_State, position: ^win.WINDOWPOS) -> bool {
-	if state == nil || !state.frame_enabled || position == nil { return false }
-	required := win.UINT(win.SWP_NOSIZE | win.SWP_NOACTIVATE)
-	excluded := win.UINT(win.SWP_NOMOVE | win.SWP_NOZORDER | win.SWP_FRAMECHANGED)
-	if (position.flags & required) != required || (position.flags & excluded) != 0 { return false }
+	if state == nil || !state.frame_enabled { return false }
 	if state.menu == nil || state.menu.window == nil { return false }
-	topmost := (sdl3.GetWindowFlags(state.menu.window) & sdl3.WindowFlags{.ALWAYS_ON_TOP}) != sdl3.WindowFlags{}
-	if !topmost { return false }
-	// Windows may replace HWND_TOPMOST with an actual insertion HWND before
-	// sending WINDOWPOSCHANGING, so identify SDL's standard-frame adjustment
-	// from the requested coordinates rather than the normalized z-order target.
-	standard_frame: win.RECT
-	style := cast(win.DWORD)win.GetWindowLongW(state.hwnd, win.GWL_STYLE)
-	ex_style := cast(win.DWORD)win.GetWindowLongW(state.hwnd, win.GWL_EXSTYLE)
-	if !win.AdjustWindowRectExForDpi(&standard_frame, style, win.BOOL(state.menu_attached), ex_style, win.GetDpiForWindow(state.hwnd)) { return false }
-	if standard_frame.left == 0 && standard_frame.top == 0 { return false }
-	x, y: c.int
-	if !sdl3.GetWindowPosition(state.menu.window, &x, &y) ||
-		position.x != x+standard_frame.left || position.y != y+standard_frame.top { return false }
-	// SDL's WIN_OnWindowEnter promotes topmost windows with an adjusted position
-	// and no SWP_NOMOVE. Its standard-frame adjustment disagrees with our full
-	// client WM_NCCALCSIZE contract. This is a z-order promotion: preserve the
-	// HWND rectangle before Windows applies it. Explicit moves keep SWP_NOZORDER
-	// and resize/DPI/frame changes do not satisfy this predicate.
-	position.flags |= win.SWP_NOMOVE
-	state.window_geometry.topmost_promotions_preserved += 1
-	return true
+	// The predicate is shared with the hosted SDL3/WebGPU chrome so both
+	// renderers recognize SDL's automatic topmost promotion identically; see
+	// host/sdl3/window_frame. This host keeps its own counter for the
+	// windows.json diagnostics capture.
+	preserved := window_frame.preserve_topmost_promotion_position(window_frame.Context{
+		hwnd=state.hwnd,
+		window=state.menu.window,
+		frame_enabled=state.frame_enabled,
+		menu_attached=state.menu_attached,
+	}, position)
+	if preserved { state.window_geometry.topmost_promotions_preserved += 1 }
+	return preserved
 }
 
 win32_menu_subclass :: proc "system" (hwnd: win.HWND, message: win.UINT, wparam: win.WPARAM, lparam: win.LPARAM, subclass_id: win.UINT_PTR, ref_data: win.DWORD_PTR) -> win.LRESULT {
