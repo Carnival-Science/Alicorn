@@ -985,6 +985,11 @@ semantic_snapshot_destroy :: proc(snapshot: ^Semantic_Snapshot) {
 	snapshot^ = Semantic_Snapshot{}
 }
 
+// semantic_collection_begin publishes a collection owned by a visual node. An
+// explicit parent names the collection's semantic parent directly, which is how
+// a popup list can belong to its trigger's semantic entity when the visual
+// ancestry does not express that relationship. Zero keeps the default nearest
+// described semantic ancestor.
 semantic_collection_begin :: proc(
 	ui: ^UI,
 	owner: Node_ID,
@@ -997,6 +1002,7 @@ semantic_collection_begin :: proc(
 	realized_first: u64 = 0,
 	realized_last: u64 = 0,
 	actions := Semantic_Actions{},
+	parent := Semantic_ID{},
 ) -> Semantic_Collection_Handle {
 	if ui == nil || ui.runtime == nil || !semantic_id_is_valid(id) ||
 	   (role != .List && role != .Tree && role != .Tab_List && role != .List_Box) ||
@@ -1020,6 +1026,7 @@ semantic_collection_begin :: proc(
 		pending.semantic.selected_id = selected_id
 		pending.semantic.current_id = current_id
 		pending.semantic.actions = semantic_actions_add(actions, .Focus)
+		if semantic_id_is_valid(parent) { pending.semantic.parent = parent }
 		return Semantic_Collection_Handle{id, generation, logical_count, selected_id, current_id}
 	}
 	delete_key(&rt.semantic_collection_touched, id)

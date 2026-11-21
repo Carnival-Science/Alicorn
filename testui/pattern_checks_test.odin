@@ -313,6 +313,8 @@ custom_combo_overlays :: proc(app: ^Custom_Combo_App, ui: ^alicorn.UI) {
 		if list != 0 {
 			selected_id := custom_combo_option_id(app.selected)
 			current_id := custom_combo_option_id(app.active_key)
+			collection_parent := app.trigger_semantic
+			if app.fault == .List_Unparented { collection_parent = {} }
 			collection := alicorn.semantic_collection_begin(
 				ui,
 				list,
@@ -325,10 +327,8 @@ custom_combo_overlays :: proc(app: ^Custom_Combo_App, ui: ^alicorn.UI) {
 				realized_first=0,
 				realized_last=u64(len(CUSTOM_COMBO_KEYS)),
 				actions=alicorn.semantic_actions_add({}, .Focus),
+				parent=collection_parent,
 			)
-			if app.fault != .List_Unparented && collection.id.namespace != 0 {
-				ui.runtime.pending[len(ui.runtime.pending)-1].semantic.parent = app.trigger_semantic
-			}
 			for key, index in CUSTOM_COMBO_KEYS {
 				enabled := custom_combo_enabled(key)
 				advertise_disabled := app.fault == .Disabled_Advertises && !enabled
