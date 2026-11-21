@@ -7,6 +7,12 @@ the current project status.
 
 ## Current acceptance and platform limits
 
+- [Issue #229 Phase 1 performance harness and baseline (2026-11-21)](issue-229-phase1-baseline-2026-11-21.md)
+  — Scratchpad-shaped workload matrix (dense virtual editor, 1k-node tree, tabs,
+  pinned gradient panel, focused field) across SDL_GPU, hosted D3D12, and hosted
+  Vulkan; six interaction families; per-stage CPU attribution in
+  `Frame_Stats.stage_timings_ns`; p50/p95/p99, allocation and visit counters;
+  real-Scratchpad `--timings` cross-check; measured instrumentation overhead.
 - [Reusable accessibility and interaction pattern checks (2026-11-21)](issue-217-pattern-checks-2026-11-21.md)
   — test-only `alicorn:testui` conformance checks for a single-select
   list/combobox and a composed modal dialog; stock Select, custom userland

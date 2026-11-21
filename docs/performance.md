@@ -7,6 +7,12 @@ limitations before using a number.
 
 ## Reports
 
+- [Issue #229 Phase 1 performance harness and baseline — Windows
+  (2026-11-21)](validation/issue-229-phase1-baseline-2026-11-21.md):
+  Scratchpad-shaped workload matrix across SDL_GPU, D3D12, and Vulkan;
+  per-stage `Frame_Stats` attribution; per-interaction percentiles, allocation
+  and visit counters; real-Scratchpad `--timings` cross-check; measured
+  instrumentation cost.
 - [v0.2.1 candidate performance scorecard — Windows
   (2026-11-04)](benchmarks/performance-scorecard-v0.2.1-windows-2026-11-04.md):
   matched construction, retained-locality, text, motion, and Scratchpad

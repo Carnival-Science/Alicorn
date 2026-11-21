@@ -1422,6 +1422,24 @@ List_Box still counts options rather than headers. Up/Down, Home/End, type-ahead
 pointer activation, focus restoration, and scroll reveal cross group boundaries
 in declared order while skipping disabled options and headers.
 
+### Performance attribution
+
+`alicorn.frame_stats_snapshot` includes cumulative
+`stage_timings_ns: [Runtime_Timing_Stage]u64`. The timers are always enabled
+and allocation-free. `Runtime_Timing_Stage` names description, whole reconcile,
+per-node reconcile hash and copy, structure diff, measure, text shaping,
+layout, semantic sync, paint, composition, and finalize. `Description` brackets
+the whole application pass; `Reconcile` contains measure/layout/semantic/paint/
+composition/finalize, while hash/copy/structure are reconcile sub-stages. Text
+shaping (`Measure_Text`) can be reached from both measure and layout and is a
+shared bucket rather than a strict subset.
+
+The stage marks use a cycle counter calibrated once per process against
+`core:time`; a platform without a usable cycle counter falls back to
+`time.tick_now`. Instrumentation cost is measured in the issue #229 baseline
+record. `testui.Turn_Work.stage_timings_ns` exposes the same deltas per
+headless turn.
+
 ### Pattern conformance checks (testui)
 
 `alicorn:testui` includes opt-in pattern checks for reusable interaction
