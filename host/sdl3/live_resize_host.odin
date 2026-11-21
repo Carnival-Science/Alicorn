@@ -19,6 +19,7 @@ package sdl3_host
 
 import "core:fmt"
 import alicorn "alicorn:runtime"
+import sdl3_file_drag "alicorn:host/sdl3/file_drag"
 import live_resize "alicorn:host/sdl3/live_resize"
 import presentation_host "alicorn:host/presentation"
 import "vendor:sdl3"
@@ -135,6 +136,12 @@ sdl3_webgpu_live_resize_renderable :: proc(
 	data: rawptr,
 	slot: live_resize.Slot,
 ) -> bool {
+	// A native file drag owns a modal OLE loop on this thread. The application
+	// is suspended inside its own pointer callback, so re-entering its retained
+	// description from a live-resize timer would corrupt application state.
+	// This mirrors the re-entrancy guard Stage C slice 1 added for the platform
+	// move/size loop.
+	if sdl3_file_drag.is_active() { return false }
 	live := cast(^SDL3_WebGPU_Live_Resize)data
 	application := sdl3_webgpu_live_resize_application(live, slot)
 	if application == nil || !application.initialized || !application.visible { return false }

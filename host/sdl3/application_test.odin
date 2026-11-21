@@ -86,16 +86,29 @@ test_sdl3_webgpu_application_routes_drop_file_events :: proc(t: ^testing.T) {
 	}
 	defer alicorn.hosted_runtime_destroy(&application.hosted)
 
+	drop_path := "C:/alicorn/host-drop.txt"
+	path_buffer: [64]u8
+	copy(path_buffer[:], drop_path)
+	path_buffer[len(drop_path)] = 0
 	drop_event: sdl3.Event
 	drop_event.type = .DROP_FILE
 	drop_event.drop.commonEvent.type = .DROP_FILE
 	drop_event.drop.windowID = 0
-	drop_event.drop.data = cstring("C:/alicorn/host-drop.txt")
-	result := sdl3_webgpu_application_handle_event(&application, drop_event)
+	drop_event.drop.data = cstring(rawptr(&path_buffer[0]))
+	if !sdl3.PushEvent(&drop_event) {
+		testing.expect(t, false, "the synthetic SDL drop event must enqueue")
+		return
+	}
+	queued: sdl3.Event
+	observed := sdl3.PeepEvents(&queued, 1, .GETEVENT, .DROP_FILE, .DROP_FILE) == 1
+	result: SDL3_WebGPU_Application_Event_Result
+	if observed {
+		result = sdl3_webgpu_application_handle_event(&application, queued)
+	}
 	step := alicorn.hosted_runtime_step(&application.hosted, 1)
-	testing.expect(t, result == .Handled && state.file_drops == 1 &&
-		state.drop_path == "C:/alicorn/host-drop.txt",
-		"SDL3 DROP_FILE events reach the hosted application callback with the exact path")
+	testing.expect(t, observed && result == .Handled && state.file_drops == 1 &&
+		state.drop_path == drop_path,
+		"SDL_EVENT_DROP_FILE pushed through SDL's queue reaches the hosted application callback with the exact path")
 	testing.expect(t, step.description_built,
 		"a routed drop invalidates the hosted application description")
 }

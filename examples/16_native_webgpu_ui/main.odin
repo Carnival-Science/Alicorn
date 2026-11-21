@@ -173,6 +173,16 @@ App :: struct {
 	clipboard_ok: bool,
 	file_drops: int,
 	file_drop_ok: bool,
+	// file_drag mirrors Application_Services.file_drag on both renderers. The
+	// services smoke asserts the capability is published without entering the
+	// modal OLE loop; --file-drag-demo is the interactive call site.
+	file_drag:         ui.UI_File_Drag_Service,
+	file_drag_available: bool,
+	file_drag_demo:    bool,
+	file_drag_started: bool,
+	file_drag_button_down: bool,
+	file_drag_result:  string,
+	file_drag_path:    [260]u8,
 	ticks: int,
 	drop_push_requested: bool,
 	drop_path: [64]u8,
@@ -224,6 +234,13 @@ render :: proc(app: ^App, ctx: ^ui.UI) {
 		}
 		if app.child_open_accepted { ui.text(ctx, "Auxiliary window request accepted") }
 		if app.child.open_failed { ui.text(ctx, "Auxiliary window could not be created") }
+		if app.file_drag_demo {
+			ui.text(ctx, fmt.tprintf(
+				"Native file drag: %s. Drag from this window to Explorer.",
+				"available" if app.file_drag_available else "unavailable",
+			))
+			if len(app.file_drag_result) > 0 { ui.text(ctx, app.file_drag_result) }
+		}
 		if app.timing_motion {
 			if ui.row(ctx, height=24, label="timing-motion-probe") {
 				marker := alicorn.container_begin(
@@ -960,12 +977,36 @@ close_requested :: proc(app: ^App, rt: ^alicorn.Runtime) -> alicorn.Hosted_Close
 	return .Allow
 }
 
+// file_drag_demo_pointer is the reference app-side call site for the native
+// drag-out service. Scratchpad initiates a drag from its workspace rows; this
+// fixture uses the same one-call contract so both renderers can be exercised
+// interactively. DoDragDrop is modal: this callback blocks until the user drops
+// or cancels, and both hosts defer live-resize presentation while it runs.
+file_drag_demo_pointer :: proc(app: ^App, _rt: ^alicorn.Runtime, event: alicorn.Pointer_Event, _target: alicorn.Node_ID) {
+	if app == nil || !app.file_drag_demo { return }
+	switch event.kind {
+	case .Down: app.file_drag_button_down = true
+	case .Up: app.file_drag_button_down = false
+	case .Cancel: app.file_drag_button_down = false
+	case .Move:
+	}
+	if app.file_drag_started || event.kind != .Move || !app.file_drag_button_down { return }
+	if !app.file_drag_available { return }
+	app.file_drag_started = true
+	path := string(cstring(rawptr(&app.file_drag_path[0])))
+	fmt.println("file_drag_demo begin", path)
+	started := ui.ui_file_drag_start(app.file_drag, path)
+	app.file_drag_result = fmt.tprintf("Native file drag returned %v for %s", started, path)
+}
+
 services :: proc(app: ^App, value: ui.UI_Host_Services) {
 	app.windows = value.windows
 	app.dialogs = value.dialogs
 	app.quit = value.quit
 	app.services_scheduler = value.scheduler
 	app.services_clipboard = value.clipboard_text
+	app.file_drag = value.file_drag
+	app.file_drag_available = value.file_drag.start != nil
 	app.dialog_available = value.dialogs.show_file != nil
 	if app.services_smoke {
 		clipboard_set := ui.ui_clipboard_set_text(app.services_clipboard, CLIPBOARD_SMOKE_TEXT)
@@ -1020,9 +1061,13 @@ services_tick :: proc(app: ^App, _rt: ^alicorn.Runtime) {
 		app.scheduler_armed = app.scheduler_armed ||
 			ui.ui_schedule_after(app.services_scheduler, .Frequent, 0)
 	}
+	// Native drag-out is a Windows capability. Other platforms publish an empty
+	// service, which is correct rather than a smoke failure.
+	file_drag_published := app.file_drag_available
+	when ODIN_OS != .Windows { file_drag_published = true }
 	complete := app.scheduler_armed && app.scheduled_frequent >= 1 &&
 		app.scheduled_opportunistic >= 1 && app.clipboard_ok &&
-		app.file_drops >= 1 && app.file_drop_ok
+		app.file_drops >= 1 && app.file_drop_ok && file_drag_published
 	if complete || app.ticks > SERVICES_SMOKE_TIMEOUT_TICKS {
 		app.services_done = true
 		ui.ui_quit_request(app.quit)
@@ -1067,6 +1112,22 @@ main :: proc() {
 		}
 		if argument == "--interactive" { app.interactive = true }
 		if argument == "--services-smoke" { app.services_smoke = true }
+		if argument == "--file-drag-demo" {
+			// Interactive reference call site for the shared native drag-out
+			// service. Press and drag from the window into Explorer.
+			app.file_drag_demo = true
+			app.interactive = true
+			when ODIN_OS == .Windows {
+				temp := os.get_env("TEMP", context.temp_allocator)
+				path := fmt.tprintf("%s\\alicorn-file-drag-demo.txt", temp)
+				if write_err := os.write_entire_file_from_string(path, "Alicorn native drag-out demo\n"); write_err == nil {
+					if len(path) < len(app.file_drag_path) {
+						copy(app.file_drag_path[:], path)
+						app.file_drag_path[len(path)] = 0
+					}
+				}
+			}
+		}
 		if argument == "--menu-smoke" {
 			app.menu_smoke = true
 			app.menu_expected = [3]alicorn.Action_ID{MENU_CUT, MENU_PALETTE, MENU_SYNC}
@@ -1197,6 +1258,9 @@ main :: proc() {
 		pointer_proc = titlebar_pointer
 		drag_proc = titlebar_drag
 	}
+	if app.file_drag_demo {
+		pointer_proc = file_drag_demo_pointer
+	}
 	scheduled_proc: proc(^App, ^alicorn.Runtime, alicorn.Scheduled_Wake_Class)
 	file_drop_proc: proc(^App, ^alicorn.Runtime, string)
 	tick_proc: proc(^App, ^alicorn.Runtime)
@@ -1249,6 +1313,7 @@ main :: proc() {
 			"clipboard", app.clipboard_ok,
 			"drops", app.file_drops,
 			"drop_ok", app.file_drop_ok,
+			"file_drag", app.file_drag_available,
 			"ticks", app.ticks,
 		)
 		if !ok { os.exit(1) }

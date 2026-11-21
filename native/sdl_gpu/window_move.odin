@@ -7,6 +7,7 @@ package alicorn_sdl_gpu
 // publishes its telemetry under the historical field names.
 
 import alicorn "../../runtime"
+import sdl3_file_drag "alicorn:host/sdl3/file_drag"
 import live_resize "alicorn:host/sdl3/live_resize"
 import "vendor:sdl3"
 
@@ -32,6 +33,11 @@ native_live_resize_slot_window :: proc(state: ^Native_Live_Resize_State, slot: l
 }
 
 native_live_resize_slot_renderable :: proc(state: ^Native_Live_Resize_State, slot: live_resize.Slot) -> bool {
+	// A native file drag owns a modal OLE loop on this thread. The application
+	// is suspended inside its own pointer callback; do not re-enter its
+	// retained description from a live-resize timer. Same guard as the hosted
+	// SDL3/WebGPU live-resize adapter.
+	if sdl3_file_drag.is_active() { return false }
 	window := native_live_resize_slot_window(state, slot)
 	if window == nil { return false }
 	flags := sdl3.GetWindowFlags(window)

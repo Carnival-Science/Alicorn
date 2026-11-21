@@ -6,6 +6,7 @@ import alicorn "alicorn:runtime"
 import presentation_host "alicorn:host/presentation"
 import sdl3_clipboard "alicorn:host/sdl3/clipboard"
 import sdl3_dialogs "alicorn:host/sdl3/dialogs"
+import sdl3_file_drag "alicorn:host/sdl3/file_drag"
 import host_menus "alicorn:host/menus"
 import "core:c"
 import "core:fmt"
@@ -427,6 +428,7 @@ sdl3_webgpu_application_init :: proc(
 	if config.host_services.clipboard.get_text == nil {
 		config.host_services.clipboard = sdl3_clipboard.SDL3ClipboardService()
 	}
+	config.host_services.file_drag = sdl3_file_drag.service()
 	if config.monotonic_now == nil {
 		config.monotonic_now = sdl3_webgpu_application_now
 	}

@@ -1,0 +1,16 @@
+[alicorn-webgpu] device request begin
+[alicorn-webgpu] device callback status=Success device_present=true message=
+[alicorn-webgpu] device request returned future=0
+[alicorn-webgpu] adapter backend=D3D12 type=DiscreteGPU vendor=32.0.15.9597 architecture= device=NVIDIA GeForce RTX 2080 SUPER description=
+alicorn_diagnostics events C:\Users\saman\.codex\worktrees\alicorn-webgpu-migration\alicorn\out\slice3-dnd\tab-drag\d3d12-captures/events-20261121T021434.928Z-0001/events.jsonl
+alicorn_diagnostics path C:\Users\saman\.codex\worktrees\alicorn-webgpu-migration\alicorn\out\slice3-dnd\tab-drag\d3d12-captures/20261121T021435.933Z-0001/diagnostics.json inspector C:\Users\saman\.codex\worktrees\alicorn-webgpu-migration\alicorn\out\slice3-dnd\tab-drag\d3d12-captures/20261121T021435.933Z-0001/inspector.txt timeline C:\Users\saman\.codex\worktrees\alicorn-webgpu-migration\alicorn\out\slice3-dnd\tab-drag\d3d12-captures/20261121T021435.933Z-0001/timeline.json capture_id 20261121T021435.933Z-0001 frame_p95_ns 6177900 gpu_encode_ns 8499100 text_fingerprint_ns 0 text_fingerprint_bytes 0 text_mesh_rebuild_ns 0 text_mesh_cache_hits 0
+alicorn_diagnostics windows C:\Users\saman\.codex\worktrees\alicorn-webgpu-migration\alicorn\out\slice3-dnd\tab-drag\d3d12-captures/20261121T021435.933Z-0001/windows.json
+alicorn_diagnostics screenshot C:\Users\saman\.codex\worktrees\alicorn-webgpu-migration\alicorn\out\slice3-dnd\tab-drag\d3d12-captures/20261121T021435.933Z-0001/screenshot.ppm
+alicorn_diagnostics capture_requested F12
+alicorn_diagnostics path C:\Users\saman\.codex\worktrees\alicorn-webgpu-migration\alicorn\out\slice3-dnd\tab-drag\d3d12-captures/20261121T021436.709Z-0002/diagnostics.json inspector C:\Users\saman\.codex\worktrees\alicorn-webgpu-migration\alicorn\out\slice3-dnd\tab-drag\d3d12-captures/20261121T021436.709Z-0002/inspector.txt timeline C:\Users\saman\.codex\worktrees\alicorn-webgpu-migration\alicorn\out\slice3-dnd\tab-drag\d3d12-captures/20261121T021436.709Z-0002/timeline.json capture_id 20261121T021436.709Z-0002 frame_p95_ns 6194100 gpu_encode_ns 29021400 text_fingerprint_ns 0 text_fingerprint_bytes 0 text_mesh_rebuild_ns 0 text_mesh_cache_hits 0
+alicorn_diagnostics windows C:\Users\saman\.codex\worktrees\alicorn-webgpu-migration\alicorn\out\slice3-dnd\tab-drag\d3d12-captures/20261121T021436.709Z-0002/windows.json
+alicorn_diagnostics screenshot C:\Users\saman\.codex\worktrees\alicorn-webgpu-migration\alicorn\out\slice3-dnd\tab-drag\d3d12-captures/20261121T021436.709Z-0002/screenshot.ppm
+webgpu_live_resize frames 0 geometry_adoptions 0 idle_ticks 0 step_failures 0 peak_logical_width 0 peak_pixel_width 0 expose_events 0 expose_frames 0 move_enter_messages 0 move_exit_messages 0 move_timer_wakes 0 move_position_messages 0 move_position_changed_messages 0 move_redraws 0 move_primary_redraws 0 move_secondary_redraws 0 move_skipped_ticks 0 deferred_exposes 0 deferred_timer_ticks 0
+titlebar_smoke PASS metrics 1 layouts 831 header_h 32 usable_x 269 575 pointer_events 1 reorders 1
+tab_drag_smoke PASS mode=Source_Subtree ready=false commands=3 size=150.0x32.0 tab=150.0x32.0 size_ok=true text="Alicorn OverviGǪ" text_found=true marker=true source_hidden=true neighbor_visible=true topmost=true owner_zero=true viewport_clip=true translation=150.0,0.0 drop_target 2 drop_position After
+

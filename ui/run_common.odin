@@ -234,6 +234,7 @@ run_hosted_config :: proc(
 		state.host_services.dialogs = services.dialogs
 		state.host_services.quit = services.quit
 		state.host_services.clipboard_text = services.clipboard
+		state.host_services.file_drag = services.file_drag
 		state.host_services.scheduler = services.scheduler
 	}
 	chrome_metrics :: proc(data: rawptr, rt: ^alicorn.Runtime, metrics: alicorn.Window_Chrome_Metrics) {

@@ -665,3 +665,170 @@ test_hosted_presentation_preserves_spans_across_an_edit_sequence :: proc(t: ^tes
 		stable_after.run == stable_run_before,
 		"the untouched row must keep the same spans and text product after publication")
 }
+
+// Internal retained drag-and-drop between two drop targets. Scratchpad's
+// workspace tree moves a document by semantic identity; the hosted pointer
+// route must emit the same Started/Target_Changed/Dropped sequence as the
+// reference process_pointer route. The source and target are application
+// nodes, so this fixture exercises the same retained drag machinery both hosts
+// run, not a renderer-specific copy.
+HOSTED_DND_TYPE :: Drag_Type(0x484F5354444E44)
+HOSTED_DND_SOURCE :: Semantic_ID{namespace=812, value=1}
+HOSTED_DND_TARGET :: Semantic_ID{namespace=812, value=2}
+
+Hosted_Parity_Dnd_App :: struct {
+	root:   Node_ID,
+	source: Node_ID,
+	target: Node_ID,
+	events: [dynamic]Drag_Event,
+}
+
+hosted_parity_dnd_render :: proc(data: rawptr, ui: ^UI, _width, _height: int, _dpi: f32) {
+	app := cast(^Hosted_Parity_Dnd_App)data
+	app.root = container_begin(
+		ui, .Root, label="dnd-root", key="dnd-root",
+		style=layout_style(.Row, width=400, height=100, gap=20, padding=10),
+	)
+	if app.root == 0 { return }
+	app.source, _ = button_begin(
+		ui, "document.txt", key=key_string("dnd-source"),
+		style=layout_style(width=120, height=50),
+	)
+	_ = semantic_bind(ui, HOSTED_DND_SOURCE)
+	_ = drag_source(ui, HOSTED_DND_TYPE, HOSTED_DND_SOURCE, .Auto)
+	button_end(ui)
+	app.target = container_begin_simple(
+		ui, .Container, label="dnd-target", key=key_string("dnd-target"),
+		style=layout_style(.Row, width=160, height=50),
+	)
+	_ = semantic_bind(ui, HOSTED_DND_TARGET)
+	_ = drop_target(ui, HOSTED_DND_TYPE, HOSTED_DND_TARGET, .On)
+	_ = text(ui, "folder", key=key_string("dnd-target-text"))
+	container_end(ui)
+	container_end(ui)
+}
+
+hosted_parity_dnd_drag :: proc(data: rawptr, _rt: ^Runtime, event: Drag_Event) {
+	app := cast(^Hosted_Parity_Dnd_App)data
+	append(&app.events, event)
+}
+
+hosted_parity_dnd_post :: proc(_data: rawptr) -> bool { return true }
+
+hosted_parity_dnd_take_reference :: proc(rt: ^Runtime, events: ^[dynamic]Drag_Event) {
+	for {
+		event, ok := drag_event_take(rt)
+		if !ok { return }
+		append(events, event)
+	}
+}
+
+hosted_parity_dnd_equal :: proc(a, b: Drag_Event) -> bool {
+	return a.kind == b.kind && a.drag_type == b.drag_type && a.source == b.source &&
+		a.previous_target == b.previous_target && a.target == b.target &&
+		a.position == b.position && a.presentation_state == b.presentation_state
+}
+
+@(test)
+test_hosted_retained_drag_drop_between_targets_matches_the_reference_route :: proc(t: ^testing.T) {
+	host: Hosted_Runtime
+	app: Hosted_Parity_Dnd_App
+	defer delete(app.events)
+	if hosted_runtime_init(&host, Hosted_Runtime_Config{
+		state=rawptr(&app),
+		logical_width=400, logical_height=100,
+		pixel_width=400, pixel_height=100,
+		dpi_scale=1,
+		post_wake_data=rawptr(&app),
+		post_wake=hosted_parity_dnd_post,
+		render=hosted_parity_dnd_render,
+		on_drag=hosted_parity_dnd_drag,
+	}) != .Ok {
+		testing.expect(t, false, "the hosted drag/drop fixture should initialize")
+		return
+	}
+	defer hosted_runtime_destroy(&host)
+	hosted_rt, borrowed := hosted_runtime_borrow(&host)
+	if borrowed != .Ok {
+		testing.expect(t, false, "the hosted drag/drop fixture should borrow its runtime")
+		return
+	}
+	_ = hosted_runtime_step(&host, 1)
+	if app.source == 0 || app.target == 0 {
+		testing.expect(t, false, "the hosted drag/drop fixture should retain a source and target")
+		return
+	}
+	source := hosted_rt.nodes[app.source]
+	target := hosted_rt.nodes[app.target]
+	sx := source.bounds.x+source.bounds.w*0.5
+	sy := source.bounds.y+source.bounds.h*0.5
+	tx := target.bounds.x+target.bounds.w*0.5
+	ty := target.bounds.y+target.bounds.h*0.5
+	_, _ = hosted_runtime_pointer(&host, Pointer_Event{kind=.Down, x=sx, y=sy, button=POINTER_BUTTON_PRIMARY})
+	_ = hosted_runtime_step(&host, 2)
+	_, _ = hosted_runtime_pointer(&host, Pointer_Event{kind=.Move, x=sx+DRAG_START_THRESHOLD+2, y=sy})
+	_ = hosted_runtime_step(&host, 3)
+	_, _ = hosted_runtime_pointer(&host, Pointer_Event{kind=.Move, x=tx, y=ty})
+	_ = hosted_runtime_step(&host, 4)
+	_, _ = hosted_runtime_pointer(&host, Pointer_Event{kind=.Up, x=tx, y=ty, button=POINTER_BUTTON_PRIMARY})
+	_ = hosted_runtime_step(&host, 5)
+
+	// Reference route: process_pointer plus the drag-event take/dispatch the
+	// native host performs after each pointer event.
+	reference := new_runtime(Rect{0, 0, 400, 100})
+	defer destroy_runtime(&reference)
+	reference_app: Hosted_Parity_Dnd_App
+	ui, should_build := begin_frame(&reference)
+	if should_build {
+		hosted_parity_dnd_render(rawptr(&reference_app), &ui, 400, 100, 1)
+		end_frame(&ui)
+	}
+	if reference_app.source == 0 || reference_app.target == 0 {
+		testing.expect(t, false, "the reference drag/drop fixture should retain a source and target")
+		return
+	}
+	reference_source := reference.nodes[reference_app.source]
+	reference_target := reference.nodes[reference_app.target]
+	reference_sx := reference_source.bounds.x+reference_source.bounds.w*0.5
+	reference_sy := reference_source.bounds.y+reference_source.bounds.h*0.5
+	reference_tx := reference_target.bounds.x+reference_target.bounds.w*0.5
+	reference_ty := reference_target.bounds.y+reference_target.bounds.h*0.5
+	reference_events := make([dynamic]Drag_Event, 0, allocator=context.temp_allocator)
+	defer delete(reference_events)
+	_ = process_pointer(&reference, Pointer_Event{kind=.Down, x=reference_sx, y=reference_sy, button=POINTER_BUTTON_PRIMARY})
+	hosted_parity_dnd_take_reference(&reference, &reference_events)
+	_ = process_pointer(&reference, Pointer_Event{kind=.Move, x=reference_sx+DRAG_START_THRESHOLD+2, y=reference_sy})
+	hosted_parity_dnd_take_reference(&reference, &reference_events)
+	_ = process_pointer(&reference, Pointer_Event{kind=.Move, x=reference_tx, y=reference_ty})
+	hosted_parity_dnd_take_reference(&reference, &reference_events)
+	_ = process_pointer(&reference, Pointer_Event{kind=.Up, x=reference_tx, y=reference_ty, button=POINTER_BUTTON_PRIMARY})
+	hosted_parity_dnd_take_reference(&reference, &reference_events)
+
+	if len(app.events) < 3 || len(app.events) != len(reference_events) {
+		testing.expect(t, false, fmt.tprintf(
+			"both routes must emit the same drag sequence: hosted=%d reference=%d",
+			len(app.events), len(reference_events),
+		))
+		return
+	}
+	for event, index in app.events {
+		testing.expect(t, hosted_parity_dnd_equal(event, reference_events[index]),
+			fmt.tprintf("drag event %d must match the reference route: hosted=%v reference=%v",
+				index, event, reference_events[index]))
+	}
+	testing.expect(t, app.events[0].kind == .Started &&
+		app.events[0].source == HOSTED_DND_SOURCE &&
+		app.events[0].drag_type == HOSTED_DND_TYPE,
+		"the hosted drag starts from the document source identity")
+	found_target_change := false
+	for event in app.events {
+		if event.kind == .Target_Changed && event.target == HOSTED_DND_TARGET && event.position == .On {
+			found_target_change = true
+		}
+	}
+	testing.expect(t, found_target_change,
+		"crossing the drop target reports Target_Changed with the target identity and On position")
+	last := app.events[len(app.events)-1]
+	testing.expect(t, last.kind == .Dropped && last.target == HOSTED_DND_TARGET && last.position == .On,
+		"releasing over the target drops the document with the target identity")
+}

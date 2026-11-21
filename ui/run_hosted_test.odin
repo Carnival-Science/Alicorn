@@ -22,6 +22,7 @@ Run_Hosted_Config_Test_App :: struct {
 	close_result: alicorn.Hosted_Close_Result,
 	scheduler_available: bool,
 	clipboard_text_available: bool,
+	file_drag: alicorn.File_Drag_Service,
 	file_drops: int,
 	ticks: int,
 }
@@ -52,6 +53,7 @@ run_hosted_config_test_services :: proc(app: ^Run_Hosted_Config_Test_App, servic
 	app.service_read_available = services.clipboard.read_text != nil
 	app.scheduler_available = services.scheduler.schedule != nil && services.scheduler.cancel != nil
 	app.clipboard_text_available = services.clipboard_text.get_text != nil
+	app.file_drag = services.file_drag
 }
 
 run_hosted_config_test_file_drop :: proc(app: ^Run_Hosted_Config_Test_App, _rt: ^alicorn.Runtime, _path: string) {
@@ -68,6 +70,10 @@ run_hosted_config_test_clipboard_text_get :: proc(_data: rawptr, allocator: mem.
 
 run_hosted_config_test_clipboard_text_set :: proc(_data: rawptr, _text: string) -> bool {
 	return true
+}
+
+run_hosted_config_test_file_drag_start :: proc(_data: rawptr, path: string) -> bool {
+	return path == "C:/alicorn/drag.txt"
 }
 
 run_hosted_config_test_clipboard_read :: proc(	_data: rawptr,
@@ -178,7 +184,10 @@ test_shared_ui_run_adapts_to_hosted_runtime :: proc(t: ^testing.T) {
 		render_overlays=run_hosted_config_test_render,
 		on_initialize=run_hosted_config_test_initialize,
 		on_services=run_hosted_config_test_services,
-		host_services=UI_Host_Services{clipboard=clipboard.Clipboard_Service{read_text=run_hosted_config_test_clipboard_read}},
+		host_services=UI_Host_Services{
+			clipboard=clipboard.Clipboard_Service{read_text=run_hosted_config_test_clipboard_read},
+			file_drag=alicorn.File_Drag_Service{start=run_hosted_config_test_file_drag_start},
+		},
 		on_start=run_hosted_config_test_start,
 		on_wake=run_hosted_config_test_wake,
 		on_stop=run_hosted_config_test_stop,
@@ -203,6 +212,7 @@ test_shared_ui_run_adapts_to_hosted_runtime :: proc(t: ^testing.T) {
 		get_text=run_hosted_config_test_clipboard_text_get,
 		set_text=run_hosted_config_test_clipboard_text_set,
 	}
+	config.host_services.file_drag = alicorn.File_Drag_Service{start=run_hosted_config_test_file_drag_start}
 	testing.expect(t,
 		config.on_drag != nil && config.on_scroll_capture != nil && config.on_scroll != nil &&
 		config.on_text_input != nil && config.on_scheduled_wake != nil &&
@@ -219,6 +229,9 @@ test_shared_ui_run_adapts_to_hosted_runtime :: proc(t: ^testing.T) {
 		"host services should be delivered after initialization and before the app start hook")
 	testing.expect(t, app.scheduler_available && app.clipboard_text_available,
 		"UI_Host_Services should publish the native-shaped scheduler and synchronous clipboard")
+	testing.expect(t, app.file_drag.start != nil && ui_file_drag_start(app.file_drag, "C:/alicorn/drag.txt") &&
+		!ui_file_drag_start(app.file_drag, "C:/alicorn/other.txt"),
+		"UI_Host_Services should publish the shared file-drag service with the native call shape")
 
 	first := alicorn.hosted_runtime_step(&session, 1)
 	testing.expect(t, first.status == .Ok && first.description_built && first.render_required && app.renders == 2,

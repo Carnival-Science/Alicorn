@@ -293,6 +293,7 @@ run_native_window_services :: proc(data: rawptr, services: host.Application_Serv
 			dialogs=services.dialogs,
 			quit=services.quit,
 			clipboard=services.clipboard,
+			file_drag=services.file_drag,
 			scheduler=services.scheduler,
 		},
 	)
@@ -432,6 +433,7 @@ run_application :: proc(
 		state.host_services.dialogs = services.dialogs
 		state.host_services.quit = services.quit
 		state.host_services.clipboard_text = services.clipboard
+		state.host_services.file_drag = services.file_drag
 		state.host_services.scheduler = services.scheduler
 		if service_context != nil {
 			service_context.windows = services.windows

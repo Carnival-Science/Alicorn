@@ -26,6 +26,9 @@ Hosted_Services_Test_App :: struct {
 	last_class: Scheduled_Wake_Class,
 	file_drops: int,
 	drop_ok: bool,
+	file_drag: File_Drag_Service,
+	file_drag_ok: bool,
+	drag_path: string,
 	clicks: int,
 }
 
@@ -66,6 +69,14 @@ hosted_services_test_services :: proc(data: rawptr, services: Hosted_Host_Servic
 	text_value, read_ok := ClipboardGetText(services.clipboard)
 	defer if len(text_value) > 0 { delete(text_value) }
 	app.clipboard_ok = ok && read_ok && text_value == "hosted clipboard roundtrip"
+	app.file_drag = services.file_drag
+	app.file_drag_ok = application_file_drag_start(services.file_drag, "C:/alicorn/drag.txt")
+}
+
+hosted_services_test_file_drag_start :: proc(data: rawptr, path: string) -> bool {
+	app := cast(^Hosted_Services_Test_App)data
+	app.drag_path = path
+	return path == "C:/alicorn/drag.txt"
 }
 
 hosted_services_test_scheduled :: proc(data: rawptr, _rt: ^Runtime, class: Scheduled_Wake_Class) {
@@ -140,6 +151,10 @@ hosted_services_test_open :: proc(
 			get_text=hosted_services_clipboard_get,
 			set_text=hosted_services_clipboard_set,
 		}
+		config.host_services.file_drag = File_Drag_Service{
+			data=rawptr(app),
+			start=hosted_services_test_file_drag_start,
+		}
 	}
 	return hosted_runtime_init(host, config)
 }
@@ -159,6 +174,9 @@ test_hosted_services_publish_native_shaped_scheduler_and_clipboard :: proc(t: ^t
 		"host services are delivered before start with a fully populated scheduler")
 	testing.expect(t, app.clipboard_ok,
 		"the hosted clipboard service is the synchronous native shape and supports a set/get roundtrip")
+	testing.expect(t, app.file_drag.start != nil && app.file_drag_ok &&
+		app.drag_path == "C:/alicorn/drag.txt",
+		"the hosted file-drag service is published unchanged and application_file_drag_start reaches it")
 }
 
 @(test)

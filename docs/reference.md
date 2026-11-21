@@ -307,12 +307,15 @@ or passing it to asynchronous work. File-drop events are also copied when the
 host queues input for a secondary window.
 
 `Application_Services.file_drag` can start a native drag that offers one
-filesystem path to another application. The Windows SDL host currently
-implements this through OLE as a `CF_HDROP` file transfer. The drag operation
-runs synchronously inside the initiating UI-thread pointer callback and ends
-when the user drops or cancels it. Hosts without a native source implementation
-return `false`; SDL file drops into an Alicorn window remain a separate,
-cross-platform input path.
+filesystem path to another application. `File_Drag_Service` is defined in
+`alicorn:runtime`; the Windows implementation in `alicorn:host/sdl3/file_drag`
+is shared by the reference SDL_GPU host and the hosted SDL3/WebGPU host, so the
+same `application_file_drag_start(service, path)` call works on both renderers.
+It uses OLE as a `CF_HDROP` file transfer. The drag operation runs synchronously
+inside the initiating UI-thread pointer callback and ends when the user drops or
+cancels it; while it runs, hosts defer nested retained presentation. Hosts
+without a native source implementation return `false`; SDL file drops into an
+Alicorn window remain a separate, cross-platform input path.
 
 `Application_Waker` is a borrowed, backend-provided wake callback. You may
 copy it to worker threads while `Run` is active, but `on_stop` must stop and

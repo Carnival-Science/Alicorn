@@ -243,7 +243,7 @@ surface without signature changes. File-drop paths are borrowed for the
 callback only.
 
 `Hosted_Host_Services` publishes `windows`, `dialogs`, `quit`, `clipboard`,
-and `scheduler`:
+`file_drag`, and `scheduler`:
 
 - `Hosted_Dialog_Service` is an opaque host backend. Submit a
   `File_Dialog_Request` with `hosted_dialog_show_file`; the host copies the
@@ -265,6 +265,13 @@ and `scheduler`:
   renderer-neutral asynchronous service in `alicorn:host/clipboard` through
   `UI_Host_Services.clipboard` instead. Browser applications must consume the
   async request/completion shape; that migration is a Stage C concern.
+- `file_drag` is the native drag-out capability and has exactly the
+  `Application_Services.file_drag` shape: `File_Drag_Service` with
+  `application_file_drag_start(service, path)`. The Windows SDL3 host installs
+  the shared OLE `CF_HDROP` source from `alicorn:host/sdl3/file_drag`; hosts
+  without a native source publish an empty service and the call returns false.
+  File drops *into* a window remain a separate host input path delivered through
+  `on_file_drop`.
 - `scheduler` is a UI-thread-only `Application_Scheduler` with one replaceable
   `Frequent` and one replaceable `Opportunistic` deadline. Each hosted session
   publishes its own service, so a child surface schedules against its own
@@ -295,6 +302,50 @@ only. The hosted description loop mirrors the native bounded stabilization pass
 limit (four descriptions). The browser host publishes ticks and scheduled wakes,
 records the interaction policy, and has no file-drop or synchronous clipboard
 event; its `UI_Host_Services.clipboard` remains asynchronous.
+
+## Drag and drop
+
+Three independent capabilities share this section because Scratchpad exercises
+all three through the same application:
+
+| Capability | Owner | Hosted path |
+| --- | --- | --- |
+| Move items inside the application | `runtime/drag_drop.odin` retained drag sessions | Same `Pointer_Event` route as the reference host (`hosted_runtime_pointer`) |
+| Drag a file or folder out to another application | `alicorn:host/sdl3/file_drag` | `Hosted_Host_Services.file_drag` / `UI_Host_Services.file_drag` |
+| Drop files from another application into the window | SDL3 `SDL_EVENT_DROP_FILE` | `hosted_runtime_file_drop` -> `on_file_drop` |
+
+**Internal drag and drop.** Sources register with `drag_source`, targets with
+`drop_target`, and both hosts dispatch through the retained runtime. The hosted
+pointer route performs the same drag-event take/dispatch, autoscroll deadline,
+preview presentation, and drop arbitration as the reference host; the fixture
+`test_hosted_retained_drag_drop_between_targets_matches_the_reference_route`
+compares the full Started/Target_Changed/Dropped sequence against
+`process_pointer`.
+
+**Drag out.** `File_Drag_Service` is a UI-thread-only
+`application_file_drag_start(service, path)` call. The shared Windows
+implementation is a minimal OLE `IDataObject`/`IDropSource` pair that advertises
+one `CF_HDROP` path and answers `DROPEFFECT_COPY`; `native/sdl_gpu` delegates its
+`Application_Services.file_drag` to the same package the hosted SDL3/WebGPU host
+publishes. DoDragDrop is modal: it re-enters the owning thread's Windows message
+loop and does not return until the user drops or cancels. While it runs, the
+shared source marks itself active and both hosts suppress live-resize/expose
+presentation (`sdl3_file_drag.is_active`). This is the drag equivalent of the
+Stage C live-resize guard: the application is suspended inside its own pointer
+callback, so rebuilding its retained description from a timer would re-enter
+application state. The application must initiate the drag from its pointer
+callback, exactly as the reference host requires.
+
+The OLE source is Windows-only. Other platforms publish an empty service; the
+call returns false and applications keep internal drag/drop and file drops.
+There is no browser drag-out equivalent in this slice.
+
+**Drop in.** The hosted SDL3 event loop routes `SDL_EVENT_DROP_FILE` to
+`hosted_runtime_file_drop`, which copies the borrowed path into the callback
+under the host-event cause and invalidates the description. The path is valid
+only for `on_file_drop`. Native host fixtures push the same event through SDL's
+queue (`native/sdl_gpu/file_drop_test.odin`); the hosted fixture does the same
+through `host/sdl3/application_test.odin`.
 
 ## Native menus
 
@@ -432,11 +483,13 @@ Each hosted child owns independent retained state:
   regions, and host chrome paint. `Window_Drag` regions in a child are caption
   gestures for that child only; the content inset is published on the child's
   Runtime and applied to the child's presenter.
-- Its own `Hosted_Host_Services.dialogs`, `.quit`, and `.scheduler`. A child
-  close request is routed through the child's `on_close_requested`; `.Defer`
-  keeps that child alive and the child's `quit` service completes shutdown.
-  The child's scheduler owns that surface's deadlines; it does not arm the
-  parent's scheduler.
+- Its own `Hosted_Host_Services.dialogs`, `.quit`, `.file_drag`, and
+  `.scheduler`. A child close request is routed through the child's
+  `on_close_requested`; `.Defer` keeps that child alive and the child's `quit`
+  service completes shutdown. The child's scheduler owns that surface's
+  deadlines; it does not arm the parent's scheduler. A child can start the same
+  native drag; the modal-drag guard is per UI thread and therefore covers every
+  hosted window while `DoDragDrop` owns the loop.
 
 The SDL_GPU `ui.run` path keeps its reference behavior by bridging a hosted
 description onto `Application_Window_Description`. That bridge preserves menus,
@@ -821,9 +874,10 @@ unrun on a physical Mac; Linux keeps semantic menu metadata only; and Snap
 Layouts, mixed-DPI moves, and trackpad inertia still need hands-on Windows
 records.
 
-The hosted scheduler, synchronous clipboard, file-drop, tick, and interaction
-policy now mirror the reference host. `Hosted_Host_Services` publishes
-`windows`, `dialogs`, `quit`, `clipboard`, and a per-surface `scheduler`;
+The hosted scheduler, synchronous clipboard, file drag-out and drop-in, tick,
+and interaction policy now mirror the reference host. `Hosted_Host_Services`
+publishes `windows`, `dialogs`, `quit`, `clipboard`, `file_drag`, and a
+per-surface `scheduler`;
 `Hosted_Runtime_Config` carries `on_file_drop`, `on_tick`, and
 `interaction_update_policy`. `on_tick` is a bounded ~60 Hz callback backed by a
 one-shot hosted deadline rather than the native host's 1 ms delay pump; that is

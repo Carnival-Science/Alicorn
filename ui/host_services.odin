@@ -17,6 +17,10 @@ UI_Host_Services :: struct {
 	// clipboard_text is the synchronous native SDL3 clipboard shape that
 	// mirrors Application_Services.clipboard. It stays empty on browser hosts.
 	clipboard_text: alicorn.Clipboard_Service,
+	// file_drag mirrors Application_Services.file_drag. The Windows native
+	// SDL_GPU host and the native SDL3/WebGPU host both publish the shared OLE
+	// source; browser hosts leave it empty.
+	file_drag: alicorn.File_Drag_Service,
 	// scheduler mirrors Application_Services.scheduler. Every hosted Runtime
 	// publishes one replaceable Frequent and Opportunistic deadline.
 	scheduler: alicorn.Application_Scheduler,
@@ -80,6 +84,16 @@ ui_clipboard_get_text :: proc(service: UI_Clipboard_Service, allocator := contex
 
 ui_clipboard_set_text :: proc(service: UI_Clipboard_Service, text: string) -> bool {
 	return alicorn.ClipboardSetText(service, text)
+}
+
+// UI_File_Drag_Service is the native drag-out capability. It has the same
+// shape as native/sdl_gpu's Application_Services.file_drag, so an application
+// initiates a drag with one call on either renderer.
+UI_File_Drag_Service :: alicorn.File_Drag_Service
+UI_File_Drag_Start_Proc :: alicorn.File_Drag_Start_Proc
+
+ui_file_drag_start :: proc(service: UI_File_Drag_Service, path: string) -> bool {
+	return alicorn.application_file_drag_start(service, path)
 }
 
 UI_Scheduler :: alicorn.Application_Scheduler

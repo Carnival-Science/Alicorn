@@ -4957,3 +4957,73 @@ spans while `metadata_refresh_needed` is true instead of clearing
 `window_covers_view` at `app_editor_view.odin:753`. Either path should be
 covered by a frontend regression that types into a highlighted document and
 asserts span-bearing rows through the post-publication frame.
+
+## Stage D slice 3: file and folder drag-and-drop (Windows, 2026-11-20)
+
+The founder's parity table names three drag-and-drop capabilities: moving items
+inside Scratchpad, dragging files/folders out to Explorer, and dropping files
+from Explorer into Scratchpad. The internal retained path and the SDL drop-in
+path existed on both hosts. The native OS drag source existed only in the
+reference `native/sdl_gpu` host; the hosted services had no field for it.
+
+### Inventory
+
+- `native/sdl_gpu/file_drag.odin` defined `File_Drag_Service` and
+  `application_file_drag_start`; `file_drag_windows.odin` implemented
+  `IDataObject`/`IDropSource` with one `CF_HDROP` path and `DoDragDrop`.
+- `runtime/drag_drop.odin` already provided retained drag sessions, previews,
+  drop-target arbitration, autoscroll, and the B5/C2 fixes.
+- B1 wired `SDL_EVENT_DROP_FILE` to `hosted_runtime_file_drop` ->
+  `on_file_drop`; the native host dispatches the same SDL event to
+  `Application.on_file_drop`.
+
+### Shared service
+
+The vocabulary moved to `runtime/file_drag.odin` (one `File_Drag_Service`,
+`application_file_drag_start`, and `File_Drag_Start_Proc`) so the native and
+hosted APIs are the same values. The OLE implementation moved to
+`host/sdl3/file_drag`; `native_file_drag_service` now delegates to it, and the
+old native Windows implementation was deleted. `Hosted_Host_Services.file_drag`,
+`UI_Host_Services.file_drag`, both `ui.run` adapters, and hosted secondary
+windows publish it. Non-Windows hosts publish an empty service.
+
+OLE `DoDragDrop` is modal and re-enters the owning thread's message loop while
+the application is suspended in its pointer callback. The shared source exposes
+`sdl3_file_drag.is_active`, and both hosts refuse nested live-resize/expose
+presentation while it is set, mirroring the Stage C slice 1 guard.
+
+### Validation
+
+- Internal DnD: `runtime/hosted_parity_test.odin` adds
+  `test_hosted_retained_drag_drop_between_targets_matches_the_reference_route`,
+  comparing the hosted `Started`/`Target_Changed`/`Dropped` sequence against
+  `process_pointer`. Runtime suite: 421 tests. Example 16 `--tab-drag-smoke`
+  still passes on D3D12, Vulkan, and SDL_GPU with three preview commands.
+- Drag out: `host/sdl3/file_drag` has three mock-consumer tests covering
+  `QueryInterface`, format enumeration/negotiation, the wide `DROPFILES`
+  payload (including a non-ASCII path and a folder), `E_NOTIMPL`/no-advise
+  behavior, Escape cancel, button-held continuation, and release-drop. Example
+  16 `--services-smoke` reports `file_drag true` on all three backends, proving
+  the service reaches both renderers. A synthetic OLE drag cannot complete
+  headlessly; example 16 gained `--file-drag-demo` as the interactive call site.
+- Drop in: `native/sdl_gpu/file_drop_test.odin` and
+  `host/sdl3/application_test.odin` push a real `SDL_EVENT_DROP_FILE` through
+  SDL's queue and assert the exact path reaches `on_file_drop`; example 16
+  `--services-smoke` reports `drops 1 drop_ok true` on all three backends.
+- Suites: runtime 421, host/fonts 5, host/sdl3 8, host/sdl3/file_drag 3,
+  live_resize 9, window_frame 1, input 8, clipboard 3, dialogs 5, host/menus 9,
+  host/web 14, host/diagnostics 9, host/presentation 7, renderer/webgpu 9,
+  renderer/cpu 23, ui 50, testui 13, theme 37, native/sdl_gpu 169,
+  scroll_capture 6, accessibility contract 1, `odin build tests`/foundation
+  PASS. Scratchpad `b458d6e` smoke passes hosted D3D12 and SDL_GPU (clean and
+  recovery).
+- `tools/check_web_ui_package.ps1` fails on this Odin installation with
+  `DevicePoll is not declared by wgpu`; the same failure reproduces at base
+  `b79ef57` and is not introduced here.
+
+The Scratchpad validator has no `Scratchpad_Services.file_drag` mapping or
+workspace drag-out call site yet, so the founder's real Scratchpad drag-out
+requires that one-line adapter change. Alicorn's hosted API now matches native
+1:1, and example 16 `--file-drag-demo` is the reference call site. Full evidence,
+raw logs, and the founder checklist are in
+[`validation/issue-211-drag-and-drop-windows-2026-11-20.md`](validation/issue-211-drag-and-drop-windows-2026-11-20.md).

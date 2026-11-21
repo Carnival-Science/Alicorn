@@ -155,6 +155,11 @@ Hosted_Host_Services :: struct {
 	// may leave it empty; they publish the asynchronous alicorn:host/clipboard
 	// service through UI_Host_Services instead.
 	clipboard: Clipboard_Service,
+	// file_drag is the native drag-out capability. The Windows SDL3 host
+	// installs the shared OLE CF_HDROP source; hosts without a source leave it
+	// empty. It matches Application_Services.file_drag exactly, so an
+	// application uses the same call on either renderer.
+	file_drag: File_Drag_Service,
 	// scheduler is always supplied by the hosted Runtime. It owns one
 	// replaceable Frequent and one replaceable Opportunistic deadline for this
 	// surface and mirrors native/sdl_gpu's Application_Scheduler.
