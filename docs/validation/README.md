@@ -39,6 +39,12 @@ the current project status.
   and zero-percentage coverage; parent-first retained resolution; the
   consumer-shaped percentage-vs-manual A/B and its explicit native/graphics
   limits.
+- [Connected-tab visual acceptance audit (2026-11-21)](issue-120-connected-tabs-visual-audit.md)
+  — Scratchpad warm, cool-light, and workbench-relief captures at
+  1/1.25/1.5/2 display scales; option A (editor-paper fill + open seam) and
+  option C (bounded curved shoulders) accepted; options B/D not pursued and a
+  general shoulder/path primitive explicitly NO-GO. Records the Standard-tab
+  control, the constraint checks, and the native-host DPI-density gap.
 - [Live-resize presentation latency — Windows (2026-11-20)](issue-211-live-resize-performance-windows-2026-11-20.md)
   — per-frame inter-present latency, `WM_WINDOWPOSCHANGED`-to-present stretch
   window, `wgpu.SurfaceConfigure` cost, description/layout cost, and
