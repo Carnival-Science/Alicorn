@@ -56,7 +56,11 @@ widget tree. The API is still evolving, and Alicorn is not production-ready.
   host for applications that own their window and event loop.
 
 **New to Alicorn?** Follow [Getting Started](docs/getting-started.md) to install
-the prerequisites, build the project, and run an editable native example.
+the prerequisites, build the project, and run an editable native example. Then
+run the [Control Gallery](examples/08_control_gallery/README.md), the single
+native tour of forms, collections, tabs, layout, surfaces, overlays, menus,
+motion, and themes. Its patterns are collected as copyable
+[component recipes](docs/recipes.md).
 For the current release's scope and limitations, see the
 [changelog](CHANGELOG.md), which consolidates the v0.1.0, v0.2.0, v0.2.1, and
 v0.2.2 release notes.

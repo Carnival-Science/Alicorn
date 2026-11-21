@@ -10,6 +10,10 @@ The same changelog contains the v0.1.0, v0.2.0, and v0.2.1 history.
 
 - [Progressive application guide](guide.md) — build interfaces from basic
   controls through native integration and accessibility.
+- [Component recipes](recipes.md) — copyable patterns behind the live
+  [Control Gallery](../examples/08_control_gallery/README.md): forms,
+  virtualization, tabs, drag reorder, split/Grid layout, positioned text,
+  modals, menus, notices, themes, and motion.
 - [API reference](reference.md) — public Odin API and runtime contracts.
 - [Choosing Alicorn](choosing-alicorn.md) — workload fit and architectural
   tradeoffs.

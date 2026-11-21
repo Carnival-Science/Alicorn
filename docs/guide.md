@@ -30,6 +30,13 @@ uses the same Runtime as the detailed API below.
    allocation configuration, tracing, and inspection when the application
    needs those controls.
 
+The fastest complete tour is the native
+[Control Gallery](../examples/08_control_gallery/README.md), which runs every
+capability in this guide through one default SDL_GPU example. Its
+[component recipes](recipes.md) are short, copyable excerpts for forms,
+virtualized lists, tabs, drag reorder, split/Grid layout, positioned text,
+modals, tooltips, context menus, notices, themes, and motion.
+
 The simple package does not own application state or retain a second widget
 tree. `ui.run` covers the routine single-window frame lifecycle and typed
 worker start, wake and shutdown callbacks. Applications that need additional
@@ -301,7 +308,8 @@ A positioned child does not size a fit-content owner. Give the owner a definite
 height (as above) instead of relying on its labels. `alicorn.position_child`
 exposes the same placement seam for non-text children, and the lower-level
 runtime API remains the place to combine it with custom-surface geometry
-updates.
+updates. The Control Gallery's Layout section has a runnable ruler; see the
+[positioned-label recipe](recipes.md#split-panes-grid-and-positioned-labels).
 
 ## Select a value
 
@@ -328,7 +336,9 @@ if theme.changed {
 The control supplies an anchored, scrollable listbox, keyboard navigation,
 type-ahead, focus restoration, and Combo_Box/List_Box accessibility semantics.
 Keep keys stable when the option order changes. The popup is an Alicorn overlay
-and is added automatically when `end_frame` describes the retained frame.
+and is added automatically when `end_frame` describes the retained frame. The
+[select recipe](recipes.md#a-select-combo-box-with-a-disabled-option) and the
+Control Gallery's Controls section include a disabled option.
 
 ## Describe layout with containers
 
@@ -422,10 +432,15 @@ if result.action == .Select {
 application's command handling to share the component's
 Next/Previous/index/Last navigation semantics. It returns `(index, found)`;
 apply `index` only when `found` is true. Choose Ctrl/Cmd bindings in the
-application rather than assuming the runtime installs them.
+application rather than assuming the runtime installs them. The Control Gallery
+Collections section implements close and dirty handling in
+[`gallery_document_tabs`](../examples/08_control_gallery/collections.odin); the
+[tab recipe](recipes.md#tabs-with-close-and-dirty-state) is the condensed form.
 
 For reordering, consume the existing drag/drop events and update the
-application-owned order. `Semantic_ID` is also used by Alicorn's backend-neutral
+application-owned order. The
+[drag-reorder recipe](recipes.md#drag-to-reorder-a-list) matches the gallery's
+`gallery_reorder_list` and `gallery_drag` implementation. `Semantic_ID` is also used by Alicorn's backend-neutral
 semantic model; it is not a native screen-reader accessibility interface.
 
 ## Give repeated data stable identity
@@ -592,7 +607,8 @@ still owns dismissal and focus restoration. The overlay fills the viewport, but
 its child panels follow normal layout rules: generic containers do not size
 themselves to their descendants, so give transient panels an explicit or
 application-computed height. See the API
-[reference](reference.md#transient-modal-surfaces).
+[reference](reference.md#transient-modal-surfaces) and the
+[modal recipe](recipes.md#a-modal-with-focus-restoration).
 
 Attach delayed help to a just-described control with `tooltip(&ui, text)`. The
 native host waits for the hover deadline; the popup remains pointer-transparent
@@ -606,7 +622,8 @@ After describing the ordinary root, add the menu with
 `context_menu_begin/item/separator/end`; dispatch the `Action_ID` returned by
 `context_menu_end` through the app's existing command handler. The popup owns
 navigation, placement, outside-click dismissal, and focus restoration. See the
-[context-menu reference](reference.md#context-menus).
+[context-menu reference](reference.md#context-menus) and the
+[tooltip/context-menu recipe](recipes.md#tooltip-and-single-level-context-menu).
 
 ## Report an application notice
 
@@ -640,7 +657,8 @@ ID, draws notices in an independent overlay, and schedules a one-shot wake for
 transient expiry. The app owns severity, lifetime, retry behavior, and
 dismissal. Notices do not take editor focus or move the main layout. See the
 [Notice reference](reference.md#notices) for queue limits and accessibility
-announcements.
+announcements, and the [notice recipe](recipes.md#application-notices) for the
+gallery's `on_after_frame` posting path.
 
 ## Accessibility status
 
