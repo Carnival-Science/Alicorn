@@ -161,6 +161,29 @@ backing state. All producer calls must finish before `on_stop` returns. Hooks
 default to `nil`, preserving existing simple apps without polling or synthetic
 callbacks. The bridge uses `host.Application` and the existing native loop.
 An optional `smoke=true` uses the host's bounded smoke mode for example tests.
+
+`ui.run` and `ui/webgpu.run` also accept the full input and host-capability hook
+surface. These callbacks run on the application thread and default to `nil`:
+
+| Parameter | Signature | Responsibility |
+| --- | --- | --- |
+| `on_drag` | `proc(app: ^App, rt: ^Runtime, event: alicorn.Drag_Event)` | Adopt application drag state; invalidate explicitly when the next description changes. |
+| `on_scroll_capture` | `proc(app: ^App, rt: ^Runtime, event: alicorn.Scroll_Event, target: Node_ID) -> bool` | Claim a scroll over a nested scroll region before retained scrolling. |
+| `on_scroll` | `proc(app: ^App, rt: ^Runtime, event: alicorn.Scroll_Event)` | Receive scrolling that no retained region or capture handler claimed. |
+| `on_text_input` | `proc(app: ^App, rt: ^Runtime, owner: Node_ID, event: alicorn.Hosted_Text_Input_Event)` | Receive text for an application-owned text-input target. Offsets are UTF-8 bytes. |
+| `on_scheduled_wake` | `proc(app: ^App, rt: ^Runtime)` | Service the one-shot application deadline installed by the hosted runtime. |
+| `on_menu_command` | `proc(app: ^App, rt: ^Runtime, command: alicorn.Action_ID)` | Adopt a host-normalized native menu or accelerator command. |
+| `on_close_requested` | `proc(app: ^App, rt: ^Runtime) -> alicorn.Hosted_Close_Result` | Return `.Allow` to close immediately or `.Defer` to finish app-owned save/discard work. |
+| `on_dialog` | `proc(app: ^App, rt: ^Runtime, result: ^alicorn.File_Dialog_Result)` | Adopt one asynchronous file-dialog completion. Result strings are borrowed for the callback. |
+
+Read `UI_Host_Services.dialogs` and `UI_Host_Services.quit` from `on_services`.
+`ui.ui_dialog_show_file(service, request)` submits an asynchronous
+`UI_File_Dialog_Request` and later invokes `on_dialog`. `ui.ui_quit_request`
+completes a deferred close and lets the host tear down. The native SDL3 host
+provides both services; the browser host currently leaves `dialogs` empty and
+does not deliver close requests, so `ui_dialog_show_file` returns false there.
+The callback names and parameter shapes match `native/sdl_gpu`'s `Application`
+so an application can move handlers between the SDL_GPU and hosted WebGPU paths.
 See [03_async_list](../examples/03_async_list/main.odin) for an app-owned Odin
 thread, mutex-protected completion, typed adoption and explicit shutdown join.
 
@@ -199,12 +222,30 @@ runs. `ui.run` also accepts optional typed `on_key`, `on_text_change`, and
 not require those callbacks. Use the lower-level `host.Run` loop when custom
 event ordering or native services are needed.
 
+`ui.run`, `ui/webgpu.run`, and the browser `run` also accept `on_after_frame`,
+a per-frame hook that runs after `end_frame` of the same description and before
+presentation. Unlike `ui.after_frame`, it is not one-shot: it runs on every
+described frame, including the last one before idle, and may invalidate the
+Runtime to request a same-step corrective description. `ui.run` and the browser
+`run` keep the host-owned-root callback contract; `ui/webgpu.run` uses the
+native `Application.build` contract, so its `render` opens and closes the
+application's own `.Root` and treats `render_overlays` as a top-level layer.
+
 ## Native application host
 
 Import `native/sdl_gpu` as a host package and pass an `Application` to `Run`.
 The application state pointer is borrowed for the duration of `Run`; keep the
 state alive until it returns. See the complete
 [native starter](../examples/01_hello/main.odin).
+
+The opt-in native WebGPU host lives in `alicorn:ui/webgpu` (`webgpu.run`). It
+reuses the same application callback vocabulary and the shared
+`Hosted_Runtime`, but is a separate package so SDL_GPU consumers of
+`alicorn:ui` do not compile the WebGPU host or require wgpu-native. Keep using
+`ui.run` for the default SDL_GPU host, or use the `hosted_runtime_*` API
+directly when the application owns its window and event loop. See
+[Host-owned UI loops](hosted-runtime.md) and the
+[WebGPU migration plan](webgpu-migration.md).
 
 ### Host-owned SDL_GPU presentation
 
@@ -275,12 +316,15 @@ or passing it to asynchronous work. File-drop events are also copied when the
 host queues input for a secondary window.
 
 `Application_Services.file_drag` can start a native drag that offers one
-filesystem path to another application. The Windows SDL host currently
-implements this through OLE as a `CF_HDROP` file transfer. The drag operation
-runs synchronously inside the initiating UI-thread pointer callback and ends
-when the user drops or cancels it. Hosts without a native source implementation
-return `false`; SDL file drops into an Alicorn window remain a separate,
-cross-platform input path.
+filesystem path to another application. `File_Drag_Service` is defined in
+`alicorn:runtime`; the Windows implementation in `alicorn:host/sdl3/file_drag`
+is shared by the reference SDL_GPU host and the hosted SDL3/WebGPU host, so the
+same `application_file_drag_start(service, path)` call works on both renderers.
+It uses OLE as a `CF_HDROP` file transfer. The drag operation runs synchronously
+inside the initiating UI-thread pointer callback and ends when the user drops or
+cancels it; while it runs, hosts defer nested retained presentation. Hosts
+without a native source implementation return `false`; SDL file drops into an
+Alicorn window remain a separate, cross-platform input path.
 
 `Application_Waker` is a borrowed, backend-provided wake callback. You may
 copy it to worker threads while `Run` is active, but `on_stop` must stop and
@@ -373,8 +417,9 @@ for the callback contract and native fixture.
 
 For an application that owns its event loop, see
 [host-owned UI loops](hosted-runtime.md) for the nonblocking retained Runtime
-session, UI-thread event ingress, wake/deadline handling, resize/DPI, and close
-contract. This API does not provide a wxWidgets or native renderer adapter.
+session, UI-thread event ingress, wake/deadline handling, resize/DPI, close
+contract, per-surface scheduler, synchronous clipboard, file-drop, and tick
+callbacks. This API does not provide a wxWidgets or native renderer adapter.
 
 ## Frame and invalidation
 
@@ -412,7 +457,7 @@ checker verifies only the mutation scopes the application explicitly reports.
 | `GPU_Surface_Image` / `gpu_surface_image` / `gpu_surface_update_images` | Retain up to 256 Runtime-owned image handles as surface-local layers above the background and below custom geometry. |
 | `Image_Handle` / `Image_Load_Error` | Identify a retained image resource and report bounded decode failures. |
 | `font_load_bytes` / `font_load_italic_bytes` / `font_load_fallback_bytes` | Install app-owned fonts by `Font_Role`; the host keeps defaults for faces not supplied. |
-| `font_file_load_bytes` / `font_face_load` | Register a bounded, Runtime-owned SFNT/TTC file and parse one face by collection index. Returns stable `Font_File_ID` / `Font_Face_ID` values; this registry stage does not yet enable automatic glyph fallback. |
+| `font_file_load_bytes` / `font_face_load` / `font_face_add_fallback` | Register a bounded, Runtime-owned SFNT/TTC file and parse one face by collection index, returning stable `Font_File_ID` / `Font_Face_ID` values. `font_face_add_fallback` appends a registered face to one role's ordered fallback stack; a candidate must cover every non-ignorable scalar in an extended grapheme cluster, and only unresolved retained runs for that role are reshaped. |
 | `button` | Emit an interactive button; returns `bool` when activated. |
 | `checkbox` | Emit a controlled checkbox; returns `{value, changed}`. |
 | `slider_f32` | Emit a controlled horizontal `f32` slider; returns `{value, changed}`. |
@@ -911,14 +956,27 @@ drag is held near an overflowing edge; the application handles the events and
 changes its own item order. The widget does not mutate the supplied slice or
 own application data.
 
-For browser-style reorder previews, `drag_preview_mode = .Source_Subtree`
-captures the source tab's current paint commands when the drag threshold is
-crossed and moves that inert visual copy with the pointer. Its original visual
+A dragged tab previews itself. `Tab_Bar_Options.drag_preview_mode` defaults to
+`Drag_Preview_Mode.Auto`, which a tab bar resolves to `.Source_Subtree`: when the
+drag threshold is crossed the runtime captures the source tab's current paint
+commands and moves that inert visual copy with the pointer. Its original visual
 slot is hidden during the drag, while its retained node, semantic identity,
-logical hit bounds, and drop targets remain in place. If the bounded snapshot
-cannot be captured, the runtime falls back to the ordinary label preview.
-Applications should use this only when the source subtree remains realized for
-the duration of the drag.
+logical hit bounds, and drop targets remain in place. The copy is appended to
+the end of the display list, so it stays above the strip, the insertion marker,
+and neighboring tabs, and it is clipped only by the window viewport. If the
+bounded snapshot cannot be captured (more than 512 commands or 2048 text spans,
+or a source that painted nothing), the runtime falls back to the label preview;
+`.Label` forces that compact card for applications that prefer it.
+
+A label preview names its source. When the drag source node has no label or text
+of its own - as with a tab, list row, or icon button, whose visible name lives
+in a child text node - the runtime borrows the first painted descendant text
+run's value, size, font and style spans and shapes its own copy. An empty
+96x28 card therefore only remains for a source that paints no text at all.
+
+`Drag_Preview_Mode.Label` and `.Source_Subtree` still select one presentation
+explicitly for any `drag_source`; `Auto` means "the declaring widget's default",
+which for a non-tab source is the label card.
 
 `animate_drag_reorder = true` returns `Tab_Bar_Result.item_nodes`, a frame-local
 slice mapping each input item to its retained tab root. An application can
@@ -1282,7 +1340,10 @@ ordinary layout; the surrounding control or adjacent text remains responsible
 for its accessible name. `icon_button(ui, accessible_label, icon_id, key,
 style)` creates an icon-only button with an explicit semantic name. Available
 IDs include check, chevrons, close, minus, radio, warning, info, folder-open and
-folder-closed, file, search, settings, and terminal. Icon paint is theme tinted
+folder-closed, file, search, settings, terminal, and more-horizontal.
+`More_Horizontal` is the font-independent three-dot "more actions" affordance:
+use it instead of a text glyph such as U+22EF HORIZONTAL MIDLINE ELLIPSIS, which
+the bundled faces do not cover. Icon paint is theme tinted
 and sized at the host rendering boundary. Each integer physical size from 8
 through 64 pixels has its own offline rasterization; sizes outside that range
 resample the nearest endpoint. Atlas pages are uploaded once per device

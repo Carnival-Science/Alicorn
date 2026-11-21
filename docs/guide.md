@@ -195,16 +195,29 @@ initialize :: proc(state: rawptr, rt: ^alicorn.Runtime) {
 
 Use `.Monospace` for code-oriented text. Optional italic and fallback faces
 can be installed with `font_load_italic_bytes` and
-`font_load_fallback_bytes`. The app supplies the font license and distribution
-rights. Call these APIs on the application thread; loading a face invalidates
-text shaping and paint so retained content is rebuilt with the new font.
+`font_load_fallback_bytes`. Individual faces can also be registered with
+`font_file_load_bytes` and `font_face_load`, then appended to a role's ordered
+fallback stack with `font_face_add_fallback`.
 
-When an application does not supply a fallback, the Linux native host resolves
-an optional symbol fallback through Fontconfig and verifies its glyph coverage
-before loading it. It does not assume a distribution-specific path such as
-`/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf`. If Fontconfig, `fc-match`,
-or the selected font is unavailable or unusable, the fallback remains optional
-and the host continues with the bundled primary face.
+Fallback resolves one face per extended grapheme cluster. Combining sequences,
+variation selectors, modifiers, keycaps, flags, and ZWJ text stay on one face,
+and adjacent clusters with compatible face, script, and style are shaped
+together so contextual shaping is retained. This is cmap coverage, not proof
+that a font has a color-glyph substitution for every emoji sequence. Adding a
+fallback face reshapes only retained runs for that role that previously
+contained uncovered clusters.
+
+The app supplies the font license and distribution rights. Call these APIs on
+the application thread; loading a face invalidates text shaping and paint so
+retained content is rebuilt with the new font.
+
+When an application does not supply a fallback, the desktop hosts seed an
+optional stack through `alicorn:host/fonts`. Windows uses DirectWrite
+`MapCharacters` to copy bounded local SFNT/TTC faces, macOS adds the system
+face, and Linux resolves a symbol fallback through Fontconfig and verifies its
+coverage. The SDL_GPU reference, `ui.run`'s native path, and hosted
+`ui/webgpu.run` install the same stack. The browser host loads bundled defaults
+only because a page cannot read local font files.
 
 `image_load_bytes` currently decodes PNG and QOI into Runtime-owned RGBA8
 pixels. It copies decoded pixels, so a disk buffer can be released as soon as
@@ -243,8 +256,9 @@ allows at most 256 layers, and schedules paint/presentation work without
 re-describing application layout. Call it on the Runtime's owning thread.
 
 The built-in decoder is intentionally small: PNG and QOI only, bounded to
-128 MiB encoded input and 64 MiB decoded RGBA8 data. Alicorn does not search OS
-font locations or infer licenses. Keep third-party attribution with the
+128 MiB encoded input and 64 MiB decoded RGBA8 data. Host font seeding is
+limited to the platform mappings above; Alicorn does not scan font directories,
+download fonts, or infer licenses. Keep third-party attribution with the
 application's distributed assets.
 
 ## Place labels at surface-local coordinates
@@ -374,7 +388,7 @@ focus without rebuilding the description. Visual-part identity adds
 inspectable owner/state metadata; ordinary retained layout still controls
 ordering, bounds, and clipping. Use visual parts to describe presentation, not
 to create another interaction system.
-See [Visual parts under an existing control](reference.md#visual-parts-under-an-existing-control)
+See [Visual parts](reference.md#visual-parts)
 for attachment validation, core roles, namespaced identities, and owner-state
 visibility policies.
 

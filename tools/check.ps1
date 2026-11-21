@@ -30,7 +30,14 @@ foreach ($Fixture in $FixturePackages) {
     $Main = Join-Path $Fixture.FullName 'main.odin'
     if (-not (Test-Path -LiteralPath $Main -PathType Leaf)) { continue }
     $Output = Join-Path $FixtureOutput ($Fixture.Name + '.exe')
-    & $Odin build $Fixture.FullName "-collection:alicorn=$RepoRoot" @($AccessKit.CompilerArguments) "-out:$Output"
+    $FixtureArguments = @()
+    if ($Fixture.Name -eq 'dpi_transition') {
+        # AccessKit's Rust static library and Odin's static wgpu-native both
+        # define rust_eh_personality. Match example 16 and use the shared WGPU
+        # library for the hosted DPI fixture.
+        $FixtureArguments += '-define:WGPU_SHARED=true'
+    }
+    & $Odin build $Fixture.FullName "-collection:alicorn=$RepoRoot" @($AccessKit.CompilerArguments) @FixtureArguments "-out:$Output"
     if ($LASTEXITCODE -ne 0) { throw "Fixture build failed: $($Fixture.Name)" }
 }
 

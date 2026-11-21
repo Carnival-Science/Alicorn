@@ -11,6 +11,7 @@ import alicorn "alicorn:runtime"
 import host "alicorn:host/sdl3"
 import sdl_gpu "alicorn:native/sdl_gpu"
 import ui "alicorn:ui"
+import webgpu "alicorn:ui/webgpu"
 
 // The workload matrix drives SDL_GPU and WebGPU through identical description
 // and retained-motion sequences. One scene file is compiled into both host
@@ -480,7 +481,12 @@ raw_child_stop :: proc(state: rawptr) {
 
 hosted_render :: proc(state: rawptr, ctx: ^alicorn.UI, _width, _height: int, _dpi: f32) {
 	app := cast(^App)state
+	if alicorn.container_begin(
+		ctx, .Root, label="alicorn.workload.hosted.root", key="alicorn.workload.hosted.root",
+		style=alicorn.layout_style(.Column, grow=1),
+	) == 0 { return }
 	describe_frame(app, ctx)
+	alicorn.container_end(ctx)
 }
 
 hosted_wake :: proc(state: rawptr, rt: ^alicorn.Runtime) {
@@ -551,7 +557,12 @@ hosted_child_render :: proc(state: rawptr, ctx: ^alicorn.UI, _width, _height: in
 	child.frames_described += 1
 	sync.atomic_store(&child.frames_described, child.frames_described)
 	if child.rt == nil { child.rt = ctx.runtime }
+	if alicorn.container_begin(
+		ctx, .Root, label="alicorn.workload.hosted.child.root", key="alicorn.workload.hosted.child.root",
+		style=alicorn.layout_style(.Column, grow=1),
+	) == 0 { return }
 	workload_content(&child.scene, ctx)
+	alicorn.container_end(ctx)
 }
 
 hosted_child_wake :: proc(state: rawptr, _rt: ^alicorn.Runtime) {
@@ -652,8 +663,8 @@ main :: proc() {
 
 	if sdl_reference {
 		ui.run(
-			&app,
-			run_render,
+			state=&app,
+			render=run_render,
 			title="Alicorn workload matrix",
 			width=WORKLOAD_WINDOW_WIDTH,
 			height=WORKLOAD_WINDOW_HEIGHT,
@@ -664,9 +675,9 @@ main :: proc() {
 		)
 		return
 	}
-	ui.run_webgpu(
-		&app,
-		run_render,
+	webgpu.run(
+		state=&app,
+		render=run_render,
 		title="Alicorn workload matrix",
 		width=WORKLOAD_WINDOW_WIDTH,
 		height=WORKLOAD_WINDOW_HEIGHT,

@@ -5,6 +5,7 @@ import "core:sync"
 import "core:testing"
 import "core:thread"
 import alicorn "../../runtime"
+import live_resize "alicorn:host/sdl3/live_resize"
 import "vendor:sdl3"
 
 native_sdl_event_test_mutex: sync.Mutex
@@ -44,15 +45,25 @@ test_live_resize_routes_expose_events_to_the_matching_window_context :: proc(t: 
 		window_id=sdl3.WindowID(11),
 		secondary_manager=&manager,
 	}
+	// Slot identity is published by the host; the shared core resolves exposures
+	// from its slot table rather than from a host-side window-id switch.
+	live_resize.live_resize_set_window(&state.core, .Primary, nil, false)
+	state.core.slots[0] = live_resize.Slot_State{active=true, window_id=sdl3.WindowID(11)}
+	state.core.slots[1] = live_resize.Slot_State{active=true, window_id=sdl3.WindowID(22)}
 
-	testing.expect(t, native_live_resize_target(&state, sdl3.WindowID(11)) == .Primary,
+	slot, found := live_resize.live_resize_slot_for_window_id(&state.core, sdl3.WindowID(11))
+	testing.expect(t, found && slot == .Primary,
 		"primary expose events must continue using the primary redraw state")
-	testing.expect(t, native_live_resize_target(&state, sdl3.WindowID(22)) == .Secondary,
+	slot, found = live_resize.live_resize_slot_for_window_id(&state.core, sdl3.WindowID(22))
+	testing.expect(t, found && slot == .Secondary,
 		"secondary expose events must redraw the matching secondary runtime")
-	testing.expect(t, native_live_resize_target(&state, sdl3.WindowID(33)) == .None,
+	_, found = live_resize.live_resize_slot_for_window_id(&state.core, sdl3.WindowID(33))
+	testing.expect(t, !found,
 		"unowned window expose events must not enter either runtime")
 	child.active = false
-	testing.expect(t, native_live_resize_target(&state, sdl3.WindowID(22)) == .None,
+	live_resize.live_resize_set_window(&state.core, .Secondary, nil, false)
+	_, found = live_resize.live_resize_slot_for_window_id(&state.core, sdl3.WindowID(22))
+	testing.expect(t, !found,
 		"events for a retired child window must be ignored")
 }
 

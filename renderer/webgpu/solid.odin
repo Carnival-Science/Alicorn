@@ -241,7 +241,17 @@ Solid_Prepare :: proc(
 				translation_index=u32(len(renderer.draws)),
 			})
 		}
-		if len(renderer.vertices) != required_vertices { return .Resource_Failure }
+		if len(renderer.vertices) != required_vertices {
+			// The shared CPU count is an allocation preflight, not an exact
+			// geometry contract. A connected top-edge gap can split one optical
+			// edge into two quads or omit a zero-width side, so the emitter may
+			// produce fewer vertices than the reservation. Only growth beyond the
+			// reservation needs a new GPU buffer; a smaller result is safe.
+			if len(renderer.vertices) > required_vertices &&
+			   !solid_vertex_buffer_ensure(renderer, len(renderer.vertices)) {
+				return .Resource_Failure
+			}
+		}
 		if len(renderer.vertices) > 0 {
 			upload_bytes := len(renderer.vertices)*size_of(cpu_renderer.Vertex)
 			wgpu.QueueWriteBuffer(renderer.queue, renderer.vertex_buffer, 0, raw_data(renderer.vertices[:]), uint(upload_bytes))

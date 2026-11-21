@@ -1,0 +1,97 @@
+# Alicorn inspector text-run span provenance
+# hosted SDL3/WebGPU D3D12, Scratchpad codex/issue-211-webgpu-frontend @ bfb2aed
+# scene: language/detection.go, builtin:cool-light, 1216x799, settled frame
+
+text run: valid=true bytes=7 paint-spans=0 style-spans=0
+text run: valid=true bytes=11 paint-spans=0 style-spans=0
+text run: valid=true bytes=6 paint-spans=0 style-spans=0
+text run: valid=true bytes=6 paint-spans=0 style-spans=0
+text run: valid=true bytes=3 paint-spans=0 style-spans=0
+text run: valid=true bytes=8 paint-spans=0 style-spans=0
+text run: valid=true bytes=4 paint-spans=0 style-spans=0
+text run: valid=true bytes=8 paint-spans=0 style-spans=0
+text run: valid=true bytes=6 paint-spans=0 style-spans=0
+text run: valid=true bytes=9 paint-spans=0 style-spans=0
+text run: valid=true bytes=8 paint-spans=0 style-spans=0
+text run: valid=true bytes=9 paint-spans=0 style-spans=0
+text run: valid=true bytes=13 paint-spans=0 style-spans=0
+text run: valid=true bytes=5 paint-spans=0 style-spans=0
+text run: valid=true bytes=6 paint-spans=0 style-spans=0
+text run: valid=true bytes=11 paint-spans=0 style-spans=0
+text run: valid=true bytes=14 paint-spans=0 style-spans=0
+text run: valid=true bytes=5 paint-spans=0 style-spans=0
+text run: valid=true bytes=9 paint-spans=0 style-spans=0
+text run: valid=true bytes=21 paint-spans=0 style-spans=0
+text run: valid=true bytes=14 paint-spans=0 style-spans=0
+text run: valid=true bytes=10 paint-spans=0 style-spans=0
+text run: valid=true bytes=12 paint-spans=0 style-spans=0
+text run: valid=true bytes=7 paint-spans=0 style-spans=0
+text run: valid=true bytes=9 paint-spans=0 style-spans=0
+text run: valid=true bytes=19 paint-spans=0 style-spans=0
+text run: valid=true bytes=22 paint-spans=0 style-spans=0
+text run: valid=true bytes=6 paint-spans=0 style-spans=0
+text run: valid=true bytes=15 paint-spans=0 style-spans=0
+text run: valid=true bytes=14 paint-spans=0 style-spans=0
+text run: valid=true bytes=9 paint-spans=0 style-spans=0
+text run: valid=true bytes=12 paint-spans=0 style-spans=0
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=27 paint-spans=5 style-spans=0 [4,8)fg=(0.040,0.058,0.085,1.000) [15,17)fg=(0.018,0.107,0.141,1.000) [18,19)fg=(0.091,0.117,0.147,1.000) [20,21)fg=(0.040,0.058,0.085,1.000) [22,26)fg=(0.040,0.058,0.085,1.000)
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=32 paint-spans=4 style-spans=0 [4,14)fg=(0.040,0.058,0.085,1.000) [15,17)fg=(0.040,0.058,0.085,1.000) [18,19)fg=(0.091,0.117,0.147,1.000) [20,32)fg=(0.194,0.080,0.024,1.000)
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=32 paint-spans=4 style-spans=0 [4,14)fg=(0.040,0.058,0.085,1.000) [15,17)fg=(0.018,0.107,0.141,1.000) [18,19)fg=(0.091,0.117,0.147,1.000) [20,32)fg=(0.194,0.080,0.024,1.000)
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=25 paint-spans=4 style-spans=0 [4,7)fg=(0.040,0.058,0.085,1.000) [15,17)fg=(0.018,0.107,0.141,1.000) [18,19)fg=(0.091,0.117,0.147,1.000) [20,25)fg=(0.194,0.080,0.024,1.000)
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=28 paint-spans=4 style-spans=0 [4,10)fg=(0.040,0.058,0.085,1.000) [15,17)fg=(0.018,0.107,0.141,1.000) [18,19)fg=(0.091,0.117,0.147,1.000) [20,28)fg=(0.194,0.080,0.024,1.000)
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=27 paint-spans=4 style-spans=0 [4,9)fg=(0.040,0.058,0.085,1.000) [15,17)fg=(0.018,0.107,0.141,1.000) [18,19)fg=(0.091,0.117,0.147,1.000) [20,27)fg=(0.194,0.080,0.024,1.000)
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=26 paint-spans=4 style-spans=0 [4,8)fg=(0.040,0.058,0.085,1.000) [15,17)fg=(0.018,0.107,0.141,1.000) [18,19)fg=(0.091,0.117,0.147,1.000) [20,26)fg=(0.194,0.080,0.024,1.000)
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=26 paint-spans=4 style-spans=0 [4,8)fg=(0.040,0.058,0.085,1.000) [15,17)fg=(0.018,0.107,0.141,1.000) [18,19)fg=(0.091,0.117,0.147,1.000) [20,26)fg=(0.194,0.080,0.024,1.000)
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=1 paint-spans=0 style-spans=0
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=0 paint-spans=0 style-spans=0
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=78 paint-spans=1 style-spans=0 [0,78)fg=(0.086,0.130,0.194,1.000)
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=74 paint-spans=1 style-spans=0 [0,74)fg=(0.086,0.130,0.194,1.000)
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=38 paint-spans=1 style-spans=0 [0,38)fg=(0.086,0.130,0.194,1.000)
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=33 paint-spans=6 style-spans=0 [0,4)fg=(0.117,0.068,0.246,1.000) [5,15)fg=(0.028,0.091,0.201,1.000) [5,15)fg=(0.040,0.058,0.085,1.000) [16,20)fg=(0.040,0.058,0.085,1.000) [21,27)fg=(0.018,0.107,0.141,1.000) [29,31)fg=(0.018,0.107,0.141,1.000)
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=46 paint-spans=9 style-spans=0 [4,7)fg=(0.040,0.058,0.085,1.000) [8,10)fg=(0.091,0.117,0.147,1.000) [11,18)fg=(0.040,0.058,0.085,1.000) [19,26)fg=(0.028,0.091,0.201,1.000) [19,26)fg=(0.031,0.110,0.242,1.000) [27,35)fg=(0.040,0.058,0.085,1.000) [36,39)fg=(0.028,0.091,0.201,1.000) [36,39)fg=(0.031,0.110,0.242,1.000) [40,44)fg=(0.040,0.058,0.085,1.000)
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=16 paint-spans=2 style-spans=0 [4,10)fg=(0.117,0.068,0.246,1.000) [11,14)fg=(0.040,0.058,0.085,1.000)
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=38 paint-spans=4 style-spans=0 [4,8)fg=(0.117,0.068,0.246,1.000) [9,14)fg=(0.194,0.080,0.024,1.000) [16,27)fg=(0.194,0.080,0.024,1.000) [29,37)fg=(0.194,0.080,0.024,1.000)
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=23 paint-spans=2 style-spans=0 [8,14)fg=(0.117,0.068,0.246,1.000) [15,23)fg=(0.040,0.058,0.085,1.000)
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=15 paint-spans=2 style-spans=0 [4,8)fg=(0.117,0.068,0.246,1.000) [9,14)fg=(0.194,0.080,0.024,1.000)
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=17 paint-spans=2 style-spans=0 [8,14)fg=(0.117,0.068,0.246,1.000) [15,17)fg=(0.040,0.058,0.085,1.000)
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=15 paint-spans=2 style-spans=0 [4,8)fg=(0.117,0.068,0.246,1.000) [9,14)fg=(0.194,0.080,0.024,1.000)
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=19 paint-spans=2 style-spans=0 [8,14)fg=(0.117,0.068,0.246,1.000) [15,19)fg=(0.040,0.058,0.085,1.000)
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=39 paint-spans=5 style-spans=0 [4,8)fg=(0.117,0.068,0.246,1.000) [9,14)fg=(0.194,0.080,0.024,1.000) [16,22)fg=(0.194,0.080,0.024,1.000) [24,30)fg=(0.194,0.080,0.024,1.000) [32,38)fg=(0.194,0.080,0.024,1.000)
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=25 paint-spans=2 style-spans=0 [8,14)fg=(0.117,0.068,0.246,1.000) [15,25)fg=(0.040,0.058,0.085,1.000)
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=39 paint-spans=5 style-spans=0 [4,8)fg=(0.117,0.068,0.246,1.000) [9,14)fg=(0.194,0.080,0.024,1.000) [16,22)fg=(0.194,0.080,0.024,1.000) [24,30)fg=(0.194,0.080,0.024,1.000) [32,38)fg=(0.194,0.080,0.024,1.000)
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=26 paint-spans=4 style-spans=0 [8,10)fg=(0.117,0.068,0.246,1.000) [11,14)fg=(0.040,0.058,0.085,1.000) [15,17)fg=(0.091,0.117,0.147,1.000) [18,24)fg=(0.194,0.080,0.024,1.000)
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=22 paint-spans=2 style-spans=0 [12,18)fg=(0.117,0.068,0.246,1.000) [19,22)fg=(0.040,0.058,0.085,1.000)
+text run: valid=true bytes=2 paint-spans=0 style-spans=0
+text run: valid=true bytes=9 paint-spans=0 style-spans=0
+text run: valid=true bytes=14 paint-spans=0 style-spans=0
+text run: valid=true bytes=14 paint-spans=0 style-spans=0
+text run: valid=true bytes=12 paint-spans=0 style-spans=0
+text run: valid=false bytes=0 paint-spans=0 style-spans=0
+text run: valid=false bytes=0 paint-spans=0 style-spans=0

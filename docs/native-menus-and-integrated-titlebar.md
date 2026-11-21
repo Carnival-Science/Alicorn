@@ -16,6 +16,18 @@ application remains responsible for dispatch and explicitly publishes action
 descriptors/state with `action_update`. SDL event handling, retained focus,
 and runtime nodes remain unaware of native menu handles and selectors.
 
+The description and shortcut policy now live in `runtime/menus.odin`, and the
+renderer-agnostic service plus SDL3 platform adapters live in `host/menus`. The
+SDL_GPU host keeps its integrated-titlebar Win32 chrome adapter; the hosted
+SDL3/WebGPU host uses the shared adapter (system Win32 menu bar or NSMenu) and
+matches SDL key events before application key routing. Both hosts share the
+snapshot/borrowed-state contract and the enabled gate described here. Slice 3
+extends the hosted adapter to the integrated Windows band: it paints menu labels
+inside the authored header band, owns caption controls and chrome-region hit
+testing, and publishes the same metrics/inset contract to Hosted_Runtime.
+Application-facing chrome types now live in `runtime` and `native/sdl_gpu`
+aliases them, so `Application` and `Hosted_Runtime_Config` map 1:1.
+
 ## Platform verdict
 
 SDL exposes the Windows `HWND` and macOS `NSWindow` through

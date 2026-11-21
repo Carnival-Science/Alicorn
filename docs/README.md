@@ -3,8 +3,9 @@
 Start with [Getting Started](getting-started.md) to install the toolchain, build
 Alicorn, and run the native starter.
 
-The current release is [Alicorn v0.2.1](../CHANGELOG.md); the same changelog
-contains the v0.1.0 and v0.2.0 release history.
+The current release is [Alicorn v0.2.2](../CHANGELOG.md) (release candidate; the
+date is set at release). The same changelog contains the v0.1.0, v0.2.0, and
+v0.2.1 history.
 
 ## Use Alicorn
 
@@ -19,6 +20,10 @@ contains the v0.1.0 and v0.2.0 release history.
 
 - [Architecture](architecture.md) — ownership boundaries, retained execution,
   invalidation, semantics, and scheduling.
+- [Host-owned UI loops](hosted-runtime.md) — the `Hosted_Runtime` contract,
+  application callbacks, host services, menus, chrome, input, and diagnostics.
+- [SDL_GPU to WebGPU migration](webgpu-migration.md) — the opt-in renderer,
+  phase status, slice records, and evidence.
 - [Durable UI restoration](durable-ui-restoration.md) — persistent identity and
   restoration behavior.
 - [Application mutation diagnostics](application-mutation-diagnostics.md) —
@@ -41,16 +46,16 @@ contains the v0.1.0 and v0.2.0 release history.
 ## Active research
 
 - [#162 host-owned presentation](research/issue-162-host-owned-presentation.md) —
-  public SDL_GPU frame/fence boundary and external host fixture; pixel, input,
-  idle, and lifetime comparisons remain open.
+  the bounded SDL_GPU presenter boundary is complete; the WebGPU renderer
+  consumes the same borrowed paint list and caller-owned submission rules.
 - [#169 native mesh locality](research/issue-169-native-mesh-locality.md) —
   fixes text-mesh invalidation when unrelated selection surfaces move in the
   paint stream; a broader per-owner GPU buffer cache remains pending matched
   Scratchpad measurements.
 - [#109 typed sizing research](research/issue-109-completion-plan.md) —
-  v0.3.0 follow-up research. v0.2.1 includes only the already merged fixed,
+  v0.3.0 follow-up research. v0.2.x includes only the already merged fixed,
   fit-height, and definite-parent percentage-width work; broader layout
-  resizing remains deferred and is not a v0.2.1 release gate.
+  resizing remains deferred.
 
 ## Platform status and validation
 

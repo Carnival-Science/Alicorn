@@ -8,7 +8,22 @@ native starter app, use [Getting Started](getting-started.md).
 ```text
 runtime/          retained runtime and lower-level public API
 ui/               convenience API for ordinary native application UI
-native/sdl_gpu/   SDL3 / SDL_GPU host and compositor
+ui/webgpu/        opt-in native WebGPU entry for SDL3 hosts (`webgpu.run`)
+renderer/cpu/     shared backend-neutral mesh, text, image, and material prep
+renderer/webgpu/  shared WebGPU renderer; the host owns device and submission
+native/sdl_gpu/   SDL3 / SDL_GPU host and compositor (default renderer)
+host/sdl3/        SDL3 WebGPU host plus shared window/event/chrome/accessibility code
+host/sdl3/input/  WebGPU-agnostic SDL3 key, pointer, wheel, and text mapping
+host/sdl3/clipboard/  shared synchronous SDL3 clipboard service
+host/sdl3/dialogs/    shared native file-dialog bridge
+host/sdl3/file_drag/  shared native drag-out source (Windows OLE)
+host/sdl3/live_resize/  shared modal resize/move dispatch and window-frame geometry
+host/sdl3/window_frame/ shared integrated-frame window predicates
+host/web/         browser (`js_wasm32`) host: input, composition, scheduling, DOM/ARIA
+host/presentation shared hosted-surface presenter (WebGPU)
+host/diagnostics/ shared, renderer-neutral developer diagnostics
+host/fonts/       shared desktop font seeding
+host/menus/       shared native menu model and platform adapters
 examples/         numbered native application lessons
 tests/fixtures/   focused runtime and lifecycle validation applications
 tests/            deterministic foundation tests
@@ -48,8 +63,45 @@ For focused work:
 ./tools/native_sdl_gpu.sh
 ```
 
-### Headless application interaction tests
+### WebGPU and hosted checks
 
+The default checks never compile wgpu-native. WebGPU-specific work adds:
+
+```powershell
+# Builds every example; example 16 uses -define:WGPU_SHARED=true and stages
+# SDL3.dll plus wgpu_native.dll in out\examples\.
+.\tools\build_examples.ps1
+# Proves an SDL_GPU consumer builds and smokes when wgpu-native is unavailable.
+.\tools\test_sdl_gpu_without_wgpu_native.ps1
+# Scripted real-window runners for example 16.
+.\tools\validate_native_webgpu_ui.ps1 -Executable out\examples\16_native_webgpu_ui.exe -Backend d3d12
+.\tools\validate_native_webgpu_resize.ps1 -Executable out\examples\16_native_webgpu_ui.exe -Backend d3d12
+.\tools\validate_native_webgpu_dpi.ps1 -Executable out\examples\16_native_webgpu_ui.exe -Backend d3d12
+.\tools\validate_native_webgpu_tab_drag.ps1 -Executable out\examples\16_native_webgpu_ui.exe -Backend d3d12
+# Test-only wgpu-native export: induce D3D12 backend removal, then recover.
+.\tools\validate_wgpu_native_backend_removal.ps1
+```
+
+Browser host code is exercised with `odin check ... -target:js_wasm32` and the
+Node tests `tools/test_web_scheduler.js` and `tools/test_webgpu_ui_host.js`.
+Example 17's `build.ps1`/`build.sh` stages a localhost page; WebGPU requires a
+secure context.
+
+Two harness caveats are recorded for this toolchain and host combination:
+
+- `tools/check.ps1` and `tools/test.ps1` run the AccessKit binding check, whose
+  `verify-uia.ps1` window-selection step is intermittently failing upstream in
+  [odin-accesskit#1](https://github.com/samanshaiza004/odin-accesskit/issues/1).
+  It selects the console or IME window instead of the fixture window under
+  Windows PowerShell 5.1; run the stages individually or use PowerShell 7 when
+  reproducing.
+- `tools/check_web_ui_package.ps1` currently fails to compile the
+  `tests/fixtures/web_ui_package` wasm target with `DevicePoll is not declared
+  by wgpu`. The failure is recorded in
+  [`webgpu-migration.md`](webgpu-migration.md) and is independent of the
+  renderer slices.
+
+### Headless application interaction tests
 Import `alicorn:testui` to drive an application's normal render procedure and
 callbacks against Alicorn's retained runtime without opening SDL or creating a
 GPU device. The harness supports typed key/text/pointer/scroll input, semantic
@@ -66,6 +118,87 @@ would catch a missing reveal request.
 
 The scripts accept `-Odin PATH` on PowerShell and `--odin PATH` on Unix-like
 shells. They otherwise use `ALICORN_ODIN`, then `odin` on `PATH`.
+
+### Physical window validation
+
+Two Windows runners drive real `SendInput` input against
+`examples/16_native_webgpu_ui` and assert host behavior that a headless test
+cannot reach:
+
+```powershell
+.\tools\validate_native_webgpu_chrome.ps1 -Executable out\example16\16_native_webgpu_ui.exe -Backend d3d12
+.\tools\validate_native_webgpu_resize.ps1 -Executable out\example16\16_native_webgpu_ui.exe -Backend d3d12
+.\tools\validate_native_webgpu_topmost.ps1 -Executable out\example16\16_native_webgpu_ui.exe -Backend d3d12
+```
+
+The chrome runner covers hit testing, caption drag/maximize/minimize, edge
+resize, and theme-message survival. The resize runner adds
+`--live-resize-smoke` and `--test-live-resize-trace` and proves that frames are
+presented *during* a modal move/resize drag: it counts per-frame trace lines from
+a dedicated reader thread, compares the drawable size and aspect with the live
+client rectangle, and cross-checks the fixture's own width accounting. Run it
+with `-Mode application -ExtraArguments '--renderer=webgpu'` against a consumer
+build (Scratchpad) for the same drags without fixture chrome. The mechanism it
+exercises is shared with `native/sdl_gpu`; see
+[`hosted-runtime.md`](hosted-runtime.md#live-resize-and-window-movement).
+The topmost runner adds `--topmost-child-smoke`, hovers the real cursor in and out of
+an `ALWAYS_ON_TOP` integrated-chrome child, and asserts the window rectangle
+never moves; without the shared `WM_WINDOWPOSCHANGING` guard
+(`host/sdl3/window_frame`) it reports the historical `(-8,-31)` drift.
+
+### Matched renderer/backend capture comparison
+
+`tools/compare_backends.ps1` is the standard evidence harness for renderer
+parity. One command runs the same application scene on every renderer/backend,
+presses F12 through the host capture shortcut, proves the frame settled (two
+consecutive captures byte-identical), and diffs each hosted frame against the
+reference frame:
+
+```powershell
+.\tools\compare_backends.ps1 `
+    -Executable C:\work\scratchpad\out\c4\scratchpad-alicorn.exe `
+    -Scene go-editor -Theme cool-light -Reference sdl-gpu `
+    -Backends @(
+        @{ Name = 'sdl-gpu'; Env = @{ SCRATCHPAD_RENDERER = 'sdl-gpu' } },
+        @{ Name = 'webgpu-d3d12'; Env = @{ SCRATCHPAD_RENDERER = 'webgpu' }; Args = @('--backend=d3d12') },
+        @{ Name = 'webgpu-vulkan'; Env = @{ SCRATCHPAD_RENDERER = 'webgpu' }; Args = @('--backend=vulkan') }
+    ) `
+    -StateFiles @(
+        @{ Path = "$env:APPDATA\Scratchpad\session.json"; Source = 'fixtures\session-go.json' },
+        @{ Path = "$env:LOCALAPPDATA\Scratchpad\preferences.json"; Source = 'fixtures\prefs-cool-light.json' }
+    ) `
+    -RegionsFile .\tools\compare_regions.scratchpad-1216x799.json `
+    -OutputDir out\backend-compare\go-cool-light
+```
+
+Each leg launches with `--diagnostics --capture-dir=... --capture-after=600`;
+the large `--capture-after` suppresses the host's automatic 2 s capture so the
+evidence is the settled frame requested by the harness. `-StateFiles` installs
+restored application state for the run (an empty `Source` removes the file),
+backs up what was there, and restores it byte-for-byte with SHA-256 verification
+in a `finally` block. `-Backends` supplies the per-leg environment and extra
+arguments, so the harness is not Scratchpad-specific.
+
+The report contains, per candidate backend, the full-frame channel diff and the
+named-region statistics from the regions file: differing channels, percent, max
+and mean delta, differing pixels, and the bounding box. Captures, `report.md`,
+`report.json`, and the per-pair diff JSON stay under `-OutputDir`, which defaults
+to `out\backend-compare\<scene>-<theme>-<stamp>` and is git-ignored.
+
+The capture driving (window activation, F12, bundle discovery) is Windows-only,
+matching the other F12 runners; `ppm_diff.py` and `theme_contrast.py` are
+portable and can compare any two captured PPMs.
+
+Standalone pieces:
+
+- `python tools/ppm_diff.py --a reference.ppm --b candidate.ppm [--regions ...]`
+  prints and optionally writes the diff JSON/markdown; `--fail-on-diff` exits 3.
+- `python tools/theme_contrast.py --theme name=style_generated.odin ...` reports
+  syntax-token contrast in generated style themes for both the authored sRGB
+  intent and the displayed linear-as-sRGB value (see
+  [`themes.md`](themes.md) for the transfer contract).
+- `python tools/test_compare_tools.py` covers the PPM parser, region statistics,
+  and the contrast math.
 
 ### Linux NixOS/Mango validation
 
@@ -241,7 +374,12 @@ for the automatic capture timer.
 
 The native window supports `F10` to toggle the host-owned runtime HUD, `F11` to
 toggle retained bounds, and `F12` for a diagnostic capture (including repeated
-captures during one run). The HUD reports recent application builds,
+captures during one run). The implementation lives in `host/diagnostics` and is
+shared with the hosted SDL3/WebGPU runtime; `native/sdl_gpu` keeps thin
+compatibility shims and its own SDL_GPU overlay sink. See
+[Host-owned UI loops](hosted-runtime.md#diagnostics) for the hosted contract,
+backend identity, and capture-on-failure behavior.
+The HUD reports recent application builds,
 presentation updates, app-driven GPU submissions, host wakes, surface updates,
 runtime allocations, retained-region reuse, last-interaction stage visits, and
 input-to-submit latency. Its status classifies the latest work as `IDLE`,

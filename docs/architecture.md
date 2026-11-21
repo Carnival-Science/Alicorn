@@ -14,7 +14,7 @@ application-owned Odin state
 identity → reconcile → layout → paint → presentation
               │
               ▼
-      native host / SDL_GPU
+      native host / SDL_GPU or opt-in WebGPU
 ```
 
 ## Ownership
@@ -315,13 +315,26 @@ Gradient strokes remain independent solid colors. Equal stop alpha keeps
 interpolation compatible with the existing straight-alpha source-over path;
 Increased Contrast flattens the fill and Reduce Transparency makes both stops
 opaque. Theme changes invalidate paint only. The surface APIs stay renderer
-neutral, but this prototype currently has native SDL_GPU pixel validation only;
-other renderer implementations must resolve the same semantic surface product
-before they can display the gradient.
+neutral; native SDL_GPU and the hosted WebGPU path (Windows D3D12 and browser
+readback) resolve the same semantic surface product. Other renderer
+implementations must do the same before they can display the gradient.
 
 The host waits for events when idle. Worker completions can wake it through an
 opaque `Application_Waker`; the UI remains on the window thread. The runtime
 does not create application threads or observe external state.
+
+Interactive window sizing is the one case where the platform does not return to
+the host's wait. Windows (and macOS live-resize sessions) run a modal loop while
+the pointer holds a frame edge or caption, so event polling only resumes on
+release. Both SDL3 renderers therefore share one dispatch core,
+`host/sdl3/live_resize`: an SDL event watch for direct `WINDOW_EXPOSED` redraws,
+an opt-in queued-resize dispatch (so the hosted renderer adopts a new drawable at
+the size message rather than at the compositor's next exposure), a Windows
+message hook and per-window timer for the modal move/size loop, slot state for a
+primary and one secondary window, and the re-entrancy guards that keep a frame
+from nesting inside another. Renderers plug their frame policy in through `Ops`;
+the windowing, scheduling, and input mechanism is not duplicated per backend. See
+[`hosted-runtime.md`](hosted-runtime.md#live-resize-and-window-movement).
 
 Applications that need delayed refreshes can use the host's two-slot
 `Application_Scheduler`. A slot is either `Frequent` or `Opportunistic`; each

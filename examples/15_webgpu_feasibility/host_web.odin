@@ -55,6 +55,10 @@ browser_host_app_initialize :: proc(_app_state: rawptr, rt: ^alicorn.Runtime) {
 
 browser_host_app_render :: proc(app_state: rawptr, ui: ^alicorn.UI, _width, _height: int, _dpi: f32) {
 	app := cast(^Browser_Feasibility_App)app_state
+	if alicorn.container_begin(
+		ui, .Root, label="browser-host-root", key="browser-host-root",
+		style=alicorn.layout_style(.Column, grow=1),
+	) == 0 { return }
 	alicorn.text(
 		ui, "Shared Alicorn WebGPU host",
 		key=alicorn.key_string("browser-host-title"),
@@ -107,6 +111,7 @@ browser_host_app_render :: proc(app_state: rawptr, ui: ^alicorn.UI, _width, _hei
 		key=alicorn.key_string("browser-host-editor-key-status"),
 		style=alicorn.layout_style(.Row, height=30),
 	)
+	alicorn.container_end(ui)
 }
 
 browser_host_app_text_key :: proc(

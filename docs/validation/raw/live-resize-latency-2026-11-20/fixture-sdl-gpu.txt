@@ -1,0 +1,72 @@
+
+Name                                         Status   Detail                                                           
+----                                         ------   ------                                                           
+main window created                          PASS     hwnd=15270990                                                    
+window focus                                 PASS     foreground=True                                                  
+window resized for live interaction          PASS     rect=120,120 1100x700                                            
+Window_Drag region maps to HTCAPTION         PASS     point=770,136 WM_NCHITTEST=2 (HTCAPTION=2)                       
+drag-to-move on caption band                 PASS     delta=100,50 (expected about +100,+50)                           
+frames presented during modal move           PASS     native counters verified after close (trace lines seen: 59)      
+right edge maps to HTRIGHT                   PASS     WM_NCHITTEST=11 (HTRIGHT=11)                                     
+resize by right edge drag                    PASS     width delta=140 (expected about +140)                            
+resize presentations happen mid-drag         PASS     hosted-only per-frame seam; reference modal-loop counters are ...
+drawable tracks the live window size         PASS     hosted-only per-frame seam; reference modal-loop counters are ...
+live layout follows the drag continuously    PASS     hosted-only per-frame seam; reference modal-loop counters are ...
+mid-drag drawable matches live client aspect PASS     hosted-only per-frame seam; reference modal-loop counters are ...
+live-resize latency recorded (no threshold)  PASS     resize inter-present p50=15.77 ms p95=23.99 ms | resize geomet...
+fixture-side live layout accounting          PASS     live_resize_smoke PASS frames 29 size_changes 26 distinct_widt...
+reference host redrew inside the modal loop  PASS     live_resize_expose_events=119 windows_move_redraws=23            
+clean exit                                   PASS     exited=True exit=0                                               
+mixed-DPI live drag during WM_DPICHANGED     HANDS-ON requires a physical multi-monitor arrangement; the live path r...
+
+
+
+backend=sdl-gpu executable=C:\Users\saman\.codex\worktrees\alicorn-webgpu-migration\alicorn\out\liveperf\native_webgpu_ui.exe pid=368868
+[PASS] main window created: hwnd=15270990
+[PASS] window focus: foreground=True
+[PASS] window resized for live interaction: rect=120,120 1100x700
+[PASS] Window_Drag region maps to HTCAPTION: point=770,136 WM_NCHITTEST=2 (HTCAPTION=2)
+[PASS] drag-to-move on caption band: delta=100,50 (expected about +100,+50)
+[PASS] frames presented during modal move: native counters verified after close (trace lines seen: 59)
+[PASS] right edge maps to HTRIGHT: WM_NCHITTEST=11 (HTRIGHT=11)
+[PASS] resize by right edge drag: width delta=140 (expected about +140)
+[PASS] resize presentations happen mid-drag: hosted-only per-frame seam; reference modal-loop counters are checked after close (frames=58 pixel_widths=1100,1100,1100,1100,1100,1105,1105,1111,1111,1117,1117,1123,1123,1129,1129,1135,1135,1140,1140,1146,1146,1152,1152,1158,1158,1164,1164,1170,1170,1175,1175,1181,1181,1187,1187,1193,1193,1199,1199,1205,1205,1210,1210,1216,1216,1222,1222,1228,1228,1234,1234,1240,1240,1240,1240,1240,1240,1240)
+[PASS] drawable tracks the live window size: hosted-only per-frame seam; reference modal-loop counters are checked after close (client_before=1100 max_frame_pixel_width=1240 client_after=1240)
+[PASS] live layout follows the drag continuously: hosted-only per-frame seam; reference modal-loop counters are checked after close (distinct_pixel_widths=25 min=1100 max=1240)
+[PASS] mid-drag drawable matches live client aspect: hosted-only per-frame seam; reference modal-loop counters are checked after close (drawable=1240x700 live_client=1240x700 aspect_delta=0.00% width_delta=0)
+live_resize_metrics backend=sdl-gpu gesture=move host=sdl-gpu frames=59
+  inter-present              n=58  p50=15.68 ms p95=16.17 ms p99=16.30 ms max=16.44 ms
+  stale-frame gaps           over_16.7ms=0 over_33.3ms=0
+  geometry-to-present        n=1   p50=13.53 ms p95=13.53 ms p99=13.53 ms max=13.53 ms
+  description/layout         n=59  p50=0.00 ms p95=0.00 ms p99=0.00 ms max=0.00 ms
+  surface reconfigure        n=0
+  geometry adoption          n=0
+  surface acquire            n=59  p50=0.01 ms p95=0.01 ms p99=0.01 ms max=0.01 ms
+  renderer encode            n=59  p50=0.07 ms p95=0.11 ms p99=0.11 ms max=0.14 ms
+  queue submit               n=59  p50=0.15 ms p95=0.22 ms p99=0.25 ms max=0.26 ms
+  chrome pre-present         n=59  p50=0.00 ms p95=0.00 ms p99=0.00 ms max=0.00 ms
+  host post-present          n=59  p50=0.00 ms p95=0.00 ms p99=0.00 ms max=0.00 ms
+  device poll                n=59  p50=0.00 ms p95=0.00 ms p99=0.00 ms max=0.00 ms
+  whole live frame           n=59  p50=0.25 ms p95=0.39 ms p99=0.43 ms max=0.47 ms
+  mesh rebuilds in gesture   0 (first-to-last retained mesh rebuild counter delta)
+live_resize_metrics backend=sdl-gpu gesture=resize host=sdl-gpu frames=58
+  inter-present              n=57  p50=15.77 ms p95=23.99 ms p99=24.74 ms max=25.41 ms
+  stale-frame gaps           over_16.7ms=23 over_33.3ms=0
+  geometry-to-present        n=24  p50=2.30 ms p95=15.96 ms p99=16.07 ms max=18.41 ms
+  description/layout         n=58  p50=0.00 ms p95=0.39 ms p99=0.40 ms max=0.54 ms
+  surface reconfigure        n=0
+  geometry adoption          n=0
+  surface acquire            n=58  p50=0.01 ms p95=1.19 ms p99=1.23 ms max=6.40 ms
+  renderer encode            n=58  p50=0.08 ms p95=0.60 ms p99=0.65 ms max=0.70 ms
+  queue submit               n=58  p50=0.11 ms p95=0.16 ms p99=0.18 ms max=0.21 ms
+  chrome pre-present         n=58  p50=0.00 ms p95=0.00 ms p99=0.00 ms max=0.00 ms
+  host post-present          n=58  p50=0.00 ms p95=0.00 ms p99=0.00 ms max=0.00 ms
+  device poll                n=58  p50=0.00 ms p95=0.00 ms p99=0.00 ms max=0.00 ms
+  whole live frame           n=58  p50=0.28 ms p95=2.29 ms p99=2.38 ms max=6.91 ms
+  mesh rebuilds in gesture   24 (first-to-last retained mesh rebuild counter delta)
+[PASS] live-resize latency recorded (no threshold): resize inter-present p50=15.77 ms p95=23.99 ms | resize geometry-to-present p50=2.30 ms p95=15.96 ms | move inter-present p50=15.68 ms p95=16.17 ms | csv=out\liveperf\ab-recorded\sdl-gpu-live-resize-metrics-20261120-210844.csv
+[PASS] fixture-side live layout accounting: live_resize_smoke PASS frames 29 size_changes 26 distinct_widths 26 min_width 736 max_width 1240
+[PASS] reference host redrew inside the modal loop: live_resize_expose_events=119 windows_move_redraws=23
+[PASS] clean exit: exited=True exit=0
+[HANDS-ON] mixed-DPI live drag during WM_DPICHANGED: requires a physical multi-monitor arrangement; the live path re-reads pixel and logical metrics together, but the founder drag across monitors is the confirming check
+backend=sdl-gpu failures=0 pass=16 hands_on=1

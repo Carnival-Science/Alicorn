@@ -13,62 +13,25 @@ native_text_field_return_key :: proc(shifted: bool) -> Application_Key {
 // runtime-visible Action_ID. Platform-native menu item IDs stay host-private.
 Application_Command_ID :: alicorn.Action_ID
 
-Application_Menu_Item_Kind :: enum {
-	Command,
-	Separator,
-	Submenu,
-}
+// The menu model and its accelerator/enabled-gate policy live in
+// alicorn:runtime so the reference SDL_GPU host, the hosted SDL3/WebGPU host,
+// and renderer-agnostic tests share one definition. These aliases keep the
+// native Application-facing vocabulary stable.
+Application_Menu_Item_Kind :: alicorn.Menu_Item_Kind
+Application_Menu_Modifier :: alicorn.Menu_Modifier
+Application_Menu_Modifiers :: alicorn.Menu_Modifiers
+Application_Menu_Shortcut :: alicorn.Menu_Shortcut
+Application_Menu_Item :: alicorn.Menu_Item
+Application_Menu :: alicorn.Menu
 
-Application_Menu_Modifier :: enum {
-	Primary,
-	Shift,
-	Alt,
-	Super,
-}
-
-Application_Menu_Modifiers :: distinct bit_set[Application_Menu_Modifier; u8]
-
-// A shortcut uses one printable key plus platform-neutral modifiers.
-// Primary means Ctrl on Windows/Linux and Command on macOS; Super maps to the
-// Windows key on Windows/Linux and Control on macOS.
-Application_Menu_Shortcut :: struct {
-	key:       rune,
-	modifiers: Application_Menu_Modifiers,
-}
-
-// Menu descriptions are borrowed for the duration of Run. Labels and menu
-// structure are snapshotted at startup; Action_State is read from
-// the borrowed item storage whenever a native menu opens or a host processes
-// an accelerator. Keep that storage stable and update its state on the
-// application thread.
-Application_Menu_Item :: struct {
-	kind:     Application_Menu_Item_Kind,
-	command:  Application_Command_ID,
-	label:    string,
-	state:    alicorn.Action_State,
-	shortcut: Application_Menu_Shortcut,
-	items:    []Application_Menu_Item,
-}
-
-Application_Menu :: struct {
-	label: string,
-	items: []Application_Menu_Item,
-	// A nonzero command turns this top-level label into a direct action instead
-	// of a popup menu. Its state and shortcut are borrowed like item state.
-	command: Application_Command_ID,
-	state: alicorn.Action_State,
-	shortcut: Application_Menu_Shortcut,
-}
-
-Window_Decoration_Mode :: enum {
-	System,
-	Integrated_Title_Bar,
-	Content_Title_Bar,
-}
+// The decoration and chrome vocabulary lives in alicorn:runtime so the
+// reference SDL_GPU host and Hosted_Runtime hosts share one definition. These
+// aliases preserve the native Application-facing names.
+Window_Decoration_Mode :: alicorn.Window_Decoration_Mode
 
 // Hidden affects only Windows Integrated_Title_Bar labels. The native menu
 // descriptions, command shortcuts, and Alt menu access remain available.
-Application_Menu_Presentation :: enum { Labels, Hidden }
+Application_Menu_Presentation :: alicorn.Menu_Presentation
 
 // Window_Chrome_Metrics reports measured native geometry for an application-
 // authored titlebar header. Rectangles use top-left window-logical points. On
@@ -76,46 +39,23 @@ Application_Menu_Presentation :: enum { Labels, Hidden }
 // content_start_x follows visible native menu labels (or the frame inset when
 // menu_presentation is Hidden) and content_end_x precedes
 // the native caption buttons. The host keeps native-control hit testing.
-Window_Chrome_Metrics :: struct {
-	header: alicorn.Rect,
-	native_controls: [3]alicorn.Rect,
-	native_control_count: int,
-	content_start_x: f32,
-	content_end_x: f32,
-	display_scale: f32,
-	fullscreen: bool,
-}
+Window_Chrome_Metrics :: alicorn.Window_Chrome_Metrics
+window_chrome_metrics_equal :: alicorn.window_chrome_metrics_equal
 
-window_chrome_metrics_equal :: proc(a, b: Window_Chrome_Metrics) -> bool {
-	if a.header != b.header || a.native_control_count != b.native_control_count ||
-		a.content_start_x != b.content_start_x || a.content_end_x != b.content_end_x ||
-		a.display_scale != b.display_scale || a.fullscreen != b.fullscreen { return false }
-	for i in 0..<min(max(a.native_control_count, 0), len(a.native_controls)) {
-		if a.native_controls[i] != b.native_controls[i] { return false }
-	}
-	return true
-}
+Window_Chrome_Metrics_Proc :: alicorn.Window_Chrome_Metrics_Proc
 
-Window_Chrome_Metrics_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, metrics: Window_Chrome_Metrics)
+Window_Chrome_Region_Kind :: alicorn.Window_Chrome_Region_Kind
 
-Window_Chrome_Region_Kind :: enum { Interactive, Window_Drag }
-
-WINDOW_CHROME_REGION_CAPACITY :: 16
+WINDOW_CHROME_REGION_CAPACITY :: alicorn.WINDOW_CHROME_REGION_CAPACITY
 
 // A chrome region references an ordinary retained node. The host resolves its
 // finalized bounds after layout and retains only those geometry products. At
 // most WINDOW_CHROME_REGION_CAPACITY regions are consumed per layout callback.
-Window_Chrome_Region :: struct {
-	node: alicorn.Node_ID,
-	kind: Window_Chrome_Region_Kind,
-}
+Window_Chrome_Region :: alicorn.Window_Chrome_Region
 
-Window_Chrome_Layout :: struct {
-	header: alicorn.Node_ID,
-	regions: []Window_Chrome_Region,
-}
+Window_Chrome_Layout :: alicorn.Window_Chrome_Layout
 
-Window_Chrome_Layout_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime) -> Window_Chrome_Layout
+Window_Chrome_Layout_Proc :: alicorn.Window_Chrome_Layout_Proc
 
 Application_Build_Proc :: proc(
 	state: rawptr,
@@ -128,10 +68,7 @@ Application_Build_Proc :: proc(
 // interaction during a description requests a corrective description.
 // Stabilization remains bounded by the native host pass limit. Explicit is
 // the default for applications that manage invalidation themselves.
-Application_Interaction_Update_Policy :: enum {
-	Explicit,
-	Correct_After_Interaction,
-}
+Application_Interaction_Update_Policy :: alicorn.Interaction_Update_Policy
 
 // Application_Initialize_Proc runs on the application thread after Runtime
 // creation and before host-default fonts and renderer resources initialize.
@@ -177,60 +114,41 @@ Application_Services_Proc :: proc(state: rawptr, services: Application_Services)
 
 Application_Wake_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime)
 
-Application_Scheduled_Wake_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, class: Scheduled_Wake_Class)
+Application_Scheduled_Wake_Proc :: alicorn.Application_Scheduled_Wake_Proc
 
 Application_Stop_Proc :: proc(state: rawptr)
 
-Application_Menu_Command_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, command: Application_Command_ID)
+Application_Menu_Command_Proc :: alicorn.Hosted_Menu_Command_Proc
 
-Application_Close_Result :: enum {Allow, Defer}
+Application_Close_Result :: alicorn.Hosted_Close_Result
 
-Application_Close_Requested_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime) -> Application_Close_Result
+Application_Close_Requested_Proc :: alicorn.Hosted_Close_Requested_Proc
 
-// Scheduled_Wake_Class distinguishes work that should run at a useful cadence
-// from lower-fidelity work that can wait until the user has been quiet.
-Scheduled_Wake_Class :: enum {Frequent, Opportunistic}
+// Scheduled_Wake_Class and the scheduler service vocabulary live in
+// alicorn:runtime so the reference SDL_GPU host, hosted SDL3/WebGPU, and
+// renderer-agnostic tests share one definition. These aliases preserve the
+// native Application-facing names.
+Scheduled_Wake_Class :: alicorn.Scheduled_Wake_Class
 
 NATIVE_DRAG_AUTOSCROLL_INTERVAL_NS :: u64(16_000_000)
 
-Application_Schedule_After_Proc :: proc(data: rawptr, class: Scheduled_Wake_Class, delay_ns: u64) -> bool
+Application_Schedule_After_Proc :: alicorn.Application_Schedule_After_Proc
 
-Application_Cancel_Scheduled_Proc :: proc(data: rawptr, class: Scheduled_Wake_Class) -> bool
+Application_Cancel_Scheduled_Proc :: alicorn.Application_Cancel_Scheduled_Proc
 
-Application_Scheduler_Stats_Proc :: proc(data: rawptr) -> Application_Scheduler_Stats
+Application_Scheduler_Stats_Proc :: alicorn.Application_Scheduler_Stats_Proc
 
-Application_Scheduler_Stats :: struct {
-	scheduled:               u64,
-	coalesced:               u64,
-	frequent_wakes:          u64,
-	opportunistic_wakes:     u64,
-	opportunistic_deferrals: u64,
-	maximum_lateness_ns:     u64,
-	frequent_pending:        bool,
-	opportunistic_pending:   bool,
-}
+Application_Scheduler_Stats :: alicorn.Application_Scheduler_Stats
 
 // Application_Scheduler is a UI-thread-only service. It owns at most one
 // replaceable deadline for each class; it is deliberately not a task queue.
-Application_Scheduler :: struct {
-	data:         rawptr,
-	schedule:     Application_Schedule_After_Proc,
-	cancel:       Application_Cancel_Scheduled_Proc,
-	read_stats:   Application_Scheduler_Stats_Proc,
-}
+Application_Scheduler :: alicorn.Application_Scheduler
 
-application_schedule_after :: proc(scheduler: Application_Scheduler, class: Scheduled_Wake_Class, delay_ns: u64) -> bool {
-	return scheduler.schedule != nil && scheduler.schedule(scheduler.data, class, delay_ns)
-}
+application_schedule_after :: alicorn.application_schedule_after
 
-application_cancel_scheduled_wake :: proc(scheduler: Application_Scheduler, class: Scheduled_Wake_Class) -> bool {
-	return scheduler.cancel != nil && scheduler.cancel(scheduler.data, class)
-}
+application_cancel_scheduled_wake :: alicorn.application_cancel_scheduled_wake
 
-application_scheduler_stats :: proc(scheduler: Application_Scheduler) -> Application_Scheduler_Stats {
-	if scheduler.read_stats != nil { return scheduler.read_stats(scheduler.data) }
-	return {}
-}
+application_scheduler_stats :: alicorn.application_scheduler_stats
 
 // Application_Waker is a borrowed, thread-safe request to wake the native
 // application loop. Applications may copy and call it from worker threads
@@ -251,16 +169,9 @@ application_wake :: proc(waker: Application_Waker) {
 // Window_Chrome_Appearance is optional host presentation policy for integrated
 // window chrome. The native host keeps ownership of rendering and interaction;
 // applications may supply colors resolved from their active theme.
-Window_Chrome_Appearance :: struct {
-	defined:    bool,
-	background: alicorn.Color,
-	foreground: alicorn.Color,
-}
+Window_Chrome_Appearance :: alicorn.Window_Chrome_Appearance
 
-Application_Chrome_Appearance_Proc :: proc(
-	state: rawptr,
-	rt: ^alicorn.Runtime,
-) -> Window_Chrome_Appearance
+Application_Chrome_Appearance_Proc :: alicorn.Window_Chrome_Appearance_Proc
 
 // Application is the intended public boundary for a small native Alicorn
 // program. State is borrowed by callbacks for the duration of Run; retained

@@ -3,6 +3,7 @@
 package sdl3_host
 
 import alicorn "alicorn:runtime"
+import host_menus "alicorn:host/menus"
 import "core:c"
 import "vendor:sdl3"
 
@@ -52,6 +53,7 @@ sdl3_webgpu_application_sync_text_input :: proc(application: ^SDL3_WebGPU_Applic
 		}
 	}
 	if !state.active || state.owner == 0 { return true }
+	state.content_inset_top = sdl3_webgpu_application_content_inset(application)
 	rt, status := alicorn.hosted_runtime_borrow(&application.hosted)
 	if status != .Ok { return false }
 	area, valid := alicorn.text_input_area(rt, state.owner)
@@ -61,17 +63,19 @@ sdl3_webgpu_application_sync_text_input :: proc(application: ^SDL3_WebGPU_Applic
 		state.last_area = {}
 		return true
 	}
-	if state.last_area_valid && state.last_area == area { return true }
+	cached := area
+	cached.rect.y += state.content_inset_top
+	if state.last_area_valid && state.last_area == cached { return true }
 	width := max(1, int(area.rect.w))
 	height := max(1, int(area.rect.h))
 	rect := sdl3.Rect{
 		x=c.int(area.rect.x),
-		y=c.int(area.rect.y),
+		y=c.int(area.rect.y+state.content_inset_top),
 		w=c.int(width),
 		h=c.int(height),
 	}
 	if !sdl3.SetTextInputArea(application.window, &rect, c.int(area.cursor_x)) { return false }
-	state.last_area = area
+	state.last_area = cached
 	state.last_area_valid = true
 	return true
 }
@@ -124,6 +128,43 @@ sdl3_webgpu_application_key_down :: proc(
 		reverse_tab=input_modifier_is_set(event.mod, sdl3.KMOD_SHIFT),
 	)
 	if overlay_handled {
+		if !sdl3_webgpu_application_sync_text_input(application) { return .Failure }
+		return .Handled
+	}
+
+	// Integrated-titlebar menu navigation: bare Alt, Alt+first letter, and
+	// menu-mode arrows/Escape are consumed before application key routing,
+	// matching the SDL_GPU host. A bare Alt press is held until release so
+	// Alt+Space stays with Windows.
+	if !composition_active &&
+	   host_menus.native_menu_adapter_handle_keydown(
+		   &application.menu_adapter, int(event.key), event.mod,
+	   ) {
+		if !sdl3_webgpu_application_sync_text_input(application) { return .Failure }
+		return .Handled
+	}
+
+	// Native menu accelerators are matched before application key routing, in
+	// the same order as the SDL_GPU host. Active IME composition keeps its keys;
+	// a held accelerator is consumed without dispatching a second command.
+	if !composition_active &&
+	   host_menus.menu_service_try_shortcut(
+		   &application.menu_service,
+		   rt,
+		   rune(event.key),
+		   menu_modifiers_from_sdl(event.mod),
+		   event.repeat,
+	   ) {
+		if !sdl3_webgpu_application_sync_text_input(application) { return .Failure }
+		return .Handled
+	}
+
+	// Host diagnostics sit exactly where native/sdl_gpu places them: after menu
+	// accelerators and before application key routing. F10 toggles the
+	// performance HUD and is consumed; F11/F12 are host effects that do not
+	// consume the key, so the application still receives them.
+	if !composition_active && application.diagnostics != nil &&
+	   sdl3_diagnostics_key(application.diagnostics, event.key, event.mod, event.repeat) {
 		if !sdl3_webgpu_application_sync_text_input(application) { return .Failure }
 		return .Handled
 	}

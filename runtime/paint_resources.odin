@@ -61,7 +61,7 @@ paint_text_run_resolve :: proc(rt: ^Runtime, handle: Text_Run_Handle) -> (run: ^
 		if handle.resource != 0 || !rt.drag_preview.ready || rt.drag_preview.run_generation != handle.generation { return }
 		return &rt.drag_preview.run, true
 	case .Host:
-		return
+		return runtime_host_text_run_resolve(rt, handle)
 	}
 	return
 }

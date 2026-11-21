@@ -34,6 +34,13 @@ hosted_multi_output_test_initialize :: proc(data: rawptr, rt: ^Runtime) {
 hosted_multi_output_test_render :: proc(data: rawptr, ui: ^UI, width, height: int, dpi: f32) {
 	app := (^Hosted_Multi_Output_Test_App)(data)
 	app.descriptions += 1
+	if container_begin(
+		ui,
+		.Root,
+		label="hosted-output-root",
+		key="hosted-output-root",
+		style=layout_style(.Column, grow=1),
+	) == 0 { return }
 	ruler_height := f32(height)*0.5
 	ruler := container_begin(ui, .Container, key="hosted-output-ruler",
 		style=layout_style(.Column, width=f32(width), height=ruler_height))
@@ -51,6 +58,7 @@ hosted_multi_output_test_render :: proc(data: rawptr, ui: ^UI, width, height: in
 		}
 		container_end(ui)
 	}
+	container_end(ui)
 }
 
 hosted_multi_output_test_open :: proc(

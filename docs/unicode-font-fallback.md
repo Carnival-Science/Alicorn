@@ -36,6 +36,34 @@ carry per-face scaling. The provider is a startup-seeded fallback stack, not a
 general asynchronous resolver for arbitrary later scripts or document
 languages.
 
+The seeding lives in `alicorn:host/fonts`; `load_default_fonts` is the single
+entry point that installs bundled defaults and then the optional platform
+fallbacks. The SDL_GPU reference host, `ui.run`'s native path, and the hosted
+SDL3/WebGPU path (`ui/webgpu.run`) all call it, so both desktop backends load an
+identical stack. The browser `ui/webgpu.run` path still loads bundled defaults
+only: a browser cannot read local font files, and a DOM/network font source is a
+separate feature.
+
+### The U+22EF midline-ellipsis case
+
+The bundled Atkinson faces do not cover U+22EF HORIZONTAL MIDLINE ELLIPSIS.
+Before the shared seeding, the hosted WebGPU host loaded bundled defaults only
+and shaped it as `.notdef` (glyph 0), while the reference host resolved it
+through an optional system face (on the validation machine, `NotoSansJP-VF.ttf`)
+and reported a real glyph. That was an initialization-parity gap, not a Runa
+coverage bug: the same codepoint resolves identically once both hosts build the
+same stack. The inspector now records `faces=[...] unresolved=...` on text runs
+and `text fallback glyphs: ... face=N gid=N` for fallback glyphs, so a capture
+bundle proves the choice without a screenshot.
+
+That fix is not a promise that every system covers the codepoint. `segoeui.ttf`
+does not contain U+22EF either, so a machine without a covering optional face
+still boxes a text glyph. Controls whose meaning is "more actions" should not
+depend on font coverage at all: use the semantic `More_Horizontal` icon
+(`icon_button(ui, "More actions", .More_Horizontal, ...)`) instead of the
+character. General system-font coverage remains follow-up work; it is not
+solved by bundling a second font here.
+
 Scratchpad continues to own the selected editor font preference. Alicorn owns
 font-file/face lifetimes, fallback registration, and retained text invalidation.
 Runa owns grapheme selection, script/style run shaping, glyph metrics, and
@@ -93,6 +121,12 @@ glyph ID, and raster size so bitmap strikes and vector glyphs cannot collide.
 - Alicorn tests cover targeted refresh when registered fallback coverage is
   added. Windows native tests verify DirectWrite CJK selection and color emoji
   atlas output when the OS provides a compatible COLR face.
+- `host/fonts` tests verify that both desktop host initializations build the
+  same face stack and resolve U+22EF to the same face and glyph (or record
+  unresolved `.notdef` coverage when the machine has no covering system face).
+  Runtime tests pin the inspector's `faces=`/`unresolved=` and fallback-glyph
+  provenance, and the icon tests pin the font-independent `More_Horizontal`
+  control.
 - Native Windows launch/build and visual checks still need to be recorded on
   supported Windows versions. Verify the emoji RGBA colors, alpha, syntax-color
   interaction, wrapping, caret/source-byte behavior, and detached windows.

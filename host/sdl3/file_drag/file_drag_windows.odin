@@ -1,7 +1,24 @@
 #+build windows
 
-package alicorn_sdl_gpu
+package sdl3_file_drag
 
+// Shared Windows native file-drag source.
+//
+// Both Alicorn hosts consume this package: the reference SDL_GPU host
+// (native/sdl_gpu) delegates its Application_Services.file_drag here, and the
+// hosted SDL3/WebGPU host publishes the same service through
+// Hosted_Host_Services.file_drag. The implementation is a minimal OLE
+// IDataObject/IDropSource pair carrying one CF_HDROP path, exactly the shape
+// Windows shell targets understand.
+//
+// DoDragDrop is modal and re-enters the owning thread's Windows message loop.
+// The loop is guarded here (`active`) so either host can defer ordinary or
+// live-resize presentation for its duration: the application is inside its own
+// pointer callback, and a nested retained description would re-enter
+// application state. See docs/hosted-runtime.md.
+
+import "core:strings"
+import alicorn "alicorn:runtime"
 import win "core:sys/windows"
 
 foreign import Native_File_Drag_Ole32 "system:Ole32.lib"
@@ -107,6 +124,25 @@ WIN32_DVASPECT_CONTENT :: u32(1)
 WIN32_TYMED_HGLOBAL    :: u32(1)
 WIN32_DROPEFFECT_COPY  :: win.DWORD(1)
 WIN32_MK_LBUTTON       :: u32(1)
+
+// active records that this thread is inside DoDragDrop. DoDragDrop pumps
+// Windows messages until the user drops or cancels, so a host must not start a
+// nested retained description while it runs. Only the UI thread can start or
+// observe a drag, so a plain package value is sufficient.
+@(private)
+active := false
+
+// service publishes the platform drag-out capability. A host that cannot
+// export files returns an empty service.
+service :: proc() -> alicorn.File_Drag_Service {
+	return alicorn.File_Drag_Service{start=windows_file_drag_start}
+}
+
+// is_active reports whether the shared source is inside its modal drag loop.
+// Both hosts consult it before servicing a nested live-resize/expose frame.
+is_active :: proc() -> bool {
+	return active
+}
 
 win32_iid_equal :: proc "contextless" (a, b: ^win.GUID) -> bool {
 	return a != nil && b != nil && a.Data1 == b.Data1 && a.Data2 == b.Data2 &&
@@ -336,7 +372,6 @@ Win32_IDropSource_VTable :: struct {
 	release:              proc "system" (this: rawptr) -> win.ULONG,
 	query_continue_drag:  proc "system" (this: rawptr, escape_pressed: win.BOOL, key_state: u32) -> win.HRESULT,
 	give_feedback:        proc "system" (this: rawptr, effect: win.DWORD) -> win.HRESULT,
-
 }
 
 WIN32_I_DROP_SOURCE_VTABLE: Win32_IDropSource_VTable = {
@@ -347,26 +382,39 @@ WIN32_I_DROP_SOURCE_VTABLE: Win32_IDropSource_VTable = {
 	give_feedback=win32_drop_source_give_feedback,
 }
 
-native_windows_file_drag_start :: proc(_data: rawptr, path: string) -> bool {
+// windows_file_drag_object_create builds one reference-counted IDataObject +
+// IDropSource pair for `path`. It is shared by the modal entry point and by the
+// mock-consumer fixture, so the OLE contract is tested without entering
+// DoDragDrop.
+windows_file_drag_object_create :: proc(path: string) -> (^Win32_File_Drag_Object, bool) {
 	wide := win.utf8_to_utf16(path, context.temp_allocator)
-	if len(wide) == 0 { return false }
-	if i32(OleInitialize(nil)) < 0 { return false }
-	defer OleUninitialize()
-
+	if len(wide) == 0 || strings.contains_rune(path, 0) { return nil, false }
 	object := cast(^Win32_File_Drag_Object)(win.CoTaskMemAlloc(win.SIZE_T(size_of(Win32_File_Drag_Object))))
-	if object == nil { return false }
+	if object == nil { return nil, false }
 	path_wide := cast([^]u16)(win.CoTaskMemAlloc(win.SIZE_T((len(wide)+1)*size_of(u16))))
 	if path_wide == nil {
 		win.CoTaskMemFree(rawptr(object))
-		return false
+		return nil, false
 	}
 	copy(path_wide[:len(wide)], wide)
 	path_wide[len(wide)] = 0
 	object^ = Win32_File_Drag_Object{references=1, path_wide=path_wide[:len(wide)]}
 	object.data_object = Win32_File_Drag_Interface{vtable=rawptr(&WIN32_I_DATA_OBJECT_VTABLE), owner=object}
 	object.drop_source = Win32_File_Drag_Interface{vtable=rawptr(&WIN32_I_DROP_SOURCE_VTABLE), owner=object}
+	return object, true
+}
+
+windows_file_drag_start :: proc(_data: rawptr, path: string) -> bool {
+	if len(path) == 0 || strings.contains_rune(path, 0) { return false }
+	if i32(OleInitialize(nil)) < 0 { return false }
+	defer OleUninitialize()
+	object, created := windows_file_drag_object_create(path)
+	if !created { return false }
+	defer _ = win32_file_drag_release(rawptr(&object.data_object))
+
+	active = true
+	defer active = false
 	effect: win.DWORD
 	status := DoDragDrop(rawptr(&object.data_object), rawptr(&object.drop_source), WIN32_DROPEFFECT_COPY, &effect)
-	_ = win32_file_drag_release(rawptr(&object.data_object))
 	return status == WIN32_DRAGDROP_S_DROP || status == WIN32_DRAGDROP_S_CANCEL
 }

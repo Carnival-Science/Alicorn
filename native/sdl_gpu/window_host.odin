@@ -5,6 +5,7 @@ import "base:runtime"
 import "core:c"
 import "core:time"
 import alicorn "../../runtime"
+import live_resize "alicorn:host/sdl3/live_resize"
 import "vendor:sdl3"
 
 Window_Metrics :: struct {
@@ -111,29 +112,20 @@ native_window_metrics_apply :: proc(
 		old_scale_x != new_scale_x || old_scale_y != new_scale_y
 }
 
+// native_live_resize_redraw runs one bounded live frame. Dispatch ordering and
+// re-entrancy are owned by the shared live-resize core; this host only supplies
+// the frame. The core may invoke it twice when an exposure arrives during a
+// present, matching the reference host's bounded two-pass cleanup.
 native_live_resize_redraw :: proc(state: ^Native_Live_Resize_State) {
-	if state == nil || !state.active || state.window == nil || state.device == nil || state.rt == nil ||
-		state.application == nil || state.metrics == nil || state.text_renderer == nil ||
-		state.surface_renderer == nil || state.solid_renderer == nil || state.timing == nil ||
-		state.host_scratch == nil || state.in_flight == nil {
-		return
-	}
-	if state.rendering {
-		state.pending = true
-		return
-	}
-	state.rendering = true
-	defer state.rendering = false
-	for pass in 0..<2 {
-		state.pending = false
-		native_live_resize_redraw_once(state)
-		if !state.pending { return }
-	}
+	if state == nil || !state.active { return }
+	native_live_resize_redraw_once(state)
 }
 
 native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	if state == nil || !state.active { return }
 	frame_start := time.now()
+	state.last_frame = {}
+	build_before := state.timing.application_build_ns
 	native_host_scratch_reset(state.host_scratch)
 
 	current_metrics: Window_Metrics
@@ -156,12 +148,20 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	scale_changed := current_metrics.pixel_density != old_metrics.pixel_density ||
 	                 current_metrics.display_scale != old_metrics.display_scale ||
 	                 new_scale_x != old_scale_x || new_scale_y != old_scale_y
+	metadata_scale_changed := current_metrics.pixel_density != old_metrics.pixel_density ||
+	                          current_metrics.display_scale != old_metrics.display_scale
 	state.metrics^ = current_metrics
 	if scale_changed { _ = alicorn.set_presentation_scale(state.rt, new_scale_x, new_scale_y) }
 	if logical_changed {
 		state.rt.viewport.w = f32(current_metrics.logical_width)
 		state.rt.viewport.h = f32(current_metrics.logical_height)
 		alicorn.invalidate_root(state.rt, "SDL live-resize logical size changed")
+	} else if metadata_scale_changed {
+		// A window can cross a monitor boundary mid-drag without changing its
+		// logical size. Application descriptions receive display_scale and may
+		// size GPU surfaces from it, so they need the same rebuild that the
+		// ordinary event path performs.
+		alicorn.invalidate_root(state.rt, "SDL display scale changed")
 	}
 	inspector_enabled := state.inspector != nil && state.inspector.enabled
 	if state.rt.invalidated && (!inspector_enabled || !state.rt.hard_error) {
@@ -225,7 +225,10 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	if command == nil { return }
 	swapchain: ^sdl3.GPUTexture
 	swap_w, swap_h: sdl3.Uint32
-	if !sdl3.AcquireGPUSwapchainTexture(command, state.window, &swapchain, &swap_w, &swap_h) {
+	acquire_start := time.now()
+	acquired := sdl3.AcquireGPUSwapchainTexture(command, state.window, &swapchain, &swap_w, &swap_h)
+	acquire_ns := u64(time.duration_nanoseconds(time.since(acquire_start)))
+	if !acquired {
 		_ = sdl3.CancelGPUCommandBuffer(command)
 		return
 	}
@@ -307,8 +310,9 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 		u64(time.duration_nanoseconds(time.since(encode_start))))
 	submit_start := time.now()
 	fence := sdl3.SubmitGPUCommandBufferAndAcquireFence(command)
+	submit_ns := u64(time.duration_nanoseconds(time.since(submit_start)))
 	native_timing_accumulate(&state.timing.gpu_submit_ns, &state.timing.gpu_submit_max_ns,
-		u64(time.duration_nanoseconds(time.since(submit_start))))
+		submit_ns)
 	if fence == nil { fail("SDL live-resize frame submission failed") }
 	flight := Native_In_Flight{fence=fence}
 	flight.serial = state.timing.gpu_submissions+1
@@ -345,7 +349,16 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	if state.max_in_flight != nil && len(state.in_flight^) > state.max_in_flight^ {
 		state.max_in_flight^ = len(state.in_flight^)
 	}
-	native_timing_add_frame(state.timing, u64(time.duration_nanoseconds(time.since(frame_start))))
+	frame_ns := u64(time.duration_nanoseconds(time.since(frame_start)))
+	native_timing_add_frame(state.timing, frame_ns)
+	state.last_frame = Native_Live_Frame_Sample{
+		valid=true,
+		build_ns=state.timing.application_build_ns-build_before,
+		acquire_ns=acquire_ns,
+		encode_ns=encode_elapsed,
+		submit_ns=submit_ns,
+		frame_ns=frame_ns,
+	}
 	if state.devtools_recorder != nil && state.devtools_cursor != nil && state.text_events != nil {
 		native_devtools_record_wake(
 			state.devtools_recorder, state.devtools_cursor, state.rt, state.timing, state.text_events,
@@ -354,56 +367,9 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	}
 }
 
-native_live_resize_event_watch :: proc "c" (userdata: rawptr, event: ^sdl3.Event) -> bool {
-	// AddEventWatch can run from arbitrary producer threads for most events.
-	// Filter those without touching host state; SDL guarantees live-resize
-	// WINDOW_EXPOSED events arrive on the main thread for direct redraw.
-	if event == nil || event.type != .WINDOW_EXPOSED || event.window.data1 != 1 { return true }
-	state := cast(^Native_Live_Resize_State)userdata
-	if state == nil || !state.active { return true }
-	context = runtime.default_context()
-	switch native_live_resize_target(state, event.window.windowID) {
-	case .Primary:
-		state.live_resize_expose_events += 1
-		before_samples := state.motion_scheduler_state.stats.samples if state.motion_scheduler_state != nil else 0
-		before_submissions := state.timing.gpu_submissions
-		if state.rendering {
-			state.pending = true
-			return true
-		}
-		native_live_resize_redraw(state)
-		if state.motion_scheduler_state != nil {
-			state.live_resize_motion_samples += state.motion_scheduler_state.stats.samples-before_samples
-		}
-		state.live_resize_gpu_submissions += state.timing.gpu_submissions-before_submissions
-	case .Secondary:
-		child := state.secondary_manager.child if state.secondary_manager != nil else nil
-		if child != nil {
-			state.live_resize_expose_events += 1
-			before_samples := child.motion_scheduler.stats.samples
-			before_submissions := child.timing.gpu_submissions
-			native_secondary_window_live_resize_redraw(state.secondary_manager, child)
-			state.live_resize_motion_samples += child.motion_scheduler.stats.samples-before_samples
-			state.live_resize_gpu_submissions += child.timing.gpu_submissions-before_submissions
-		}
-	case .None:
-		return true
-	}
-	return true
-}
-
-Native_Live_Resize_Target :: enum {None, Primary, Secondary}
-
-native_live_resize_target :: proc(state: ^Native_Live_Resize_State, window_id: sdl3.WindowID) -> Native_Live_Resize_Target {
-	if state == nil || !state.active { return .None }
-	if state.window_id != 0 && window_id == state.window_id { return .Primary }
-	manager := state.secondary_manager
-	if manager != nil {
-		child := manager.child
-		if child != nil && child.active && child.window_id != 0 && window_id == child.window_id { return .Secondary }
-	}
-	return .None
-}
+// Exposure dispatch, slot identity, and re-entrancy are owned by the shared
+// live-resize core (host/sdl3/live_resize). The reference host only supplies
+// the frame through native_live_resize_slot_render.
 
 print_window_metrics :: proc(label: string, metrics: Window_Metrics) {
 	fmt.println(
@@ -415,14 +381,24 @@ print_window_metrics :: proc(label: string, metrics: Window_Metrics) {
 	)
 }
 
-// SDL's live-resize expose callback runs while the platform's interactive
-// sizing loop has control. Keep the host references together so that callback
-// can rebuild and submit one current frame without entering the normal event
-// loop recursively.
+// SDL's live-resize dispatch runs while the platform's interactive sizing loop
+// has control. The shared core owns when a frame runs; this state keeps the host
+// references and the reference renderer's own live-resize telemetry.
+// Native_Live_Frame_Sample is the reference-side counterpart of the hosted
+// presenter's per-frame timing sample. build_ns is application description
+// work, acquire_ns is SDL's swapchain acquire (including any internal swapchain
+// resize), and encode/submit are the renderer's own command-buffer stages.
+Native_Live_Frame_Sample :: struct {
+	valid:      bool,
+	build_ns:   u64,
+	acquire_ns: u64,
+	encode_ns:  u64,
+	submit_ns:  u64,
+	frame_ns:   u64,
+}
+
 Native_Live_Resize_State :: struct {
 	active: bool,
-	rendering: bool,
-	pending: bool,
 	window: ^sdl3.Window,
 	window_id: sdl3.WindowID,
 	secondary_manager: ^Native_Secondary_Window_Manager,
@@ -449,25 +425,25 @@ Native_Live_Resize_State :: struct {
 	submitted: ^int,
 	motion_scheduler_state: ^Native_Motion_Scheduler_State,
 	motion_breadcrumbs: ^Native_Breadcrumb_Recorder,
-	live_resize_expose_events: u64,
+	// core owns the event watch, Windows modal-loop hook, per-window timer,
+	// re-entrancy guards, and the shared live-resize counters.
+	core: live_resize.Core,
+	// Stage D slice 5 per-frame trace. The reference host has no explicit
+	// swapchain reconfigure call: SDL performs any swapchain resize inside
+	// SDL_AcquireGPUSwapchainTexture, so acquire_ns is the comparable
+	// surface-reconfiguration cost on this path.
+	trace: bool,
+	last_frame: Native_Live_Frame_Sample,
+	last_present_ns: u64,
+	// Reference-renderer motion/submission accounting stays here.
 	live_resize_motion_samples: u64,
 	live_resize_gpu_submissions: u64,
-	windows_move_enter_messages: u64,
-	windows_move_exit_messages: u64,
-	windows_move_timer_wakes: u64,
-	windows_move_position_messages: u64,
-	windows_move_position_changed_messages: u64,
-	windows_move_redraws: u64,
 	windows_move_motion_samples: u64,
 	windows_move_gpu_submissions: u64,
 	windows_move_primary_motion_samples: u64,
 	windows_move_primary_gpu_submissions: u64,
 	windows_move_secondary_motion_samples: u64,
 	windows_move_secondary_gpu_submissions: u64,
-	move_timer_rendering: bool,
-	move_active: bool,
-	move_timer_active: bool,
-	move_hwnd: rawptr,
 	text_events: ^Native_Text_Event_Telemetry,
 	devtools_recorder: ^Native_Flight_Recorder,
 	devtools_cursor: ^Native_DevTools_Cursor,

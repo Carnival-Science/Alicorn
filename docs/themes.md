@@ -573,6 +573,17 @@ color mixing in perceptual spaces, and extra GPU-side conversions are
 unsupported. This deliberately keeps authoring conversion explicit without
 silently changing the native renderer's behavior.
 
+Both native hosts must agree on that swapchain contract or identical
+descriptions will not produce identical pixels. `SDL_GetGPUSwapchainTextureFormat`
+is a non-sRGB (`*_UNORM`) target on the SDL_GPU reference host, so the hosted
+WebGPU hosts select a non-sRGB surface format as well
+(`host/presentation/surface_format.odin`). Configuring an sRGB-encoded WebGPU
+target applies a second transfer function and lightens every hosted color -
+backgrounds, surfaces, and per-glyph syntax paint-span colors - relative to the
+reference. **Do not** switch one host to sRGB output without the other; true
+color-managed output is a contract change that must land on both hosts (and
+their image-texture formats) together.
+
 `Theme_Length` is a finite nonnegative logical-unit value capped at the
 runtime's supported maximum. It has no implicit dependency on DPI, font size,
 parent size, or viewport dimensions.

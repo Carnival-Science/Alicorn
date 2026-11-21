@@ -23,12 +23,27 @@ Hosted_Test_App :: struct {
 	last_key: Application_Key,
 	text_key_events: int,
 	last_text_key: Application_Text_Navigation_Key,
+	scroll_captures, text_inputs, dialogs, close_requests, menu_commands: int,
+	last_menu_command: Action_ID,
+	last_scheduled_class: Scheduled_Wake_Class,
+	last_dialog_status: Dialog_Status,
+	capture_scroll: bool,
+	close_result: Hosted_Close_Result,
+	last_dpi: f32,
 	host: ^Hosted_Runtime,
 }
 
 hosted_test_render :: proc(data: rawptr, ui: ^UI, width, height: int, dpi: f32) {
 	app := (^Hosted_Test_App)(data)
 	app.descriptions += 1
+	app.last_dpi = dpi
+	if container_begin(
+		ui,
+		.Root,
+		label="hosted-test-root",
+		key="hosted-test-root",
+		style=layout_style(.Column, grow=1),
+	) == 0 { return }
 	app.button, _ = button_ex(ui, "Source", key="hosted-source", style=layout_style(width=100, height=36))
 	_ = drag_source(ui, DRAG_TEST_TYPE, DRAG_SCROLL_SOURCE)
 	app.field = text_field(ui, "seed", key="hosted-field", style=layout_style(width=180, height=36))
@@ -42,6 +57,7 @@ hosted_test_render :: proc(data: rawptr, ui: ^UI, width, height: int, dpi: f32) 
 	button(ui, "Target", key="hosted-target", style=layout_style(width=180, height=36))
 	_ = drop_target(ui, DRAG_TEST_TYPE, DRAG_SCROLL_TARGET, .On)
 	scroll_region_end(ui)
+	container_end(ui)
 }
 
 hosted_test_post :: proc(data: rawptr) -> bool {
@@ -81,9 +97,10 @@ hosted_test_wake :: proc(data: rawptr, rt: ^Runtime) {
 	invalidate_root(rt, "hosted worker wake")
 }
 
-hosted_test_scheduled :: proc(data: rawptr, rt: ^Runtime) {
+hosted_test_scheduled :: proc(data: rawptr, rt: ^Runtime, class: Scheduled_Wake_Class) {
 	app := (^Hosted_Test_App)(data)
 	app.scheduled += 1
+	app.last_scheduled_class = class
 }
 
 hosted_test_stop :: proc(data: rawptr) {
@@ -99,6 +116,35 @@ hosted_test_pointer :: proc(data: rawptr, rt: ^Runtime, event: Pointer_Event, ta
 hosted_test_scroll :: proc(data: rawptr, rt: ^Runtime, event: Scroll_Event) {
 	app := (^Hosted_Test_App)(data)
 	app.scroll_events += 1
+}
+
+hosted_test_scroll_capture :: proc(data: rawptr, rt: ^Runtime, event: Scroll_Event, target: Node_ID) -> bool {
+	app := (^Hosted_Test_App)(data)
+	app.scroll_captures += 1
+	return app.capture_scroll && target != 0
+}
+
+hosted_test_text_input :: proc(data: rawptr, rt: ^Runtime, owner: Node_ID, event: Hosted_Text_Input_Event) {
+	app := (^Hosted_Test_App)(data)
+	app.text_inputs += 1
+}
+
+hosted_test_close_requested :: proc(data: rawptr, rt: ^Runtime) -> Hosted_Close_Result {
+	app := (^Hosted_Test_App)(data)
+	app.close_requests += 1
+	return app.close_result
+}
+
+hosted_test_menu_command :: proc(data: rawptr, rt: ^Runtime, command: Action_ID) {
+	app := (^Hosted_Test_App)(data)
+	app.menu_commands += 1
+	app.last_menu_command = command
+}
+
+hosted_test_dialog :: proc(data: rawptr, rt: ^Runtime, result: ^File_Dialog_Result) {
+	app := (^Hosted_Test_App)(data)
+	app.dialogs += 1
+	app.last_dialog_status = result.status
 }
 
 hosted_test_text_change :: proc(data: rawptr, rt: ^Runtime, change: Text_Change) {
@@ -137,6 +183,13 @@ hosted_key_route_post :: proc(_data: rawptr) -> bool {
 
 hosted_key_route_render :: proc(data: rawptr, ui: ^UI, _width, _height: int, _dpi: f32) {
 	state := (^Hosted_Key_Route_Test_State)(data)
+	if container_begin(
+		ui,
+		.Root,
+		label="hosted-key-route-root",
+		key="hosted-key-route-root",
+		style=layout_style(.Column, grow=1),
+	) == 0 { return }
 	state.scope_owner = container_begin(
 		ui,
 		.Container,
@@ -157,6 +210,7 @@ hosted_key_route_render :: proc(data: rawptr, ui: ^UI, _width, _height: int, _dp
 		rawptr(state),
 		Interaction_Scope_Options{keys={.Find}},
 	)
+	container_end(ui)
 }
 
 hosted_key_route_key :: proc(data: rawptr, _rt: ^Runtime, _owner: Node_ID, event: Hosted_Key_Event) -> bool {
@@ -207,7 +261,11 @@ hosted_test_open :: proc(host: ^Hosted_Runtime, app: ^Hosted_Test_App) -> Hosted
 		on_start=hosted_test_start, on_wake=hosted_test_wake,
 		on_scheduled_wake=hosted_test_scheduled, on_stop=hosted_test_stop, on_pointer=hosted_test_pointer,
 		on_text_change=hosted_test_text_change, on_text_key=hosted_test_text_key,
-		on_scroll=hosted_test_scroll, on_key=hosted_test_key,
+		on_scroll=hosted_test_scroll, on_scroll_capture=hosted_test_scroll_capture,
+		on_text_input=hosted_test_text_input, on_key=hosted_test_key,
+		on_menu_command=hosted_test_menu_command,
+		on_close_requested=hosted_test_close_requested,
+		on_dialog=hosted_test_dialog,
 	})
 }
 
@@ -362,7 +420,13 @@ test_hosted_runtime_step_resize_and_idle :: proc(t: ^testing.T) {
 	defer hosted_waker_release(&app.waker)
 	defer hosted_runtime_destroy(&host)
 	first := hosted_runtime_step(&host, 1)
-	testing.expect(t, first.status == .Ok && first.description_built && first.render_required && app.descriptions == 1)
+	testing.expect(t, first.status == .Ok && first.description_built && first.render_required &&
+		app.descriptions >= 1 && app.descriptions <= HOSTED_DESCRIPTION_STABILIZATION_LIMIT,
+		"an invalidated hosted step runs one bounded description sequence, mirroring the native host")
+	testing.expect(t, first.description_ns > 0 && first.description_passes >= 1,
+		"a description step reports its CPU cost and stabilization pass count")
+	testing.expect(t, first.layout_nodes_visited > 0 && first.reconcile_nodes_visited > 0,
+		"a description step reports the retained-work deltas it accumulated")
 	commands, status := hosted_runtime_display_commands(&host)
 	testing.expect(t, status == .Ok && len(commands) > 0)
 	_ = hosted_runtime_frame_submission_succeeded(&host)
@@ -385,6 +449,8 @@ test_hosted_runtime_step_resize_and_idle :: proc(t: ^testing.T) {
 	resized := hosted_runtime_step(&host, 11)
 	rt, _ := hosted_runtime_borrow(&host)
 	testing.expect(t, resized.description_built && resized.render_required && viewport_bounds(rt) == Rect{0, 0, 300, 200})
+	testing.expect(t, resized.description_ns > 0 && resized.description_passes >= 1,
+		"the resize step's rebuilt description reports its own cost")
 	testing.expect(t, rt.presentation_scale_x == 1.5 && rt.presentation_scale_y == 2)
 	_ = hosted_runtime_frame_submission_succeeded(&host)
 	_ = hosted_runtime_set_renderable(&host, false)
@@ -397,9 +463,104 @@ test_hosted_runtime_step_resize_and_idle :: proc(t: ^testing.T) {
 	testing.expect(t, restored.render_required && !restored.description_built)
 }
 
+Hosted_DPI_Transition_Observed :: struct {
+	description_built: bool,
+	dpi:               f32,
+	button_bounds:     Rect,
+	pixel_scale_x:     f32,
+	pixel_scale_y:     f32,
+	hit:               Node_ID,
+}
+
+hosted_dpi_transition_observe :: proc(
+	t: ^testing.T,
+	host: ^Hosted_Runtime,
+	app: ^Hosted_Test_App,
+	turn: u64,
+) -> Hosted_DPI_Transition_Observed {
+	step := hosted_runtime_step(host, turn)
+	rt, status := hosted_runtime_borrow(host)
+	if status != .Ok || app.button == 0 {
+		testing.expect(t, false, "the DPI fixture must retain its button")
+		return {}
+	}
+	button := rt.nodes[app.button]
+	if button == nil { testing.expect(t, false, "missing button node"); return {} }
+	center_x := button.bounds.x+button.bounds.w*0.5
+	center_y := button.bounds.y+button.bounds.h*0.5
+	hit, hit_status := hosted_runtime_pointer(host, Pointer_Event{kind=.Move, x=center_x, y=center_y})
+	if hit_status != .Ok { testing.expect(t, false, "hit test must run after a scale transition") }
+	return Hosted_DPI_Transition_Observed{
+		description_built=step.description_built,
+		dpi=app.last_dpi,
+		button_bounds=button.bounds,
+		pixel_scale_x=rt.presentation_scale_x,
+		pixel_scale_y=rt.presentation_scale_y,
+		hit=hit,
+	}
+}
+
+// A monitor transition changes the drawable pixel size and display scale while
+// the SDL window stays at the same logical size. The retained logical geometry
+// and pointer mapping must be invariant, the device-grid presentation scale
+// must follow the drawable, and the application must receive the new display
+// scale. Repeated round trips must not accumulate snapping.
 @(test)
-test_hosted_runtime_host_presentation_request_reuses_description :: proc(t: ^testing.T) {
+test_hosted_runtime_display_scale_transitions_preserve_geometry_and_hit_testing :: proc(t: ^testing.T) {
 	host: Hosted_Runtime
+	app: Hosted_Test_App
+	if hosted_test_open(&host, &app) != .Ok { testing.expect(t, false, "open failed"); return }
+	defer hosted_waker_release(&app.waker)
+	defer hosted_runtime_destroy(&host)
+	baseline := hosted_dpi_transition_observe(t, &host, &app, 1)
+	if baseline.hit != app.button {
+		testing.expect(t, false, "the baseline hit test must land on the fixture button")
+		return
+	}
+	scales := []f32{1, 1.25, 1.5, 1.75, 1.25, 1, 2}
+	turn := u64(2)
+	for scale in scales {
+		pixel_width := int(f32(240)*scale+0.5)
+		pixel_height := int(f32(240)*scale+0.5)
+		if status := hosted_runtime_resize(&host, 240, 240, pixel_width, pixel_height, scale); status != .Ok {
+			testing.expectf(t, false, "resize to scale %.2f failed: %v", scale, status)
+			return
+		}
+		observed := hosted_dpi_transition_observe(t, &host, &app, turn)
+		turn += 1
+		testing.expectf(t, observed.description_built,
+			"a display-scale change at fixed logical size must rebuild the description (scale %.2f)", scale)
+		testing.expectf(t, observed.dpi == scale,
+			"the application must receive display scale %.2f, got %.2f", scale, observed.dpi)
+		testing.expectf(t, observed.button_bounds == baseline.button_bounds,
+			"logical bounds must not depend on display scale %.2f (%.2f,%.2f %.2fx%.2f vs %.2f,%.2f %.2fx%.2f)",
+			scale,
+			observed.button_bounds.x, observed.button_bounds.y, observed.button_bounds.w, observed.button_bounds.h,
+			baseline.button_bounds.x, baseline.button_bounds.y, baseline.button_bounds.w, baseline.button_bounds.h)
+		testing.expectf(t, observed.pixel_scale_x == scale && observed.pixel_scale_y == scale,
+			"presentation scale must follow the drawable at %.2f", scale)
+		testing.expectf(t, observed.hit == app.button,
+			"a pointer at the same logical coordinate must hit the same node at scale %.2f", scale)
+	}
+	// A metadata-only transition (display scale changed, drawable ratio fixed)
+	// still rebuilds the description even though the logical geometry did not
+	// change, matching native/sdl_gpu's `metadata_scale_changed` branch.
+	before := hosted_runtime_step(&host, turn)
+	if before.render_required { _ = hosted_runtime_frame_submission_succeeded(&host) }
+	turn += 1
+	_ = hosted_runtime_resize(&host, 240, 240, 360, 360, 1.75)
+	metadata := hosted_dpi_transition_observe(t, &host, &app, turn)
+	testing.expect(t, metadata.description_built,
+		"a display-scale change with an unchanged drawable must still rebuild the application description")
+	testing.expect(t, metadata.dpi == 1.75, "the application must receive the metadata display scale")
+	testing.expect(t, metadata.pixel_scale_x == 1.5 && metadata.pixel_scale_y == 1.5,
+		"the device-grid scale must keep following the unchanged drawable ratio")
+	testing.expect(t, metadata.hit == app.button && metadata.button_bounds == baseline.button_bounds,
+		"metadata-only scale changes must not move logical geometry or hit testing")
+}
+
+@(test)
+test_hosted_runtime_host_presentation_request_reuses_description :: proc(t: ^testing.T) {	host: Hosted_Runtime
 	app: Hosted_Test_App
 	if hosted_test_open(&host, &app) != .Ok { testing.expect(t, false, "open failed"); return }
 	defer hosted_waker_release(&app.waker)
@@ -567,4 +728,157 @@ test_hosted_runtime_worker_wakes_and_teardown :: proc(t: ^testing.T) {
 	testing.expect(t, hosted_runtime_destroy(&host) == .Ok && app.stops == 1)
 	testing.expect(t, !hosted_waker_notify(app.waker) && hosted_runtime_deliver_wake(&host) == .Closed && app.wakes == 1)
 	testing.expect(t, hosted_runtime_destroy(&host) == .Ok && app.stops == 1)
+}
+
+
+@(test)
+test_hosted_runtime_close_requests_allow_defer_and_default :: proc(t: ^testing.T) {
+	host: Hosted_Runtime
+	app: Hosted_Test_App
+	if hosted_test_open(&host, &app) != .Ok { testing.expect(t, false, "open failed"); return }
+	defer hosted_waker_release(&app.waker)
+	defer hosted_runtime_destroy(&host)
+
+	app.close_result = .Defer
+	result, status := hosted_runtime_request_close(&host)
+	testing.expect(t, status == .Ok && result == .Defer && app.close_requests == 1,
+		"a deferring application keeps the hosted surface alive")
+
+	app.close_result = .Allow
+	result, status = hosted_runtime_request_close(&host)
+	testing.expect(t, status == .Ok && result == .Allow && app.close_requests == 2,
+		"an allowing application permits the host to close")
+
+	// A host that omits the callback preserves immediate-close behavior.
+	default_host: Hosted_Runtime
+	default_app: Hosted_Test_App
+	if hosted_runtime_init(&default_host, Hosted_Runtime_Config{
+		state=rawptr(&default_app), logical_width=240, logical_height=120,
+		pixel_width=480, pixel_height=240, dpi_scale=2,
+		post_wake_data=rawptr(&default_app), post_wake=hosted_test_post,
+		render=hosted_test_render, on_initialize=hosted_test_init,
+	}) != .Ok {
+		testing.expect(t, false, "default close host failed to initialize")
+		return
+	}
+	defer hosted_runtime_destroy(&default_host)
+	result, status = hosted_runtime_request_close(&default_host)
+	testing.expect(t, status == .Ok && result == .Allow,
+		"an absent on_close_requested callback defaults to Allow")
+}
+
+@(test)
+test_hosted_runtime_menu_command_and_dialog_delivery :: proc(t: ^testing.T) {
+	host: Hosted_Runtime
+	app: Hosted_Test_App
+	if hosted_test_open(&host, &app) != .Ok { testing.expect(t, false, "open failed"); return }
+	defer hosted_waker_release(&app.waker)
+	defer hosted_runtime_destroy(&host)
+
+	_ = hosted_runtime_step(&host, 1)
+	_ = hosted_runtime_frame_submission_succeeded(&host)
+	if status := hosted_runtime_menu_command(&host, Action_ID(41)); status != .Ok {
+		testing.expect(t, false, "menu command dispatch failed")
+	}
+	testing.expect(t, app.menu_commands == 1 && app.last_menu_command == Action_ID(41),
+		"host-normalized menu commands reach the application callback")
+
+	result := File_Dialog_Result{id=Dialog_ID(9), status=.Accepted, selected_filter=1}
+	if status := hosted_runtime_dialog(&host, &result); status != .Ok {
+		testing.expect(t, false, "dialog delivery failed")
+	}
+	testing.expect(t, app.dialogs == 1 && app.last_dialog_status == .Accepted,
+		"asynchronous dialog completions reach the application callback")
+}
+
+Hosted_Menu_Test_App :: struct {
+	commands: int,
+	last:     Action_ID,
+}
+
+hosted_menu_test_command :: proc(data: rawptr, _rt: ^Runtime, command: Action_ID) {
+	app := cast(^Hosted_Menu_Test_App)data
+	app.commands += 1
+	app.last = command
+}
+
+@(test)
+test_hosted_runtime_menu_command_applies_borrowed_enabled_state :: proc(t: ^testing.T) {
+	app := Hosted_Menu_Test_App{}
+	items := [?]Menu_Item{
+		{kind=.Command, command=Action_ID(7), label="Save", state=Action_State{enabled=false}, shortcut=Menu_Shortcut{'S', {.Primary}}},
+	}
+	menus := [?]Menu{
+		{label="File", items=items[:]},
+		{label="Sync", command=Action_ID(9), state=Action_State{enabled=true}},
+	}
+	host: Hosted_Runtime
+	if hosted_runtime_init(&host, Hosted_Runtime_Config{
+		state=rawptr(&app), logical_width=240, logical_height=240,
+		pixel_width=480, pixel_height=480, dpi_scale=2,
+		post_wake_data=rawptr(&app), post_wake=hosted_test_post, render=hosted_test_render,
+		menus=menus[:], menu_presentation=.Hidden, on_menu_command=hosted_menu_test_command,
+	}) != .Ok {
+		testing.expect(t, false, "hosted menu test failed to initialize")
+		return
+	}
+	defer hosted_runtime_destroy(&host)
+
+	_ = hosted_runtime_menu_command(&host, Action_ID(7))
+	testing.expect(t, app.commands == 0,
+		"a command carried only by a disabled menu item must not reach on_menu_command")
+
+	_ = hosted_runtime_menu_command(&host, Action_ID(9))
+	testing.expect(t, app.commands == 1 && app.last == Action_ID(9),
+		"an enabled direct top-level menu command must dispatch")
+
+	menus[1].state.enabled = false
+	_ = hosted_runtime_menu_command(&host, Action_ID(9))
+	testing.expect(t, app.commands == 1,
+		"disabling the borrowed top-level state must prevent later dispatch")
+
+	_ = action_update(&host.state.runtime,
+		Action_Descriptor{id=Action_ID(30), name="test.menu.action", label="Export"},
+		Action_State{enabled=false})
+	_ = hosted_runtime_menu_command(&host, Action_ID(30))
+	testing.expect(t, app.commands == 1,
+		"a command backed by a disabled runtime action must not dispatch")
+	_ = action_update(&host.state.runtime,
+		Action_Descriptor{id=Action_ID(30), name="test.menu.action", label="Export"},
+		Action_State{enabled=true})
+	_ = hosted_runtime_menu_command(&host, Action_ID(30))
+	testing.expect(t, app.commands == 2 && app.last == Action_ID(30),
+		"enabling the runtime action must restore dispatch")
+}
+
+@(test)
+test_hosted_runtime_scroll_capture_and_application_text_input :: proc(t: ^testing.T) {
+	host: Hosted_Runtime
+	app: Hosted_Test_App
+	if hosted_test_open(&host, &app) != .Ok { testing.expect(t, false, "open failed"); return }
+	defer hosted_waker_release(&app.waker)
+	defer hosted_runtime_destroy(&host)
+
+	_ = hosted_runtime_step(&host, 1)
+	rt, _ := hosted_runtime_borrow(&host)
+	if app.scroll == 0 { testing.expect(t, false, "missing scroll region"); return }
+	viewport := scroll_region_state(rt, app.scroll).viewport_bounds
+	app.capture_scroll = true
+	handled, status := hosted_runtime_scroll(&host, Scroll_Event{
+		delta_y=-1,
+		x=viewport.x + viewport.w/2,
+		y=viewport.y + viewport.h/2,
+	})
+	testing.expect(t, status == .Ok && handled && app.scroll_captures == 1 && app.scroll_events == 0,
+		"a capturing application scroll handler claims the event before retained scrolling")
+
+	app.capture_scroll = false
+	handled, status = hosted_runtime_scroll(&host, Scroll_Event{delta_y=-1, x=-1, y=-1})
+	testing.expect(t, status == .Ok && handled && app.scroll_events == 1,
+		"a non-capturing application falls back to the existing on_scroll path")
+
+	_ = focus(rt, app.generic_text_target)
+	testing.expect(t, hosted_runtime_text_input(&host, app.generic_text_target, .Commit, "text") == .Ok &&
+		app.text_inputs == 1,
+		"application-owned text targets receive hosted text-input events")
 }

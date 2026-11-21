@@ -45,6 +45,24 @@ limitations before using a number.
   unchanged-root allocation reduction, initial-construction attribution, and
   current retained/text/material workload evidence.
 
+## WebGPU and hosted-path measurements
+
+These are validation records, not cross-renderer guarantees. Each uses one
+executable, scene, theme, and event loop with only the renderer or host changed.
+
+- [WebGPU vs SDL_GPU matched-description workload matrix (2026-11-19)](validation/webgpu-vs-sdlgpu-workload-matrix-windows-2026-11-19.md)
+  — 131 asserted expectations across identical, transform, color, localized
+  layout, 1k/10k scroll, multi-window, and settled idle, with CPU percentiles and
+  retained-work counters.
+- [WebGPU vs SDL_GPU app-level performance (2026-11-19)](validation/webgpu-vs-sdlgpu-perf-windows-2026-11-19.md)
+  — one application scene through both renderers, with explicit idle limits.
+- [Hosted live-resize presentation latency (2026-11-20)](validation/issue-211-live-resize-performance-windows-2026-11-20.md)
+  — per-frame inter-present latency, message-to-present stretch, reconfiguration
+  cost, and the geometry-dispatch change that cut D3D12's p50 stretch window
+  from 7.3 ms to 2.6 ms.
+- [Native WebGPU presenter timing probe (2026-11-17)](validation/webgpu-timings-windows-2026-11-17.md)
+  — host-side CPU stages only; no GPU execution or scanout claim.
+
 ## Reproduce
 
 From a fresh checkout with the documented Odin toolchain:

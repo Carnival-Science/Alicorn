@@ -124,7 +124,7 @@ run_application_loop :: proc(
 	defer native_dialog_bridge_release(dialog_bridge)
 	if application_instance.on_services != nil {
 		application_instance.on_services(application_instance.state, Application_Services{
-			dialogs=Dialog_Service{handle=rawptr(dialog_bridge)},
+			dialogs=native_dialog_service(dialog_bridge),
 			diagnostics=Application_Diagnostics{
 				data=rawptr(breadcrumbs),
 				record=native_breadcrumb_application_event,
@@ -217,12 +217,13 @@ run_application_loop :: proc(
 		inspector=inspector,
 		debug_bounds=debug_bounds,
 		native_menu=native_menu,
+		trace=native_live_resize_trace_requested(),
 	}
-	if !sdl3.AddEventWatch(native_live_resize_event_watch, rawptr(&live_resize_state)) {
-		fail("SDL live-resize event watch registration failed")
+	if !native_live_resize_install(&live_resize_state) {
+		fail("SDL live-resize dispatch registration failed")
 	}
 	when ODIN_OS == .Windows {
-		if !native_live_resize_windows_hook_install(&live_resize_state) {
+		if !live_resize_state.core.windows_hook_installed {
 			fmt.println("motion", "Windows live-move presentation hook unavailable")
 		}
 	}
@@ -253,7 +254,7 @@ run_application_loop :: proc(
 	event_wait_deadline_sources: [NATIVE_EVENT_WAIT_DEADLINE_SOURCE_COUNT]u64
 	wake_events: u64 = 0
 	for !quit_requested {
-		when ODIN_OS == .Windows { native_live_resize_windows_move_reconcile(&live_resize_state) }
+		native_live_resize_reconcile(&live_resize_state)
 		native_host_scratch_reset(&host_scratch)
 		frame_start := time.now()
 		event_start := time.now()
@@ -624,10 +625,13 @@ run_application_loop :: proc(
 			if motion_update.status != .Ok { fail("secondary retained motion sampling failed") }
 			native_motion_scheduler_sync_timing(&child.motion_scheduler, &child.timing, motion_update.active_owners)
 			if child.native_menu.application != nil {
+				application_frame_pending := alicorn.frame_needs_submission(child.runtime)
 				when ODIN_OS == .Windows {
 					_ = win32_menu_refresh_text_if_needed(&child.native_menu, child.runtime)
+					// App-authored headers must re-resolve chrome regions after each
+					// child description, exactly as the primary window does.
+					if application_frame_pending { native_menu_sync_chrome_layout(&child.native_menu) }
 				}
-				application_frame_pending := alicorn.frame_needs_submission(child.runtime)
 				_ = native_menu_sync_chrome_appearance(&child.native_menu, request_redraw=!application_frame_pending)
 			}
 			if !child.runtime.invalidated && alicorn.presentation_needs_frame(child.runtime) {
@@ -1080,9 +1084,8 @@ run_application_loop :: proc(
 		}
 	}
 
-	when ODIN_OS == .Windows { native_live_resize_windows_hook_remove(&live_resize_state) }
+	native_live_resize_release(&live_resize_state)
 	live_resize_state.active = false
-	sdl3.RemoveEventWatch(native_live_resize_event_watch, rawptr(&live_resize_state))
 	// Secondary workers and Runtime resources are retired before application-owned
 	// shared state and the host-owned GPU device begin shutdown.
 	if child := secondary_windows.child; child != nil {
@@ -1154,15 +1157,15 @@ run_application_loop :: proc(
 		"motion_hidden_active_observations", timing.motion_hidden_active_observations,
 		"motion_missed_intervals", timing.motion_missed_intervals,
 		"motion_max_lateness_ns", timing.motion_max_lateness_ns,
-		"live_resize_expose_events", live_resize_state.live_resize_expose_events,
+		"live_resize_expose_events", live_resize_state.core.counters.expose_events,
 		"live_resize_motion_samples", live_resize_state.live_resize_motion_samples,
 		"live_resize_gpu_submissions", live_resize_state.live_resize_gpu_submissions,
-		"windows_move_enter_messages", live_resize_state.windows_move_enter_messages,
-		"windows_move_exit_messages", live_resize_state.windows_move_exit_messages,
-		"windows_move_timer_wakes", live_resize_state.windows_move_timer_wakes,
-		"windows_move_position_messages", live_resize_state.windows_move_position_messages,
-		"windows_move_position_changed_messages", live_resize_state.windows_move_position_changed_messages,
-		"windows_move_redraws", live_resize_state.windows_move_redraws,
+		"windows_move_enter_messages", live_resize_state.core.counters.move_enter_messages,
+		"windows_move_exit_messages", live_resize_state.core.counters.move_exit_messages,
+		"windows_move_timer_wakes", live_resize_state.core.counters.move_timer_wakes,
+		"windows_move_position_messages", live_resize_state.core.counters.move_position_messages,
+		"windows_move_position_changed_messages", live_resize_state.core.counters.move_position_changed_messages,
+		"windows_move_redraws", live_resize_state.core.counters.move_redraws,
 		"windows_move_motion_samples", live_resize_state.windows_move_motion_samples,
 		"windows_move_gpu_submissions", live_resize_state.windows_move_gpu_submissions,
 		"windows_move_primary_motion_samples", live_resize_state.windows_move_primary_motion_samples,

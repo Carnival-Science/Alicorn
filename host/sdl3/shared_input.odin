@@ -23,5 +23,6 @@ pointer_modifier_state_update :: sdl3_input.pointer_modifier_state_update
 focused_control_key_from_sdl :: sdl3_input.focused_control_key_from_sdl
 context_menu_key_from_sdl :: sdl3_input.context_menu_key_from_sdl
 application_key_from_sdl :: sdl3_input.application_key_from_sdl
+menu_modifiers_from_sdl :: sdl3_input.menu_modifiers_from_sdl
 scroll_event_from_sdl :: sdl3_input.scroll_event_from_sdl
 event_window_id_from_sdl :: sdl3_input.event_window_id_from_sdl

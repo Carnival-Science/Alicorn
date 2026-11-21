@@ -1,0 +1,6 @@
+[alicorn-webgpu] device request begin
+[alicorn-webgpu] device callback status=Success device_present=true message=
+[alicorn-webgpu] device request returned future=0
+[alicorn-webgpu] adapter backend=Vulkan type=DiscreteGPU vendor=NVIDIA architecture= device=NVIDIA GeForce RTX 2080 SUPER description=595.97
+webgpu_live_resize frames 0 geometry_adoptions 0 idle_ticks 0 step_failures 0 peak_logical_width 0 peak_pixel_width 0 expose_events 0 expose_frames 0 move_enter_messages 0 move_exit_messages 0 move_timer_wakes 0 move_position_messages 0 move_position_changed_messages 0 move_redraws 0 move_primary_redraws 0 move_secondary_redraws 0 move_skipped_ticks 0 deferred_exposes 0 deferred_timer_ticks 0
+services_smoke PASS scheduler true frequent 1 opportunistic 1 classes true clipboard true drops 1 drop_ok true file_drag true ticks 10

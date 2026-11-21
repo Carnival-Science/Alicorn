@@ -1233,3 +1233,157 @@ test_tab_bar_dirty_state_is_visible_without_a_close_action :: proc(t: ^testing.T
 	testing.expect(t, marker_count == 1 && marker_found,
 		"dirty state should be composed as a semantic surface part in the tab's trailing slot")
 }
+
+// A tab is a composed control: its visible name lives in a child text node, so
+// the label preview cannot describe it and used to paint an empty card. The tab
+// bar's default (Auto) mode must therefore lift the painted tab itself, exactly
+// as the SDL_GPU reference host did for Scratchpad's connected titlebar tabs.
+@(test)
+test_tab_bar_default_drag_preview_lifts_the_real_tab :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 600, 160})
+	defer destroy_runtime(&rt)
+	testing.expect(t, text_engine_load_font(&rt.text_engine, TAB_BAR_TEST_FONT),
+		"the tab drag preview needs the test font")
+	items := tab_bar_test_items()
+	// tab_bar_test_options leaves drag_preview_mode at its zero value, which is
+	// Auto: the widget resolves it without the application opting in.
+	options := tab_bar_test_options()
+	for settle in 0..<3 {
+		_ = tab_bar_test_build(&rt, items[:], 520, options)
+		if !rt.invalidated { break }
+	}
+	source_id, source_count := tab_bar_test_item_node(&rt, items[0].semantic_id)
+	target_id, target_count := tab_bar_test_item_node(&rt, items[1].semantic_id)
+	if source_count != 1 || target_count != 1 {
+		testing.expect(t, false, "the drag fixture should retain both tab roots")
+		return
+	}
+	source := rt.nodes[source_id]
+	target := rt.nodes[target_id]
+	sx := source.bounds.x+source.bounds.w*0.5
+	sy := source.bounds.y+source.bounds.h*0.5
+	tx := target.bounds.x+6
+	ty := target.bounds.y+target.bounds.h*0.5
+	_ = process_pointer(&rt, Pointer_Event{kind=.Down, x=sx, y=sy, button=POINTER_BUTTON_PRIMARY})
+	// A pointer press invalidates the root so the application can describe its
+	// pressed state; the reference host describes that before the drag begins.
+	_ = tab_bar_test_build(&rt, items[:], 520, options)
+	source = rt.nodes[source_id]
+	target = rt.nodes[target_id]
+	sx = source.bounds.x+source.bounds.w*0.5
+	sy = source.bounds.y+source.bounds.h*0.5
+	tx = target.bounds.x+6
+	ty = target.bounds.y+target.bounds.h*0.5
+	_ = process_pointer(&rt, Pointer_Event{kind=.Move, x=tx, y=ty})
+	started, started_ok := drag_event_take(&rt)
+	testing.expect(t, started_ok && started.kind == .Started && rt.drag_preview.mode == .Source_Subtree,
+		"a tab bar that leaves the preview mode at Auto should lift the painted tab")
+	testing.expect(t, !rt.drag_preview.ready &&
+		rt.drag_preview.width == source.bounds.w && rt.drag_preview.height == source.bounds.h,
+		"the lifted preview should adopt the tab's own size instead of shaping a label card")
+	testing.expect(t, len(rt.drag_preview.commands) >= 2,
+		"the lifted tab should carry its painted contour and label commands")
+	testing.expect(t, drag_source_opacity(&rt, source_id) == 0 && drag_source_opacity(&rt, target_id) == 1,
+		"only the dragged tab's own visual slot is hidden; neighbors keep their normal paint")
+
+	ui, presentation_ready := begin_presentation_frame(&rt)
+	if presentation_ready { end_presentation_frame(&ui) }
+	if !presentation_ready || len(rt.drag_preview.commands) == 0 { return }
+	start := rt.drag_preview.display_start
+	count := len(rt.drag_preview.commands)
+	tab_label := false
+	tab_contour := false
+	stacked_over_marker := start >= 0
+	for index in start..<min(start+count, len(rt.display)) {
+		command := rt.display[index]
+		if command.owner != 0 || command.clip != rt.viewport {
+			stacked_over_marker = false
+		}
+		if text, is_text := command.payload.(Text_Paint); is_text {
+			if run, found := paint_text_run_resolve(&rt, text.run); found && run.value == items[0].label {
+				tab_label = true
+			}
+		}
+		if abs(command.bounds.w-source.bounds.w) <= 1 && abs(command.bounds.h-source.bounds.h) <= 1 {
+			tab_contour = true
+		}
+	}
+	testing.expect(t, start+count <= len(rt.display) && stacked_over_marker,
+		"the lifted tab should be the inert, viewport-clipped top of the display list")
+	testing.expect(t, tab_label && tab_contour,
+		"the lifted preview should carry the tab's own label text and contour geometry")
+	marker_below_preview := false
+	if start >= 0 {
+		for index in 0..<start {
+			command := rt.display[index]
+			if command.owner == target_id && abs(command.bounds.w-3) < 0.01 { marker_below_preview = true }
+		}
+	}
+	testing.expect(t, marker_below_preview,
+		"the insertion marker should stay in the strip, below the lifted tab")
+
+	if start < 0 || start >= len(rt.display_target) { return }
+	passes_before := rt.stats.display_finalization_full_passes
+	finalized_before := rt.stats.display_commands_finalized
+	base_translation := rt.display_target[start].translation
+	_ = process_pointer(&rt, Pointer_Event{kind=.Move, x=tx+5, y=ty+3})
+	testing.expect(t, rt.display_target[start].translation ==
+		[2]f32{base_translation[0]+5, base_translation[1]+3},
+		"pointer movement should update only the lifted tab's retained translation")
+	testing.expect(t, rt.stats.display_finalization_full_passes == passes_before &&
+		rt.stats.display_commands_finalized-finalized_before == u64(count),
+		"dragging should finalize the bounded preview commands, not rebuild the display")
+	_ = process_pointer(&rt, Pointer_Event{kind=.Cancel})
+}
+
+// The label card remains available for applications that ask for it, but it
+// must name a composed source instead of drawing an empty 96x28 rectangle.
+@(test)
+test_tab_bar_label_drag_preview_names_the_tab :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 600, 160})
+	defer destroy_runtime(&rt)
+	testing.expect(t, text_engine_load_font(&rt.text_engine, TAB_BAR_TEST_FONT),
+		"the label preview needs the test font")
+	items := tab_bar_test_items()
+	options := tab_bar_test_options()
+	options.drag_preview_mode = .Label
+	for settle in 0..<3 {
+		_ = tab_bar_test_build(&rt, items[:], 520, options)
+		if !rt.invalidated { break }
+	}
+	source_id, source_count := tab_bar_test_item_node(&rt, items[0].semantic_id)
+	target_id, target_count := tab_bar_test_item_node(&rt, items[1].semantic_id)
+	if source_count != 1 || target_count != 1 {
+		testing.expect(t, false, "the drag fixture should retain both tab roots")
+		return
+	}
+	source := rt.nodes[source_id]
+	target := rt.nodes[target_id]
+	_ = process_pointer(&rt, Pointer_Event{
+		kind=.Down, x=source.bounds.x+source.bounds.w*0.5,
+		y=source.bounds.y+source.bounds.h*0.5, button=POINTER_BUTTON_PRIMARY,
+	})
+	_ = tab_bar_test_build(&rt, items[:], 520, options)
+	source = rt.nodes[source_id]
+	target = rt.nodes[target_id]
+	_ = process_pointer(&rt, Pointer_Event{
+		kind=.Move, x=target.bounds.x+6, y=target.bounds.y+target.bounds.h*0.5,
+	})
+	testing.expect(t, rt.drag_preview.ready && rt.drag_preview.run.value == items[0].label,
+		"a label-mode tab drag should name the tab through its painted text child")
+	testing.expect(t, !(rt.drag_preview.width == 96 && rt.drag_preview.height == 28),
+		"the empty fallback card must not stand in for a tab that has a visible label")
+	ui, presentation_ready := begin_presentation_frame(&rt)
+	if presentation_ready { end_presentation_frame(&ui) }
+	label_preview := false
+	for index in rt.drag_preview.display_start..<len(rt.display) {
+		if text, is_text := rt.display[index].payload.(Text_Paint); is_text {
+			if run, found := paint_text_run_resolve(&rt, text.run); found && run.value == items[0].label {
+				label_preview = true
+			}
+		}
+	}
+	testing.expect(t, presentation_ready && label_preview,
+		"the composed preview should paint the resolved tab label")
+	_ = process_pointer(&rt, Pointer_Event{kind=.Cancel})
+}

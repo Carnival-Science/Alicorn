@@ -54,6 +54,10 @@ webgpu_presenter_internal_state :: struct {
 	pending_output_bound: bool,
 	frame_pending: bool,
 	failed: bool,
+	// acked_revision is the last application display revision this presenter
+	// acknowledged as a real application submission. A host overlay redraw
+	// re-encodes the same revision and must not count as app work.
+	acked_revision: u64,
 }
 
 webgpu_presenter_state :: proc(presenter: ^WebGPU_Presenter) -> ^webgpu_presenter_internal_state {
@@ -251,10 +255,15 @@ WebGPU_Presenter_Submission_Succeeded :: proc(
 	state.pending_output_bound = false
 	state.frame_pending = false
 	// A Runtime mutation between encode and submit belongs to a later frame.
-	if webgpu_presenter_ack_submission(
+	// A host overlay redraw re-encodes the same application revision; it keeps
+	// the presentation correct without counting as another application submit.
+	already_acked := !submission.output_bound && submission.display_revision != 0 &&
+		submission.display_revision == state.acked_revision
+	if !already_acked && webgpu_presenter_ack_submission(
 		state.runtime, submission.output_id, submission.output_bound, submission.display_revision,
 	) {
 		state.runtime.stats.gpu_submits += 1
+		state.acked_revision = submission.display_revision
 	}
 	return submission, true
 }

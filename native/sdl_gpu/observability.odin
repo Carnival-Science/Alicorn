@@ -1,187 +1,26 @@
 package alicorn_sdl_gpu
 
+// Diagnostics options, timing, telemetry, and capture are shared with every
+// Alicorn host through alicorn:host/diagnostics. This file adapts the
+// reference SDL_GPU renderer counters and the SDL preference path into the
+// shared schema.
+
 import "core:fmt"
 import "core:os"
-import "core:sort"
 import "core:strconv"
 import "core:strings"
 import "core:time"
 import alicorn "../../runtime"
+import diag "alicorn:host/diagnostics"
 import "vendor:sdl3"
 
-NATIVE_DIAGNOSTIC_FRAME_SAMPLES :: 240
+NATIVE_DIAGNOSTIC_FRAME_SAMPLES :: diag.FRAME_SAMPLES
+NATIVE_DIAGNOSTICS_ORGANIZATION :: diag.ORGANIZATION
+NATIVE_DIAGNOSTICS_APPLICATION :: diag.APPLICATION
 
-Native_Diagnostics_Options :: struct {
-	enabled:             bool,
-	breadcrumbs_enabled: bool,
-	debug_bounds:        bool,
-	capture_requested:   bool,
-	capture_after_ns:    u64,
-	capture_dir:         string,
-	automatic_capture_done: bool,
-	capture_sequence:    u64,
-	last_capture_dir:    string,
-}
-
-NATIVE_DIAGNOSTICS_ORGANIZATION :: "Alicorn"
-NATIVE_DIAGNOSTICS_APPLICATION :: "Alicorn Diagnostics"
-
-Native_Host_Timing :: struct {
-	frames:              u64,
-	event_pump_ns:       u64,
-	application_build_ns: u64,
-	first_application_submit_ns: u64,
-	application_gpu_encode_ns: u64,
-	native_chrome_encode_ns: u64,
-	devtools_hud_encode_ns: u64,
-	inspector_encode_ns: u64,
-	native_host_wake_events: u64,
-	inspector_submissions: u64,
-	application_stabilization_rebuilds: u64,
-	application_stabilization_limit_hits: u64,
-	application_tick_ns: u64,
-	application_tick_calls: u64,
-	gpu_encode_ns:       u64,
-	gpu_submit_ns:       u64,
-	fence_wait_ns:       u64,
-	frame_ns_total:      u64,
-	frame_ns_max:        u64,
-	gpu_submissions:     u64,
-	fence_waits:         u64,
-	scheduled_wakes:     u64,
-	frequent_wakes:      u64,
-	opportunistic_wakes: u64,
-	scheduled_requests:  u64,
-	schedule_coalesces:  u64,
-	opportunistic_deferrals: u64,
-	maximum_scheduled_lateness_ns: u64,
-	motion_samples: u64,
-	motion_timer_wakes: u64,
-	motion_restore_samples: u64,
-	motion_hidden_active_observations: u64,
-	motion_coalesced_owners: u64,
-	motion_bounded_snaps: u64,
-	motion_missed_intervals: u64,
-	motion_sample_ns: u64,
-	motion_sample_max_ns: u64,
-	motion_max_active_owners: u64,
-	motion_max_lateness_ns: u64,
-	event_pump_max_ns:   u64,
-	application_build_max_ns: u64,
-	application_tick_max_ns:  u64,
-	gpu_encode_max_ns:   u64,
-	gpu_submit_max_ns:   u64,
-	fence_wait_max_ns:   u64,
-	frame_samples:       [dynamic; NATIVE_DIAGNOSTIC_FRAME_SAMPLES]u64,
-	// build_samples records each bounded application description pass, so the
-	// diagnostics can report a real per-build CPU distribution instead of only
-	// the accumulated total. The final smoke wait never enters this array.
-	build_samples:       [dynamic; NATIVE_DIAGNOSTIC_FRAME_SAMPLES]u64,
-	// Encode and submit samples describe CPU submission work per primary GPU
-	// submission. They exclude event waits and the final smoke idle window.
-	gpu_encode_samples:  [dynamic; NATIVE_DIAGNOSTIC_FRAME_SAMPLES]u64,
-	gpu_submit_samples:  [dynamic; NATIVE_DIAGNOSTIC_FRAME_SAMPLES]u64,
-}
-
-Native_Text_Event_Telemetry :: struct {
-	text_change_dispatches:    u64,
-	text_changes:              u64,
-	text_edit_key_events:      u64,
-	text_navigation_key_events: u64,
-	text_selection_key_events:  u64,
-	text_word_key_events:       u64,
-	events_this_pump:            u64,
-	events_per_pump_max:         u64,
-	oldest_event_age_max_ns:     u64,
-	pending_input_timestamp:     u64,
-	input_to_submit_samples:     [dynamic; NATIVE_DIAGNOSTIC_FRAME_SAMPLES]u64,
-	input_to_submit_max_ns:      u64,
-	input_to_submit_sequence:    u64,
-	events_received_sequence:    u64,
-}
-
-native_note_input_event :: proc(telemetry: ^Native_Text_Event_Telemetry, timestamp: u64) {
-	telemetry.events_this_pump += 1
-	if timestamp == 0 { return }
-	now := u64(sdl3.GetTicksNS())
-	if now >= timestamp {
-		age := now - timestamp
-		if age > telemetry.oldest_event_age_max_ns { telemetry.oldest_event_age_max_ns = age }
-	}
-	if telemetry.pending_input_timestamp == 0 || timestamp < telemetry.pending_input_timestamp {
-		telemetry.pending_input_timestamp = timestamp
-	}
-}
-
-native_finish_input_pump :: proc(telemetry: ^Native_Text_Event_Telemetry) {
-	if telemetry.events_this_pump > telemetry.events_per_pump_max {
-		telemetry.events_per_pump_max = telemetry.events_this_pump
-	}
-	telemetry.events_this_pump = 0
-}
-
-native_note_input_submission :: proc(telemetry: ^Native_Text_Event_Telemetry) {
-	if telemetry.pending_input_timestamp == 0 { return }
-	now := u64(sdl3.GetTicksNS())
-	if now >= telemetry.pending_input_timestamp {
-		latency := now - telemetry.pending_input_timestamp
-		if len(telemetry.input_to_submit_samples) >= NATIVE_DIAGNOSTIC_FRAME_SAMPLES {
-			for i := 1; i < len(telemetry.input_to_submit_samples); i += 1 {
-				telemetry.input_to_submit_samples[i-1] = telemetry.input_to_submit_samples[i]
-			}
-			pop(&telemetry.input_to_submit_samples)
-		}
-		append(&telemetry.input_to_submit_samples, latency)
-		telemetry.input_to_submit_sequence += 1
-		if latency > telemetry.input_to_submit_max_ns { telemetry.input_to_submit_max_ns = latency }
-	}
-	telemetry.pending_input_timestamp = 0
-}
-
-native_timing_accumulate :: proc(total, maximum: ^u64, elapsed: u64) {
-	total^ += elapsed
-	if elapsed > maximum^ { maximum^ = elapsed }
-}
-
-native_timing_add_frame :: proc(timing: ^Native_Host_Timing, frame_ns: u64) {
-	timing.frames += 1
-	timing.frame_ns_total += frame_ns
-	if frame_ns > timing.frame_ns_max { timing.frame_ns_max = frame_ns }
-	if len(timing.frame_samples) >= NATIVE_DIAGNOSTIC_FRAME_SAMPLES {
-		for i := 1; i < len(timing.frame_samples); i += 1 {
-			timing.frame_samples[i-1] = timing.frame_samples[i]
-		}
-		pop(&timing.frame_samples)
-	}
-	append(&timing.frame_samples, frame_ns)
-}
-
-// native_timing_add_build records one bounded application description pass.
-// Hosts call it once per build pass, so its percentiles describe description
-// CPU time rather than loop wall time that includes event waits.
-native_timing_add_build :: proc(timing: ^Native_Host_Timing, build_ns: u64) {
-	native_timing_add_sample(&timing.build_samples, build_ns)
-}
-
-native_timing_add_sample :: proc(samples: ^[dynamic; NATIVE_DIAGNOSTIC_FRAME_SAMPLES]u64, value: u64) {
-	if len(samples^) >= NATIVE_DIAGNOSTIC_FRAME_SAMPLES {
-		for i := 1; i < len(samples^); i += 1 {
-			samples^[i-1] = samples^[i]
-		}
-		pop(samples)
-	}
-	append(samples, value)
-}
-
-native_timing_percentile :: proc(samples: []u64, fraction: f64) -> u64 {
-	if len(samples) == 0 { return 0 }
-	ordered := make([]u64, len(samples))
-	defer delete(ordered)
-	copy(ordered, samples)
-	sort.quick_sort(ordered)
-	index := int(fraction * f64(len(ordered)-1))
-	return ordered[index]
-}
+Native_Diagnostics_Options :: diag.Options
+Native_Host_Timing :: diag.Timing
+Native_Text_Event_Telemetry :: diag.Text_Event_Telemetry
 
 native_diagnostics_default_capture_dir :: proc() -> (directory, failure: string) {
 	// SDL_GetPrefPath is the platform-supported writable location for
@@ -207,108 +46,72 @@ native_diagnostics_default_capture_dir :: proc() -> (directory, failure: string)
 	return "", fmt.tprintf("SDL_GetPrefPath failed: %s", sdl_failure)
 }
 
-native_diagnostics_capture_dir_override :: proc(args: []string, default_dir: string) -> (directory: string, overridden: bool) {
-	directory = default_dir
-	for argument in args {
-		capture_dir_prefix := "--capture-dir="
-		if len(argument) > len(capture_dir_prefix) && argument[:len(capture_dir_prefix)] == capture_dir_prefix {
-			directory = argument[len(capture_dir_prefix):]
-			overridden = true
-		}
-	}
-	return
+native_note_input_event :: proc(telemetry: ^Native_Text_Event_Telemetry, timestamp: u64) {
+	diag.note_input_event(telemetry, timestamp, u64(sdl3.GetTicksNS()))
+}
+
+native_finish_input_pump :: proc(telemetry: ^Native_Text_Event_Telemetry) {
+	diag.finish_input_pump(telemetry)
+}
+
+native_note_input_submission :: proc(telemetry: ^Native_Text_Event_Telemetry) {
+	diag.note_input_submission(telemetry, u64(sdl3.GetTicksNS()))
+}
+
+native_timing_accumulate :: proc(total, maximum: ^u64, elapsed: u64) {
+	diag.timing_accumulate(total, maximum, elapsed)
+}
+
+native_timing_add_frame :: proc(timing: ^Native_Host_Timing, frame_ns: u64) {
+	diag.timing_add_frame(timing, frame_ns)
+}
+
+native_timing_add_build :: proc(timing: ^Native_Host_Timing, build_ns: u64) {
+	diag.timing_add_build(timing, build_ns)
+}
+
+native_timing_add_sample :: proc(samples: ^[dynamic; NATIVE_DIAGNOSTIC_FRAME_SAMPLES]u64, value: u64) {
+	diag.add_sample(samples, value)
+}
+
+native_timing_percentile :: proc(samples: []u64, fraction: f64) -> u64 {
+	return diag.timing_percentile(samples, fraction)
 }
 
 // native_smoke_hold_ns reads an optional idle hold for bounded smoke runs.
 // When nonzero, --smoke still requires the usual startup wait, but exits only
 // after no application primary submission has occurred for the hold duration.
-// Benchmarks use it to observe an idle window; the default remains the fixed
-// three-second smoke window.
 native_smoke_hold_ns :: proc() -> u64 {
 	prefix := "--smoke-hold-ms="
 	for argument in os.args {
 		if len(argument) <= len(prefix) || argument[:len(prefix)] != prefix { continue }
 		milliseconds, ok := strconv.parse_u64(argument[len(prefix):])
 		if !ok || milliseconds > 60_000 { return 0 }
-		return milliseconds * 1_000_000
+		return milliseconds*1_000_000
 	}
 	return 0
 }
 
 native_parse_diagnostics_options :: proc() -> Native_Diagnostics_Options {
-	options := Native_Diagnostics_Options{
-		capture_after_ns = 2_000_000_000,
-	}
-	for argument in os.args {
-		if argument == "--diagnostics" {
-			options.enabled = true
-			options.breadcrumbs_enabled = true
-			continue
-		}
-		if argument == "--diagnostic-events" {
-			options.breadcrumbs_enabled = true
-			continue
-		}
-		if argument == "--debug-bounds" {
-			options.debug_bounds = true
-			continue
-		}
-		capture_after_prefix := "--capture-after="
-		if len(argument) > len(capture_after_prefix) && argument[:len(capture_after_prefix)] == capture_after_prefix {
-			seconds, ok := strconv.parse_int(argument[len(capture_after_prefix):])
-			if ok && seconds >= 0 {
-				options.enabled = true
-				options.capture_after_ns = u64(seconds) * 1_000_000_000
-			}
-			continue
-		}
-	}
-	if override, overridden := native_diagnostics_capture_dir_override(os.args, options.capture_dir); overridden {
-		options.enabled = true
-		options.capture_dir = override
-		options.breadcrumbs_enabled = true
-	}
+	options := diag.parse_options(os.args)
+	options.default_capture_root = native_diagnostics_default_capture_dir
 	return options
 }
 
+native_diagnostics_capture_dir_override :: proc(args: []string, default_dir: string) -> (directory: string, overridden: bool) {
+	return diag.capture_dir_override(args, default_dir)
+}
+
 native_diagnostics_timestamp :: proc(moment: time.Time) -> (stamp, iso: string, ok: bool) {
-	datetime, converted := time.time_to_datetime(moment)
-	if !converted { return }
-	millisecond := datetime.nano / 1_000_000
-	stamp = fmt.tprintf("%04d%02d%02dT%02d%02d%02d.%03dZ",
-		datetime.year, int(datetime.month), int(datetime.day),
-		int(datetime.hour), int(datetime.minute), int(datetime.second), millisecond)
-	iso = fmt.tprintf("%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
-		datetime.year, int(datetime.month), int(datetime.day),
-		int(datetime.hour), int(datetime.minute), int(datetime.second), millisecond)
-	return stamp, iso, true
+	return diag.timestamp(moment)
 }
 
 native_diagnostics_path_join :: proc(parent, child: string) -> string {
-	if len(parent) == 0 { return child }
-	last := parent[len(parent)-1]
-	separator := "/" if last != '/' && last != '\\' else ""
-	return fmt.tprintf("%s%s%s", parent, separator, child)
+	return diag.path_join(parent, child)
 }
 
 native_diagnostics_create_bundle :: proc(root, stamp: string, first_sequence: u64) -> (directory: string, sequence: u64, ok: bool, failure: string) {
-	if err := os.make_directory_all(root); err != nil && err != .Exist {
-		failure = fmt.tprintf("create capture root: %v", err)
-		return
-	}
-	sequence = first_sequence
-	for attempt in 0..<10_000 {
-		candidate := native_diagnostics_path_join(root, fmt.tprintf("%s-%04d", stamp, sequence))
-		if err := os.make_directory(candidate); err == nil {
-			return candidate, sequence, true, ""
-		} else if err != .Exist {
-			failure = fmt.tprintf("create capture bundle: %v", err)
-			return "", 0, false, failure
-		}
-		sequence += 1
-	}
-	failure = "no unused capture sequence found after 10000 attempts"
-	return "", 0, false, failure
+	return diag.create_bundle(root, stamp, first_sequence)
 }
 
 native_diagnostics_capture_failed :: proc(
@@ -316,16 +119,46 @@ native_diagnostics_capture_failed :: proc(
 	attempted_path, failure: string,
 	automatic_due: bool,
 ) {
-	path_for_log := attempted_path
-	if path_for_log == "" { path_for_log = "<default capture directory unavailable>" }
-	failure_for_log := failure
-	if failure_for_log == "" { failure_for_log = "unspecified diagnostics capture failure" }
-	fmt.println("alicorn_diagnostics", "capture_failed", "path", path_for_log, "error", failure_for_log)
-	// One log and one attempt per manual request. Automatic capture is also
-	// latched after failure, otherwise its due condition would remain true on
-	// every idle event-loop iteration.
-	options.capture_requested = false
-	if automatic_due { options.automatic_capture_done = true }
+	diag.capture_failed(options, attempted_path, failure, automatic_due)
+}
+
+native_renderer_counters :: proc(
+	rt: ^alicorn.Runtime,
+	text_renderer: ^Native_Text_Renderer,
+	surface_renderer: ^Native_Surface_Renderer,
+	solid_renderer: ^Native_Solid_Renderer,
+) -> diag.Counters {
+	counters := diag.Counters{}
+	if rt != nil {
+		counters.text_shape_calls = rt.text_engine.shape_calls
+		counters.text_glyph_cache_hits = rt.text_engine.glyph_cache_hits
+		counters.text_glyph_cache_misses = rt.text_engine.glyph_cache_misses
+		counters.text_rasterizations = rt.text_engine.glyph_rasterizations
+	}
+	if text_renderer != nil {
+		counters.text_atlas_pages = u64(len(text_renderer.pages))
+		counters.text_mesh_rebuilds = text_renderer.mesh_rebuilds
+		counters.text_mesh_cache_hits = text_renderer.mesh_cache_hits
+		counters.text_fingerprint_ns = text_renderer.fingerprint_ns
+		counters.text_fingerprint_bytes = text_renderer.fingerprint_bytes
+		counters.text_mesh_rebuild_ns = text_renderer.mesh_rebuild_ns
+		counters.text_mesh_commands = text_renderer.mesh_text_commands
+		counters.text_vertex_uploads = text_renderer.vertex_uploads
+	}
+	if surface_renderer != nil {
+		counters.surface_encodes = surface_renderer.encodes
+		counters.surface_vertex_uploads = surface_renderer.vertex_uploads
+	}
+	if solid_renderer != nil {
+		counters.solid_batches = solid_renderer.batches
+		counters.solid_vertices_uploaded = solid_renderer.vertices_uploaded
+		counters.icon_atlas_uploads = solid_renderer.icons.atlas_uploads
+		counters.icon_atlas_upload_bytes = solid_renderer.icons.atlas_upload_bytes
+		counters.icon_mesh_rebuilds = solid_renderer.icons.mesh_rebuilds
+		counters.icon_mesh_cache_hits = solid_renderer.icons.mesh_cache_hits
+		counters.icon_vertex_uploads = solid_renderer.icons.vertices_uploaded
+	}
+	return counters
 }
 
 native_write_diagnostics :: proc(
@@ -341,276 +174,23 @@ native_write_diagnostics :: proc(
 	text_events: ^Native_Text_Event_Telemetry = nil,
 	recorder: ^Native_Flight_Recorder = nil,
 ) -> bool {
-	automatic_due := options.enabled && !options.automatic_capture_done &&
-		time.duration_nanoseconds(time.since(started)) >= i64(options.capture_after_ns)
-	if !options.capture_requested && !automatic_due { return false }
-	// A capture is meant to explain a presented frame. The host may spend
-	// several idle/event-only iterations between application build and the
-	// first submission, especially when a surface tick is cadence-driven. Do
-	// not freeze a misleading zero-GPU snapshot in that window.
-	if timing.gpu_submissions == 0 { return false }
-	stamp, captured_at, timestamp_ok := native_diagnostics_timestamp(time.now())
-	if !timestamp_ok { return false }
-	bundle_dir: string
-	capture_sequence: u64
-	bundle_ok: bool
-	bundle_failure: string
-	attempted_root := options.capture_dir
-	if options.capture_dir == "" {
-		capture_root, path_failure := native_diagnostics_default_capture_dir()
-		if capture_root == "" {
-			native_diagnostics_capture_failed(
-				options,
-				"SDL_GetPrefPath(Alicorn, Alicorn Diagnostics)",
-				path_failure,
-				automatic_due,
-			)
-			return false
-		}
-		defer delete(capture_root)
-		attempted_root = capture_root
-		bundle_dir, capture_sequence, bundle_ok, bundle_failure = native_diagnostics_create_bundle(
-			capture_root, stamp, options.capture_sequence+1)
-	} else {
-		bundle_dir, capture_sequence, bundle_ok, bundle_failure = native_diagnostics_create_bundle(
-			options.capture_dir, stamp, options.capture_sequence+1)
+	report := diag.Report{
+		window_role="primary",
+		backend=diag.Backend_Info{name=gpu_driver, detail=gpu_driver},
+		window=diag.Window_Info{
+			logical_width=metrics.logical_width,
+			logical_height=metrics.logical_height,
+			window_logical_height=metrics.window_logical_height,
+			pixel_width=metrics.pixel_width,
+			pixel_height=metrics.pixel_height,
+			pixel_density=metrics.pixel_density,
+			display_scale=metrics.display_scale,
+		},
+		timing=timing,
+		telemetry=text_events,
+		rt=rt,
+		counters=native_renderer_counters(rt, text_renderer, surface_renderer, solid_renderer),
+		inspector_submissions=timing.inspector_submissions,
 	}
-	if !bundle_ok {
-		native_diagnostics_capture_failed(options, attempted_root, bundle_failure, automatic_due)
-		return false
-	}
-
-	p50 := native_timing_percentile(timing.frame_samples[:], 0.50)
-	p95 := native_timing_percentile(timing.frame_samples[:], 0.95)
-	p99 := native_timing_percentile(timing.frame_samples[:], 0.99)
-	input_p50: u64 = 0
-	input_p95: u64 = 0
-	input_p99: u64 = 0
-	input_max: u64 = 0
-	if text_events != nil {
-		input_p50 = native_timing_percentile(text_events.input_to_submit_samples[:], 0.50)
-		input_p95 = native_timing_percentile(text_events.input_to_submit_samples[:], 0.95)
-		input_p99 = native_timing_percentile(text_events.input_to_submit_samples[:], 0.99)
-		input_max = text_events.input_to_submit_max_ns
-	}
-	average := u64(0)
-	if timing.frames > 0 { average = timing.frame_ns_total / timing.frames }
-	builder, builder_err := strings.builder_make()
-	if builder_err != nil {
-		_ = os.remove_all(bundle_dir)
-		native_diagnostics_capture_failed(options, bundle_dir, fmt.tprintf("allocate diagnostics JSON builder: %v", builder_err), automatic_due)
-		return false
-	}
-	defer strings.builder_destroy(&builder)
-	fmt.sbprintf(&builder, `{{
-  "schema": 1,
-  "kind": "alicorn-native-diagnostics",
-  "window_role": "primary",
-  "capture": {{
-    "id": "%s-%04d",
-    "captured_at_utc": "%s",
-    "sequence": %d,
-    "frame": %d,
-    "gpu_submissions": %d,
-    "application_gpu_submissions": %d,
-    "devtools_only_gpu_submissions": %d,
-    "inspector_gpu_submissions": %d
-  }},
-  "gpu_driver": "%s",
-  "window": {{
-    "logical_width": %d,
-    "logical_height": %d,
-    "pixel_width": %d,
-    "pixel_height": %d,
-    "pixel_density": %.4f,
-    "display_scale": %.4f
-  }},
-	`, stamp, capture_sequence, captured_at, capture_sequence, timing.frames, timing.gpu_submissions,
-		rt.stats.gpu_submits, timing.gpu_submissions-rt.stats.gpu_submits, timing.inspector_submissions, gpu_driver,
-		metrics.logical_width, metrics.logical_height, metrics.pixel_width, metrics.pixel_height,
-		metrics.pixel_density, metrics.display_scale)
-	fmt.sbprintf(&builder, `  "timing_ns": {{
-    "frames": %d,
-    "event_pump": %d,
-    "application_build": %d,
-    "application_stabilization_rebuilds": %d,
-    "application_stabilization_limit_hits": %d,
-    "application_tick": %d,
-    "application_tick_calls": %d,
-    "scheduled_wakes": %d,
-    "frequent_wakes": %d,
-    "opportunistic_wakes": %d,
-    "scheduled_requests": %d,
-    "schedule_coalesces": %d,
-    "opportunistic_deferrals": %d,
-    "native_host_wake_events": %d,
-    "maximum_scheduled_lateness": %d,
-    "motion_samples": %d,
-    "motion_timer_wakes": %d,
-    "motion_restore_samples": %d,
-    "motion_hidden_active_observations": %d,
-    "motion_coalesced_owners": %d,
-    "motion_bounded_snaps": %d,
-    "motion_missed_intervals": %d,
-    "motion_sample_ns": %d,
-    "motion_sample_max_ns": %d,
-    "motion_max_active_owners": %d,
-    "motion_max_lateness_ns": %d,
-    "gpu_encode": %d,
-    "application_gpu_encode": %d,
-    "native_chrome_encode": %d,
-    "devtools_hud_encode": %d,
-    "inspector_encode": %d,
-    "gpu_submit": %d,
-    "fence_wait": %d,
-    "frame_average": %d,
-    "frame_p50": %d,
-    "frame_p95": %d,
-    "frame_p99": %d,
-    "frame_max": %d,
-    "event_pump_max": %d,
-    "application_build_max": %d,
-    "application_tick_max": %d,
-    "gpu_encode_max": %d,
-    "gpu_submit_max": %d,
-    "fence_wait_max": %d
-  }},
-	`, timing.frames, timing.event_pump_ns, timing.application_build_ns,
-		timing.application_stabilization_rebuilds, timing.application_stabilization_limit_hits,
-		timing.application_tick_ns, timing.application_tick_calls,
-		timing.scheduled_wakes, timing.frequent_wakes, timing.opportunistic_wakes,
-		timing.scheduled_requests, timing.schedule_coalesces, timing.opportunistic_deferrals,
-		timing.native_host_wake_events,
-		timing.maximum_scheduled_lateness_ns,
-		timing.motion_samples, timing.motion_timer_wakes, timing.motion_restore_samples,
-		timing.motion_hidden_active_observations,
-		timing.motion_coalesced_owners, timing.motion_bounded_snaps, timing.motion_missed_intervals,
-		timing.motion_sample_ns, timing.motion_sample_max_ns, timing.motion_max_active_owners,
-		timing.motion_max_lateness_ns,
-		timing.gpu_encode_ns, timing.application_gpu_encode_ns, timing.native_chrome_encode_ns, timing.devtools_hud_encode_ns, timing.inspector_encode_ns,
-		timing.gpu_submit_ns, timing.fence_wait_ns, average,
-		p50, p95, p99, timing.frame_ns_max, timing.event_pump_max_ns,
-		timing.application_build_max_ns, timing.application_tick_max_ns,
-		timing.gpu_encode_max_ns, timing.gpu_submit_max_ns, timing.fence_wait_max_ns)
-	fmt.sbprintf(&builder, `  "gpu": {{
-    "submissions": %d,
-    "application_submissions": %d,
-    "devtools_only_submissions": %d,
-    "fence_waits": %d,
-    "text_shape_calls": %d,
-    "text_glyph_cache_hits": %d,
-    "text_glyph_cache_misses": %d,
-    "text_rasterizations": %d,
-    "text_atlas_pages": %d,
-    "text_mesh_rebuilds": %d,
-    "text_mesh_cache_hits": %d,
-    "text_fingerprint_ns": %d,
-    "text_fingerprint_bytes": %d,
-    "text_mesh_rebuild_ns": %d,
-    "text_mesh_commands": %d,
-    "text_vertex_uploads": %d,
-    "surface_encodes": %d,
-    "surface_vertex_uploads": %d,
-    "solid_batches": %d,
-    "solid_vertices_uploaded": %d,
-    "icon_atlas_uploads": %d,
-    "icon_atlas_upload_bytes": %d,
-    "icon_mesh_rebuilds": %d,
-    "icon_mesh_cache_hits": %d,
-    "icon_vertex_uploads": %d
-  }},
-`, timing.gpu_submissions, rt.stats.gpu_submits, timing.gpu_submissions-rt.stats.gpu_submits, timing.fence_waits,
-		rt.text_engine.shape_calls, rt.text_engine.glyph_cache_hits, rt.text_engine.glyph_cache_misses,
-		rt.text_engine.glyph_rasterizations,
-		len(text_renderer.pages), text_renderer.mesh_rebuilds, text_renderer.mesh_cache_hits,
-		text_renderer.fingerprint_ns, text_renderer.fingerprint_bytes, text_renderer.mesh_rebuild_ns,
-		text_renderer.mesh_text_commands, text_renderer.vertex_uploads,
-		surface_renderer.encodes, surface_renderer.vertex_uploads,
-		solid_renderer.batches, solid_renderer.vertices_uploaded,
-		solid_renderer.icons.atlas_uploads, solid_renderer.icons.atlas_upload_bytes,
-		solid_renderer.icons.mesh_rebuilds, solid_renderer.icons.mesh_cache_hits, solid_renderer.icons.vertices_uploaded)
-	if text_events != nil {
-		fmt.sbprintf(&builder, `  "text_events": {{
-    "change_dispatches": %d,
-    "changes": %d,
-    "edit_key_events": %d,
-    "navigation_key_events": %d,
-    "selection_key_events": %d,
-    "word_key_events": %d,
-    "events_per_pump_max": %d,
-    "oldest_event_age_max_ns": %d,
-    "input_to_submit_p50_ns": %d,
-    "input_to_submit_p95_ns": %d,
-    "input_to_submit_p99_ns": %d,
-    "input_to_submit_max_ns": %d
-  }},
-`, text_events.text_change_dispatches, text_events.text_changes,
-			text_events.text_edit_key_events, text_events.text_navigation_key_events,
-			text_events.text_selection_key_events,
-			text_events.text_word_key_events, text_events.events_per_pump_max,
-			text_events.oldest_event_age_max_ns, input_p50, input_p95, input_p99,
-			input_max)
-	}
-	fmt.sbprintf(&builder, `  "runtime": {{
-    "retained_nodes": %d,
-    "display_commands": %d,
-    "focused_node": %d,
-    "gpu_surface_updates": %d,
-    "gpu_surface_clear_count": %d,
-    "gpu_surface_stale_update_rejections": %d,
-    "gpu_surface_frames_consumed": %d,
-    "presentation_revision": %d,
-    "submitted_revision": %d,
-    "frame_needs_submission": %t,
-    "debug_bounds": %t
-  }},
-`, len(rt.nodes), len(rt.display), u64(rt.focused), rt.stats.surface_updates, rt.stats.surface_clear_count, rt.stats.surface_stale_update_rejections, rt.stats.surface_frames_consumed, rt.presentation_revision, rt.submitted_revision, alicorn.frame_needs_submission(rt), options.debug_bounds)
-	strings.write_string(&builder, `  "notes": [
-    "timing values are host wall-clock measurements in nanoseconds",
-    "runtime allocation telemetry excludes application allocations, GPU memory, driver memory, and OS working set",
-    "solid rectangles are batched only within contiguous display-list runs; text and custom surfaces remain ordering boundaries",
-    "DevTools HUD geometry and HUD-only submissions do not increment application Frame_Stats; a HUD-only swapchain redraw still composites the current application display"
-  ]
-}
-`)
-	json := strings.to_string(builder)
-	path := fmt.tprintf("%s/diagnostics.json", bundle_dir)
-	if err := os.write_entire_file(path, json); err != nil {
-		_ = os.remove_all(bundle_dir)
-		native_diagnostics_capture_failed(options, path, fmt.tprintf("write diagnostics JSON: %v", err), automatic_due)
-		return false
-	}
-	// Keep the full retained-tree explanation beside the compact JSON. The
-	// human-readable inspector already contains node identity, bounds, dirty
-	// stages, focus/hover state, and invalidation reasons without requiring a
-	// JSON escaping layer in the runtime.
-	inspection := alicorn.inspect(rt)
-	inspection_path := fmt.tprintf("%s/inspector.txt", bundle_dir)
-	if err := os.write_entire_file(inspection_path, inspection); err != nil {
-		delete(inspection)
-		_ = os.remove_all(bundle_dir)
-		native_diagnostics_capture_failed(options, inspection_path, fmt.tprintf("write inspector snapshot: %v", err), automatic_due)
-		return false
-	}
-	delete(inspection)
-	timeline_path := fmt.tprintf("%s/timeline.json", bundle_dir)
-	if !native_write_flight_timeline(timeline_path, recorder) {
-		_ = os.remove_all(bundle_dir)
-		native_diagnostics_capture_failed(options, timeline_path, "flight timeline writer failed", automatic_due)
-		return false
-	}
-	options.capture_sequence = capture_sequence
-	options.last_capture_dir = bundle_dir
-	options.capture_requested = false
-	if automatic_due { options.automatic_capture_done = true }
-	fmt.println(
-		"alicorn_diagnostics", "path", path, "inspector", inspection_path, "timeline", timeline_path,
-		"capture_id", fmt.tprintf("%s-%04d", stamp, capture_sequence), "frame_p95_ns", p95,
-		"gpu_encode_ns", timing.gpu_encode_ns,
-		"text_fingerprint_ns", text_renderer.fingerprint_ns,
-		"text_fingerprint_bytes", text_renderer.fingerprint_bytes,
-		"text_mesh_rebuild_ns", text_renderer.mesh_rebuild_ns,
-		"text_mesh_cache_hits", text_renderer.mesh_cache_hits,
-	)
-	return true
+	return diag.write_capture(options, started, report, recorder)
 }

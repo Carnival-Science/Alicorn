@@ -2,6 +2,7 @@ package presentation_host
 
 import "core:mem"
 import "base:runtime"
+import "core:fmt"
 import "core:time"
 import alicorn "alicorn:runtime"
 import "vendor:wgpu"
@@ -21,6 +22,19 @@ Hosted_Surface_Timing_Sample :: struct {
 	surface_present_ns: u64,
 	step_to_present_ns: u64,
 	input_to_submit_ns: u64,
+	// Live-resize attribution (Stage D slice 5). surface_reconfigure_ns is the
+	// accumulated CPU time the host spent in SurfaceConfigure since the previous
+	// presented frame, so a size change's swapchain cost lands on the frame it
+	// delayed. description_ns/passes and the *_nodes_visited deltas come from
+	// the Hosted_Step_Result that produced this frame. pre_present_ns is the
+	// host chrome hook cost inside the same step.
+	surface_reconfigure_ns: u64,
+	description_ns:        u64,
+	description_passes:    u32,
+	reconcile_nodes_visited: u64,
+	layout_nodes_visited:    u64,
+	paint_nodes_visited:     u64,
+	pre_present_ns:          u64,
 }
 
 @(private)
@@ -86,6 +100,10 @@ Hosted_Surface_Result :: enum {
 }
 
 Hosted_Surface_Wake_Proc :: proc(data: rawptr)
+// Hosted_Surface_Pre_Present_Proc runs on the owner thread after the Runtime
+// step and before frame encoding. Hosts use it to refresh host-owned chrome
+// geometry/paint against the freshly described tree in the same frame.
+Hosted_Surface_Pre_Present_Proc :: proc(data: rawptr)
 
 // Hosted_Surface_Presenter binds one Hosted_Runtime to a host-created WebGPU
 // surface. The embedding host still owns adapter/device/queue/surface creation,
@@ -119,6 +137,25 @@ hosted_surface_presenter_state :: struct {
 	device_lost: bool,
 	timing_enabled: bool,
 	timing: ^hosted_surface_timing_buffer,
+	// last_sample retains the most recent recorded frame for post-step readers
+	// such as the live-resize trace seam. It is a copy, not part of the ring.
+	last_sample: Hosted_Surface_Timing_Sample,
+	has_last_sample: bool,
+	// SurfaceConfigure bookkeeping. A resize/outdated reconfigure is the
+	// swapchain-side cost a live drag pays per pixel-size change; pending_ns is
+	// attributed to the next presented frame.
+	configure_count: u64,
+	configure_total_ns: u64,
+	configure_last_ns: u64,
+	configure_pending_ns: u64,
+	// overlay_redraw requests one host-owned overlay frame (diagnostics HUD or
+	// retained-bounds inspection) without mutating the application Runtime or
+	// acknowledging a new application presentation.
+	overlay_redraw: bool,
+	// fail_next_encode is a host test seam: the next presentation attempt
+	// reports Render_Failure before encoding so the diagnostics failure-capture
+	// path can be validated against a real host-loop failure branch.
+	fail_next_encode: bool,
 }
 
 @(private)
@@ -189,7 +226,10 @@ hosted_surface_presenter_init :: proc(
 		free(state, allocator=state.allocator)
 		return .Invalid_Input
 	}
-	wgpu.SurfaceConfigure(surface, &state.configuration)
+	hosted_surface_configure(state)
+	// The initial configure is not a resize; it must not be attributed to the
+	// first presented frame's swapchain cost.
+	state.configure_pending_ns = 0
 	presenter.state = rawptr(state)
 	if status := alicorn.hosted_runtime_request_presentation(hosted, "WebGPU presenter attached"); status != .Ok {
 		_ = hosted_surface_presenter_destroy(presenter)
@@ -232,12 +272,25 @@ hosted_surface_presenter_resize :: proc(
 	// A resize racing a backend removal must not configure a surface against
 	// the lost parent device; recovery recreates the surface instead.
 	if state.device_lost { return .Ok }
-	wgpu.SurfaceConfigure(state.surface, &state.configuration)
+	hosted_surface_configure(state)
 	if status := alicorn.hosted_runtime_set_renderable(state.hosted, state.visible); status != .Ok {
 		return .Invalid_Input
 	}
 	if state.visible && state.wake != nil { state.wake(state.wake_data) }
 	return .Ok
+}
+
+// hosted_surface_presenter_metrics reports the currently configured drawable
+// dimensions and presentation scales. Hosts and transition fixtures use it to
+// assert that a DPI adoption reconfigured the surface before the next frame.
+hosted_surface_presenter_metrics :: proc(
+	presenter: ^Hosted_Surface_Presenter,
+) -> (logical_width, logical_height, pixel_width, pixel_height: int, scale_x, scale_y: f32, ok: bool) {
+	state := hosted_surface_state(presenter)
+	if state == nil { return }
+	return state.logical_width, state.logical_height,
+		int(state.configuration.width), int(state.configuration.height),
+		state.scale_x, state.scale_y, true
 }
 
 // Suspend or resume retained presentation when the host's visibility changes.
@@ -267,6 +320,30 @@ hosted_surface_visibility_changed :: proc(data: rawptr, visible: bool) {
 	_ = hosted_surface_presenter_set_visible(presenter, visible)
 }
 
+// hosted_surface_presenter_request_overlay_redraw asks the next step to
+// composite the current retained display plus host overlays even when the
+// application has no pending presentation. It never mutates the Runtime, so a
+// HUD-only redraw cannot look like application work in counters or captures.
+hosted_surface_presenter_request_overlay_redraw :: proc(presenter: ^Hosted_Surface_Presenter) {
+	state := hosted_surface_state(presenter)
+	if state == nil || state.device_lost { return }
+	state.overlay_redraw = true
+	if state.wake != nil { state.wake(state.wake_data) }
+}
+
+hosted_surface_presenter_overlay_redraw_pending :: proc(presenter: ^Hosted_Surface_Presenter) -> bool {
+	state := hosted_surface_state(presenter)
+	return state != nil && state.overlay_redraw
+}
+
+// hosted_surface_presenter_fail_next_encode_for_test injects one deterministic
+// encode failure at the presentation boundary. It exists so a host can prove
+// that diagnostics capture still produces its bundle when presentation fails.
+hosted_surface_presenter_fail_next_encode_for_test :: proc(presenter: ^Hosted_Surface_Presenter) {
+	state := hosted_surface_state(presenter)
+	if state != nil { state.fail_next_encode = true }
+}
+
 // Step once after a bounded input batch or scheduled wake. At most one Runtime
 // description and one surface submission are performed. The host scheduler
 // should use step.next_wake_ns, keep running when has_more_work is true, wait
@@ -276,12 +353,44 @@ hosted_surface_presenter_step :: proc(
 	presenter: ^Hosted_Surface_Presenter,
 	now_ns: u64,
 ) -> (step: alicorn.Hosted_Step_Result, presentation: Hosted_Surface_Result) {
+	return hosted_surface_presenter_step_with_hook(presenter, now_ns, nil, nil)
+}
+
+// hosted_surface_presenter_step_with_hook is step plus a pre-present callback.
+// The hook runs before encoding so hosted chrome (menu labels, caption state,
+// app-declared hit regions) reflects the current description. It may request a
+// presentation; render_required is re-evaluated after it returns.
+//
+// live selects the modal move/resize path: the Runtime advances retained motion
+// and an invalidated description, but application ticks and scheduled wakes wait
+// for the next ordinary host-loop turn. The presentation boundary is identical.
+hosted_surface_presenter_step_with_hook :: proc(
+	presenter: ^Hosted_Surface_Presenter,
+	now_ns: u64,
+	hook_data: rawptr,
+	hook: Hosted_Surface_Pre_Present_Proc,
+	live := false,
+) -> (step: alicorn.Hosted_Step_Result, presentation: Hosted_Surface_Result) {
 	state := hosted_surface_state(presenter)
 	if state == nil { return alicorn.Hosted_Step_Result{status=.Closed}, .Invalid_Input }
 	timing_start: time.Tick
 	if state.timing_enabled { timing_start = time.tick_now() }
-	step = alicorn.hosted_runtime_step(state.hosted, now_ns)
+	step = alicorn.hosted_runtime_live_step(state.hosted, now_ns) if live else alicorn.hosted_runtime_step(state.hosted, now_ns)
 	if step.status != .Ok { return step, .Invalid_Input }
+	pre_present_ns: u64
+	if hook != nil {
+		hook_start: time.Tick
+		if state.timing_enabled { hook_start = time.tick_now() }
+		hook(hook_data)
+		if state.timing_enabled { pre_present_ns = hosted_surface_timing_elapsed_ns(hook_start) }
+	}
+	app_frame_required := alicorn.frame_needs_submission(state.runtime)
+	step.render_required = state.visible && state.drawable && (app_frame_required || state.overlay_redraw)
+	if state.overlay_redraw && !app_frame_required {
+		// The application has no pending presentation. This frame exists only to
+		// composite host overlays, so it must not advertise application work.
+		step.has_more_work = false
+	}
 	if !step.render_required {
 		// An input event that produced no requested presentation has no visible
 		// response to time. Do not carry its marker into an unrelated later frame.
@@ -300,9 +409,24 @@ hosted_surface_presenter_step :: proc(
 		timing_sample.runtime_step_ns = hosted_surface_timing_elapsed_ns(timing_start)
 	}
 	presentation = hosted_surface_present_pending(presenter, &timing_sample)
+	if presentation == .Ok || presentation == .No_Frame { state.overlay_redraw = false }
+	if presentation == .Ok {
+		// Attribute the swapchain reconfigure that this frame had to complete.
+		// A configure that produced no frame stays pending for the next present.
+		timing_sample.surface_reconfigure_ns = state.configure_pending_ns
+		state.configure_pending_ns = 0
+	}
 	if state.timing_enabled && timing_sample.submission_serial != 0 {
 		timing_sample.step_to_present_ns = hosted_surface_timing_elapsed_ns(timing_start)
+		timing_sample.pre_present_ns = pre_present_ns
+		timing_sample.description_ns = step.description_ns
+		timing_sample.description_passes = step.description_passes
+		timing_sample.reconcile_nodes_visited = step.reconcile_nodes_visited
+		timing_sample.layout_nodes_visited = step.layout_nodes_visited
+		timing_sample.paint_nodes_visited = step.paint_nodes_visited
 		hosted_surface_timing_record(state.timing, timing_sample)
+		state.last_sample = timing_sample
+		state.has_last_sample = true
 	}
 	return
 }
@@ -349,10 +473,63 @@ hosted_surface_presenter_take_timing_samples :: proc(
 	return hosted_surface_timing_take(state.timing, output)
 }
 
+// Copy oldest-first timing samples without consuming them. Diagnostics capture
+// uses this so an investigation does not disturb the --timings report.
+hosted_surface_presenter_copy_timing_samples :: proc(
+	presenter: ^Hosted_Surface_Presenter,
+	output: []Hosted_Surface_Timing_Sample,
+) -> int {
+	state := hosted_surface_state(presenter)
+	if state == nil || !state.timing_enabled || state.timing == nil || len(output) == 0 { return 0 }
+	buffer := state.timing
+	taken := min(buffer.count, len(output))
+	for i in 0..<taken {
+		index := (buffer.first+i) % HOSTED_SURFACE_TIMING_SAMPLE_CAPACITY
+		output[i] = buffer.samples[index]
+	}
+	return taken
+}
+
+// hosted_surface_presenter_timing_total returns retained and overwritten sample
+// counts without draining.
+hosted_surface_presenter_timing_counts :: proc(presenter: ^Hosted_Surface_Presenter) -> (retained: int, overwritten: u64, ok: bool) {
+	state := hosted_surface_state(presenter)
+	if state == nil || !state.timing_enabled || state.timing == nil { return 0, 0, false }
+	return state.timing.count, state.timing.overwritten, true
+}
+
 hosted_surface_presenter_timing_overwritten :: proc(presenter: ^Hosted_Surface_Presenter) -> u64 {
 	state := hosted_surface_state(presenter)
 	if state == nil || !state.timing_enabled || state.timing == nil { return 0 }
 	return state.timing.overwritten
+}
+
+// hosted_surface_presenter_last_timing copies the most recent presented frame's
+// timing sample without draining the ring. The live-resize trace seam reads it
+// once per modal-loop frame; --timings still owns the ring's consumer role.
+hosted_surface_presenter_last_timing :: proc(
+	presenter: ^Hosted_Surface_Presenter,
+) -> (sample: Hosted_Surface_Timing_Sample, ok: bool) {
+	state := hosted_surface_state(presenter)
+	if state == nil || !state.has_last_sample { return }
+	return state.last_sample, true
+}
+
+// Hosted_Surface_Configuration_Stats reports swapchain reconfiguration work:
+// how many SurfaceConfigure calls this presenter performed, the last one's CPU
+// cost, and the running total. The initial configure is included.
+Hosted_Surface_Configuration_Stats :: struct {
+	configures: u64,
+	last_ns:    u64,
+	total_ns:   u64,
+}
+
+hosted_surface_presenter_configuration_stats :: proc(
+	presenter: ^Hosted_Surface_Presenter,
+) -> (stats: Hosted_Surface_Configuration_Stats, ok: bool) {
+	state := hosted_surface_state(presenter)
+	if state == nil { return }
+	return {configures=state.configure_count, last_ns=state.configure_last_ns, total_ns=state.configure_total_ns}, true
 }
 
 // Hosted_Surface_Renderer_Stats is the shared presenter's retained-work
@@ -384,6 +561,22 @@ hosted_surface_presenter_has_in_flight :: proc(presenter: ^Hosted_Surface_Presen
 	return state != nil && webgpu_renderer.WebGPU_Presenter_In_Flight(&state.renderer) > 0
 }
 
+// hosted_surface_presenter_poll is platform-defined in surface_present_native.odin
+// and surface_present_web.odin: wgpu-native exposes DevicePoll, while browser
+// WebGPU delivers completion through the event loop instead.
+
+@(private)
+hosted_surface_configure :: proc(state: ^hosted_surface_presenter_state) {
+	if state == nil || state.surface == nil { return }
+	start := time.tick_now()
+	wgpu.SurfaceConfigure(state.surface, &state.configuration)
+	ns := hosted_surface_timing_elapsed_ns(start)
+	state.configure_count += 1
+	state.configure_last_ns = ns
+	state.configure_total_ns += ns
+	state.configure_pending_ns += ns
+}
+
 @(private)
 hosted_surface_present_pending :: proc(
 	presenter: ^Hosted_Surface_Presenter,
@@ -395,8 +588,13 @@ hosted_surface_present_pending :: proc(
 	if state.completion_failed { return .Resource_Failure }
 	if state.configuration.width == 0 || state.configuration.height == 0 { return .Suspended }
 	if !webgpu_renderer.WebGPU_Presenter_Can_Encode(&state.renderer) { return .Retry_Later }
-	display, display_ready := alicorn.paint_display_list(state.runtime)
-	if !display_ready || display.revision == 0 { return .No_Frame }
+	display, display_status := alicorn.hosted_runtime_presentation_list(state.hosted, state.allocator)
+	if display_status != .Ok { return .Invalid_Input }
+	if display.revision == 0 { return .No_Frame }
+	if state.fail_next_encode {
+		state.fail_next_encode = false
+		return .Render_Failure
+	}
 
 	acquire_start: time.Tick
 	if state.timing_enabled { acquire_start = time.tick_now() }
@@ -416,7 +614,7 @@ hosted_surface_present_pending :: proc(
 		// here would configure a surface against the lost parent device, so let
 		// the host's recovery drain own it instead.
 		if state.device_lost { return .Surface_Acquire_Failure }
-		wgpu.SurfaceConfigure(state.surface, &state.configuration)
+		hosted_surface_configure(state)
 		if state.wake != nil { state.wake(state.wake_data) }
 		return .Reconfigure_Required
 	case .Occluded:
@@ -441,6 +639,15 @@ hosted_surface_present_pending :: proc(
 		state.configuration.width, state.configuration.height,
 		state.scale_x, state.scale_y, true, state.clear_color,
 	); result != .Ok {
+		// Encode failures used to become a silent Render_Failure at the host's
+		// presentation switch. Name the stage and the retained command count so a
+		// content-specific renderer rejection is diagnosable from the console.
+		fmt.eprintln(
+			"[alicorn-webgpu] frame encode failed",
+			"result", result,
+			"commands", len(display.commands),
+			"revision", display.revision,
+		)
 		return .Render_Failure
 	}
 	command := wgpu.CommandEncoderFinish(encoder)

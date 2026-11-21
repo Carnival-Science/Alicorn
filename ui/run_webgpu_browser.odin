@@ -41,9 +41,41 @@ run :: proc(
 	on_pointer: proc(^T, ^alicorn.Runtime, alicorn.Pointer_Event, Node_ID) = nil,
 	on_text_key: proc(^T, ^alicorn.Runtime, Node_ID, alicorn.Application_Text_Key_Event) -> bool = nil,
 	on_services: proc(^T, UI_Host_Services) = nil,
+	on_drag: proc(^T, ^alicorn.Runtime, alicorn.Drag_Event) = nil,
+	on_scroll_capture: proc(^T, ^alicorn.Runtime, alicorn.Scroll_Event, Node_ID) -> bool = nil,
+	on_scroll: proc(^T, ^alicorn.Runtime, alicorn.Scroll_Event) = nil,
+	on_text_input: proc(^T, ^alicorn.Runtime, Node_ID, alicorn.Hosted_Text_Input_Event) = nil,
+	on_scheduled_wake: proc(^T, ^alicorn.Runtime, alicorn.Scheduled_Wake_Class) = nil,
+	// Browser hosts can deliver ticks and scheduled wakes. File drops have no
+	// canvas event in this slice, so on_file_drop is accepted for compile parity
+	// and recorded by the browser policy without being invoked.
+	on_file_drop: proc(^T, ^alicorn.Runtime, string) = nil,
+	on_tick: proc(^T, ^alicorn.Runtime) = nil,
+	interaction_update_policy: alicorn.Interaction_Update_Policy = .Correct_After_Interaction,
+	// Native menus are not implemented in the browser host yet; these fields
+	// keep the ui.run surface identical so hosted applications compile on both
+	// targets. Browser acceleration and menu presentation remain TODO.
+	menus: []alicorn.Menu = nil,
+	menu_presentation: alicorn.Menu_Presentation = .Labels,
+	on_menu_command: proc(^T, ^alicorn.Runtime, alicorn.Action_ID) = nil,
+	on_close_requested: proc(^T, ^alicorn.Runtime) -> alicorn.Hosted_Close_Result = nil,
+	on_dialog: proc(^T, ^alicorn.Runtime, ^alicorn.File_Dialog_Result) = nil,
+	// The browser host records decoration and chrome policy so hosted
+	// applications keep one ui.run surface. The canvas has no native chrome
+	// band; browser titlebar integration remains outside scope.
+	window_decorations: alicorn.Window_Decoration_Mode = .System,
+	window_chrome_height: f32 = 0,
+	window_chrome_metrics: alicorn.Window_Chrome_Metrics_Proc = nil,
+	window_chrome_layout: alicorn.Window_Chrome_Layout_Proc = nil,
+	window_chrome_appearance: alicorn.Window_Chrome_Appearance_Proc = nil,
+	on_after_frame: proc(^T, ^alicorn.Runtime) = nil,
 ) {
 	_ = title
 	_ = smoke
+	_ = window_chrome_height
+	_ = window_chrome_metrics
+	_ = window_chrome_layout
+	_ = window_chrome_appearance
 	if browser_ui_run.run_state != nil || state == nil || render == nil || width <= 0 || height <= 0 {
 		panic("ui.run requires one live application, a valid state pointer, and a render callback")
 	}
@@ -54,6 +86,10 @@ run :: proc(
 		app=state,
 		render=render,
 		render_overlays=render_overlays,
+		menus=menus,
+		menu_presentation=menu_presentation,
+		window_decorations=window_decorations,
+		interaction_update_policy=interaction_update_policy,
 		on_initialize=on_initialize,
 		on_start=on_start,
 		on_wake=on_wake,
@@ -63,6 +99,12 @@ run :: proc(
 		on_text_key=on_text_key,
 		on_pointer=on_pointer,
 		on_services=on_services,
+		on_drag=on_drag, on_scroll_capture=on_scroll_capture, on_scroll=on_scroll,
+		on_text_input=on_text_input, on_scheduled_wake=on_scheduled_wake,
+		on_file_drop=on_file_drop, on_tick=on_tick,
+		on_after_frame=on_after_frame,
+		on_menu_command=on_menu_command, on_close_requested=on_close_requested,
+		on_dialog=on_dialog,
 	}
 	hosted := run_hosted_config(
 		run_state,
@@ -101,6 +143,11 @@ run :: proc(
 		if start_result == .Resource_Failure { return }
 		panic("ui.run could not start the browser WebGPU host")
 	}
+	// TODO(issue 211): the browser host has no file-dialog or quit service in
+	// this slice. UI_Host_Services.dialogs stays empty so ui_dialog_show_file
+	// reports false; add a <input type=file> bridge when browser dialogs are in
+	// scope. on_close_requested is also not delivered because the page owns the
+	// unload lifecycle.
 	run_state.host_services = UI_Host_Services{
 		clipboard=host.browser_webgpu_run_clipboard_service(&browser_ui_run.runner),
 	}

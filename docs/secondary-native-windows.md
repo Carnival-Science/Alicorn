@@ -138,8 +138,10 @@ labels that role.
 Windows integrated frames preserve the HWND position during SDL's automatic
 topmost promotion on mouse entry. SDL's standard-frame adjustment would otherwise
 subtract a caption/resize inset from the custom full-client frame repeatedly.
-The host recognizes that z-order promotion in `WM_WINDOWPOSCHANGING` and applies
-`SWP_NOMOVE`; explicit moves, resizing, and DPI/frame changes retain their normal
-geometry handling. A hidden native regression exercises repeated SDL mouse
-entry/leave, topmost toggles, ordinary movement, and resizing without activating
-or moving the user's cursor.
+The predicate lives in the shared `host/sdl3/window_frame` package, so the
+reference SDL_GPU host and the hosted SDL3/WebGPU host recognize that z-order
+promotion in `WM_WINDOWPOSCHANGING` identically and apply `SWP_NOMOVE`; explicit
+moves, resizing, and DPI/frame changes retain their normal geometry handling. A
+hidden native regression exercises repeated SDL mouse entry/leave, topmost
+toggles, ordinary movement, and resizing without activating or moving the user's
+cursor.

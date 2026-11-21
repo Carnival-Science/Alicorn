@@ -11,7 +11,7 @@ param(
 # consumers, and restores the library in finally.
 #
 # CI can adopt this unchanged; see
-# docs/validation/webgpu-build-time-opt-in-windows-2026-11-19.md.
+# docs/validation/webgpu-opt-in-corrective-pass-2026-11-19.md.
 
 $ErrorActionPreference = 'Stop'
 . "$PSScriptRoot\common.ps1"

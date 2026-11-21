@@ -1,0 +1,631 @@
+{
+  "themes": [
+    {
+      "theme": "cool-light",
+      "background_token": "scratchpad.cool.editor_background",
+      "text_token": "scratchpad.cool.text",
+      "muted_token": "scratchpad.cool.muted_text",
+      "baseline_token": "scratchpad.cool.syntax.variable",
+      "displayed": {
+        "background_hex": "#f4f6fd",
+        "text_hex": "#020305",
+        "muted_hex": "#0f1724",
+        "baseline_hex": "#0a0f16",
+        "text_vs_background": 19.11,
+        "baseline_vs_background": 17.8,
+        "muted_vs_background": 16.65
+      },
+      "authored": {
+        "background_hex": "#fafbfe",
+        "text_hex": "#121a26",
+        "muted_hex": "#455469",
+        "text_vs_background": 16.89,
+        "muted_vs_background": 7.45
+      },
+      "tokens": [
+        {
+          "class": "keyword",
+          "token": "scratchpad.cool.syntax.keyword",
+          "storage_linear": [
+            0.116665,
+            0.068385,
+            0.245867
+          ],
+          "displayed_hex": "#1e113f",
+          "authored_hex": "#604a88",
+          "displayed_luminance": 0.01036,
+          "displayed_vs_background": 16.11,
+          "displayed_vs_text": 1.19,
+          "displayed_vs_baseline": 1.1,
+          "displayed_delta_e_vs_baseline": 30.6,
+          "authored_vs_background": 7.17,
+          "authored_vs_text": 2.36,
+          "authored_vs_baseline": 1.34,
+          "authored_delta_e_vs_baseline": 33.5,
+          "precomp_vs_background": 6.87,
+          "precomp_vs_baseline": 2.59,
+          "precomp_delta_e_vs_baseline": 47.9
+        },
+        {
+          "class": "function",
+          "token": "scratchpad.cool.syntax.function",
+          "storage_linear": [
+            0.028337,
+            0.090655,
+            0.201311
+          ],
+          "displayed_hex": "#071733",
+          "authored_hex": "#2f557c",
+          "displayed_luminance": 0.00897,
+          "displayed_vs_background": 16.49,
+          "displayed_vs_text": 1.16,
+          "displayed_vs_baseline": 1.08,
+          "displayed_delta_e_vs_baseline": 17.3,
+          "authored_vs_background": 7.49,
+          "authored_vs_text": 2.26,
+          "authored_vs_baseline": 1.28,
+          "authored_delta_e_vs_baseline": 17.5,
+          "precomp_vs_background": 7.17,
+          "precomp_vs_baseline": 2.48,
+          "precomp_delta_e_vs_baseline": 37.7
+        },
+        {
+          "class": "string",
+          "token": "scratchpad.cool.syntax.string",
+          "storage_linear": [
+            0.19424,
+            0.080363,
+            0.024254
+          ],
+          "displayed_hex": "#321406",
+          "authored_hex": "#7a502b",
+          "displayed_luminance": 0.01192,
+          "displayed_vs_background": 15.7,
+          "displayed_vs_text": 1.22,
+          "displayed_vs_baseline": 1.13,
+          "displayed_delta_e_vs_baseline": 23.7,
+          "authored_vs_background": 6.74,
+          "authored_vs_text": 2.51,
+          "authored_vs_baseline": 1.42,
+          "authored_delta_e_vs_baseline": 42.4,
+          "precomp_vs_background": 6.46,
+          "precomp_vs_baseline": 2.75,
+          "precomp_delta_e_vs_baseline": 49.3
+        },
+        {
+          "class": "comment",
+          "token": "scratchpad.cool.syntax.comment",
+          "storage_linear": [
+            0.086233,
+            0.130082,
+            0.19424
+          ],
+          "displayed_hex": "#162132",
+          "authored_hex": "#53657a",
+          "displayed_luminance": 0.01489,
+          "displayed_vs_background": 14.99,
+          "displayed_vs_text": 1.28,
+          "displayed_vs_baseline": 1.19,
+          "displayed_delta_e_vs_baseline": 11.7,
+          "authored_vs_background": 5.78,
+          "authored_vs_text": 2.92,
+          "authored_vs_baseline": 1.66,
+          "authored_delta_e_vs_baseline": 14.3,
+          "precomp_vs_background": 5.54,
+          "precomp_vs_baseline": 3.21,
+          "precomp_delta_e_vs_baseline": 39.1
+        },
+        {
+          "class": "number",
+          "token": "scratchpad.cool.syntax.number",
+          "storage_linear": [
+            0.017604,
+            0.102277,
+            0.171457
+          ],
+          "displayed_hex": "#041a2c",
+          "authored_hex": "#245a73",
+          "displayed_luminance": 0.00946,
+          "displayed_vs_background": 16.35,
+          "displayed_vs_text": 1.17,
+          "displayed_vs_baseline": 1.09,
+          "displayed_delta_e_vs_baseline": 11.0,
+          "authored_vs_background": 7.29,
+          "authored_vs_text": 2.32,
+          "authored_vs_baseline": 1.32,
+          "authored_delta_e_vs_baseline": 14.6,
+          "precomp_vs_background": 6.98,
+          "precomp_vs_baseline": 2.55,
+          "precomp_delta_e_vs_baseline": 36.2
+        },
+        {
+          "class": "type",
+          "token": "scratchpad.cool.syntax.type",
+          "storage_linear": [
+            0.017604,
+            0.107156,
+            0.141434
+          ],
+          "displayed_hex": "#041b24",
+          "authored_hex": "#245c69",
+          "displayed_luminance": 0.00937,
+          "displayed_vs_background": 16.38,
+          "displayed_vs_text": 1.17,
+          "displayed_vs_baseline": 1.09,
+          "displayed_delta_e_vs_baseline": 8.0,
+          "authored_vs_background": 7.22,
+          "authored_vs_text": 2.34,
+          "authored_vs_baseline": 1.33,
+          "authored_delta_e_vs_baseline": 15.3,
+          "precomp_vs_background": 6.92,
+          "precomp_vs_baseline": 2.57,
+          "precomp_delta_e_vs_baseline": 35.7
+        },
+        {
+          "class": "constant",
+          "token": "scratchpad.cool.syntax.constant",
+          "storage_linear": [
+            0.201311,
+            0.070303,
+            0.01435
+          ],
+          "displayed_hex": "#331204",
+          "authored_hex": "#7c4b20",
+          "displayed_luminance": 0.01145,
+          "displayed_vs_background": 15.82,
+          "displayed_vs_text": 1.21,
+          "displayed_vs_baseline": 1.12,
+          "displayed_delta_e_vs_baseline": 24.9,
+          "authored_vs_background": 7.04,
+          "authored_vs_text": 2.4,
+          "authored_vs_baseline": 1.36,
+          "authored_delta_e_vs_baseline": 47.7,
+          "precomp_vs_background": 6.74,
+          "precomp_vs_baseline": 2.64,
+          "precomp_delta_e_vs_baseline": 52.8
+        },
+        {
+          "class": "variable",
+          "token": "scratchpad.cool.syntax.variable",
+          "storage_linear": [
+            0.039682,
+            0.057949,
+            0.084608
+          ],
+          "displayed_hex": "#0a0f16",
+          "authored_hex": "#384452",
+          "displayed_luminance": 0.00464,
+          "displayed_vs_background": 17.8,
+          "displayed_vs_text": 1.07,
+          "displayed_vs_baseline": 1.0,
+          "displayed_delta_e_vs_baseline": 0.0,
+          "authored_vs_background": 9.59,
+          "authored_vs_text": 1.76,
+          "authored_vs_baseline": 1.0,
+          "authored_delta_e_vs_baseline": 0.0,
+          "precomp_vs_background": 9.19,
+          "precomp_vs_baseline": 1.94,
+          "precomp_delta_e_vs_baseline": 24.8
+        }
+      ]
+    },
+    {
+      "theme": "warm",
+      "background_token": "scratchpad.palette.editor_background",
+      "text_token": "scratchpad.palette.text",
+      "muted_token": "scratchpad.palette.muted_text",
+      "baseline_token": "scratchpad.syntax.variable",
+      "displayed": {
+        "background_hex": "#f0ebdb",
+        "text_hex": "#2b2b26",
+        "muted_hex": "#6e6b5e",
+        "baseline_hex": "#12120e",
+        "text_vs_background": 11.93,
+        "baseline_vs_background": 15.74,
+        "muted_vs_background": 4.48
+      },
+      "authored": {
+        "background_hex": "#f8f6ef",
+        "text_hex": "#73736c",
+        "muted_hex": "#afada4",
+        "text_vs_background": 4.42,
+        "muted_vs_background": 2.08
+      },
+      "tokens": [
+        {
+          "class": "keyword",
+          "token": "scratchpad.syntax.keyword",
+          "storage_linear": [
+            0.130082,
+            0.068385,
+            0.19424
+          ],
+          "displayed_hex": "#211132",
+          "authored_hex": "#654a7a",
+          "displayed_luminance": 0.00955,
+          "displayed_vs_background": 14.79,
+          "displayed_vs_text": 1.24,
+          "displayed_vs_baseline": 1.06,
+          "displayed_delta_e_vs_baseline": 27.4,
+          "authored_vs_background": 6.9,
+          "authored_vs_text": 1.56,
+          "authored_vs_baseline": 1.16,
+          "authored_delta_e_vs_baseline": 37.5,
+          "precomp_vs_background": 6.26,
+          "precomp_vs_baseline": 2.52,
+          "precomp_delta_e_vs_baseline": 45.5
+        },
+        {
+          "class": "function",
+          "token": "scratchpad.syntax.function",
+          "storage_linear": [
+            0.024254,
+            0.084608,
+            0.188174
+          ],
+          "displayed_hex": "#061630",
+          "authored_hex": "#2b5278",
+          "displayed_luminance": 0.00826,
+          "displayed_vs_background": 15.11,
+          "displayed_vs_text": 1.27,
+          "displayed_vs_baseline": 1.04,
+          "displayed_delta_e_vs_baseline": 22.1,
+          "authored_vs_background": 7.52,
+          "authored_vs_text": 1.7,
+          "authored_vs_baseline": 1.07,
+          "authored_delta_e_vs_baseline": 31.8,
+          "precomp_vs_background": 6.82,
+          "precomp_vs_baseline": 2.31,
+          "precomp_delta_e_vs_baseline": 39.8
+        },
+        {
+          "class": "string",
+          "token": "scratchpad.syntax.string",
+          "storage_linear": [
+            0.19424,
+            0.070303,
+            0.013783
+          ],
+          "displayed_hex": "#321204",
+          "authored_hex": "#7a4b1f",
+          "displayed_luminance": 0.01119,
+          "displayed_vs_background": 14.39,
+          "displayed_vs_text": 1.21,
+          "displayed_vs_baseline": 1.09,
+          "displayed_delta_e_vs_baseline": 20.1,
+          "authored_vs_background": 6.81,
+          "authored_vs_text": 1.54,
+          "authored_vs_baseline": 1.18,
+          "authored_delta_e_vs_baseline": 33.2,
+          "precomp_vs_background": 6.17,
+          "precomp_vs_baseline": 2.55,
+          "precomp_delta_e_vs_baseline": 47.3
+        },
+        {
+          "class": "comment",
+          "token": "scratchpad.syntax.comment",
+          "storage_linear": [
+            0.12193,
+            0.132868,
+            0.095206
+          ],
+          "displayed_hex": "#1f2218",
+          "authored_hex": "#626657",
+          "displayed_luminance": 0.01501,
+          "displayed_vs_background": 13.54,
+          "displayed_vs_text": 1.14,
+          "displayed_vs_baseline": 1.16,
+          "displayed_delta_e_vs_baseline": 8.9,
+          "authored_vs_background": 5.46,
+          "authored_vs_text": 1.24,
+          "authored_vs_baseline": 1.47,
+          "authored_delta_e_vs_baseline": 10.9,
+          "precomp_vs_background": 4.95,
+          "precomp_vs_baseline": 3.18,
+          "precomp_delta_e_vs_baseline": 37.7
+        },
+        {
+          "class": "number",
+          "token": "scratchpad.syntax.number",
+          "storage_linear": [
+            0.016754,
+            0.107156,
+            0.132868
+          ],
+          "displayed_hex": "#041b22",
+          "authored_hex": "#235c66",
+          "displayed_luminance": 0.00925,
+          "displayed_vs_background": 14.86,
+          "displayed_vs_text": 1.25,
+          "displayed_vs_baseline": 1.06,
+          "displayed_delta_e_vs_baseline": 11.4,
+          "authored_vs_background": 6.95,
+          "authored_vs_text": 1.57,
+          "authored_vs_baseline": 1.15,
+          "authored_delta_e_vs_baseline": 21.9,
+          "precomp_vs_background": 6.3,
+          "precomp_vs_baseline": 2.5,
+          "precomp_delta_e_vs_baseline": 36.3
+        },
+        {
+          "class": "type",
+          "token": "scratchpad.syntax.type",
+          "storage_linear": [
+            0.021252,
+            0.107156,
+            0.078288
+          ],
+          "displayed_hex": "#051b14",
+          "authored_hex": "#285c4f",
+          "displayed_luminance": 0.00867,
+          "displayed_vs_background": 15.01,
+          "displayed_vs_text": 1.26,
+          "displayed_vs_baseline": 1.05,
+          "displayed_delta_e_vs_baseline": 9.5,
+          "authored_vs_background": 7.1,
+          "authored_vs_text": 1.61,
+          "authored_vs_baseline": 1.13,
+          "authored_delta_e_vs_baseline": 19.6,
+          "precomp_vs_background": 6.44,
+          "precomp_vs_baseline": 2.44,
+          "precomp_delta_e_vs_baseline": 36.2
+        },
+        {
+          "class": "constant",
+          "token": "scratchpad.syntax.constant",
+          "storage_linear": [
+            0.178035,
+            0.057949,
+            0.005642
+          ],
+          "displayed_hex": "#2d0f01",
+          "authored_hex": "#754411",
+          "displayed_luminance": 0.00902,
+          "displayed_vs_background": 14.92,
+          "displayed_vs_text": 1.25,
+          "displayed_vs_baseline": 1.06,
+          "displayed_delta_e_vs_baseline": 18.2,
+          "authored_vs_background": 7.49,
+          "authored_vs_text": 1.7,
+          "authored_vs_baseline": 1.07,
+          "authored_delta_e_vs_baseline": 36.8,
+          "precomp_vs_background": 6.8,
+          "precomp_vs_baseline": 2.32,
+          "precomp_delta_e_vs_baseline": 48.8
+        },
+        {
+          "class": "variable",
+          "token": "scratchpad.syntax.variable",
+          "storage_linear": [
+            0.072253,
+            0.072253,
+            0.054554
+          ],
+          "displayed_hex": "#12120e",
+          "authored_hex": "#4c4c42",
+          "displayed_luminance": 0.00593,
+          "displayed_vs_background": 15.74,
+          "displayed_vs_text": 1.32,
+          "displayed_vs_baseline": 1.0,
+          "displayed_delta_e_vs_baseline": 0.0,
+          "authored_vs_background": 8.03,
+          "authored_vs_text": 1.82,
+          "authored_vs_baseline": 1.0,
+          "authored_delta_e_vs_baseline": 0.0,
+          "precomp_vs_background": 7.28,
+          "precomp_vs_baseline": 2.16,
+          "precomp_delta_e_vs_baseline": 27.0
+        }
+      ]
+    },
+    {
+      "theme": "charcoal-ink",
+      "background_token": "scratchpad.charcoal.editor_background",
+      "text_token": "scratchpad.charcoal.text",
+      "muted_token": "scratchpad.charcoal.muted_text",
+      "baseline_token": "scratchpad.charcoal.syntax.variable",
+      "displayed": {
+        "background_hex": "#060607",
+        "text_hex": "#ccc2af",
+        "muted_hex": "#776f60",
+        "baseline_hex": "#ccc2af",
+        "text_vs_background": 11.48,
+        "baseline_vs_background": 11.48,
+        "muted_vs_background": 4.08
+      },
+      "authored": {
+        "background_hex": "#292c2f",
+        "text_hex": "#e7e2d8",
+        "muted_hex": "#b6b0a5",
+        "text_vs_background": 10.88,
+        "muted_vs_background": 6.51
+      },
+      "tokens": [
+        {
+          "class": "keyword",
+          "token": "scratchpad.charcoal.syntax.keyword",
+          "storage_linear": [
+            0.533335,
+            0.26223,
+            0.37119
+          ],
+          "displayed_hex": "#88435f",
+          "authored_hex": "#c18ca4",
+          "displayed_luminance": 0.10075,
+          "displayed_vs_background": 2.91,
+          "displayed_vs_text": 3.95,
+          "displayed_vs_baseline": 3.95,
+          "displayed_delta_e_vs_baseline": 53.9,
+          "authored_vs_background": 5.05,
+          "authored_vs_text": 2.15,
+          "authored_vs_baseline": 2.15,
+          "authored_delta_e_vs_baseline": 36.8,
+          "precomp_vs_background": 7.29,
+          "precomp_vs_baseline": 1.58,
+          "precomp_delta_e_vs_baseline": 31.8
+        },
+        {
+          "class": "function",
+          "token": "scratchpad.charcoal.syntax.function",
+          "storage_linear": [
+            0.208621,
+            0.386427,
+            0.508917
+          ],
+          "displayed_hex": "#356382",
+          "authored_hex": "#7ea7bd",
+          "displayed_luminance": 0.11292,
+          "displayed_vs_background": 3.14,
+          "displayed_vs_text": 3.65,
+          "displayed_vs_baseline": 3.65,
+          "displayed_delta_e_vs_baseline": 51.1,
+          "authored_vs_background": 5.45,
+          "authored_vs_text": 2.0,
+          "authored_vs_baseline": 2.0,
+          "authored_delta_e_vs_baseline": 32.9,
+          "precomp_vs_background": 7.86,
+          "precomp_vs_baseline": 1.46,
+          "precomp_delta_e_vs_baseline": 30.6
+        },
+        {
+          "class": "string",
+          "token": "scratchpad.charcoal.syntax.string",
+          "storage_linear": [
+            0.396695,
+            0.450842,
+            0.19459
+          ],
+          "displayed_hex": "#657332",
+          "authored_hex": "#a9b37a",
+          "displayed_luminance": 0.15258,
+          "displayed_vs_background": 3.91,
+          "displayed_vs_text": 2.94,
+          "displayed_vs_baseline": 2.94,
+          "displayed_delta_e_vs_baseline": 43.1,
+          "authored_vs_background": 6.3,
+          "authored_vs_text": 1.73,
+          "authored_vs_baseline": 1.73,
+          "authored_delta_e_vs_baseline": 32.2,
+          "precomp_vs_background": 9.08,
+          "precomp_vs_baseline": 1.26,
+          "precomp_delta_e_vs_baseline": 23.1
+        },
+        {
+          "class": "comment",
+          "token": "scratchpad.charcoal.syntax.comment",
+          "storage_linear": [
+            0.242269,
+            0.296147,
+            0.238407
+          ],
+          "displayed_hex": "#3e4c3d",
+          "authored_hex": "#879486",
+          "displayed_luminance": 0.0653,
+          "displayed_vs_background": 2.22,
+          "displayed_vs_text": 5.16,
+          "displayed_vs_baseline": 5.16,
+          "displayed_delta_e_vs_baseline": 49.1,
+          "authored_vs_background": 4.42,
+          "authored_vs_text": 2.46,
+          "authored_vs_baseline": 2.46,
+          "authored_delta_e_vs_baseline": 31.0,
+          "precomp_vs_background": 6.38,
+          "precomp_vs_baseline": 1.8,
+          "precomp_delta_e_vs_baseline": 21.0
+        },
+        {
+          "class": "number",
+          "token": "scratchpad.charcoal.syntax.number",
+          "storage_linear": [
+            0.327727,
+            0.314014,
+            0.564759
+          ],
+          "displayed_hex": "#545090",
+          "authored_hex": "#9b98c6",
+          "displayed_luminance": 0.09636,
+          "displayed_vs_background": 2.82,
+          "displayed_vs_text": 4.07,
+          "displayed_vs_baseline": 4.07,
+          "displayed_delta_e_vs_baseline": 64.4,
+          "authored_vs_background": 5.15,
+          "authored_vs_text": 2.11,
+          "authored_vs_baseline": 2.11,
+          "authored_delta_e_vs_baseline": 39.9,
+          "precomp_vs_background": 7.43,
+          "precomp_vs_baseline": 1.55,
+          "precomp_delta_e_vs_baseline": 38.4
+        },
+        {
+          "class": "type",
+          "token": "scratchpad.charcoal.syntax.type",
+          "storage_linear": [
+            0.181126,
+            0.402022,
+            0.391542
+          ],
+          "displayed_hex": "#2e6764",
+          "authored_hex": "#76aaa8",
+          "displayed_luminance": 0.11201,
+          "displayed_vs_background": 3.13,
+          "displayed_vs_text": 3.67,
+          "displayed_vs_baseline": 3.67,
+          "displayed_delta_e_vs_baseline": 46.0,
+          "authored_vs_background": 5.41,
+          "authored_vs_text": 2.01,
+          "authored_vs_baseline": 2.01,
+          "authored_delta_e_vs_baseline": 31.3,
+          "precomp_vs_background": 7.8,
+          "precomp_vs_baseline": 1.47,
+          "precomp_delta_e_vs_baseline": 26.7
+        },
+        {
+          "class": "constant",
+          "token": "scratchpad.charcoal.syntax.constant",
+          "storage_linear": [
+            0.651492,
+            0.439632,
+            0.181126
+          ],
+          "displayed_hex": "#a6702e",
+          "authored_hex": "#d3b176",
+          "displayed_luminance": 0.19893,
+          "displayed_vs_background": 4.8,
+          "displayed_vs_text": 2.39,
+          "displayed_vs_baseline": 2.39,
+          "displayed_delta_e_vs_baseline": 45.2,
+          "authored_vs_background": 6.9,
+          "authored_vs_text": 1.58,
+          "authored_vs_baseline": 1.58,
+          "authored_delta_e_vs_baseline": 33.7,
+          "precomp_vs_background": 9.95,
+          "precomp_vs_baseline": 1.15,
+          "precomp_delta_e_vs_baseline": 24.8
+        },
+        {
+          "class": "variable",
+          "token": "scratchpad.charcoal.syntax.variable",
+          "storage_linear": [
+            0.799138,
+            0.760574,
+            0.686761
+          ],
+          "displayed_hex": "#ccc2af",
+          "authored_hex": "#e7e2d8",
+          "displayed_luminance": 0.54516,
+          "displayed_vs_background": 11.48,
+          "displayed_vs_text": 1.0,
+          "displayed_vs_baseline": 1.0,
+          "displayed_delta_e_vs_baseline": 0.0,
+          "authored_vs_background": 10.88,
+          "authored_vs_text": 1.0,
+          "authored_vs_baseline": 1.0,
+          "authored_delta_e_vs_baseline": 0.0,
+          "precomp_vs_background": 15.69,
+          "precomp_vs_baseline": 1.37,
+          "precomp_delta_e_vs_baseline": 12.5
+        }
+      ]
+    }
+  ]
+}

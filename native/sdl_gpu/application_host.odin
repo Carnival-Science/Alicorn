@@ -3,6 +3,7 @@ package alicorn_sdl_gpu
 import "base:runtime"
 import "core:time"
 import alicorn "../../runtime"
+import sdl_host "alicorn:host/sdl3/input"
 import "vendor:sdl3"
 
 NATIVE_DESCRIPTION_STABILIZATION_LIMIT :: 4
@@ -101,49 +102,12 @@ native_menu_try_shortcut_shared :: proc(
 	return true
 }
 
-native_menu_shortcut_key_equal :: proc(shortcut_key, key: rune) -> bool {
-	if shortcut_key == 0 { return false }
-	upper_key := key
-	if upper_key >= 'a' && upper_key <= 'z' { upper_key -= ('a' - 'A') }
-	upper_shortcut_key := shortcut_key
-	if upper_shortcut_key >= 'a' && upper_shortcut_key <= 'z' { upper_shortcut_key -= ('a' - 'A') }
-	return upper_key == upper_shortcut_key
-}
-
-native_menu_shortcut_modifiers_match :: proc(
-	expected: Application_Menu_Modifiers,
-	actual: sdl3.Keymod,
-) -> bool {
-	primary_down := native_text_primary_modifier(actual)
-	shift_down := native_text_modifier(actual, sdl3.KMOD_SHIFT)
-	alt_down := native_text_modifier(actual, sdl3.KMOD_ALT)
-	super_down := native_text_modifier(actual, sdl3.KMOD_GUI)
-	when ODIN_OS == .Darwin {
-		super_down = native_text_modifier(actual, sdl3.KMOD_CTRL)
-	}
-	return (Application_Menu_Modifier.Primary in expected) == primary_down &&
-		(Application_Menu_Modifier.Shift in expected) == shift_down &&
-		(Application_Menu_Modifier.Alt in expected) == alt_down &&
-		(Application_Menu_Modifier.Super in expected) == super_down
-}
-
-native_menu_match_shortcut_items :: proc(
-	items: []Application_Menu_Item,
-	key: rune,
-	modifiers: sdl3.Keymod,
-) -> (Application_Command_ID, bool) {
-	for item in items {
-		if item.kind == .Submenu {
-			if command, found := native_menu_match_shortcut_items(item.items, key, modifiers); found {
-				return command, true
-			}
-		} else if item.kind == .Command && item.state.enabled && item.command != Application_Command_ID(0) &&
-			item.shortcut.key != 0 && native_menu_shortcut_modifiers_match(item.shortcut.modifiers, modifiers) &&
-			native_menu_shortcut_key_equal(item.shortcut.key, key) {
-			return item.command, true
-		}
-	}
-	return {}, false
+// native_menu_modifiers translates SDL modifier state into the runtime's
+// platform-neutral menu vocabulary. Primary is Ctrl on Windows/Linux and
+// Command on macOS; Super is the Windows key on Windows/Linux and Control on
+// macOS. host/sdl3/input owns the same conversion for hosted SDL3 hosts.
+native_menu_modifiers :: proc(modifiers: sdl3.Keymod) -> Application_Menu_Modifiers {
+	return sdl_host.menu_modifiers_from_sdl(modifiers)
 }
 
 native_menu_match_shortcut :: proc(
@@ -152,18 +116,7 @@ native_menu_match_shortcut :: proc(
 	modifiers: sdl3.Keymod,
 ) -> (Application_Command_ID, bool) {
 	if application == nil { return {}, false }
-	key := rune(keycode)
-	for description in application.menus {
-		if description.command != Application_Command_ID(0) && description.state.enabled &&
-			description.shortcut.key != 0 && native_menu_shortcut_modifiers_match(description.shortcut.modifiers, modifiers) &&
-			native_menu_shortcut_key_equal(description.shortcut.key, key) {
-			return description.command, true
-		}
-		if command, found := native_menu_match_shortcut_items(description.items, key, modifiers); found {
-			return command, true
-		}
-	}
-	return {}, false
+	return alicorn.menu_match_shortcut(application.menus, rune(keycode), native_menu_modifiers(modifiers))
 }
 
 // A native chrome transition must wake the SDL loop when it is waiting for
@@ -201,17 +154,10 @@ native_menu_sync_chrome_appearance :: proc(menu: ^Native_Menu_Runtime, request_r
 
 native_menu_dispatch_command :: proc(menu: ^Native_Menu_Runtime, command: Application_Command_ID) {
 	if menu == nil || menu.application == nil || menu.application.on_menu_command == nil { return }
-	direct_command := false
-	for description in menu.application.menus {
-		if description.command == command && command != Application_Command_ID(0) {
-			direct_command = true
-			if !description.state.enabled { return }
-		}
-	}
-	if !direct_command && menu.runtime != nil {
-		_, state, found := alicorn.action_lookup(menu.runtime, command)
-		if found && !state.enabled { return }
-	}
+	// One shared enabled gate: top-level direct commands use their borrowed
+	// description state, item commands require an enabled carrying item, and
+	// registered runtime actions must be enabled.
+	if !alicorn.menu_command_enabled(menu.application.menus, menu.runtime, command) { return }
 	cause: alicorn.Cause_Scope
 	if menu.runtime != nil {
 		cause = alicorn.cause_begin(menu.runtime, .Native_Command, "native menu command", command)

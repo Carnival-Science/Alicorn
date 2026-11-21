@@ -33,13 +33,25 @@ sh "$ACCESSKIT_BINDING_ROOT/tools/check.sh" --odin "$ODIN" --cache-root "$REPO_R
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
 	build native/sdl_gpu_entry "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_sdl_gpu"
 "$ODIN" test runtime
+"$ODIN" test host/fonts "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_host_fonts_tests"
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
 	test host/sdl3 "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_sdl3_host_tests"
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+	test host/sdl3/live_resize "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_sdl3_live_resize_tests"
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+	test host/sdl3/window_frame "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_sdl3_window_frame_tests"
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
 	test host/sdl3/input "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_sdl3_input_tests"
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
 	test host/sdl3/clipboard "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_sdl3_clipboard_tests"
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+	test host/sdl3/file_drag "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_sdl3_file_drag_tests"
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+	test host/sdl3/dialogs "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_sdl3_dialog_tests"
+alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
+	test host/menus "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_host_menus_tests"
 "$ODIN" test host/web "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_web_host_tests"
+"$ODIN" test host/diagnostics "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/alicorn_diagnostics_tests"
 alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
 	test tests/fixtures/accessibility_contract \
 	"-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/accessibility_contract_tests"

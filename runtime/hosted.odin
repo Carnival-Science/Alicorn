@@ -3,6 +3,7 @@ package alicorn
 import "core:math"
 import "core:mem"
 import "core:sync"
+import "core:time"
 
 // Hosted_Runtime_Status is returned by the host-driven Runtime API. A hosted
 // Runtime is deliberately single-threaded; only Hosted_Waker may cross threads.
@@ -23,7 +24,38 @@ Hosted_Initialize_Proc :: proc(state: rawptr, rt: ^Runtime)
 Hosted_Start_Proc :: proc(state: rawptr, waker: Hosted_Waker)
 Hosted_Wake_Proc :: proc(state: rawptr, rt: ^Runtime)
 Hosted_Stop_Proc :: proc(state: rawptr)
-Hosted_Scheduled_Wake_Proc :: proc(state: rawptr, rt: ^Runtime)
+// Hosted_Scheduled_Wake_Proc matches native/sdl_gpu's
+// Application_Scheduled_Wake_Proc: the due class is supplied and the runtime
+// has already cleared that class before the callback runs.
+Hosted_Scheduled_Wake_Proc :: Application_Scheduled_Wake_Proc
+// Hosted_File_Drop_Proc matches Application_File_Drop_Proc. The path is
+// borrowed from the host's event storage for the callback only.
+Hosted_File_Drop_Proc :: proc(state: rawptr, rt: ^Runtime, path: string)
+// Hosted_Tick_Proc matches Application_Tick_Proc. Hosted runtimes invoke it at
+// the same bounded 60 Hz cadence as the native host and never use it as an
+// idle poll.
+Hosted_Tick_Proc :: proc(state: rawptr, rt: ^Runtime)
+// Hosted_After_Frame_Proc runs after end_frame for the same description pass
+// and before the host presents that frame. It mirrors the reference SDL_GPU
+// application ordering: prepare -> begin_frame -> describe -> end_frame ->
+// after_frame -> present/commit acknowledgement. It runs on every completed
+// description pass, including the last one, whether or not another frame is
+// scheduled. Post-layout work such as focus restoration, scroll restoration,
+// and deferred geometry fixes belongs here; a callback that changes retained
+// layout or paint state must explicitly invalidate the supplied Runtime.
+Hosted_After_Frame_Proc :: proc(state: rawptr, rt: ^Runtime)
+// Hosted_Monotonic_Now_Proc supplies the monotonic nanosecond domain used for
+// scheduler deadlines and interaction timestamps. Hosts should install the
+// same clock they pass to hosted_runtime_step; when omitted, the last step
+// time is used.
+Hosted_Monotonic_Now_Proc :: proc(data: rawptr) -> u64
+
+// Interaction_Update_Policy mirrors native/sdl_gpu's
+// Application_Interaction_Update_Policy.
+Interaction_Update_Policy :: enum {
+	Explicit,
+	Correct_After_Interaction,
+}
 Hosted_Pointer_Proc :: proc(state: rawptr, rt: ^Runtime, event: Pointer_Event, target: Node_ID)
 Hosted_Scroll_Proc :: proc(state: rawptr, rt: ^Runtime, event: Scroll_Event)
 Hosted_Scroll_Capture_Proc :: proc(state: rawptr, rt: ^Runtime, event: Scroll_Event, target: Node_ID) -> bool
@@ -103,8 +135,36 @@ Hosted_Window_Service :: struct {
 	set_title: Hosted_Window_Set_Title_Proc,
 }
 
+// Hosted_Quit_Service lets an application complete a close request it deferred
+// from on_close_requested after its own save/discard flow has finished. The
+// host owns the resulting shutdown and retires the service after on_stop.
+Hosted_Quit_Request_Proc :: proc(data: rawptr)
+Hosted_Quit_Service :: struct {
+	data:    rawptr,
+	request: Hosted_Quit_Request_Proc,
+}
+
+hosted_quit_request :: proc(service: Hosted_Quit_Service) {
+	if service.request != nil { service.request(service.data) }
+}
+
 Hosted_Host_Services :: struct {
-	windows: Hosted_Window_Service,
+	windows:   Hosted_Window_Service,
+	dialogs:   Hosted_Dialog_Service,
+	quit:      Hosted_Quit_Service,
+	// clipboard is the synchronous native SDL3 clipboard shape. Browser hosts
+	// may leave it empty; they publish the asynchronous alicorn:host/clipboard
+	// service through UI_Host_Services instead.
+	clipboard: Clipboard_Service,
+	// file_drag is the native drag-out capability. The Windows SDL3 host
+	// installs the shared OLE CF_HDROP source; hosts without a source leave it
+	// empty. It matches Application_Services.file_drag exactly, so an
+	// application uses the same call on either renderer.
+	file_drag: File_Drag_Service,
+	// scheduler is always supplied by the hosted Runtime. It owns one
+	// replaceable Frequent and one replaceable Opportunistic deadline for this
+	// surface and mirrors native/sdl_gpu's Application_Scheduler.
+	scheduler: Application_Scheduler,
 }
 
 Hosted_Host_Services_Proc :: proc(state: rawptr, services: Hosted_Host_Services)
@@ -125,6 +185,18 @@ hosted_window_set_title :: proc(service: Hosted_Window_Service, title: string) -
 	return service.set_title != nil && service.set_title(service.data, title)
 }
 
+// Hosted_Menu_Command_Proc receives one host-normalized native command. It
+// matches native/sdl_gpu's Application_Menu_Command_Proc so applications can
+// map menu handlers directly once the host exposes menus.
+Hosted_Menu_Command_Proc :: proc(state: rawptr, rt: ^Runtime, command: Action_ID)
+
+Hosted_Close_Result :: enum { Allow, Defer }
+
+// Hosted_Close_Requested_Proc decides whether a host close request may proceed.
+// Defer keeps the surface alive; the application calls hosted_quit_request when
+// its own save/discard policy completes. Without a callback the host closes.
+Hosted_Close_Requested_Proc :: proc(state: rawptr, rt: ^Runtime) -> Hosted_Close_Result
+
 // Hosted_Runtime_Config describes one host-owned surface. It owns one retained
 // Runtime for every control rendered into that surface. Renderer and native
 // window ownership stay with the embedding host.
@@ -132,8 +204,45 @@ Hosted_Runtime_Config :: struct {
 	state: rawptr,
 	logical_width, logical_height: int,
 	pixel_width, pixel_height: int,
+	// dpi_scale is the host's display/text scale (SDL's display scale, CSS
+	// device-pixel-ratio, or wx content scale), not the drawable-to-logical
+	// ratio. Application descriptions receive it. Presentation derives
+	// independent X/Y pixel scales from pixel/logical dimensions.
 	dpi_scale: f32,
 	runtime: Runtime_Config,
+	// menus are borrowed for the Hosted_Runtime lifetime. A host's native menu
+	// adapter snapshots labels and structure at initialization; Action_State is
+	// read from this borrowed storage whenever a menu opens or an accelerator
+	// matches. menu_presentation is host policy (see Menu_Presentation).
+	menus: []Menu,
+	menu_presentation: Menu_Presentation,
+	// window_decorations selects native chrome policy. Integrated_Title_Bar is
+	// the Windows host-owned titlebar band; Content_Title_Bar is the macOS
+	// full-size-content mode. System leaves chrome entirely with the platform.
+	window_decorations: Window_Decoration_Mode,
+	// window_chrome_height is the application-authored header height. It is
+	// informational for hosts that measure their own native band.
+	window_chrome_height: f32,
+	// The chrome callbacks mirror native/sdl_gpu's Application fields. The
+	// layout callback is sampled after retained layout; its returned slice is
+	// borrowed only for that call.
+	window_chrome_metrics: Window_Chrome_Metrics_Proc,
+	window_chrome_layout: Window_Chrome_Layout_Proc,
+	window_chrome_appearance: Window_Chrome_Appearance_Proc,
+	// chrome_paint appends host-owned chrome commands after application paint
+	// during presentation. Width and height include the chrome band.
+	chrome_paint: Hosted_Chrome_Paint_Proc,
+	chrome_paint_data: rawptr,
+	// diagnostics_paint appends host-owned diagnostic overlays after
+	// application paint and chrome for the next presented frame. The built-in
+	// hosts install it automatically; applications never opt in. Returning nil
+	// means diagnostics are hidden.
+	diagnostics_paint: Hosted_Chrome_Paint_Proc,
+	diagnostics_paint_data: rawptr,
+	// content_inset_top reserves host-owned chrome above the application
+	// viewport. The host updates it with hosted_runtime_set_content_inset when
+	// native geometry changes.
+	content_inset_top: f32,
 	// wake_allocator must be thread-safe because retained wakers may be released
 	// by worker threads. The default context allocator is used when omitted.
 	wake_allocator: mem.Allocator,
@@ -156,6 +265,28 @@ Hosted_Runtime_Config :: struct {
 	on_text_input: Hosted_Text_Input_Proc,
 	on_key: Hosted_Key_Proc,
 	on_text_key: Hosted_Text_Key_Proc,
+	on_menu_command: Hosted_Menu_Command_Proc,
+	on_close_requested: Hosted_Close_Requested_Proc,
+	on_dialog: Hosted_Dialog_Proc,
+	// on_file_drop receives one borrowed path per host file-drop event. Browser
+	// hosts have no equivalent and leave it unused.
+	on_file_drop: Hosted_File_Drop_Proc,
+	// on_tick is the optional ~60 Hz application callback. Installing it keeps
+	// the hosted deadline cadence armed; it is not an idle poll.
+	on_tick: Hosted_Tick_Proc,
+	// interaction_update_policy requests a corrective description after a
+	// consumed widget interaction, mirroring the native host's bounded
+	// stabilization loop.
+	interaction_update_policy: Interaction_Update_Policy,
+	// monotonic_now supplies scheduler/interaction timestamps. The host should
+	// pass the same clock used for hosted_runtime_step.
+	monotonic_now: Hosted_Monotonic_Now_Proc,
+	monotonic_now_data: rawptr,
+	// on_after_frame runs after end_frame of the description pass that just
+	// completed and before presentation, matching the reference host's
+	// build-then-after-frame ordering. It runs every described frame, including
+	// the final frame before an idle period.
+	on_after_frame: Hosted_After_Frame_Proc,
 }
 
 Hosted_Runtime :: struct {
@@ -171,6 +302,17 @@ Hosted_Step_Result :: struct {
 	// Absolute monotonic deadline in nanoseconds, or zero when the host should
 	// wait only for native input or a worker wake.
 	next_wake_ns: u64,
+	// Per-step description cost. description_ns is CPU wall time spent inside
+	// application description passes (reconcile, measure, layout, paint,
+	// compose); description_passes counts the bounded stabilization passes.
+	// The *_nodes_visited fields are the Runtime counter deltas this step
+	// accumulated, so a host can attribute per-frame layout cost without
+	// reaching into Runtime internals. They are zero when nothing was built.
+	description_ns:      u64,
+	description_passes:  u32,
+	reconcile_nodes_visited: u64,
+	layout_nodes_visited:    u64,
+	paint_nodes_visited:     u64,
 }
 
 Hosted_Waker :: struct {
@@ -178,9 +320,11 @@ Hosted_Waker :: struct {
 }
 
 HOSTED_MOTION_SAMPLE_INTERVAL_NS :: u64(16_666_667)
+HOSTED_TICK_INTERVAL_NS :: u64(16_666_667)
 HOSTED_DRAG_AUTOSCROLL_INTERVAL_NS :: u64(16_000_000)
 HOSTED_UNCERTIFIED_MOTION_LIMIT_NS :: u64(5_000_000_000)
 HOSTED_MAX_MONOTONIC_NS :: u64(0x7fff_ffff_ffff_ffff)
+HOSTED_DESCRIPTION_STABILIZATION_LIMIT :: 4
 
 @(private)
 Hosted_Wake_Control :: struct {
@@ -199,6 +343,7 @@ Hosted_Runtime_State :: struct {
 	owner_thread_id: int,
 	app_state: rawptr,
 	runtime: Runtime,
+	menus: []Menu,
 	wake_control: ^Hosted_Wake_Control,
 	render: Hosted_Render_Proc,
 	render_overlays: Hosted_Render_Proc,
@@ -213,11 +358,46 @@ Hosted_Runtime_State :: struct {
 	on_text_key: Hosted_Text_Key_Proc,
 	on_text_input: Hosted_Text_Input_Proc,
 	on_key: Hosted_Key_Proc,
+	on_menu_command: Hosted_Menu_Command_Proc,
+	on_close_requested: Hosted_Close_Requested_Proc,
+	on_dialog: Hosted_Dialog_Proc,
+	on_file_drop: Hosted_File_Drop_Proc,
+	on_tick: Hosted_Tick_Proc,
+	on_after_frame: Hosted_After_Frame_Proc,
+	interaction_update_policy: Interaction_Update_Policy,
+	monotonic_now: Hosted_Monotonic_Now_Proc,
+	monotonic_now_data: rawptr,
+	window_decorations: Window_Decoration_Mode,
+	window_chrome_height: f32,
+	window_chrome_metrics: Window_Chrome_Metrics_Proc,
+	window_chrome_layout: Window_Chrome_Layout_Proc,
+	window_chrome_appearance: Window_Chrome_Appearance_Proc,
+	chrome_paint: Hosted_Chrome_Paint_Proc,
+	chrome_paint_data: rawptr,
+	diagnostics_paint: Hosted_Chrome_Paint_Proc,
+	diagnostics_paint_data: rawptr,
 	logical_width, logical_height: int,
+	window_logical_width, window_logical_height: int,
+	content_inset_top: f32,
+	// hosted_display stages window-space application paint plus host chrome for
+	// one presentation. It is reused across frames and owned by this state.
+	hosted_display: [dynamic]Paint_Command,
 	dpi_scale: f32,
-	app_deadline_ns: u64,
+	// scheduled owns the two replaceable application deadlines. app deadlines
+	// and interaction timestamps use the host's monotonic clock.
+	scheduled: Scheduled_Wake_State,
+	scheduler_stats: Application_Scheduler_Stats,
+	last_interaction_ns: u64,
+	last_tick_ns: u64,
+	has_tick: bool,
 	drag_deadline_ns: u64,
 	last_step_ns: u64,
+	// motion_deadline_ns is this surface's retained-motion sampling deadline.
+	// Like the reference host's per-window motion scheduler, a host-loop turn
+	// caused by an unrelated event advances the motion clock but must not
+	// resample or repaint retained motion before the deadline is due. Zero
+	// means no response is armed or the surface is not renderable.
+	motion_deadline_ns: u64,
 	uncertified_motion_since_ns: u64,
 	has_step_time: bool,
 	motion_uncertified_timing: bool,
@@ -242,6 +422,17 @@ hosted_runtime_metrics_valid :: proc(logical_width, logical_height, pixel_width,
 		dpi_scale > 0 && !math.is_nan(dpi_scale) && !math.is_inf(dpi_scale)
 }
 
+// hosted_app_logical_height mirrors native/sdl_gpu's content transform: the
+// application viewport excludes host-owned chrome, keeps at least one logical
+// pixel for a non-empty window, and never reports a negative height.
+hosted_app_logical_height :: proc(window_height: int, inset_top: f32) -> int {
+	if window_height <= 0 { return 0 }
+	height := f32(window_height)
+	inset := clamp(inset_top, 0, height)
+	app := max(height-inset, min(height, 1))
+	return int(app)
+}
+
 // hosted_runtime_init must run on the native surface's UI thread. The caller
 // supplies a zero-initialized Hosted_Runtime and keeps it alive until destroy.
 hosted_runtime_init :: proc(host: ^Hosted_Runtime, config: Hosted_Runtime_Config) -> Hosted_Runtime_Status {
@@ -257,10 +448,12 @@ hosted_runtime_init :: proc(host: ^Hosted_Runtime, config: Hosted_Runtime_Config
 	wake_allocator := config.wake_allocator
 	if wake_allocator.procedure == nil { wake_allocator = context.allocator }
 	state := new(Hosted_Runtime_State, allocator=state_allocator)
+	inset_top := clamp(config.content_inset_top, 0, f32(config.logical_height))
 	state^ = Hosted_Runtime_State{
 		allocator=state_allocator,
 		owner_thread_id=sync.current_thread_id(),
 		app_state=config.state,
+		menus=config.menus,
 		render=config.render,
 		render_overlays=config.render_overlays,
 		on_wake=config.on_wake,
@@ -274,13 +467,34 @@ hosted_runtime_init :: proc(host: ^Hosted_Runtime, config: Hosted_Runtime_Config
 		on_text_key=config.on_text_key,
 		on_text_input=config.on_text_input,
 		on_key=config.on_key,
+		on_menu_command=config.on_menu_command,
+		on_close_requested=config.on_close_requested,
+		on_dialog=config.on_dialog,
+		on_file_drop=config.on_file_drop,
+		on_tick=config.on_tick,
+		on_after_frame=config.on_after_frame,
+		interaction_update_policy=config.interaction_update_policy,
+		monotonic_now=config.monotonic_now,
+		monotonic_now_data=config.monotonic_now_data,
+		window_decorations=config.window_decorations,
+		window_chrome_height=config.window_chrome_height,
+		window_chrome_metrics=config.window_chrome_metrics,
+		window_chrome_layout=config.window_chrome_layout,
+		window_chrome_appearance=config.window_chrome_appearance,
+		chrome_paint=config.chrome_paint,
+		chrome_paint_data=config.chrome_paint_data,
+		diagnostics_paint=config.diagnostics_paint,
+		diagnostics_paint_data=config.diagnostics_paint_data,
 		logical_width=config.logical_width,
-		logical_height=config.logical_height,
+		logical_height=hosted_app_logical_height(config.logical_height, inset_top),
+		window_logical_width=config.logical_width,
+		window_logical_height=config.logical_height,
+		content_inset_top=inset_top,
 		dpi_scale=config.dpi_scale,
 		renderable=true,
 	}
 	state.runtime = new_runtime(
-		Rect{0, 0, f32(config.logical_width), f32(config.logical_height)},
+		Rect{0, 0, f32(state.logical_width), f32(state.logical_height)},
 		config=config.runtime,
 	)
 	if config.pixel_width > 0 && config.pixel_height > 0 && config.logical_width > 0 && config.logical_height > 0 {
@@ -298,7 +512,9 @@ hosted_runtime_init :: proc(host: ^Hosted_Runtime, config: Hosted_Runtime_Config
 	wake_control.active = true
 	state.wake_control = wake_control
 	host.state = state
-	if config.on_host_services != nil { config.on_host_services(config.state, config.host_services) }
+	services := config.host_services
+	services.scheduler = hosted_runtime_scheduler_service(state)
+	if config.on_host_services != nil { config.on_host_services(config.state, services) }
 	if config.on_initialize != nil { config.on_initialize(config.state, &state.runtime) }
 	if config.on_start != nil { config.on_start(config.state, Hosted_Waker{control=wake_control}) }
 	return .Ok
@@ -313,23 +529,178 @@ hosted_runtime_borrow :: proc(host: ^Hosted_Runtime) -> (^Runtime, Hosted_Runtim
 	return &state.runtime, .Ok
 }
 
-hosted_root_describe :: proc(state: ^Hosted_Runtime_State) -> Node_ID {
-	rt := &state.runtime
-	ui, should_build := begin_frame(rt)
-	if !should_build { return 0 }
-	root := container_begin(
-		&ui,
-		.Root,
-		label="ui-root",
-		key="alicorn.hosted.root",
-		style=layout_style(.Column, grow=1),
-	)
-	if root != 0 {
-		state.render(state.app_state, &ui, state.logical_width, state.logical_height, state.dpi_scale)
-		container_end(&ui)
-		if state.render_overlays != nil { state.render_overlays(state.app_state, &ui, state.logical_width, state.logical_height, state.dpi_scale) }
+// hosted_runtime_clock_now reads the host's monotonic clock. A host that does
+// not install one falls back to the last step time, which keeps scheduler
+// deadlines relative to the hosted loop's only known time domain.
+hosted_runtime_clock_now :: proc(state: ^Hosted_Runtime_State) -> u64 {
+	if state == nil { return 0 }
+	now := state.last_step_ns
+	if state.monotonic_now != nil {
+		now = state.monotonic_now(state.monotonic_now_data)
 	}
-	end_frame(&ui)
+	return min(now, HOSTED_MAX_MONOTONIC_NS)
+}
+
+@(private)
+hosted_scheduler_schedule :: proc(data: rawptr, class: Scheduled_Wake_Class, delay_ns: u64) -> bool {
+	state := cast(^Hosted_Runtime_State)data
+	if state == nil || state.closed { return false }
+	if scheduled_wake_class_index(class) < 0 { return false }
+	if state.scheduled.pending[scheduled_wake_class_index(class)] {
+		state.scheduler_stats.coalesced += 1
+	}
+	if !scheduled_wake_state_schedule(&state.scheduled, class, hosted_runtime_clock_now(state), delay_ns) {
+		return false
+	}
+	state.scheduler_stats.scheduled += 1
+	return true
+}
+
+@(private)
+hosted_scheduler_cancel :: proc(data: rawptr, class: Scheduled_Wake_Class) -> bool {
+	state := cast(^Hosted_Runtime_State)data
+	if state == nil || state.closed { return false }
+	return scheduled_wake_state_cancel(&state.scheduled, class)
+}
+
+@(private)
+hosted_scheduler_read_stats :: proc(data: rawptr) -> Application_Scheduler_Stats {
+	state := cast(^Hosted_Runtime_State)data
+	if state == nil { return {} }
+	result := state.scheduler_stats
+	result.frequent_pending = state.scheduled.pending[0]
+	result.opportunistic_pending = state.scheduled.pending[1]
+	return result
+}
+
+hosted_runtime_scheduler_service :: proc(state: ^Hosted_Runtime_State) -> Application_Scheduler {
+	if state == nil { return {} }
+	return Application_Scheduler{
+		data=rawptr(state),
+		schedule=hosted_scheduler_schedule,
+		cancel=hosted_scheduler_cancel,
+		read_stats=hosted_scheduler_read_stats,
+	}
+}
+
+// hosted_runtime_note_interaction updates the input-quiet timestamp used to
+// defer Opportunistic work. Hosts with an event queue call it for keyboard,
+// text, pointer, and scroll input; the standard hosted input entry points also
+// call it so a host cannot silently lose the quiet window. Pass zero to use the
+// installed monotonic clock.
+hosted_runtime_note_interaction :: proc(host: ^Hosted_Runtime, now_ns: u64 = 0) -> Hosted_Runtime_Status {
+	state, status := hosted_runtime_get_state(host)
+	if status != .Ok { return status }
+	timestamp := now_ns
+	if timestamp == 0 { timestamp = hosted_runtime_clock_now(state) }
+	timestamp = min(timestamp, HOSTED_MAX_MONOTONIC_NS)
+	if timestamp != 0 { state.last_interaction_ns = timestamp }
+	return .Ok
+}
+
+@(private)
+hosted_dispatch_scheduled_wakes :: proc(state: ^Hosted_Runtime_State, now_ns: u64) {
+	classes := [SCHEDULED_WAKE_CLASS_COUNT]Scheduled_Wake_Class{.Frequent, .Opportunistic}
+	for class in classes {
+		if !scheduled_wake_state_is_due(&state.scheduled, class, now_ns) { continue }
+		index := scheduled_wake_class_index(class)
+		if class == .Opportunistic {
+			deferred_until, defer_work := scheduled_wake_defer_until_quiet(
+				now_ns, state.last_interaction_ns, APPLICATION_OPPORTUNISTIC_QUIET_NS,
+			)
+			if defer_work {
+				state.scheduled.deadlines_ns[index] = deferred_until
+				state.scheduler_stats.opportunistic_deferrals += 1
+				continue
+			}
+		}
+		deadline_ns := state.scheduled.deadlines_ns[index]
+		lateness_ns := u64(0)
+		if now_ns > deadline_ns { lateness_ns = now_ns-deadline_ns }
+		state.scheduled.pending[index] = false
+		if class == .Frequent { state.scheduler_stats.frequent_wakes += 1 }
+		else { state.scheduler_stats.opportunistic_wakes += 1 }
+		state.scheduler_stats.maximum_lateness_ns = max(state.scheduler_stats.maximum_lateness_ns, lateness_ns)
+		if state.on_scheduled_wake != nil {
+			reason := class == .Frequent ? "frequent scheduled work" : "opportunistic scheduled work"
+			cause := cause_begin(&state.runtime, .Scheduled_Wake, reason)
+			state.on_scheduled_wake(state.app_state, &state.runtime, class)
+			cause_end(&state.runtime, cause)
+		}
+	}
+}
+
+@(private)
+hosted_dispatch_tick :: proc(state: ^Hosted_Runtime_State, now_ns: u64) {
+	if state.on_tick == nil { return }
+	if !state.has_tick {
+		state.has_tick = true
+		state.last_tick_ns = now_ns
+		return
+	}
+	if now_ns < state.last_tick_ns || now_ns-state.last_tick_ns < HOSTED_TICK_INTERVAL_NS { return }
+	tick_cause := cause_begin(&state.runtime, .Application, "application tick")
+	state.on_tick(state.app_state, &state.runtime)
+	cause_end(&state.runtime, tick_cause)
+	state.last_tick_ns = now_ns
+}
+
+@(private)
+hosted_tick_deadline :: proc(state: ^Hosted_Runtime_State, now_ns: u64) -> u64 {
+	if state.on_tick == nil { return 0 }
+	if !state.has_tick { return hosted_deadline_after(now_ns, HOSTED_TICK_INTERVAL_NS) }
+	return hosted_deadline_after(state.last_tick_ns, HOSTED_TICK_INTERVAL_NS)
+}
+
+// hosted_description_root identifies the application root described in the
+// open frame. The reference host requires the application description to own
+// its root, so a top-level `.Root` node is authoritative; a top-level node of
+// another kind is adopted as a fallback so a malformed description still
+// reports something useful to the host.
+@(private)
+hosted_description_root :: proc(rt: ^Runtime) -> Node_ID {
+	fallback: Node_ID
+	for item in rt.pending {
+		if item.kind != .Description { continue }
+		description := item.description
+		if description.parent != 0 { continue }
+		if fallback == 0 { fallback = description.id }
+		if description.kind == .Root { return description.id }
+	}
+	return fallback
+}
+
+// hosted_root_describe runs one bounded application description sequence. The
+// application's description establishes the root directly, exactly like
+// native/sdl_gpu's Application.build contract; the hosted runtime does not wrap
+// it in a host-owned root column. Host-owned chrome remains expressed through
+// content_inset_top, which reduces the application viewport, and host chrome /
+// diagnostics paint are appended at the presentation boundary.
+hosted_root_describe :: proc(state: ^Hosted_Runtime_State, passes: ^u32) -> Node_ID {
+	rt := &state.runtime
+	root: Node_ID
+	count := u32(0)
+	for rt.invalidated && count < HOSTED_DESCRIPTION_STABILIZATION_LIMIT {
+		interaction_sequence := rt.interaction_consumption_sequence
+		ui, should_build := begin_frame(rt)
+		if !should_build { break }
+		state.render(state.app_state, &ui, state.logical_width, state.logical_height, state.dpi_scale)
+		root = hosted_description_root(rt)
+		if state.render_overlays != nil {
+			state.render_overlays(state.app_state, &ui, state.logical_width, state.logical_height, state.dpi_scale)
+		}
+		end_frame(&ui)
+		// Post-layout application work runs after end_frame of this same pass and
+		// before the host presents it, matching native/sdl_gpu. It runs even when
+		// no further frame is scheduled.
+		if state.on_after_frame != nil { state.on_after_frame(state.app_state, rt) }
+		count += 1
+		if state.interaction_update_policy == .Correct_After_Interaction &&
+		   rt.interaction_consumption_sequence != interaction_sequence && !rt.invalidated {
+			invalidate_root(rt, "corrective description after consumed interaction")
+		}
+	}
+	if passes != nil { passes^ = count }
 	return root
 }
 
@@ -343,43 +714,92 @@ hosted_deadline_after :: proc(now_ns, interval_ns: u64) -> u64 {
 	return now_ns + min(interval_ns, HOSTED_MAX_MONOTONIC_NS-now_ns)
 }
 
+// hosted_motion_sample_due reports whether this presentation opportunity may
+// sample retained motion. The reference host owns one deadline per window and
+// samples only when it is due or when a response has no armed deadline yet
+// (its first sample, or the restore sample after a hidden gap). Sampling on
+// every host-loop turn would let pointer storms and queue-completion wakes
+// drive the animation faster than the display cadence and present frames the
+// reference host never produces.
+hosted_motion_sample_due :: proc(state: ^Hosted_Runtime_State, now_ns: u64) -> bool {
+	if state == nil || !state.renderable { return false }
+	activity := motion_activity(&state.runtime)
+	if activity.active_owners <= 0 {
+		state.motion_deadline_ns = 0
+		return false
+	}
+	if state.motion_deadline_ns == 0 { return true }
+	return now_ns >= state.motion_deadline_ns
+}
+
+// hosted_motion_deadline reports the sampling deadline this surface should
+// publish to its host loop. A response started by this step's description or
+// retained paint flush arms its first deadline here, exactly like the
+// reference host's post-paint `native_motion_scheduler_prepare` pass.
+hosted_motion_deadline :: proc(state: ^Hosted_Runtime_State, now_ns: u64) -> u64 {
+	if state == nil { return 0 }
+	// An armed deadline already means a response is active; it is cleared by the
+	// sample that settles it or by a hidden surface.
+	if state.motion_deadline_ns != 0 { return state.motion_deadline_ns }
+	activity := motion_activity(&state.runtime)
+	if activity.active_owners <= 0 { return 0 }
+	state.motion_deadline_ns = hosted_deadline_after(now_ns, HOSTED_MOTION_SAMPLE_INTERVAL_NS)
+	return state.motion_deadline_ns
+}
+
 hosted_runtime_next_deadline :: proc(state: ^Hosted_Runtime_State, now_ns: u64) -> u64 {
 	if state == nil { return 0 }
-	deadline := state.app_deadline_ns
+	deadline: u64
+	if scheduled_deadline, found := scheduled_wake_state_next_deadline(&state.scheduled); found {
+		deadline = scheduled_deadline
+	}
+	// Ticks run while hidden as well, matching the reference host's event loop.
+	deadline = hosted_deadline_min(deadline, hosted_tick_deadline(state, now_ns))
 	if !state.renderable { return deadline }
 	deadline = hosted_deadline_min(deadline, tooltip_next_deadline(&state.runtime))
 	deadline = hosted_deadline_min(deadline, notice_next_deadline(&state.runtime))
 	deadline = hosted_deadline_min(deadline, state.drag_deadline_ns)
-	activity := motion_activity(&state.runtime)
-	if activity.active_owners > 0 {
-		next := hosted_deadline_after(now_ns, HOSTED_MOTION_SAMPLE_INTERVAL_NS)
-		deadline = hosted_deadline_min(deadline, next)
-	}
+	deadline = hosted_deadline_min(deadline, hosted_motion_deadline(state, now_ns))
 	return deadline
 }
 
 hosted_runtime_advance_presentation :: proc(state: ^Hosted_Runtime_State, now_ns: u64) -> Hosted_Runtime_Status {
-	if !state.renderable { return .Ok }
+	if !state.renderable {
+		// A hidden or non-drawable surface drops its motion deadline. Restoring
+		// it samples once at the current time instead of replaying the gap.
+		state.motion_deadline_ns = 0
+		return .Ok
+	}
 	rt := &state.runtime
-	motion := motion_tick(rt, Motion_Time(i64(now_ns)))
-	if motion.status != .Ok { return .Motion_Failed }
-	_ = tooltip_advance(rt, now_ns)
-	_ = notice_advance(rt, now_ns)
-	if motion.unestablished_deadlines > 0 {
-		if !state.motion_uncertified_timing {
-			state.motion_uncertified_timing = true
-			state.uncertified_motion_since_ns = now_ns if now_ns != 0 else 1
-		} else if now_ns >= state.uncertified_motion_since_ns &&
-			now_ns-state.uncertified_motion_since_ns >= HOSTED_UNCERTIFIED_MOTION_LIMIT_NS {
-			snapped := motion_snap_unestablished(rt, Motion_Time(i64(now_ns)))
-			if snapped.status != .Ok { return .Motion_Failed }
+	if hosted_motion_sample_due(state, now_ns) {
+		motion := motion_tick(rt, Motion_Time(i64(now_ns)))
+		if motion.status != .Ok { return .Motion_Failed }
+		if motion.unestablished_deadlines > 0 {
+			if !state.motion_uncertified_timing {
+				state.motion_uncertified_timing = true
+				state.uncertified_motion_since_ns = now_ns if now_ns != 0 else 1
+			} else if now_ns >= state.uncertified_motion_since_ns &&
+				now_ns-state.uncertified_motion_since_ns >= HOSTED_UNCERTIFIED_MOTION_LIMIT_NS {
+				snapped := motion_snap_unestablished(rt, Motion_Time(i64(now_ns)))
+				if snapped.status != .Ok { return .Motion_Failed }
+				state.motion_uncertified_timing = false
+				state.uncertified_motion_since_ns = 0
+			}
+		} else {
 			state.motion_uncertified_timing = false
 			state.uncertified_motion_since_ns = 0
 		}
+		activity := motion_activity(rt)
+		state.motion_deadline_ns = hosted_deadline_after(now_ns, HOSTED_MOTION_SAMPLE_INTERVAL_NS) if activity.active_owners > 0 else 0
 	} else {
-		state.motion_uncertified_timing = false
-		state.uncertified_motion_since_ns = 0
+		// Not a motion sample: refresh the injected clock so a description in
+		// this step resolves `ui.motion` targets against the current time. This
+		// mirrors the reference host's pre-description clock update, which does
+		// not sample or request presentation.
+		_ = motion_clock_set_time(rt, Motion_Time(i64(now_ns)), .Native_Monotonic)
 	}
+	_ = tooltip_advance(rt, now_ns)
+	_ = notice_advance(rt, now_ns)
 	if !drag_autoscroll_can_step(rt) {
 		state.drag_deadline_ns = 0
 	} else if state.drag_deadline_ns == 0 {
@@ -392,9 +812,29 @@ hosted_runtime_advance_presentation :: proc(state: ^Hosted_Runtime_State, now_ns
 }
 
 // hosted_runtime_step advances due retained work and performs at most one
-// application description. Call it from the native UI loop after each bounded
-// batch of input events or one-shot timer. It never waits or polls.
+// bounded application description sequence. Call it from the native UI loop
+// after each bounded batch of input events or one-shot timer. It never waits or
+// polls.
 hosted_runtime_step :: proc(host: ^Hosted_Runtime, now_ns: u64) -> Hosted_Step_Result {
+	return hosted_runtime_advance(host, now_ns, dispatch_application_work=true)
+}
+
+// hosted_runtime_live_step is one presentation opportunity inside a platform
+// modal move/resize loop, where the ordinary host loop cannot run. It advances
+// retained motion, rebuilds an invalidated description, and reports pending
+// presentation exactly like hosted_runtime_step, but it does not dispatch the
+// application tick or application-scheduled wakes: those are host-loop turns,
+// not frame opportunities. The reference SDL_GPU host draws the same line.
+hosted_runtime_live_step :: proc(host: ^Hosted_Runtime, now_ns: u64) -> Hosted_Step_Result {
+	return hosted_runtime_advance(host, now_ns, dispatch_application_work=false)
+}
+
+@(private)
+hosted_runtime_advance :: proc(
+	host: ^Hosted_Runtime,
+	now_ns: u64,
+	dispatch_application_work: bool,
+) -> Hosted_Step_Result {
 	state, status := hosted_runtime_get_state(host)
 	if status != .Ok { return Hosted_Step_Result{status=status} }
 	if now_ns > HOSTED_MAX_MONOTONIC_NS { return Hosted_Step_Result{status=.Invalid_Argument} }
@@ -407,30 +847,60 @@ hosted_runtime_step :: proc(host: ^Hosted_Runtime, now_ns: u64) -> Hosted_Step_R
 	}
 
 	result := Hosted_Step_Result{status=.Ok}
-	if state.app_deadline_ns != 0 && now_ns >= state.app_deadline_ns {
-		state.app_deadline_ns = 0
-		if state.on_scheduled_wake != nil { state.on_scheduled_wake(state.app_state, rt) }
+	if dispatch_application_work {
+		hosted_dispatch_tick(state, now_ns)
+		hosted_dispatch_scheduled_wakes(state, now_ns)
 	}
+	reconcile_before := rt.stats.reconcile_nodes_visited
+	layout_before := rt.stats.layout_nodes_visited
+	paint_before := rt.stats.paint_nodes_visited
 	if rt.invalidated {
-		result.root = hosted_root_describe(state)
+		// Description cost is measured here rather than inferred from the
+		// presenter's whole-step sample: live-resize acceptance needs to know
+		// whether layout or presentation dominates a drag frame.
+		describe_start := time.tick_now()
+		result.root = hosted_root_describe(state, &result.description_passes)
+		result.description_ns = u64(max(0, time.duration_nanoseconds(time.tick_diff(describe_start, time.tick_now()))))
 		result.description_built = true
 	} else if ui, ready := begin_presentation_frame(rt); ready {
 		end_presentation_frame(&ui)
 	}
+	result.reconcile_nodes_visited = rt.stats.reconcile_nodes_visited - reconcile_before
+	result.layout_nodes_visited = rt.stats.layout_nodes_visited - layout_before
+	result.paint_nodes_visited = rt.stats.paint_nodes_visited - paint_before
 	result.render_required = state.renderable && frame_needs_submission(rt)
 	result.has_more_work = rt.invalidated
 	result.next_wake_ns = hosted_runtime_next_deadline(state, now_ns)
 	return result
 }
 
-// hosted_runtime_set_deadline installs one application-owned, one-shot
-// monotonic deadline. It is cleared before on_scheduled_wake runs, so that
-// callback may safely arm the next one. Pass zero to cancel.
+// hosted_runtime_set_deadline installs one legacy application-owned, one-shot
+// monotonic deadline in the Frequent class. It is cleared before
+// on_scheduled_wake runs, so that callback may safely arm the next one. Pass
+// zero to cancel. Prefer the Hosted_Host_Services.scheduler service for new
+// code because it preserves the wake class.
 hosted_runtime_set_deadline :: proc(host: ^Hosted_Runtime, deadline_ns: u64) -> Hosted_Runtime_Status {
 	state, status := hosted_runtime_get_state(host)
 	if status != .Ok { return status }
 	if deadline_ns > HOSTED_MAX_MONOTONIC_NS { return .Invalid_Argument }
-	state.app_deadline_ns = deadline_ns
+	state.scheduled.pending[0] = deadline_ns != 0
+	state.scheduled.deadlines_ns[0] = deadline_ns
+	return .Ok
+}
+
+// hosted_runtime_file_drop delivers one native file-drop path to the
+// application callback under the same host-event cause as the reference SDL
+// host and invalidates the description. The path is borrowed only for the
+// callback.
+hosted_runtime_file_drop :: proc(host: ^Hosted_Runtime, path: string) -> Hosted_Runtime_Status {
+	state, status := hosted_runtime_get_state(host)
+	if status != .Ok { return status }
+	if state.on_file_drop != nil {
+		drop_cause := cause_begin(&state.runtime, .Host_Event, "hosted file drop")
+		state.on_file_drop(state.app_state, &state.runtime, path)
+		invalidate_root(&state.runtime, "hosted application file drop")
+		cause_end(&state.runtime, drop_cause)
+	}
 	return .Ok
 }
 
@@ -463,7 +933,12 @@ hosted_runtime_request_presentation :: proc(
 
 // hosted_runtime_resize adopts logical and drawable dimensions together.
 // Pixel size may be zero while minimized; in that case the last device scale
-// is retained until the host reports a drawable size again.
+// is retained until the host reports a drawable size again. dpi_scale is the
+// host's display/text scale passed to the next application description;
+// presentation pixel scales always come from the drawable-to-logical ratio.
+// A display-scale change invalidates the description even when the logical
+// size is unchanged, because applications may size DPI-dependent surfaces
+// from the scale they receive.
 hosted_runtime_resize :: proc(
 	host: ^Hosted_Runtime,
 	logical_width, logical_height, pixel_width, pixel_height: int,
@@ -475,13 +950,18 @@ hosted_runtime_resize :: proc(
 		return .Invalid_Argument
 	}
 	rt := &state.runtime
-	logical_changed := logical_width != state.logical_width || logical_height != state.logical_height
+	next_inset := clamp(state.content_inset_top, 0, f32(logical_height))
+	next_height := hosted_app_logical_height(logical_height, next_inset)
+	logical_changed := logical_width != state.logical_width || next_height != state.logical_height
+	window_logical_changed := logical_width != state.window_logical_width || logical_height != state.window_logical_height
 	dpi_changed := dpi_scale != state.dpi_scale
-	state.logical_width, state.logical_height = logical_width, logical_height
+	state.window_logical_width, state.window_logical_height = logical_width, logical_height
+	state.content_inset_top = next_inset
+	state.logical_width, state.logical_height = logical_width, next_height
 	state.dpi_scale = dpi_scale
-	if logical_changed {
+	if logical_changed || window_logical_changed {
 		rt.viewport.w = f32(logical_width)
-		rt.viewport.h = f32(logical_height)
+		rt.viewport.h = f32(next_height)
 		invalidate_root(rt, "hosted surface logical size changed")
 	} else if dpi_changed {
 		invalidate_root(rt, "hosted surface DPI changed")
@@ -492,22 +972,81 @@ hosted_runtime_resize :: proc(
 	return .Ok
 }
 
+// hosted_runtime_set_content_inset publishes host-owned chrome reserved above
+// the application viewport. Input coordinates over that band are withheld from
+// the application (unless a capture is active), application descriptions see
+// the reduced height, and presentation translates app paint below the band.
+// Mirrors native/sdl_gpu's content_inset_top semantics.
+hosted_runtime_set_content_inset :: proc(
+	host: ^Hosted_Runtime,
+	inset_top: f32,
+) -> Hosted_Runtime_Status {
+	state, status := hosted_runtime_get_state(host)
+	if status != .Ok { return status }
+	if math.is_nan(inset_top) || math.is_inf(inset_top) { return .Invalid_Argument }
+	next := clamp(inset_top, 0, f32(state.window_logical_height))
+	if next == state.content_inset_top { return .Ok }
+	state.content_inset_top = next
+	next_height := hosted_app_logical_height(state.window_logical_height, next)
+	if next_height != state.logical_height {
+		state.logical_height = next_height
+		state.runtime.viewport.w = f32(state.logical_width)
+		state.runtime.viewport.h = f32(next_height)
+		invalidate_root(&state.runtime, "hosted surface content inset changed")
+	}
+	return .Ok
+}
+
+// hosted_runtime_content_inset reports the current host chrome inset.
+hosted_runtime_content_inset :: proc(host: ^Hosted_Runtime) -> (inset_top: f32, status: Hosted_Runtime_Status) {
+	state, access_status := hosted_runtime_get_state(host)
+	if access_status != .Ok { return 0, access_status }
+	return state.content_inset_top, .Ok
+}
+
 hosted_runtime_pointer :: proc(host: ^Hosted_Runtime, event: Pointer_Event) -> (target: Node_ID, status: Hosted_Runtime_Status) {
 	state, access_status := hosted_runtime_get_state(host)
 	if access_status != .Ok { return 0, access_status }
+	_ = hosted_runtime_note_interaction(host, event.timestamp_ns)
 	rt := &state.runtime
-	cause := pointer_cause_begin(rt, event.kind)
-	target = process_pointer(rt, event)
 	dispatched_event := event
-	if key, ok := node_identity_key(rt, target); ok { dispatched_event.target_key = key }
-	if state.on_pointer != nil {
-		state.on_pointer(state.app_state, rt, dispatched_event, target)
-		if event.kind == .Down || event.kind == .Up {
-			invalidate_root(rt, "hosted application pointer callback")
+	if state.content_inset_top > 0 && event.kind != .Cancel {
+		// Pointer coordinates arrive in window-logical space. The application
+		// viewport starts below host-owned chrome. A captured interaction keeps
+		// receiving the event (clamped) until the host cancels it explicitly,
+		// matching the native host's chrome-ownership handoff.
+		if event.y < state.content_inset_top || event.y >= f32(state.window_logical_height) {
+			if rt.captured_node == 0 { return 0, .Ok }
+			dispatched_event.y = 0
+		} else {
+			dispatched_event.y -= state.content_inset_top
 		}
 	}
-	if drag_event, pending := drag_event_take(rt); pending && state.on_drag != nil {
-		state.on_drag(state.app_state, rt, drag_event)
+	cause := pointer_cause_begin(rt, dispatched_event.kind)
+	captured_split_move := false
+	if dispatched_event.kind == .Move {
+		if captured, found := rt.nodes[rt.captured_node]; found && captured != nil && captured.kind == .Split_Handle {
+			captured_split_move = true
+		}
+	}
+	target = process_pointer(rt, dispatched_event)
+	if key, ok := node_identity_key(rt, target); ok { dispatched_event.target_key = key }
+	// Match native/sdl_gpu's arbitration exactly: a captured split keeps its
+	// application callback, a live drag consumes the event, and an open context
+	// menu owns pointer input. interaction_scope_dispatch_pointer runs inside
+	// application_dispatch_pointer, so hosted pointer input reaches the same
+	// scopes and callbacks in the same order as the reference host.
+	drag_event_dispatched := false
+	if drag_event, pending := drag_event_take(rt); pending {
+		drag_event_dispatched = true
+		if state.on_drag != nil { state.on_drag(state.app_state, rt, drag_event) }
+	}
+	drag_consumed := drag_event_dispatched || drag_is_active(rt)
+	blocked_by_context_menu := context_menu_pointer_consumed(rt)
+	blocked_by_drag := drag_consumed && !captured_split_move
+	callback_available := state.on_pointer != nil || interaction_scope_has_input(rt)
+	if callback_available && !blocked_by_context_menu && !blocked_by_drag {
+		_ = application_dispatch_pointer(rt, state.app_state, state.on_pointer, dispatched_event, target)
 	}
 	cause_end(rt, cause)
 	return target, .Ok
@@ -519,9 +1058,36 @@ hosted_runtime_pointer :: proc(host: ^Hosted_Runtime, event: Pointer_Event) -> (
 // trigger Alicorn text-field or interaction-scope preemption. The host retains
 // platform policy and calls hosted_runtime_application_key when it has
 // translated a key into the Application_Key vocabulary.
+// hosted_runtime_pointer_cancel cancels a captured application interaction
+// when host chrome takes pointer ownership. It mirrors the native host's
+// explicit pointer-cancel path without changing window focus.
+hosted_runtime_pointer_cancel :: proc(host: ^Hosted_Runtime) -> Hosted_Runtime_Status {
+	state, status := hosted_runtime_get_state(host)
+	if status != .Ok { return status }
+	rt := &state.runtime
+	captured := rt.captured_node
+	drag_was_active := drag_is_active(rt)
+	if captured == 0 && !drag_was_active { return .Ok }
+	cancel_cause := pointer_cause_begin(rt, .Cancel)
+	_ = cancel_pointer_capture(rt)
+	state.drag_deadline_ns = 0
+	if drag_was_active && drag_is_active(rt) { _ = drag_cancel(rt) }
+	if drag_event, pending := drag_event_take(rt); pending && state.on_drag != nil {
+		state.on_drag(state.app_state, rt, drag_event)
+	}
+	if state.on_pointer != nil {
+		cancelled := Pointer_Event{kind=.Cancel}
+		if key, ok := node_identity_key(rt, captured); ok { cancelled.target_key = key }
+		state.on_pointer(state.app_state, rt, cancelled, captured)
+	}
+	cause_end(rt, cancel_cause)
+	return .Ok
+}
+
 hosted_runtime_key :: proc(host: ^Hosted_Runtime, event: Hosted_Key_Event) -> (handled: bool, status: Hosted_Runtime_Status) {
 	state, access_status := hosted_runtime_get_state(host)
 	if access_status != .Ok { return false, access_status }
+	_ = hosted_runtime_note_interaction(host)
 	if state.on_key == nil { return false, .Ok }
 	focused_owner := focused_node(&state.runtime)
 	handled = state.on_key(state.app_state, &state.runtime, focused_owner, event)
@@ -542,6 +1108,7 @@ hosted_runtime_application_key :: proc(
 ) -> (handled: bool, status: Hosted_Runtime_Status) {
 	state, access_status := hosted_runtime_get_state(host)
 	if access_status != .Ok { return false, access_status }
+	_ = hosted_runtime_note_interaction(host)
 	if event.pressed {
 		if event.text_input_focused && !application_key_can_preempt_text_field(key, event.composition_active) {
 			return false, .Ok
@@ -558,18 +1125,80 @@ hosted_runtime_application_key :: proc(
 hosted_runtime_scroll :: proc(host: ^Hosted_Runtime, event: Scroll_Event) -> (handled: bool, status: Hosted_Runtime_Status) {
 	state, access_status := hosted_runtime_get_state(host)
 	if access_status != .Ok { return false, access_status }
+	_ = hosted_runtime_note_interaction(host)
+	dispatched_event := event
+	if state.content_inset_top > 0 {
+		if event.y < state.content_inset_top || event.y >= f32(state.window_logical_height) {
+			return false, .Ok
+		}
+		dispatched_event.y -= state.content_inset_top
+	}
 	cause := cause_begin(&state.runtime, .Scroll, "hosted scroll event")
 	if state.on_scroll_capture != nil {
-		target := scroll_region_hit_test(&state.runtime, event.x, event.y)
-		if target != 0 { handled = state.on_scroll_capture(state.app_state, &state.runtime, event, target) }
+		target := scroll_region_hit_test(&state.runtime, dispatched_event.x, dispatched_event.y)
+		if target != 0 { handled = state.on_scroll_capture(state.app_state, &state.runtime, dispatched_event, target) }
 	}
-	if !handled { handled = process_scroll(&state.runtime, event) }
+	if !handled { handled = process_scroll(&state.runtime, dispatched_event) }
 	if !handled && state.on_scroll != nil {
-		state.on_scroll(state.app_state, &state.runtime, event)
+		state.on_scroll(state.app_state, &state.runtime, dispatched_event)
 		handled = true
 	}
 	cause_end(&state.runtime, cause)
 	return handled, .Ok
+}
+
+// hosted_runtime_request_close asks the application whether a host close
+// request may proceed. A missing callback preserves the host's immediate-close
+// behavior. A Defer result requires the host to keep the surface alive until
+// the application completes its policy through Hosted_Quit_Service.
+hosted_runtime_request_close :: proc(
+	host: ^Hosted_Runtime,
+) -> (result: Hosted_Close_Result, status: Hosted_Runtime_Status) {
+	state, access_status := hosted_runtime_get_state(host)
+	if access_status != .Ok { return .Allow, access_status }
+	if state.on_close_requested != nil {
+		result = state.on_close_requested(state.app_state, &state.runtime)
+	}
+	return result, .Ok
+}
+
+// hosted_runtime_menu_command routes one host-normalized command through the
+// application callback under the same native-command cause used by the SDL_GPU
+// host. Hosts call it when their menus, accelerators, or chrome actions fire.
+// Commands rejected by the shared enabled gate (a disabled top-level direct
+// command, a command carried only by disabled menu items, or a disabled
+// runtime action) are neither delivered nor traced.
+hosted_runtime_menu_command :: proc(
+	host: ^Hosted_Runtime,
+	command: Action_ID,
+) -> Hosted_Runtime_Status {
+	state, status := hosted_runtime_get_state(host)
+	if status != .Ok { return status }
+	if state.on_menu_command != nil {
+		if !menu_command_enabled(state.menus, &state.runtime, command) { return .Ok }
+		cause := cause_begin(&state.runtime, .Native_Command, "hosted menu command", command)
+		state.on_menu_command(state.app_state, &state.runtime, command)
+		invalidate_root(&state.runtime, "hosted application menu command")
+		cause_end(&state.runtime, cause)
+	}
+	return .Ok
+}
+
+// hosted_runtime_dialog delivers one host-owned asynchronous dialog completion.
+// The host calls it on the Runtime owner thread after copying the completion out
+// of its event source. Result strings remain borrowed for the callback.
+hosted_runtime_dialog :: proc(
+	host: ^Hosted_Runtime,
+	result: ^File_Dialog_Result,
+) -> Hosted_Runtime_Status {
+	state, status := hosted_runtime_get_state(host)
+	if status != .Ok { return status }
+	if state.on_dialog != nil {
+		cause := cause_begin(&state.runtime, .Async_Wake, "hosted file dialog completed")
+		state.on_dialog(state.app_state, &state.runtime, result)
+		cause_end(&state.runtime, cause)
+	}
+	return .Ok
 }
 
 hosted_runtime_text_input :: proc(
@@ -582,6 +1211,7 @@ hosted_runtime_text_input :: proc(
 ) -> Hosted_Runtime_Status {
 	state, status := hosted_runtime_get_state(host)
 	if status != .Ok { return status }
+	_ = hosted_runtime_note_interaction(host)
 	rt := &state.runtime
 	target_owner := owner
 	if target_owner == 0 { target_owner = focused_node(rt) }
@@ -768,6 +1398,86 @@ hosted_runtime_display_commands :: proc(host: ^Hosted_Runtime) -> ([]Paint_Comma
 	return state.runtime.display[:], .Ok
 }
 
+// hosted_paint_command_apply_content_inset translates application logical
+// geometry into window space exactly once, at the presentation boundary.
+hosted_paint_command_apply_content_inset :: proc(command: Paint_Command, inset_top: f32) -> Paint_Command {
+	result := command
+	if inset_top > 0 {
+		result.bounds.y += inset_top
+		result.clip.y += inset_top
+	}
+	return result
+}
+
+// hosted_runtime_presentation_list returns the commands a presenter should
+// encode for this surface. Application paint is translated below host-owned
+// chrome and host chrome paint is appended after it, mirroring native/sdl_gpu's
+// draw_display_list overlay order. With no inset and no chrome provider the
+// retained display list is returned without copying. Otherwise commands are
+// staged in Runtime-owned storage and remain valid until the next call.
+hosted_runtime_presentation_list :: proc(
+	host: ^Hosted_Runtime,
+	allocator := context.allocator,
+) -> (view: Paint_Display_List_View, status: Hosted_Runtime_Status) {
+	state, access_status := hosted_runtime_get_state(host)
+	if access_status != .Ok { return {}, access_status }
+	rt := &state.runtime
+	if rt.frame_open { return {}, .Invalid_Argument }
+	has_chrome := state.chrome_paint != nil && state.window_decorations != .System
+	has_diagnostics := state.diagnostics_paint != nil
+	if state.content_inset_top <= 0 && !has_chrome && !has_diagnostics {
+		view = Paint_Display_List_View{commands=rt.display[:], revision=rt.presentation_revision}
+		return view, .Ok
+	}
+	// Host chrome and diagnostic paint are transient: shape/command storage
+	// comes from the Runtime scratch arena and is invalid after the next Runtime
+	// mutation.
+	chrome_allocator := allocator
+	if rt.scratch_allocator.procedure != nil { chrome_allocator = rt.scratch_allocator }
+	chrome: []Paint_Command
+	if has_chrome {
+		chrome = state.chrome_paint(
+			state.chrome_paint_data,
+			rt,
+			f32(state.window_logical_width),
+			f32(state.window_logical_height),
+			chrome_allocator,
+		)
+	}
+	// Diagnostics are appended last so bounds outlines and the performance HUD
+	// stay above application paint and host chrome, matching native/sdl_gpu's
+	// overlay order.
+	overlays: []Paint_Command
+	if has_diagnostics {
+		overlays = state.diagnostics_paint(
+			state.diagnostics_paint_data,
+			rt,
+			f32(state.window_logical_width),
+			f32(state.window_logical_height),
+			chrome_allocator,
+		)
+	}
+	required := len(rt.display)+len(chrome)+len(overlays)
+	clear(&state.hosted_display)
+	if required > 0 && state.hosted_display == nil {
+		state.hosted_display = make([dynamic]Paint_Command, 0, required, allocator=state.allocator)
+		if state.hosted_display == nil { return {}, .Invalid_Argument }
+	}
+	if required > cap(state.hosted_display) && state.hosted_display != nil {
+		reserve(&state.hosted_display, required)
+	}
+	for command in rt.display {
+		append(&state.hosted_display, hosted_paint_command_apply_content_inset(command, state.content_inset_top))
+	}
+	for command in chrome { append(&state.hosted_display, command) }
+	for command in overlays { append(&state.hosted_display, command) }
+	view = Paint_Display_List_View{
+		commands=state.hosted_display[:],
+		revision=rt.presentation_revision,
+	}
+	return view, .Ok
+}
+
 hosted_runtime_semantic_snapshot :: proc(host: ^Hosted_Runtime, allocator := context.allocator) -> (Semantic_Snapshot, Hosted_Runtime_Status) {
 	state, status := hosted_runtime_get_state(host)
 	if status != .Ok { return {}, status }
@@ -862,6 +1572,7 @@ hosted_runtime_destroy :: proc(host: ^Hosted_Runtime) -> Hosted_Runtime_Status {
 	}
 	state.closed = true
 	if state.on_stop != nil { state.on_stop(state.app_state) }
+	if state.hosted_display != nil { delete(state.hosted_display) }
 	destroy_runtime(&state.runtime)
 	if control != nil {
 		owner := Hosted_Waker{control=control}

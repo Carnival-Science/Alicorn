@@ -1,49 +1,23 @@
 package alicorn_sdl_gpu
 
 import alicorn "../../runtime"
+import host_fonts "alicorn:host/fonts"
 
-import "core:os"
-import runa "../../third_party/Runa"
-
-// Keep the native fixture name as an alias so host validation code can load
-// the same bundled face used by the runtime and headless test host.
+// The reference host's platform font seeding lives in alicorn:host/fonts so the
+// hosted WebGPU path loads the identical stack. These names stay for the
+// native validation fixtures that predate the shared package.
 NATIVE_UI_FONT_DATA :: alicorn.DEFAULT_UI_FONT_DATA
 
-NATIVE_FALLBACK_CODEPOINTS := [?]rune{'↑', '↓', '→', '←', '×', '—'}
-
 native_ui_fallback_font_path :: proc() -> string {
-	when ODIN_OS == .Windows {
-		// Keep the previous broad Windows fallback for Japanese and other glyphs
-		// outside the bundled Latin-focused default face.
-		japanese_font := "C:/Windows/Fonts/NotoSansJP-VF.ttf"
-		if os.exists(japanese_font) { return japanese_font }
-		return "C:/Windows/Fonts/segoeui.ttf"
-	} else when ODIN_OS == .Darwin {
-		return "/System/Library/Fonts/SFNS.ttf"
-	} else {
-		return native_fontconfig_find_font("sans-serif", NATIVE_FALLBACK_CODEPOINTS[:])
-	}
+	return host_fonts.ui_fallback_font_path()
 }
 
 native_monospace_fallback_font_path :: proc() -> string {
-	when ODIN_OS == .Windows {
-		return "C:/Windows/Fonts/consola.ttf"
-	} else when ODIN_OS == .Darwin {
-		return "/System/Library/Fonts/SFNSMono.ttf"
-	} else {
-		return native_fontconfig_find_font("monospace", NATIVE_FALLBACK_CODEPOINTS[:])
-	}
+	return host_fonts.monospace_fallback_font_path()
 }
 
 native_font_data_covers :: proc(data: []u8, codepoints: []rune) -> bool {
-	if len(data) == 0 || len(codepoints) == 0 { return false }
-	font, err := runa.font_load(data, context.temp_allocator)
-	if err != .None { return false }
-	defer runa.font_destroy(&font)
-	for codepoint in codepoints {
-		if runa.font_lookup_glyph(&font, codepoint) == 0 { return false }
-	}
-	return true
+	return host_fonts.font_data_covers(data, codepoints)
 }
 
 native_load_optional_fallback_font :: proc(
@@ -52,28 +26,25 @@ native_load_optional_fallback_font :: proc(
 	path: string,
 	required_codepoints: []rune = nil,
 ) -> bool {
-	if !os.exists(path) { return false }
-	data, err := os.read_entire_file_from_path(path, context.allocator)
-	if err != nil { return false }
-	defer delete(data)
-	if len(required_codepoints) > 0 && !native_font_data_covers(data, required_codepoints) { return false }
-	return alicorn.text_engine_load_fallback_font_role(&rt.text_engine, role, data)
+	return host_fonts.load_optional_fallback_font(rt, role, path, required_codepoints)
 }
 
 native_load_default_fonts :: proc(rt: ^alicorn.Runtime) -> bool {
-	if !alicorn.text_engine_load_default_fonts(rt) { return false }
-	when ODIN_OS == .Windows {
-		// Seed the bounded fallback stacks from DirectWrite's locale-aware
-		// system mappings during startup, never while shaping or editing text.
-		_ = native_load_directwrite_fallback_faces(rt)
+	return host_fonts.load_default_fonts(rt)
+}
+
+when ODIN_OS == .Windows {
+	native_load_directwrite_fallback_faces :: proc(rt: ^alicorn.Runtime) -> int {
+		return host_fonts.load_directwrite_fallback_faces(rt)
 	}
-	// System faces are optional, script-oriented fallbacks; they do not alter
-	// the bundled primary typography for text the default face can render.
-	if !rt.text_engine.fallback_font_loaded && !rt.text_engine.application_fallback_font[.UI] {
-		_ = native_load_optional_fallback_font(rt, .UI, native_ui_fallback_font_path(), NATIVE_FALLBACK_CODEPOINTS[:])
+}
+
+when ODIN_OS == .Linux {
+	native_fontconfig_initialize :: proc() -> bool {
+		return host_fonts.fontconfig_initialize()
 	}
-	if !rt.text_engine.monospace_fallback_font_loaded && !rt.text_engine.application_fallback_font[.Monospace] {
-		_ = native_load_optional_fallback_font(rt, .Monospace, native_monospace_fallback_font_path(), NATIVE_FALLBACK_CODEPOINTS[:])
+
+	native_fontconfig_find_font :: proc(family: cstring, codepoints: []rune) -> string {
+		return host_fonts.fontconfig_find_font(family, codepoints)
 	}
-	return true
 }

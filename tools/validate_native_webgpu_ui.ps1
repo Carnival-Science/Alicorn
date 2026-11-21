@@ -28,6 +28,10 @@ public static class NativeWebGpuUiValidation {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr hwnd, StringBuilder name, int count);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr hwnd);
+    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hwnd, int command);
+    [DllImport("user32.dll")] private static extern bool AttachThreadInput(uint attach, uint attachTo, bool value);
+    [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
     [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hwnd, uint msg, UIntPtr wparam, IntPtr lparam);
     [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
@@ -113,6 +117,23 @@ public static class NativeWebGpuUiValidation {
     public static int[] Rect(IntPtr hwnd) {
         RECT r; if (!GetWindowRect(hwnd, out r)) return new int[] { 0, 0, 0, 0 };
         return new int[] { r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top };
+    }
+
+    // SetForegroundWindow is cooperative; attach to the current foreground
+    // thread so scripted runs are not defeated by a terminal or another app
+    // holding activation.
+    public static bool ForceForeground(IntPtr hwnd) {
+        IntPtr foreground = GetForegroundWindow();
+        uint foregroundPid;
+        uint foregroundThread = foreground != IntPtr.Zero ? GetWindowThreadProcessId(foreground, out foregroundPid) : 0;
+        uint currentThread = GetCurrentThreadId();
+        bool attached = foregroundThread != 0 && foregroundThread != currentThread &&
+            AttachThreadInput(foregroundThread, currentThread, true);
+        ShowWindow(hwnd, 9);
+        BringWindowToTop(hwnd);
+        SetForegroundWindow(hwnd);
+        if (attached) { AttachThreadInput(foregroundThread, currentThread, false); }
+        return GetForegroundWindow() == hwnd;
     }
 
     public static bool SavePng(IntPtr hwnd, string path) {
@@ -231,7 +252,7 @@ try {
     $main = [NativeWebGpuUiValidation]::FirstSdlWindow($process.Id, [IntPtr]::Zero)
     Record 'main window created' 'PASS' "hwnd=$main title='$([NativeWebGpuUiValidation]::TitleOf($main))' class=$([NativeWebGpuUiValidation]::ClassOf($main))"
 
-    $focused = Wait-Until { [void][NativeWebGpuUiValidation]::SetForegroundWindow($main); [NativeWebGpuUiValidation]::GetForegroundWindow() -eq $main } 5000
+    $focused = Wait-Until { [NativeWebGpuUiValidation]::ForceForeground($main) } 8000
     Record 'window focus' ($(if ($focused) { 'PASS' } else { 'FAIL' })) "foreground=$focused"
 
     $mainRoot = [System.Windows.Automation.AutomationElement]::FromHandle($main)

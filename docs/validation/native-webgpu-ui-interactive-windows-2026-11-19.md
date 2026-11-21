@@ -139,6 +139,19 @@ and is unrelated to this fixture. With that dependency example step skipped
 native SDL_GPU, 6 scroll-capture, plus the accessibility contract, package
 build, theme CLI, restoration and text-input-contract checks.
 
+## Slice-4 re-run (2026-11-19)
+
+The same harness was re-run at `fe1dc7f` on D3D12 and Vulkan after the hosted
+secondary-window and chrome changes. Both runs report `failures=0`, including
+the UIA tree/patterns, physical text input, Tab order, UIA activation, wake
+delivery, and auxiliary open/resize/close. The focus step now attaches to the
+current foreground thread before calling `SetForegroundWindow`; a terminal
+window holding activation had caused a spurious first failure that the retry
+previously masked. Raw logs:
+`docs/validation/raw/webgpu-chrome-uia-{d3d12,vulkan}-2026-11-19.txt`. Physical
+caption drag/maximize/resize coverage is in
+`docs/validation/webgpu-chrome-interactive-windows-2026-11-19.md`.
+
 ## Limits
 
 - Both passes were single scripted runs on one machine and one desktop session;

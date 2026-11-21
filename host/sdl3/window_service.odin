@@ -5,6 +5,7 @@ package sdl3_host
 import "core:c"
 import "core:strings"
 import alicorn "alicorn:runtime"
+import presentation_host "alicorn:host/presentation"
 import "vendor:sdl3"
 import "vendor:wgpu"
 import "vendor:wgpu/sdl3glue"
@@ -14,6 +15,13 @@ SDL3_WebGPU_Secondary_Window :: struct {
 	window: ^sdl3.Window,
 	surface: wgpu.Surface,
 	configuration: wgpu.SurfaceConfiguration,
+	quit_requested: bool,
+}
+
+@(private)
+sdl3_webgpu_window_child_request_quit :: proc(data: rawptr) {
+	child := cast(^SDL3_WebGPU_Secondary_Window)data
+	if child != nil { child.quit_requested = true }
 }
 
 // The first ui.run_webgpu window service intentionally supports one secondary
@@ -145,14 +153,10 @@ sdl3_webgpu_window_surface_configuration :: proc(
 	}
 	if !format_found {
 		configuration.format = capabilities.formats[0]
-		for i in 0..<int(capabilities.formatCount) {
-			if capabilities.formats[i] == .BGRA8Unorm { configuration.format = .BGRA8Unorm }
-		}
-		for i in 0..<int(capabilities.formatCount) {
-			if capabilities.formats[i] == .BGRA8UnormSrgb {
-				configuration.format = .BGRA8UnormSrgb
-				break
-			}
+		if selected, selected_ok := presentation_host.hosted_presentation_format(
+			capabilities.formats[:capabilities.formatCount],
+		); selected_ok {
+			configuration.format = selected
 		}
 	}
 	present_found := false
@@ -250,10 +254,24 @@ sdl3_webgpu_window_create_pending :: proc(
 	child.surface = surface
 	child.configuration = configuration
 	child_config := description.config
+	when ODIN_OS == .Darwin {
+		// AppKit's main menu is process-global, and the reference SDL_GPU host
+		// deliberately leaves secondary windows without their own menu. Mirror
+		// that rather than letting a second adapter replace the primary menu.
+		child_config.menus = nil
+		child_config.menu_presentation = .Labels
+	}
 	child_config.logical_width, child_config.logical_height = lw, lh
 	child_config.pixel_width, child_config.pixel_height = pw, ph
-	child_config.dpi_scale = f32(pw) / f32(lw)
+	_, child_display_scale := sdl3_webgpu_application_window_scales(
+		window, lw, pw,
+	)
+	child_config.dpi_scale = child_display_scale
 	child_config.host_services.windows = sdl3_webgpu_window_service(manager)
+	child_config.host_services.quit = alicorn.Hosted_Quit_Service{
+		data=rawptr(child),
+		request=sdl3_webgpu_window_child_request_quit,
+	}
 	manager.creating = true
 	sdl3_webgpu_window_clear_pending(manager)
 	manager.child = child

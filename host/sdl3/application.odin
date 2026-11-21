@@ -4,8 +4,15 @@ package sdl3_host
 
 import alicorn "alicorn:runtime"
 import presentation_host "alicorn:host/presentation"
+import sdl3_clipboard "alicorn:host/sdl3/clipboard"
+import sdl3_dialogs "alicorn:host/sdl3/dialogs"
+import sdl3_file_drag "alicorn:host/sdl3/file_drag"
+import host_menus "alicorn:host/menus"
 import "core:c"
 import "core:fmt"
+import "core:math"
+import "core:mem"
+import "core:time"
 import "vendor:sdl3"
 import "vendor:wgpu"
 import sdl_accessibility "alicorn:host/sdl3/accessibility"
@@ -23,6 +30,10 @@ SDL3_WebGPU_Application_Event_Result :: enum {
 	Handled,
 	Wake,
 	Close_Requested,
+	// Close_Deferred means the application returned Defer from on_close_requested.
+	// The surface stays alive and the application closes later through its quit
+	// service.
+	Close_Deferred,
 	Failure,
 }
 
@@ -31,6 +42,14 @@ SDL3_WebGPU_Application_Step :: struct {
 	presentation: presentation_host.Hosted_Surface_Result,
 	has_more_work: bool,
 	next_wake_ns: u64,
+	// Live-frame instrumentation. timing is the presenter's sample for the
+	// frame this step presented (valid when has_timing). post_present_ns is the
+	// host-owned work this step performed after the presentation call (text
+	// input sync and accessibility projection), which the presenter sample
+	// cannot see. Read-only seams; they never affect frame policy.
+	timing:          presentation_host.Hosted_Surface_Timing_Sample,
+	has_timing:      bool,
+	post_present_ns: u64,
 }
 
 SDL3_WebGPU_Text_Input_State :: struct {
@@ -40,6 +59,7 @@ SDL3_WebGPU_Text_Input_State :: struct {
 	window_focused: bool,
 	last_area: alicorn.Text_Input_Area,
 	last_area_valid: bool,
+	content_inset_top: f32,
 }
 
 // SDL3_WebGPU_Application joins an SDL-owned window/event identity, one
@@ -50,6 +70,9 @@ SDL3_WebGPU_Text_Input_State :: struct {
 SDL3_WebGPU_Application :: struct {
 	hosted: alicorn.Hosted_Runtime,
 	presenter: presentation_host.Hosted_Surface_Presenter,
+	dialog_bridge: ^sdl3_dialogs.Native_Dialog_Bridge,
+	menu_service: host_menus.Menu_Service,
+	menu_adapter: host_menus.Native_Menu_Adapter,
 	accessibility_host: sdl_accessibility.Native_Accessibility_Host,
 	host_waker: sdl_accessibility.Native_Host_Event_Waker,
 	window: ^sdl3.Window,
@@ -58,7 +81,14 @@ SDL3_WebGPU_Application :: struct {
 	pointer_buttons: Pointer_Button_State,
 	modifiers: sdl3.Keymod,
 	text_input: SDL3_WebGPU_Text_Input_State,
+	// dpi_scale is the application-facing display/text scale (SDL's
+	// GetWindowDisplayScale), matching the reference SDL_GPU host's build
+	// callback. It is not necessarily the drawable-to-logical ratio:
+	// pixel_density carries that ratio and presentation derives its own
+	// independent X/Y scales from the drawable and window metrics.
 	dpi_scale: f32,
+	pixel_density: f32,
+	display_scale: f32,
 	clear_color: wgpu.Color,
 	last_logical_width, last_logical_height: int,
 	last_pixel_width, last_pixel_height: int,
@@ -67,6 +97,18 @@ SDL3_WebGPU_Application :: struct {
 	initialized: bool,
 	accessibility_ready: bool,
 	presenter_device_lost: bool,
+	chrome_redraw_pending: bool,
+	// step_in_progress serializes ordinary and modal-loop presentation. A
+	// Windows modal move loop can dispatch a live-resize tick from inside a GPU
+	// call that pumps messages; that nested tick must not start a second
+	// description while the outer one is running.
+	step_in_progress: bool,
+	diagnostics: ^SDL3_Diagnostics,
+}
+
+@(private)
+sdl3_webgpu_application_now :: proc(_data: rawptr) -> u64 {
+	return u64(sdl3.GetTicksNS())
 }
 
 @(private)
@@ -83,6 +125,114 @@ sdl3_webgpu_application_wake :: proc(data: rawptr) {
 }
 
 @(private)
+sdl3_webgpu_application_dialog_wake :: proc(data: rawptr) {
+	_ = sdl3_webgpu_application_post_wake(data)
+}
+
+@(private)
+sdl3_webgpu_application_dialog_callback :: proc(
+	data: rawptr,
+	_rt: ^alicorn.Runtime,
+	result: ^alicorn.File_Dialog_Result,
+) {
+	application := cast(^SDL3_WebGPU_Application)data
+	if application == nil || !application.initialized { return }
+	_ = alicorn.hosted_runtime_dialog(&application.hosted, result)
+}
+
+@(private)
+sdl3_webgpu_application_menu_command :: proc(
+	data: rawptr,
+	_rt: ^alicorn.Runtime,
+	command: alicorn.Action_ID,
+) {
+	application := cast(^SDL3_WebGPU_Application)data
+	if application == nil || !application.initialized { return }
+	_ = alicorn.hosted_runtime_menu_command(&application.hosted, command)
+}
+
+@(private)
+sdl3_webgpu_application_chrome_redraw :: proc(data: rawptr) {
+	application := cast(^SDL3_WebGPU_Application)data
+	if application == nil || !application.initialized { return }
+	application.chrome_redraw_pending = true
+	if application.hosted.state != nil {
+		_ = alicorn.hosted_runtime_request_presentation(&application.hosted, "host chrome paint changed")
+	}
+	_ = sdl3_webgpu_application_post_wake(application)
+}
+
+@(private)
+sdl3_webgpu_application_chrome_paint :: proc(
+	data: rawptr,
+	_rt: ^alicorn.Runtime,
+	width, height: f32,
+	allocator: mem.Allocator,
+) -> []alicorn.Paint_Command {
+	application := cast(^SDL3_WebGPU_Application)data
+	if application == nil || !application.initialized { return nil }
+	return host_menus.native_menu_adapter_chrome_paint(
+		&application.menu_adapter, width, height, allocator,
+	)
+}
+
+@(private)
+sdl3_webgpu_application_sync_chrome :: proc(application: ^SDL3_WebGPU_Application) {
+	if application == nil || !application.initialized { return }
+	host_menus.native_menu_adapter_sync_chrome(&application.menu_adapter)
+}
+
+// sdl3_webgpu_application_pre_present refreshes host chrome after the Runtime
+// description and before frame encoding, matching the native host's ordering.
+@(private)
+sdl3_webgpu_application_pre_present :: proc(data: rawptr) {
+	application := cast(^SDL3_WebGPU_Application)data
+	if application == nil || !application.initialized { return }
+	sdl3_webgpu_application_sync_chrome(application)
+	application.chrome_redraw_pending = false
+	if !sdl3_webgpu_application_sync_text_input(application) {
+		// A failed platform text-area update must not corrupt presentation;
+		// the next focus sync retries it.
+	}
+}
+
+@(private)
+sdl3_webgpu_application_content_inset :: proc(application: ^SDL3_WebGPU_Application) -> f32 {
+	if application == nil || application.hosted.state == nil { return 0 }
+	inset, status := alicorn.hosted_runtime_content_inset(&application.hosted)
+	if status != .Ok { return 0 }
+	return inset
+}
+
+// sdl3_webgpu_application_dispatch_menus delivers commands queued by native
+// menu callbacks on the owner thread. Call it at an event-loop safe point after
+// handling input, mirroring the SDL_GPU host's pending-menu dispatch.
+sdl3_webgpu_application_dispatch_menus :: proc(application: ^SDL3_WebGPU_Application) {
+	if application == nil || !application.initialized { return }
+	rt, status := alicorn.hosted_runtime_borrow(&application.hosted)
+	if status != .Ok { return }
+	for {
+		command, found := host_menus.native_menu_adapter_take_pending(&application.menu_adapter)
+		if !found { return }
+		_ = host_menus.menu_service_dispatch_command(&application.menu_service, rt, command)
+	}
+}
+
+// sdl3_webgpu_application_dispatch_dialogs delivers completed native dialogs on
+// the owner thread. Call it at an event-loop safe point after handling input.
+sdl3_webgpu_application_dispatch_dialogs :: proc(application: ^SDL3_WebGPU_Application) {
+	if application == nil || !application.initialized || application.dialog_bridge == nil { return }
+	rt, status := alicorn.hosted_runtime_borrow(&application.hosted)
+	if status != .Ok { return }
+	sdl3_dialogs.native_dialog_dispatch(
+		application.dialog_bridge,
+		sdl3_webgpu_application_dialog_callback,
+		rawptr(application),
+		rt,
+	)
+}
+
+@(private)
 sdl3_webgpu_application_window_metrics :: proc(
 	window: ^sdl3.Window,
 ) -> (logical_width, logical_height, pixel_width, pixel_height: int, ok: bool) {
@@ -95,6 +245,33 @@ sdl3_webgpu_application_window_metrics :: proc(
 	}
 	if logical_w < 0 || logical_h < 0 || pixel_w < 0 || pixel_h < 0 { return }
 	return int(logical_w), int(logical_h), int(pixel_w), int(pixel_h), true
+}
+
+// sdl3_webgpu_application_window_scales reads the two SDL scale inputs
+// separately. pixel_density is the framebuffer-pixels-to-window-points ratio
+// used for presentation; display_scale is the monitor's content scale and is
+// what the application description receives, matching native/sdl_gpu's
+// Application.build contract. A platform that reports zero falls back to the
+// drawable ratio so a suspended or not-yet-shown window still has a coherent
+// scale.
+sdl3_webgpu_application_window_scales :: proc(
+	window: ^sdl3.Window,
+	logical_width, pixel_width: int,
+) -> (pixel_density, display_scale: f32) {
+	if window != nil {
+		pixel_density = sdl3.GetWindowPixelDensity(window)
+		display_scale = sdl3.GetWindowDisplayScale(window)
+	}
+	if !(pixel_density > 0) || math.is_nan(pixel_density) || math.is_inf(pixel_density) {
+		pixel_density = 1
+		if logical_width > 0 && pixel_width > 0 {
+			pixel_density = f32(pixel_width)/f32(logical_width)
+		}
+	}
+	if !(display_scale > 0) || math.is_nan(display_scale) || math.is_inf(display_scale) {
+		display_scale = pixel_density
+	}
+	return
 }
 
 // Call before creating an SDL window when using the native WebGPU host.
@@ -128,7 +305,7 @@ sdl3_webgpu_application_accessibility_sync :: proc(
 	sdl_accessibility.native_accessibility_sync(
 		&application.accessibility_host,
 		rt,
-		0,
+		sdl3_webgpu_application_content_inset(application),
 		f32(pw)/f32(lw),
 		f32(ph)/f32(lh),
 	)
@@ -168,6 +345,7 @@ sdl3_webgpu_application_init :: proc(
 	if !metrics_ok || logical_width == 0 || logical_height == 0 || pixel_width == 0 || pixel_height == 0 {
 		return .Window_Failure
 	}
+	pixel_density, display_scale := sdl3_webgpu_application_window_scales(window, logical_width, pixel_width)
 	wake_event := sdl3.EventType(sdl3.RegisterEvents(1))
 	if wake_event == {} { return .Window_Failure }
 	application^ = SDL3_WebGPU_Application{
@@ -178,7 +356,9 @@ sdl3_webgpu_application_init :: proc(
 		text_input=SDL3_WebGPU_Text_Input_State{
 			window_focused=sdl3.GetKeyboardFocus() == window,
 		},
-		dpi_scale=f32(pixel_width) / f32(logical_width),
+		dpi_scale=display_scale,
+		pixel_density=pixel_density,
+		display_scale=display_scale,
 		clear_color=clear_color,
 		last_logical_width=logical_width,
 		last_logical_height=logical_height,
@@ -188,14 +368,89 @@ sdl3_webgpu_application_init :: proc(
 		initialized=true,
 	}
 	if application.window_id == 0 { application^ = {}; return .Window_Failure }
-	dpi := f32(pixel_width) / f32(logical_width)
+	application.dialog_bridge = sdl3_dialogs.native_dialog_bridge_make(
+		window,
+		sdl3_dialogs.Dialog_Waker{
+			data=rawptr(application),
+			wake=sdl3_webgpu_application_dialog_wake,
+		},
+	)
+	if application.dialog_bridge == nil { application^ = {}; return .Window_Failure }
+	menu_command: host_menus.Menu_Command_Proc
+	if hosted_config.on_menu_command != nil {
+		// Accelerators must not be consumed when the application installed no
+		// command callback; this matches the SDL_GPU host's try-shortcut gate.
+		menu_command = sdl3_webgpu_application_menu_command
+	}
+	host_menus.menu_service_init(
+		&application.menu_service,
+		hosted_config.menus,
+		hosted_config.menu_presentation,
+		rawptr(application),
+		menu_command,
+	)
+	chrome_config := host_menus.Menu_Chrome_Config{
+		decorations=hosted_config.window_decorations,
+		title=string(sdl3.GetWindowTitle(window)),
+		chrome_height=hosted_config.window_chrome_height,
+		menu_presentation=hosted_config.menu_presentation,
+		metrics=hosted_config.window_chrome_metrics,
+		layout=hosted_config.window_chrome_layout,
+		appearance=hosted_config.window_chrome_appearance,
+		callback_state=hosted_config.state,
+		request_redraw=sdl3_webgpu_application_chrome_redraw,
+		request_redraw_data=rawptr(application),
+	}
+	if !host_menus.native_menu_adapter_prepare(
+		&application.menu_adapter, window, &application.menu_service, chrome_config,
+	) {
+		sdl3_dialogs.native_dialog_bridge_release(application.dialog_bridge)
+		application^ = {}
+		return .Runtime_Failure
+	}
+	// Attaching a Win32 menu bar changes the client area. Re-read metrics so the
+	// initial retained viewport matches the post-menu geometry.
+	if measured_width, measured_height, measured_pixel_width, measured_pixel_height, measured_ok :=
+	   sdl3_webgpu_application_window_metrics(window);
+	   measured_ok && measured_width > 0 && measured_height > 0 &&
+	   measured_pixel_width > 0 && measured_pixel_height > 0 {
+		logical_width, logical_height = measured_width, measured_height
+		pixel_width, pixel_height = measured_pixel_width, measured_pixel_height
+		pixel_density, display_scale = sdl3_webgpu_application_window_scales(
+			window, logical_width, pixel_width,
+		)
+		application.last_logical_width, application.last_logical_height = logical_width, logical_height
+		application.last_pixel_width, application.last_pixel_height = pixel_width, pixel_height
+		application.pixel_density = pixel_density
+		application.display_scale = display_scale
+		application.dpi_scale = display_scale
+	}
 	config := hosted_config
 	config.logical_width, config.logical_height = logical_width, logical_height
 	config.pixel_width, config.pixel_height = pixel_width, pixel_height
-	config.dpi_scale = dpi
+	config.dpi_scale = application.display_scale
 	config.post_wake_data = rawptr(application)
 	config.post_wake = sdl3_webgpu_application_post_wake
+	config.chrome_paint = sdl3_webgpu_application_chrome_paint
+	config.chrome_paint_data = rawptr(application)
+	config.host_services.dialogs = sdl3_dialogs.dialog_service(application.dialog_bridge)
+	if config.host_services.clipboard.get_text == nil {
+		config.host_services.clipboard = sdl3_clipboard.SDL3ClipboardService()
+	}
+	config.host_services.file_drag = sdl3_file_drag.service()
+	if config.monotonic_now == nil {
+		config.monotonic_now = sdl3_webgpu_application_now
+	}
 	if alicorn.hosted_runtime_init(&application.hosted, config) != .Ok {
+		sdl3_dialogs.native_dialog_bridge_release(application.dialog_bridge)
+		application^ = {}
+		return .Runtime_Failure
+	}
+	application.menu_adapter.hosted = &application.hosted
+	if !host_menus.native_menu_adapter_activate_chrome(&application.menu_adapter) {
+		_ = alicorn.hosted_runtime_destroy(&application.hosted)
+		host_menus.native_menu_adapter_destroy(&application.menu_adapter)
+		sdl3_dialogs.native_dialog_bridge_release(application.dialog_bridge)
 		application^ = {}
 		return .Runtime_Failure
 	}
@@ -231,6 +486,8 @@ sdl3_webgpu_application_init :: proc(
 			application.accessibility_ready = false
 		}
 		_ = alicorn.hosted_runtime_destroy(&application.hosted)
+		host_menus.native_menu_adapter_destroy(&application.menu_adapter)
+		sdl3_dialogs.native_dialog_bridge_release(application.dialog_bridge)
 		application^ = {}
 		return .Presenter_Failure
 	}
@@ -258,9 +515,14 @@ sdl3_webgpu_application_attach_presenter :: proc(
 		sdl3_webgpu_application_window_metrics(application.window)
 	if !metrics_ok { return .Window_Failure }
 	if logical_width > 0 && logical_height > 0 && pixel_width > 0 && pixel_height > 0 {
+		pixel_density, display_scale := sdl3_webgpu_application_window_scales(
+			application.window, logical_width, pixel_width,
+		)
 		application.last_logical_width, application.last_logical_height = logical_width, logical_height
 		application.last_pixel_width, application.last_pixel_height = pixel_width, pixel_height
-		application.dpi_scale = f32(pixel_width) / f32(logical_width)
+		application.pixel_density = pixel_density
+		application.display_scale = display_scale
+		application.dpi_scale = display_scale
 	}
 	if application.last_logical_width <= 0 || application.last_logical_height <= 0 ||
 	   application.last_pixel_width <= 0 || application.last_pixel_height <= 0 {
@@ -341,35 +603,72 @@ sdl3_webgpu_application_pointer :: proc(
 	return status
 }
 
-sdl3_webgpu_application_resize :: proc(application: ^SDL3_WebGPU_Application) -> presentation_host.Hosted_Surface_Result {
-	if application == nil || !application.initialized { return .Invalid_Input }
-	lw, lh, pw, ph, ok := sdl3_webgpu_application_window_metrics(application.window)
-	if !ok { return .Invalid_Input }
-	dpi := application.dpi_scale
-	if lw > 0 && pw > 0 { dpi = f32(pw) / f32(lw) }
-	else if lh > 0 && ph > 0 { dpi = f32(ph) / f32(lh) }
-	if lw > 0 && lh > 0 && pw > 0 && ph > 0 {
-		application.last_logical_width, application.last_logical_height = lw, lh
-		application.last_pixel_width, application.last_pixel_height = pw, ph
+// sdl3_webgpu_application_apply_metrics adopts one coherent window measurement.
+// A real per-monitor DPI transition arrives here as a new drawable size and
+// display scale at the same logical size; tests and transition harnesses use
+// the same entry point to inject that measurement without a second monitor.
+// sync_chrome re-reads the native chrome band after the new scale is published
+// so the inset and application viewport update in the same adoption.
+sdl3_webgpu_application_apply_metrics :: proc(
+	application: ^SDL3_WebGPU_Application,
+	logical_width, logical_height, pixel_width, pixel_height: int,
+	pixel_density, display_scale: f32,
+	sync_chrome := true,
+) -> presentation_host.Hosted_Surface_Result {
+	if application == nil || !application.initialized ||
+	   logical_width < 0 || logical_height < 0 || pixel_width < 0 || pixel_height < 0 {
+		return .Invalid_Input
+	}
+	density := pixel_density
+	scale := display_scale
+	if !(density > 0) || math.is_nan(density) || math.is_inf(density) {
+		density = 1
+		if logical_width > 0 && pixel_width > 0 {
+			density = f32(pixel_width)/f32(logical_width)
+		}
+	}
+	if !(scale > 0) || math.is_nan(scale) || math.is_inf(scale) {
+		scale = density
+	}
+	application.pixel_density = density
+	application.display_scale = scale
+	application.dpi_scale = scale
+	if logical_width > 0 && logical_height > 0 && pixel_width > 0 && pixel_height > 0 {
+		application.last_logical_width, application.last_logical_height = logical_width, logical_height
+		application.last_pixel_width, application.last_pixel_height = pixel_width, pixel_height
 	}
 	if application.presenter.state == nil || application.presenter_device_lost {
-		if alicorn.hosted_runtime_resize(&application.hosted, lw, lh, pw, ph, dpi) != .Ok {
+		if alicorn.hosted_runtime_resize(
+			&application.hosted, logical_width, logical_height, pixel_width, pixel_height, scale,
+		) != .Ok {
 			return .Invalid_Input
 		}
 		renderable := !application.presenter_device_lost && application.visible &&
-			lw > 0 && lh > 0 && pw > 0 && ph > 0
+			logical_width > 0 && logical_height > 0 && pixel_width > 0 && pixel_height > 0
 		if alicorn.hosted_runtime_set_renderable(&application.hosted, renderable) != .Ok {
 			return .Invalid_Input
 		}
-		application.dpi_scale = dpi
+		if sync_chrome { sdl3_webgpu_application_sync_chrome(application) }
 		if renderable { return .Ok }
 		return .Suspended
 	}
 	result := presentation_host.hosted_surface_presenter_resize(
-		&application.presenter, lw, lh, pw, ph, dpi,
+		&application.presenter, logical_width, logical_height, pixel_width, pixel_height, scale,
 	)
-	if result == .Ok || result == .Suspended { application.dpi_scale = dpi }
+	if sync_chrome && (result == .Ok || result == .Suspended) {
+		sdl3_webgpu_application_sync_chrome(application)
+	}
 	return result
+}
+
+sdl3_webgpu_application_resize :: proc(application: ^SDL3_WebGPU_Application) -> presentation_host.Hosted_Surface_Result {
+	if application == nil || !application.initialized { return .Invalid_Input }
+	lw, lh, pw, ph, ok := sdl3_webgpu_application_window_metrics(application.window)
+	if !ok { return .Invalid_Input }
+	pixel_density, display_scale := sdl3_webgpu_application_window_scales(application.window, lw, pw)
+	return sdl3_webgpu_application_apply_metrics(
+		application, lw, lh, pw, ph, pixel_density, display_scale,
+	)
 }
 
 sdl3_webgpu_application_set_visible :: proc(
@@ -391,9 +690,9 @@ sdl3_webgpu_application_set_visible :: proc(
 	return presentation_host.hosted_surface_presenter_set_visible(&application.presenter, visible)
 }
 
-// Step after a bounded SDL event batch or scheduled wake. Retry_Later receives
-// one bounded 60 Hz deadline; the host should use SDL_WaitEventTimeout for that
-// deadline and continue to pump WGPU callbacks while work is in flight.
+// sdl3_webgpu_application_step is one ordinary host-loop turn. The live-resize
+// paths use sdl3_webgpu_application_live_step instead so a modal move/size loop
+// cannot re-enter presentation while an ordinary step is already running.
 sdl3_webgpu_application_step :: proc(
 	application: ^SDL3_WebGPU_Application,
 	now_ns: u64,
@@ -401,17 +700,55 @@ sdl3_webgpu_application_step :: proc(
 	if application == nil || !application.initialized {
 		return {status=.Closed, presentation=.Invalid_Input}
 	}
+	if application.step_in_progress { return {status=.Ok, presentation=.No_Frame} }
+	application.step_in_progress = true
+	defer application.step_in_progress = false
+	return sdl3_webgpu_application_present(application, now_ns, live=false)
+}
+
+// sdl3_webgpu_application_live_step performs one bounded presentation
+// opportunity for a live resize/move: geometry is re-read by the caller, the
+// surface is already configured, and the Runtime is asked for the current
+// description plus retained motion. Application ticks and scheduled wakes are
+// left to the next ordinary host-loop turn.
+sdl3_webgpu_application_live_step :: proc(
+	application: ^SDL3_WebGPU_Application,
+	now_ns: u64,
+) -> SDL3_WebGPU_Application_Step {
+	if application == nil || !application.initialized {
+		return {status=.Closed, presentation=.Invalid_Input}
+	}
+	if application.step_in_progress { return {status=.Ok, presentation=.No_Frame} }
+	application.step_in_progress = true
+	defer application.step_in_progress = false
+	return sdl3_webgpu_application_present(application, now_ns, live=true)
+}
+
+@(private)
+sdl3_webgpu_application_present :: proc(
+	application: ^SDL3_WebGPU_Application,
+	now_ns: u64,
+	live: bool,
+) -> SDL3_WebGPU_Application_Step {
 	if application.presenter.state == nil || application.presenter_device_lost {
 		return {status=.Ok, presentation=.No_Frame}
 	}
-	step, presentation := presentation_host.hosted_surface_presenter_step(&application.presenter, now_ns)
+	step, presentation := presentation_host.hosted_surface_presenter_step_with_hook(
+		&application.presenter,
+		now_ns,
+		rawptr(application),
+		sdl3_webgpu_application_pre_present,
+		live=live,
+	)
 	if step.status != .Ok { return {status=step.status, presentation=presentation} }
+	post_present_start := time.tick_now()
 	if !sdl3_webgpu_application_sync_text_input(application) {
 		return {status=.Invalid_Argument, presentation=presentation}
 	}
 	if rt, runtime_status := alicorn.hosted_runtime_borrow(&application.hosted); runtime_status == .Ok {
 		sdl3_webgpu_application_accessibility_sync(application, rt)
 	}
+	post_present_ns := u64(max(0, time.duration_nanoseconds(time.tick_diff(post_present_start, time.tick_now()))))
 	application.next_wake_ns = step.next_wake_ns
 	if presentation == .Retry_Later {
 		retry_ns := now_ns + 16_666_667
@@ -419,17 +756,34 @@ sdl3_webgpu_application_step :: proc(
 			application.next_wake_ns = retry_ns
 		}
 	}
-	return {
+	result := SDL3_WebGPU_Application_Step{
 		status=step.status,
 		presentation=presentation,
 		has_more_work=step.has_more_work,
 		next_wake_ns=application.next_wake_ns,
+		post_present_ns=post_present_ns,
 	}
+	if presentation == .Ok {
+		if sample, ok := presentation_host.hosted_surface_presenter_last_timing(&application.presenter); ok {
+			result.timing = sample
+			result.has_timing = true
+		}
+	}
+	return result
 }
 
 sdl3_webgpu_application_has_in_flight :: proc(application: ^SDL3_WebGPU_Application) -> bool {
 	return application != nil && application.initialized &&
 		presentation_host.hosted_surface_presenter_has_in_flight(&application.presenter)
+}
+
+@(private)
+sdl3_webgpu_application_request_close :: proc(
+	application: ^SDL3_WebGPU_Application,
+) -> SDL3_WebGPU_Application_Event_Result {
+	result, status := alicorn.hosted_runtime_request_close(&application.hosted)
+	if status != .Ok { return .Failure }
+	return .Close_Deferred if result == .Defer else .Close_Requested
 }
 
 // Route native input to the retained Runtime without exposing SDL types to it.
@@ -449,13 +803,26 @@ sdl3_webgpu_application_handle_event :: proc(
 		}
 		return .Wake
 	}
-	if event.type == .QUIT { return .Close_Requested }
+	if event.type == .QUIT { return sdl3_webgpu_application_request_close(application) }
 	if event.type == .WINDOW_CLOSE_REQUESTED && event.window.windowID == application.window_id {
-		return .Close_Requested
+		return sdl3_webgpu_application_request_close(application)
 	}
 	event_window := event_window_id_from_sdl(event)
 	if event_window != 0 && event_window != application.window_id { return .Ignored }
+	if application.diagnostics != nil {
+		#partial switch event.type {
+		case .KEY_DOWN, .TEXT_INPUT, .TEXT_EDITING, .MOUSE_MOTION, .MOUSE_BUTTON_DOWN, .MOUSE_BUTTON_UP, .MOUSE_WHEEL:
+			application.diagnostics.telemetry.events_received_sequence += 1
+			sdl3_diagnostics_note_input(application.diagnostics, u64(sdl3.GetTicksNS()))
+		case:
+		}
+	}
 	#partial switch event.type {
+	case .DROP_FILE:
+		if event.drop.data != nil {
+			_ = alicorn.hosted_runtime_file_drop(&application.hosted, string(event.drop.data))
+		}
+		return .Handled
 	case .WINDOW_RESIZED, .WINDOW_PIXEL_SIZE_CHANGED, .WINDOW_DISPLAY_SCALE_CHANGED:
 		result := sdl3_webgpu_application_resize(application)
 		if result != .Ok && result != .Suspended { return .Failure }
@@ -496,7 +863,17 @@ sdl3_webgpu_application_handle_event :: proc(
 		value, ok := pointer_event_from_sdl(event, application.modifiers, &application.pointer_buttons)
 		if !ok { return .Ignored }
 		value.timestamp_ns = u64(sdl3.GetTicksNS())
+		// macOS asks Cocoa's hit-test callback before queueing the matching SDL
+		// pointer event, so the event point can predate or trail the native drag.
+		// Reconcile it with the hit-test sample stream exactly as the SDL_GPU
+		// reference host does.
+		value = host_menus.native_menu_adapter_translate_pointer(&application.menu_adapter, value, event)
 		if status := sdl3_webgpu_application_pointer(application, value); status != .Ok { return .Failure }
+		if application.diagnostics != nil {
+			if rt, status := alicorn.hosted_runtime_borrow(&application.hosted); status == .Ok {
+				sdl3_diagnostics_note_pointer(application.diagnostics, rt, value, true, true)
+			}
+		}
 		if event.type == .MOUSE_BUTTON_DOWN && !sdl3_webgpu_application_sync_text_input(application) {
 			return .Failure
 		}
@@ -505,6 +882,11 @@ sdl3_webgpu_application_handle_event :: proc(
 		value := scroll_event_from_sdl(event.wheel, pointer_modifiers_from_sdl(application.modifiers))
 		_, status := alicorn.hosted_runtime_scroll(&application.hosted, value)
 		if status != .Ok { return .Failure }
+		return .Handled
+	case .WINDOW_HIT_TEST:
+		// A drag region consumed by Cocoa still queues this event. Drain the
+		// paired native sample so later client pointer events are not shifted.
+		host_menus.native_menu_adapter_note_window_hit_test(&application.menu_adapter)
 		return .Handled
 	case:
 		return .Ignored
@@ -536,7 +918,14 @@ sdl3_webgpu_application_destroy :: proc(application: ^SDL3_WebGPU_Application) -
 		sdl_accessibility.native_accessibility_host_destroy(&application.accessibility_host)
 		application.accessibility_ready = false
 	}
+	if application.dialog_bridge != nil {
+		sdl3_dialogs.native_dialog_bridge_shutdown(application.dialog_bridge)
+	}
+	host_menus.native_menu_adapter_destroy(&application.menu_adapter)
 	if alicorn.hosted_runtime_destroy(&application.hosted) != .Ok { return false }
+	if application.dialog_bridge != nil {
+		sdl3_dialogs.native_dialog_bridge_release(application.dialog_bridge)
+	}
 	application^ = {}
 	return true
 }

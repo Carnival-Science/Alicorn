@@ -1,11 +1,28 @@
 # SDL_GPU to WebGPU migration
 
-Status: Phase 0 remains open for lifecycle, baseline, and performance evidence;
-Phase 1 now includes shared Hosted_Runtime WebGPU surface coordinators for the
-browser and SDL3 native fixture, exercised against the shared compositor;
-Phase 2 has bounded solid-surface, text-sampling, icon, image, material,
-custom-surface caching, and mixed compositor slices. SDL_GPU remains the only
-complete application renderer and the visual reference.
+Status: Phases 0-3 are largely complete on Windows and the shared renderer runs
+on native D3D12/Vulkan and in Chromium-family browsers. Phase 4 — In progress.
+Windows Scratchpad interactive parity and performance validated; sustained
+dogfooding, Punks, physical macOS/Linux sessions and WebGPU application
+packaging remain outstanding. Phase 5 (SDL_GPU removal) has not started, and
+Phase 7 (release readiness) remains open, so SDL_GPU is still the default,
+complete production renderer and the visual reference. The browser host
+(Phase 6) is in progress: demand-driven scheduling, input/composition,
+asynchronous clipboard, a bounded DOM/ARIA projection, and capability errors
+exist; physical IME and assistive-technology validation, clipboard permission
+interaction, multi-browser coverage, and actual device-loss recovery remain
+open.
+
+Hosted-runtime parity for issue #211 is complete through the recorded Windows
+slices. Stage A covers native menus, integrated chrome, dialogs, close
+deferral, and a secondary window with its own services. Stage B restores
+backend-neutral diagnostics, application-owned roots, `on_after_frame`,
+paint-span and pointer parity, and the hosted service surface. Stage C covers
+live resize, tab drag previews, font and theme fidelity, motion scheduling, and
+high-DPI transitions. Stage D covers topmost re-entry, syntax spans across
+edits, file drag-and-drop, and live-resize latency. Browser menus, dialogs,
+close services, and physical macOS/Linux validation remain open; see
+[Stage A slice 4](#stage-a-slice-4-secondary-window-chrome-parity-and-physical-interaction-windows-2026-11-19).
 
 The 2026-11-19 merge of `origin/master` into this branch, every shared-surface
 change with its blast-radius verdict, and the integration regressions found and
@@ -14,8 +31,10 @@ fixed are recorded in
 
 ## Architecture inventory
 
-The current path is `application -> ui -> runtime retained state and ordered paint
-stream -> native/sdl_gpu -> SDL_GPU`. The architecture document explicitly keeps
+The current default path is `application -> ui -> runtime retained state and
+ordered paint stream -> native/sdl_gpu -> SDL_GPU`. The opt-in WebGPU path
+replaces the last two stages with `ui/webgpu` and `renderer/webgpu`, or with
+`host/web` on the browser target. The architecture document explicitly keeps
 runtime identity, reconciliation, layout, text shaping products, paint order,
 interaction, focus, semantics, and motion independent of the native renderer.
 
@@ -62,19 +81,23 @@ uploads remain renderer-specific.
 
 | Phase | Exit evidence | Status |
 | --- | --- | --- |
-| 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | In progress: the pre-change Windows SDL_GPU reference and D3D12 effects profile are recorded in `docs/validation/sdl-gpu-reference-windows-2026-11-15.md`; a Runtime-only Windows construction, phase, allocator high-water, and sampled process-working-set comparison is recorded in `docs/validation/runtime-construction-windows-2026-11-16.md`. Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes. Windows browser canvas resize now verifies retained-only redraw with a fresh output revision and no UI re-description. A 2026-11-19 live browser run on the committed fixture code passed the full core/compositor/effects/material readback matrix, including solid translation and both cropped captures, on an NVIDIA Turing adapter with `fallback=false`; it is recorded in `docs/validation/webgpu-feasibility-browser-windows-2026-11-19.md`. The Odin browser binding's eight rejected-Promise callback chains are corrected in generated build copies and covered by an exactly-once regression; this does not simulate device loss. A bounded browser loss-recovery/rebind state machine is implemented and compiled, but real driver/OS loss and recovery have not been triggered. Browser fallback/vendor metadata is exposed, but does not establish hardware acceleration. The shared presenter has opt-in bounded CPU stage timings; a Windows D3D12 retained-motion smoke produced 48 WebGPU frame samples and 37 SDL_GPU submissions from the same callback on an RTX 2080 SUPER. This validates multi-frame native execution, but timing boundaries differ and it is not a performance-parity result. The later matched-description matrix in `docs/validation/webgpu-vs-sdlgpu-workload-matrix-windows-2026-11-19.md` supersedes the earlier unmatched-motion caveat: both hosts receive the same retained-motion scene, describe once, and present retained frames. Physical Linux GPU/Wayland, genuine loss recovery, production-application comparison, GPU-execution timings, and visible-latency measurements remain open. A five-run same-workload Windows fixture comparison now records CPU build, encode, and submit stages for SDL_GPU D3D12 and WebGPU D3D12/Vulkan in `docs/validation/webgpu-vs-sdlgpu-perf-windows-2026-11-19.md`; it is not a production workload or a GPU-execution measurement. The matched matrix records 131 assertions (129 PASS, 2 FAIL) across identical, transform, color, localized layout, 1k/10k scroll, simultaneous multi-window, and settled idle workloads. Its two failures are retained-work findings on the SDL_GPU reference path: solid geometry is re-uploaded on every submitted frame, so identical descriptions and transform-only motion do not retain solid geometry, while WebGPU uploads once and then uses transform-only updates. Text, icon, image, and surface geometry are retained on both. Cross-platform CI now also builds and runs the fixture's full readback matrix on hosted macOS arm64/Metal (`Apple Paravirtual device`) and Linux x64/llvmpipe under Xvfb, plus headless Chromium/SwiftShader; those runs record adapter identity and counter parity, but use software or virtualized adapters and are not physical-GPU or performance evidence (see `docs/validation/webgpu-feasibility-ci-crossplatform-2026-11-19.md`). Physical-session runbooks are ready for maintainers: `docs/validation/hardware-validation-macos.md`, `docs/validation/hardware-validation-linux.md`, and `docs/validation/hardware-validation-windows-highdpi.md`; they define adapter-identity checks, Wayland/X11 and Retina/mixed-scale steps, and evidence templates, but no physical macOS or Linux run is recorded yet |
-| 1. Separation | renderer/host package boundary with unchanged runtime and app API | In progress: shared UI authoring and CPU preparation are SDL-independent; `renderer/webgpu/presenter.odin` consumes a borrowed finalized display list and encodes into caller-owned WebGPU frame objects, with queue submission and async completion owned by the host. `host/presentation/surface_presenter.odin` supplies a shared Hosted_Runtime-to-WebGPU-surface boundary. `host/web/application.odin` and `host/web/webgpu_run.odin` provide browser input/textarea, canvas sizing/DPR, visibility, async adapter/device bootstrap, bounded retry deadlines, and nonblocking teardown. Unexpected browser device loss now drains completion callbacks, discards the old presenter/device, and rebinds a new presenter to the existing Hosted_Runtime/input/accessibility objects. The feasibility fixture consumes the application coordinator. `host/sdl3/application.odin` composes the same Hosted_Runtime presenter with an SDL window identity, wake event, resize/DPI and visibility handling, focus changes, pointer/wheel, keyboard, text/IME routing, bounded retry deadlines, native AccessKit adapters on Windows/macOS, and nonblocking teardown. Native WebGPU `run` recovery preserves the Hosted_Runtime and now detaches old renderer handles and recreates primary and secondary SDL WebGPU surfaces before reattachment; the synthetic callback recovery smoke passes on Windows D3D12 and Vulkan, while genuine driver loss remains unverified. SDL3 pointer, modifier, wheel, focused-control, context-menu, application-shortcut, and text-editing key mapping plus native text/IME, clipboard, and AccessKit backend code lives in `host/sdl3` and its `host/sdl3/input` and WebGPU-agnostic `host/sdl3/clipboard` subpackages, with temporary SDL_GPU compatibility names retained. The browser fixture exercises resize, visibility, input, recovery, and async retirement; Windows SDL3 smoke exercises native retained presentation, pointer activation, synthetic key/text/IME routing, resize, and queue completion. A 2026-11-19 interactive pass on Windows D3D12 and Vulkan drove the native window with real `SendKeys`/`SendInput` and UIA: physical ASCII and Unicode text, Tab/Shift+Tab order, UIA Invoke on retained controls and the wake callback, and an auxiliary-window open/resize/close that preserved primary state; see `docs/validation/native-webgpu-ui-interactive-windows-2026-11-19.md`. IME composition, clipboard shortcuts, menus/titlebars, and screen-reader speech remain unvalidated. `paint_display_list_for_output` routes commands by disjoint retained root, preserves paint order and shared owner-zero overlays, and tags views with output identity and revision. Native D3D12/Vulkan fixture parity passes and the packages build for `js_wasm32`. SDL3 consumes posted `Hosted_Waker` notifications from its registered event; the browser records a posted wake and delivers it during the scheduled owner-thread step. Neither host polls wake state per frame. Native AccessKit domain actions are delivered through the application wake callback after the platform queue is drained. An opt-in native `alicorn:ui/webgpu` `run` and a browser-target `ui.run` path bootstrap WebGPU hosts while native `ui.run` remains on SDL_GPU pending acceptance. The renderer-neutral `UI_Host_Services` callback now delivers asynchronous-capable clipboard services through native `ui.run`, native WebGPU `run`, and browser `ui.run`; the browser adapter uses the permission-gated Clipboard API and bounded promise requests. Default native backend selection, physical IME composition and browser clipboard permission verification, native menus/titlebars and downstream application import migration remain outstanding; a one-child native WebGPU secondary-window service is implemented, with strict Windows Vulkan and D3D12 primary-plus-child presentation smoke passing and physical open/resize/close interaction now covered by the 2026-11-19 pass. The Windows native AccessKit code and tests now live under `host/sdl3/accessibility`; see the 2026-11-17 validation below. UIA tree and pattern behavior is now exercised programmatically; Narrator/NVDA speech remains unverified |
-| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | In progress: local Windows Vulkan and D3D12 fixtures exercise per-resource custom-surface caching, budget pressure, in-flight protection, instance transforms, readback, and resize. One shared compositor preserves interleaved paint order; text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, clipping, waveform samples, and cropped mixed-renderer readback pass Windows D3D12 and browser WebGPU. Shared CPU backdrop planning/meshes feed renderer-owned WebGPU prefix capture, filtering, and in-order composition for up to four markers within one aggregate 48 MiB tracked mesh+texture allocation budget. Two overlapping markers pass pixel readback on Windows D3D12/Vulkan and browser WebGPU; the later marker's capture includes the earlier marker's composed result. D3D12 also verifies unchanged-prefix reuse, changed-prefix invalidation, resized-target retirement behind the prior queue serial, and exact ordinary-paint parity when a valid effect exceeds budget. Six shared WGSL sources are compile-time loaded for native and `js_wasm32` builds. The rounded raised relief surface under increased contrast/reduced transparency now passes browser pixel readback as well as Windows D3D12/Vulkan; browser run also verified live canvas resize, output acknowledgement, and return to demand-driven idle. Full theme/accessibility combinations, application host presentation, and broader cross-platform GPU validation remain open |
-| 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | In progress: image, custom-geometry, and backdrop resources have bounded asynchronous retirement and completion-driven release tests; async readback is exercised. Same-device compositor teardown/rebuild reproduces every RGBA pixel on Windows D3D12 and Vulkan from retained Runtime products. Browser recovery drains queue callbacks, recreates adapter/device/presenter with one immediate attempt plus three bounded retries, and requests retained repaint without UI re-description. Native SDL3 recovery now drains callbacks, preserves Hosted_Runtime/input state, abandons old device-bound renderer handles, recreates primary and secondary SDL surfaces, reacquires adapter/device, and reattaches both presenters. The synthetic `.Unknown` callback recovery smoke passes for primary and primary-plus-child windows on Windows D3D12 and Vulkan; see `docs/validation/webgpu-native-synthetic-recovery-windows-2026-11-17.md`. This exposed and fixed stale surface texture reuse and a lost-device resource-release panic. Renderer/WebGPU (6), presentation-host (6), and SDL3 host (11) tests pass; a shared reason policy routes `.Destroyed` and `.CallbackCancelled` away from automatic recovery while unexpected reasons use bounded retries. The full Windows `tools/check.ps1` also passes after fixing its SDL3 test invocation to use the pinned AccessKit compiler arguments. The fixture strict child smoke continues to pass on Windows Vulkan and D3D12. This is callback-path evidence only: it does not trigger actual driver/OS loss or validate real callback ordering. Physical keyboard/Unicode input, UIA activation, and auxiliary-window resize/close are now exercised on Windows D3D12 and Vulkan; see `docs/validation/native-webgpu-ui-interactive-windows-2026-11-19.md`. IME composition, clipboard shortcuts, menus/titlebars, genuine loss recovery, and device-loss resource behavior remain open. Browser callback-ordering research and the generated Odin JS correction are recorded in `dependencies/webgpu-toolchain.md`. Intentional `DeviceDestroy` callbacks remain separate and do not count as driver-loss evidence. The induced-backend-removal rung is now covered on Windows D3D12: a test-only wgpu-native export calls `ID3D12Device5::RemoveDevice()` on the live device, wgpu's DeviceLost callback fires with `.Unknown`, and the same recovery path recreates adapter/device/surfaces and presents a replacement frame in 122–164 ms; see `docs/validation/webgpu-native-backend-removal-windows-2026-11-19.md`. This is harness-induced, single-backend evidence, still not OS/driver-initiated; Windows TDR and physical macOS/Linux loss remain open |
-| 4. Desktop acceptance | full regression suite, pixel comparisons, performance, Scratchpad/Punks/AliKit dogfood, and packaging/launch evidence from an actual WebGPU application | Not started: the physical-session runbooks are in place — `docs/validation/hardware-validation-macos.md` (physical Apple Silicon, Metal, Retina), `docs/validation/hardware-validation-linux.md` (physical GPU, Wayland and X11, fractional scaling), and `docs/validation/hardware-validation-windows-highdpi.md` (per-monitor DPI and mixed-scale drags). Each requires a maintainer-run dated record; none has been recorded yet. The Windows induced-removal result in `docs/validation/webgpu-native-backend-removal-windows-2026-11-19.md` covers rung 3 of the loss ladder but is not desktop acceptance. The macOS `tools/build_native_release.sh` static-wgpu check packages 01_hello, an SDL_GPU consumer that does not import wgpu; it only proves the existing packaging contract (static SDL3, no leaked rpath) has not regressed. Desktop acceptance must additionally package and launch an actual WebGPU application with static wgpu-native plus AccessKit, and record that evidence |
+| 0. Feasibility and baseline | Windows SDL_GPU reference captured; same Odin/WGPU code builds and runs native and browser; solid/clipped/blended/rounded/image/Runa text/waveform/settled-motion, partial texture and buffer uploads, uniform-buffer layout, padded async readback, and queue-completion callbacks demonstrated; binding/lifecycle limitations recorded | Complete for the recorded Windows/browser scope: the pre-change Windows SDL_GPU reference and D3D12 effects profile are recorded in `docs/validation/sdl-gpu-reference-windows-2026-11-15.md`; a Runtime-only Windows construction, phase, allocator high-water, and sampled process-working-set comparison is recorded in `docs/validation/runtime-construction-windows-2026-11-16.md`. Windows D3D12 and hosted macOS arm64 Metal smoke/callback evidence pass; Linux x64 X11/lavapipe native smoke passes; `js_wasm32` builds and actual browser WebGPU offscreen/readback passes. Windows browser canvas resize now verifies retained-only redraw with a fresh output revision and no UI re-description. A 2026-11-19 live browser run on the committed fixture code passed the full core/compositor/effects/material readback matrix, including solid translation and both cropped captures, on an NVIDIA Turing adapter with `fallback=false`; it is recorded in `docs/validation/webgpu-feasibility-browser-windows-2026-11-19.md`. The Odin browser binding's eight rejected-Promise callback chains are corrected in generated build copies and covered by an exactly-once regression; this does not simulate device loss. A bounded browser loss-recovery/rebind state machine is implemented and compiled, but real driver/OS loss and recovery have not been triggered. Browser fallback/vendor metadata is exposed, but does not establish hardware acceleration. The shared presenter has opt-in bounded CPU stage timings; a Windows D3D12 retained-motion smoke produced 48 WebGPU frame samples and 37 SDL_GPU submissions from the same callback on an RTX 2080 SUPER. This validates multi-frame native execution, but timing boundaries differ and it is not a performance-parity result. The later matched-description matrix in `docs/validation/webgpu-vs-sdlgpu-workload-matrix-windows-2026-11-19.md` supersedes the earlier unmatched-motion caveat: both hosts receive the same retained-motion scene, describe once, and present retained frames. Physical Linux GPU/Wayland, genuine loss recovery, production-application comparison, GPU-execution timings, and visible-latency measurements remain open. A five-run same-workload Windows fixture comparison now records CPU build, encode, and submit stages for SDL_GPU D3D12 and WebGPU D3D12/Vulkan in `docs/validation/webgpu-vs-sdlgpu-perf-windows-2026-11-19.md`; it is not a production workload or a GPU-execution measurement. The matched matrix records 131 assertions (129 PASS, 2 FAIL) across identical, transform, color, localized layout, 1k/10k scroll, simultaneous multi-window, and settled idle workloads. Its two failures are retained-work findings on the SDL_GPU reference path: solid geometry is re-uploaded on every submitted frame, so identical descriptions and transform-only motion do not retain solid geometry, while WebGPU uploads once and then uses transform-only updates. Text, icon, image, and surface geometry are retained on both. Cross-platform CI now also builds and runs the fixture's full readback matrix on hosted macOS arm64/Metal (`Apple Paravirtual device`) and Linux x64/llvmpipe under Xvfb, plus headless Chromium/SwiftShader; those runs record adapter identity and counter parity, but use software or virtualized adapters and are not physical-GPU or performance evidence (see `docs/validation/webgpu-feasibility-ci-crossplatform-2026-11-19.md`). Physical-session runbooks are ready for maintainers: `docs/validation/hardware-validation-macos.md`, `docs/validation/hardware-validation-linux.md`, and `docs/validation/hardware-validation-windows-highdpi.md`; they define adapter-identity checks, Wayland/X11 and Retina/mixed-scale steps, and evidence templates, but no physical macOS or Linux run is recorded yet |
+| 1. Separation | renderer/host package boundary with unchanged runtime and app API | Largely complete on Windows and in Chromium-family browsers: shared UI authoring and CPU preparation are SDL-independent; `renderer/webgpu/presenter.odin` consumes a borrowed finalized display list and encodes into caller-owned WebGPU frame objects, with queue submission and async completion owned by the host. `host/presentation/surface_presenter.odin` supplies a shared Hosted_Runtime-to-WebGPU-surface boundary. `host/web/application.odin` and `host/web/webgpu_run.odin` provide browser input/textarea, canvas sizing/DPR, visibility, async adapter/device bootstrap, bounded retry deadlines, and nonblocking teardown. Unexpected browser device loss now drains completion callbacks, discards the old presenter/device, and rebinds a new presenter to the existing Hosted_Runtime/input/accessibility objects. The feasibility fixture consumes the application coordinator. `host/sdl3/application.odin` composes the same Hosted_Runtime presenter with an SDL window identity, wake event, resize/DPI and visibility handling, focus changes, pointer/wheel, keyboard, text/IME routing, bounded retry deadlines, native AccessKit adapters on Windows/macOS, and nonblocking teardown. Native WebGPU `run` recovery preserves the Hosted_Runtime and now detaches old renderer handles and recreates primary and secondary SDL WebGPU surfaces before reattachment; the synthetic callback recovery smoke passes on Windows D3D12 and Vulkan, while genuine driver loss remains unverified. SDL3 pointer, modifier, wheel, focused-control, context-menu, application-shortcut, and text-editing key mapping plus native text/IME, clipboard, and AccessKit backend code lives in `host/sdl3` and its `host/sdl3/input` and WebGPU-agnostic `host/sdl3/clipboard` subpackages, with temporary SDL_GPU compatibility names retained. The browser fixture exercises resize, visibility, input, recovery, and async retirement; Windows SDL3 smoke exercises native retained presentation, pointer activation, synthetic key/text/IME routing, resize, and queue completion. A 2026-11-19 interactive pass on Windows D3D12 and Vulkan drove the native window with real `SendKeys`/`SendInput` and UIA: physical ASCII and Unicode text, Tab/Shift+Tab order, UIA Invoke on retained controls and the wake callback, and an auxiliary-window open/resize/close that preserved primary state; see `docs/validation/native-webgpu-ui-interactive-windows-2026-11-19.md`. IME composition, clipboard shortcuts, and screen-reader speech remain
+unvalidated; menus and titlebars are now covered by the Stage A slices. `paint_display_list_for_output` routes commands by disjoint retained root, preserves paint order and shared owner-zero overlays, and tags views with output identity and revision. Native D3D12/Vulkan fixture parity passes and the packages build for `js_wasm32`. SDL3 consumes posted `Hosted_Waker` notifications from its registered event; the browser records a posted wake and delivers it during the scheduled owner-thread step. Neither host polls wake state per frame. Native AccessKit domain actions are delivered through the application wake callback after the platform queue is drained. An opt-in native `alicorn:ui/webgpu` `run` and a browser-target `ui.run` path bootstrap WebGPU hosts while native `ui.run` remains on SDL_GPU pending acceptance. The renderer-neutral `UI_Host_Services` callback now delivers asynchronous-capable clipboard services through native `ui.run`, native WebGPU `run`, and browser `ui.run`; the browser adapter uses the permission-gated Clipboard API and bounded promise requests. Default native backend selection, physical IME composition and browser clipboard permission verification, and downstream application import migration remain outstanding; native titlebar chrome now has a hosted SDL3 port (slice 3: Windows integrated band tested locally, macOS full-size-content compile-checked); native menus now share `runtime/menus.odin` and the `host/menus` service/adapter between the SDL_GPU and SDL3/WebGPU hosts (Windows Win32 menu bar tested locally, macOS NSMenu compile-checked, browser menus still TODO); a one-child native WebGPU secondary-window service is implemented, with strict Windows Vulkan and D3D12 primary-plus-child presentation smoke passing and physical open/resize/close interaction now covered by the 2026-11-19 pass. The Windows native AccessKit code and tests now live under `host/sdl3/accessibility`; see the 2026-11-17 validation below. UIA tree and pattern behavior is now exercised programmatically; Narrator/NVDA speech remains unverified |
+| 2. Core parity | solid, clipping, text, image, icon, materials and custom surfaces pass native/browser tests | Largely complete for the validated paint subset: local Windows Vulkan and D3D12 fixtures exercise per-resource custom-surface caching, budget pressure, in-flight protection, instance transforms, readback, and resize. One shared compositor preserves interleaved paint order; text, icon, image, and resource-local custom geometry reuse are asserted. Semantic gradients, relief, clipping, waveform samples, and cropped mixed-renderer readback pass Windows D3D12 and browser WebGPU. Shared CPU backdrop planning/meshes feed renderer-owned WebGPU prefix capture, filtering, and in-order composition for up to four markers within one aggregate 48 MiB tracked mesh+texture allocation budget. Two overlapping markers pass pixel readback on Windows D3D12/Vulkan and browser WebGPU; the later marker's capture includes the earlier marker's composed result. D3D12 also verifies unchanged-prefix reuse, changed-prefix invalidation, resized-target retirement behind the prior queue serial, and exact ordinary-paint parity when a valid effect exceeds budget. Six shared WGSL sources are compile-time loaded for native and `js_wasm32` builds. The rounded raised relief surface under increased contrast/reduced transparency now passes browser pixel readback as well as Windows D3D12/Vulkan; browser run also verified live canvas resize, output acknowledgement, and return to demand-driven idle. Full theme/accessibility combinations, application host presentation, and broader cross-platform GPU validation remain open |
+| 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | Largely complete; genuine driver/OS loss remains open: image, custom-geometry, and backdrop resources have bounded asynchronous retirement and completion-driven release tests; async readback is exercised. Same-device compositor teardown/rebuild reproduces every RGBA pixel on Windows D3D12 and Vulkan from retained Runtime products. Browser recovery drains queue callbacks, recreates adapter/device/presenter with one immediate attempt plus three bounded retries, and requests retained repaint without UI re-description. Native SDL3 recovery now drains callbacks, preserves Hosted_Runtime/input state, abandons old device-bound renderer handles, recreates primary and secondary SDL surfaces, reacquires adapter/device, and reattaches both presenters. The synthetic `.Unknown` callback recovery smoke passes for primary and primary-plus-child windows on Windows D3D12 and Vulkan; see `docs/validation/webgpu-native-synthetic-recovery-windows-2026-11-17.md`. This exposed and fixed stale surface texture reuse and a lost-device resource-release panic. Renderer/WebGPU (6), presentation-host (6), and SDL3 host (11) tests pass; a shared reason policy routes `.Destroyed` and `.CallbackCancelled` away from automatic recovery while unexpected reasons use bounded retries. The full Windows `tools/check.ps1` also passes after fixing its SDL3 test invocation to use the pinned AccessKit compiler arguments. The fixture strict child smoke continues to pass on Windows Vulkan and D3D12. This is callback-path evidence only: it does not trigger actual driver/OS loss or validate real callback ordering. Physical keyboard/Unicode input, UIA activation, and auxiliary-window resize/close are now exercised on Windows D3D12 and Vulkan; see `docs/validation/native-webgpu-ui-interactive-windows-2026-11-19.md`. IME composition, clipboard shortcuts, genuine loss recovery, and
+device-loss resource behavior remain open; menus and titlebars moved to the
+Stage A slices. Browser callback-ordering research and the generated Odin JS correction are recorded in `dependencies/webgpu-toolchain.md`. Intentional `DeviceDestroy` callbacks remain separate and do not count as driver-loss evidence. The induced-backend-removal rung is now covered on Windows D3D12: a test-only wgpu-native export calls `ID3D12Device5::RemoveDevice()` on the live device, wgpu's DeviceLost callback fires with `.Unknown`, and the same recovery path recreates adapter/device/surfaces and presents a replacement frame in 122–164 ms; see `docs/validation/webgpu-native-backend-removal-windows-2026-11-19.md`. This is harness-induced, single-backend evidence, still not OS/driver-initiated; Windows TDR and physical macOS/Linux loss remain open |
+| 4. Desktop acceptance | full regression suite, pixel comparisons, performance, Scratchpad/Punks/AliKit dogfood, and packaging/launch evidence from an actual WebGPU application | Phase 4 — In progress. Windows Scratchpad interactive parity and performance validated; sustained dogfooding, Punks, physical macOS/Linux sessions and WebGPU application packaging remain outstanding. The physical-session runbooks are in place — `docs/validation/hardware-validation-macos.md` (physical Apple Silicon, Metal, Retina), `docs/validation/hardware-validation-linux.md` (physical GPU, Wayland and X11, fractional scaling), and `docs/validation/hardware-validation-windows-highdpi.md` (per-monitor DPI and mixed-scale drags). Each requires a maintainer-run dated record; none has been recorded yet. The Windows induced-removal result in `docs/validation/webgpu-native-backend-removal-windows-2026-11-19.md` covers rung 3 of the loss ladder but is not desktop acceptance. The macOS `tools/build_native_release.sh` static-wgpu check packages 01_hello, an SDL_GPU consumer that does not import wgpu; it only proves the existing packaging contract (static SDL3, no leaked rpath) has not regressed. Desktop acceptance must additionally package and launch an actual WebGPU application with static wgpu-native plus AccessKit, and record that evidence |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
 | 6. Browser host | interaction, accessibility, text/IME, lifecycle and demand-driven scheduling complete | In progress: reusable demand-driven scheduling, host-side key mapping, DOM input routing, optional textarea-backed UTF-8/IME input, Hosted_Runtime surface presentation, and the reusable `Browser_Application` coordinator live in `host/web/`. Example 17's `ui.run` consumer builds for `js_wasm32`; its renderer-neutral host services now include an asynchronous Clipboard API adapter with explicit unsupported/permission/error results, an eight-request bound, a 1 MiB transfer bound, and shutdown cancellation. JS tests cover Unicode transfer, permission denial, unsupported APIs, size limits, and late promise settlement. A posted `Hosted_Waker` notification schedules one demand-driven frame and is delivered to `on_wake` on that frame's owner thread; no per-frame wake polling is used. Queued browser accessibility actions invoke `on_wake` on the owner thread, and Example 17 applies textbox `Set_Value` to its app-owned buffer; fresh browser validation confirms the semantic value updates. The clipboard adapter has not yet been exercised in a physical browser. `host/web/webgpu_run.odin` owns async browser adapter/device/surface setup and bounded recovery after unexpected loss; JS tests cover callback-driven retries without polling. Actual device loss/recovery is not physically validated. Headless tests cover the bounded DOM/ARIA model, Unicode selection, focus recovery, and secure-context/WebGPU capability errors. Physical IME and assistive-technology validation, browser clipboard permission interaction, actual device-loss recovery, and broader application dogfooding remain outstanding. A headless Chromium/SwiftShader CI job now executes the fixture's browser readback matrix from the `js_wasm32` artifact; Firefox and Safari remain untested, so multi-browser coverage is still open (see `docs/validation/webgpu-feasibility-ci-crossplatform-2026-11-19.md`) |
 | 7. Release readiness | docs, reproducible setup, CI and substantive shared-renderer web example | Not started |
 
-The Phase 0 evidence authorizes bounded, testable renderer slices; it does not
-authorize a wholesale renderer replacement. SDL_GPU remains the complete
-application renderer and the parity reference while individual WebGPU paths
-are brought up.
+Phases 0-3 authorize bounded, testable renderer slices and now cover the hosted
+parity work recorded below; they do not authorize a wholesale renderer
+replacement. Desktop acceptance (Phase 4) is in progress, and deletion of the
+SDL_GPU path (Phase 5) has not started, so SDL_GPU remains the default
+application renderer and the parity reference.
 
 ## Protected renderer invariants
 
@@ -257,7 +280,8 @@ package-boundary build passed, and the D3D12 effects validation repeated all
 nine pixel cases with maximum error 1 RGBA8 level. Its retained custom-geometry
 probe still refreshes on payload revision change, and 100 unchanged attempts
 add zero passes, allocations or submissions. This enables shared future
-WebGPU invalidation policy; GPU capture and filtering are not ported yet.
+WebGPU invalidation policy. (The retained capture and filtering path has since
+landed in the WebGPU compositor; see the Phase 2 backdrop slices below.)
 
 ## Phase 0 feasibility results (Windows, 2026-11-15)
 
@@ -1876,7 +1900,9 @@ The feasibility browser host now uses this coordinator instead of maintaining
 its own parallel lifecycle wiring. Its Runtime callbacks and retained content
 are unchanged. This is a reusable browser host boundary; it does not yet
 provide production `ui.run` or solve the lifetime contract for application
-state when a browser entrypoint returns asynchronously.
+state when a browser entrypoint returns asynchronously. (The later browser
+`ui.run` host and example 17 address the entrypoint; application state must
+still outlive the host.)
 
 Validation with `C:\odin\odin.exe` (`dev-2026-11-nightly:08539cd`) on Windows:
 
@@ -3109,3 +3135,2105 @@ Renderer selection is now opt-in at build time as well as at runtime:
 The full procedure, import-graph audit, command output, and verification
 matrix are in
 [the corrective-pass record](validation/webgpu-opt-in-corrective-pass-2026-11-19.md).
+
+### Stage A slice 1: hosted close deferral and file dialogs (Windows, 2026-11-19)
+
+Scratchpad's WebGPU dogfood exposed three plumbing gaps between
+`native/sdl_gpu` and the hosted stack. This slice closes them without changing
+default behavior:
+
+- `Hosted_Runtime_Config` now carries `on_menu_command`,
+  `on_close_requested`, and `on_dialog` alongside the existing drag, scroll,
+  text-input, and scheduled-wake callbacks. `Hosted_Run_State` and
+  `run_hosted_config` forward all of them, and `ui/webgpu.run` (plus `ui.run` for
+  parity) accepts the same optional named parameters. Callback shapes match the
+  native `Application` so Scratchpad handlers can move 1:1.
+- `hosted_runtime_request_close` applies `.Allow`/`.Defer` semantics.
+  `Hosted_Host_Services.quit` is the hosted equivalent of
+  `Application_Services.quit`; `hosted_quit_request` completes a deferred close.
+  The SDL3/WebGPU event host returns the new `Close_Deferred` result instead of
+  `Close_Requested` and keeps the window alive. A missing callback still closes
+  immediately.
+- File dialogs are a `Hosted_Host_Services.dialogs` service.
+  `hosted_dialog_show_file` copies a `File_Dialog_Request`; the host delivers a
+  `File_Dialog_Result` through `hosted_runtime_dialog` and `on_dialog`. The
+  request/result vocabulary (`Dialog_ID`, `File_Dialog_Kind`, `Dialog_Filter`,
+  `Dialog_Status`) lives in `runtime/dialogs.odin`, and the headless fake
+  backend moved there too.
+- The SDL3 dialog bridge moved from `native/sdl_gpu/dialogs.odin` to the
+  renderer-agnostic `host/sdl3/dialogs` package. The native host keeps thin
+  aliases plus its breadcrumb adapter; `host/sdl3` constructs the same bridge per
+  window (primary and secondary). There is one `SDL_ShowFileDialogWithProperties`
+  implementation, not two. The browser host leaves `dialogs` and `quit` empty in
+  this slice; the TODO is recorded in `ui/run_webgpu_browser.odin`.
+- `examples/16_native_webgpu_ui` now exposes an "Open file dialog" button and
+  reports `Hosted dialogs: available`; `--defer-close` exercises the deferred
+  close handshake without changing the UIA validator's default close path.
+
+Validation on Windows x64 (NVIDIA RTX 2080 SUPER, D3D12):
+
+- `odin test runtime` passed all 388 tests (new close/menu/dialog/scroll-capture
+  and fake-dialog coverage); `ui` passed 50, `host/sdl3` 2,
+  `host/sdl3/dialogs` 5, `host/web` 14, `host/presentation` 6, `testui` 13,
+  `native/sdl_gpu` 169, and `native/scroll_capture_tests` 6.
+- `examples/15_host_owned_sdl_gpu` and `examples/16_native_webgpu_ui` built;
+  `16_native_webgpu_ui --backend=d3d12 --smoke` exited 0. The `js_wasm32`
+  package-boundary build passed.
+- The native dialog fake fixture built and printed PASS; the SDL_GPU
+  text-input contract and restoration suite passed.
+
+Slices 2 (native menus) and 3 (titlebar chrome) can now use
+`Hosted_Runtime_Config.on_menu_command` and `hosted_runtime_menu_command` for
+command routing, and `Hosted_Host_Services.quit` for close completion. The
+remaining menu/chrome gap is host-side: menu descriptions, accelerators, and
+native chrome metrics/layout are still not part of `Hosted_Host_Services`.
+(Both gaps closed by slices 2 and 3 below.)
+
+### Stage A slice 2: shared native menus (Windows, 2026-11-19)
+
+Native menus now use one renderer-agnostic implementation for both SDL3 hosts:
+
+- The menu model moved to `runtime/menus.odin`: `Menu`, `Menu_Item`,
+  `Menu_Item_Kind`, `Menu_Shortcut`, `Menu_Modifier(s)`, and
+  `Menu_Presentation`, plus the shared accelerator matcher, enabled gate, and
+  shortcut-label formatter. `native/sdl_gpu`'s `Application_Menu*` vocabulary
+  is now a set of aliases, and its matching/dispatch/label code delegates to
+  the runtime instead of keeping a second copy.
+- `host/menus` owns the per-surface `Menu_Service` and the SDL3 platform
+  adapters. Windows builds an HMENU tree and attaches it to the SDL window with
+  `SetMenu` (system decorations), refreshing borrowed enabled/checked state on
+  `WM_INITMENUPOPUP` and queueing `WM_COMMAND` selections for safe-point
+  dispatch. macOS builds an NSMenu main menu and queues selected tags. Linux
+  keeps descriptions as semantic accelerator metadata. There is one adapter
+  implementation, not one per host.
+- `Hosted_Runtime_Config` gained `menus` and `menu_presentation`; the runtime
+  copies the borrowed slice and `hosted_runtime_menu_command` now applies the
+  shared enabled gate before its `.Native_Command` cause. `Hosted_Run_State`,
+  `ui.run`, `ui/webgpu.run`, and the browser `ui.run` expose matching
+  parameters. `SDL3_WebGPU_Application` matches accelerators after overlay-key
+  handling and before application key/text routing and skips matching during
+  IME composition, in the same order as the native host.
+- Accelerator semantics are preserved exactly: a printable key compared
+  case-insensitively, an exact modifier set, Primary = Ctrl/Command and
+  Super = Win/Control, disabled commands never match, repeat transitions are
+  consumed without a second dispatch, and nested submenu items match
+  depth-first.
+- `examples/16_native_webgpu_ui` now supplies a Scratchpad-shaped menu tree
+  (File/Edit/View/Help, a nested recent submenu, separators, checked and
+  disabled commands, and one direct top-level command) and a `--menu-smoke`
+  mode. It synthesizes Ctrl+X, Ctrl+V (disabled), Ctrl+S (disabled),
+  Ctrl+Shift+P, and Ctrl+Y key events and verifies the dispatched sequence. The
+  same smoke passes on the SDL_GPU reference path.
+
+Validation on Windows x64 (NVIDIA RTX 2080 SUPER, D3D12):
+
+- `odin test runtime` passed all 389 tests (including hosted borrowed-state
+  menu gating); `ui` 50, `host/sdl3` 2, `host/sdl3/input` 8,
+  `host/sdl3/clipboard` 3, `host/sdl3/dialogs` 5, new `host/menus` 6,
+  `host/web` 14, `host/presentation` 6, `testui` 13, `theme` 37,
+  `native/sdl_gpu` 169, and `renderer/cpu` 22.
+- `examples/15_host_owned_sdl_gpu` and `examples/16_native_webgpu_ui` built.
+  `16_native_webgpu_ui --smoke --backend=d3d12` exited 0, and
+  `--menu-smoke --smoke --smoke-hold-ms=1200 --backend=d3d12` printed
+  `menu_smoke PASS commands 3`. The same menu smoke printed PASS through
+  `--backend=sdl-gpu`, proving identical command routing on both hosts.
+- The `js_wasm32` package-boundary build passed. `host/menus` also type-checks
+  for `darwin_arm64` and `linux_amd64`; macOS NSMenu behavior is compile-check
+  only (no local Mac), and Windows adapter behavior is covered by a local test
+  that attaches an HMENU to a hidden SDL window and verifies borrowed-state
+  refresh and selection queueing.
+- The existing `tools/validate_native_webgpu_ui.ps1` D3D12 interactive pass
+  still reports `failures=0` with the native menu bar attached, including the
+  auxiliary-window lifecycle and UIA activation checks.
+
+Slice 3 (titlebar chrome) still needs: hosted window-decoration policy
+(`Integrated_Title_Bar`/`Content_Title_Bar`) and chrome metrics/layout in
+`Hosted_Runtime_Config`; Windows menu-label painting and hit testing in the
+app-authored titlebar band (the current hosted adapter is a system menu bar and
+treats `Hidden` as a no-op, matching native system decorations); macOS
+full-size-content titlebar coordination; and a shared decision for which host
+owns the menu label rectangles inside the chrome.
+
+### Stage A slice 3: integrated titlebar chrome (Windows, 2026-11-20)
+
+The hosted SDL3/WebGPU host now presents the same integrated titlebar contract
+as the SDL_GPU reference:
+
+- `Window_Decoration_Mode`, `Window_Chrome_Metrics`,
+  `Window_Chrome_Region(_Kind)`, `WINDOW_CHROME_REGION_CAPACITY`,
+  `Window_Chrome_Layout`, and `Window_Chrome_Appearance` moved to
+  `runtime/hosted_chrome.odin`. `native/sdl_gpu`'s `Application_*` names are
+  aliases, so an application maps its chrome callbacks without adaptation.
+  `Hosted_Runtime_Config`/`Hosted_Run_State` and all three `ui.run`
+  implementations expose `window_decorations`, `window_chrome_height`,
+  `window_chrome_metrics`, `window_chrome_layout`, and
+  `window_chrome_appearance`. The browser records policy only.
+- `Hosted_Runtime` owns `content_inset_top`. Application descriptions receive
+  the inset-reduced viewport; logical presentation scale still uses full window
+  logical height; pointer and wheel coordinates subtract the inset once and
+  input over host-owned chrome is withheld (a captured interaction stays
+  clamped until cancellation); the presenter translates app paint below the
+  band and appends host chrome paint in native draw order. Host-shaped text
+  runs use `Text_Run_Source.Host` and resolve through
+  `runtime_host_text_run_set/resolve/release`.
+- `host/menus` converges the Win32 HMENU builder and the integrated chrome into
+  one adapter/state/subclass. The integrated adapter paints the title, menu
+  labels, hover/open/pressed feedback, and caption glyph masks; extends the DWM
+  frame; handles `WM_NCCALCSIZE`, `WM_NCHITTEST`, `WM_NCACTIVATE`,
+  `WM_DPICHANGED`, `WM_SIZE`, and theme messages; maps finalized app regions
+  (splitter hit bounds included) to `HTCLIENT`/`HTCAPTION`; publishes measured
+  metrics and inset into the hosted Runtime; and routes app declarations back
+  to the Runtime so interactive regions still receive ordinary client input.
+  `Window_Chrome_Appearance` resolves to derived band colors and a best-effort
+  DWM dark-frame attribute; the native SDL_GPU host itself only paints colors.
+- macOS `Content_Title_Bar` gains a compile-checked full-size-content port
+  (style-mask coordination, traffic-light metrics, region hit testing, SDL
+  hit-test callback). It has not been run on a physical Mac in this slice.
+- `examples/16_native_webgpu_ui --titlebar-smoke` declares a connected tab bar
+  plus an explicit window-drag region in the authored header. The same mode
+  passes on `--backend=d3d12` and `--backend=sdl-gpu`, reporting delivered
+  metrics, declared layouts, usable `content_start_x..content_end_x`, and
+  pointer delivery. `host/menus` adds a hidden-window regression that sends
+  real `WM_NCHITTEST` messages: an Interactive app region returns `HTCLIENT`, a
+  Window_Drag region returns `HTCAPTION`, body pixels stay `HTCLIENT`, the
+  app-owned header removes the content inset, host-owned chrome reserves it,
+  and chrome paint includes shaped label text.
+
+Residual slice-4 work: secondary-window chrome parity (the Windows adapter is
+prepared per window, but the fixture and metrics coverage are primary-only),
+physical Windows drag/maximize/Snap/high-contrast interaction, physical macOS
+validation, and Scratchpad's consumption of the hosted chrome API.
+
+Validation on Windows x64 (NVIDIA RTX 2080 SUPER, D3D12, 2026-11-20):
+
+- `tools/test.ps1 -Odin C:\odin\odin.exe` passed: AccessKit 8, runtime 392,
+  host/sdl3 2, host/sdl3/input 8, host/sdl3/clipboard 3, host/sdl3/dialogs 5,
+  host/menus 8, host/web 14, ui 50, testui 13, theme 37, renderer/cpu 22,
+  native/sdl_gpu 169, native/scroll_capture_tests 6, plus the foundation,
+  text-input contract, restoration, and theme CLI checks. The `js_wasm32`
+  package-boundary build passed.
+- `examples/15_host_owned_sdl_gpu` and `examples/16_native_webgpu_ui` built.
+  `16_native_webgpu_ui` ran `--smoke`, `--child-smoke`, `--menu-smoke`, and the
+  new `--titlebar-smoke` to exit 0 on both `--backend=d3d12` and
+  `--backend=sdl-gpu`. The titlebar smoke reported one delivered metrics
+  snapshot, declared layouts, `header_h=32`, usable span `269..575` with visible
+  menu labels, and a PASS on both hosts.
+- `tools/validate_native_webgpu_ui.ps1 -Backend d3d12` reported
+  `failures=0`, including the UIA tree, text field patterns, physical text
+  input, Tab order, UIA Invoke, wake delivery, auxiliary open/resize/close, and
+  primary-state preservation. Artifacts are under `out/uia-chrome-slice3/`.
+- `host/menus` type-checks for `darwin_arm64` and `linux_amd64`, and
+  `native/sdl_gpu` type-checks for `darwin_arm64`. The full `host/sdl3` WebGPU
+  package could not be type-checked for macOS locally because this Odin install
+  does not include the macOS wgpu-native archive. The macOS full-size-content
+  path is therefore compile-only: no physical Mac ran this slice, so
+  traffic-light placement, drag regions, and fullscreen transitions remain
+  unverified.
+
+### Stage A slice 4: secondary-window chrome parity and physical interaction (Windows, 2026-11-19)
+
+Stage A is complete on native SDL3. The hosted stack now covers native menus,
+integrated chrome, dialogs, close deferral, and one secondary window with its
+own chrome and services; what remains is browser-side and physical-platform
+validation.
+
+- `ui/run_native` now bridges `Hosted_Window_Description` onto the reference
+  `Application_Window_Description`. Before this slice, `ui.run` never published
+  `UI_Host_Services.windows` on the SDL_GPU path, so a hosted child request
+  returned `false` silently and the old `--child-smoke` could pass without a
+  child. The bridge preserves menus, chrome callbacks (routed with
+  `Hosted_Runtime_Config.state`), dialogs, close deferral, and the window
+  service. It cannot manufacture a `Hosted_Waker`, so a child `on_start` gets an
+  empty waker on the reference path; `ui/webgpu.run` supplies the real one.
+- A hosted child owns its own `Hosted_Runtime`, content inset, chrome
+  metrics/layout/regions/paint, menu service and accelerator gate, dialog
+  bridge, close result, quit service, input/text/focus state, and scheduled
+  wake. The SDL3/WebGPU loop steps the child, dispatches its dialogs/menus, and
+  arms the earliest primary/child deadline.
+- The reference secondary-window loop now re-syncs `chrome_layout` whenever the
+  child has a pending frame. Previously an app-authored child header never
+  produced drag/interactive regions after its first description.
+- A caption double-click that changes zoom can omit `WM_NCLBUTTONUP`. Both the
+  hosted and reference Win32 adapters now clear a latched `.Window` gesture when
+  the maximized state changes; without this, every later `WM_NCHITTEST`
+  returned `HTCAPTION`.
+- macOS keeps the reference host's secondary-window policy: AppKit's main menu
+  is process-global, so a hosted child leaves menus to the primary window. The
+  hosted macOS titlebar now ports the reference pointer-sample pairing
+  (hit-test point + button snapshot, press/release matching, consumed-event
+  drain, last-point fallback). It is compile-only for `darwin_arm64`.
+- `examples/16_native_webgpu_ui --child-chrome-smoke` opens a 760×460 child with
+  an integrated titlebar, menu, accelerator, chrome metrics/layout, dialog
+  service, and close deferral; it pushes a child-targeted accelerator and close
+  request, completes the deferred close through the child quit service, and
+  asserts the hosted callbacks. It passes on `--backend=d3d12` and
+  `--backend=sdl-gpu`.
+- `tools/validate_native_webgpu_chrome.ps1` drives the integrated titlebar with
+  real `SendInput`/cursor input: the Window_Drag band returns `HTCAPTION` and
+  moves the window, double-click maximizes/restores, the right edge returns
+  `HTRIGHT` and resizes, and the three caption buttons minimize/maximize/restore
+  and close cleanly. Theme/settings message survival is scripted; Snap Layouts,
+  mixed-DPI moves, trackpad inertia, and visual contrast switches are recorded
+  as hands-on. It reports `failures=0 pass=15 hands_on=4` on both D3D12 and
+  SDL_GPU. See
+  [`validation/webgpu-chrome-interactive-windows-2026-11-19.md`](validation/webgpu-chrome-interactive-windows-2026-11-19.md).
+
+Validation on Windows x64 (NVIDIA RTX 2080 SUPER, `fe1dc7f`):
+
+- `tools/test.ps1 -Odin C:\odin\odin.exe` passed: AccessKit 8, runtime 392,
+  host/sdl3 2, host/sdl3/input 8, host/sdl3/clipboard 3, host/sdl3/dialogs 5,
+  host/menus 8, host/web 14, ui 50, testui 13, theme 37, renderer/cpu 22,
+  native/sdl_gpu 169, native/scroll_capture_tests 6, plus the foundation,
+  text-input contract, restoration, and theme CLI checks. `host/menus` also adds
+  three darwin-only pointer-sample tests (compile-checked, not run on Windows).
+- `examples/15_host_owned_sdl_gpu` and `examples/16_native_webgpu_ui` built. The
+  example 16 `--smoke`, `--child-smoke`, `--child-chrome-smoke`, `--menu-smoke`,
+  and `--titlebar-smoke` modes exited 0 on both `--backend=d3d12` and
+  `--backend=sdl-gpu`. Child chrome reported metrics/layouts/menu/deferral on
+  both (`layouts=7` hosted, `layouts=2` reference).
+- `tools/validate_native_webgpu_ui.ps1` reported `failures=0` on D3D12 and
+  Vulkan. Its focus step now attaches to the foreground thread; a terminal
+  window holding activation had produced a one-off spurious failure.
+- `js_wasm32` package-boundary build passed. `host/menus` type-checks for
+  `darwin_arm64`; `native/sdl_gpu` type-checks for `darwin_arm64`. The full
+  `host/sdl3` WebGPU package still cannot be type-checked locally because this
+  Odin install has no macOS wgpu-native archive.
+
+Stage B entry state: Scratchpad should consume the branch tip after this slice
+(`fe1dc7f` plus the docs commit) through `ui/webgpu.run` and
+`Hosted_Window_Description`. Its native `Application_Window_Description`
+fields map directly: `application.state/title/width/height`, `menus`,
+`menu_presentation`, `window_decorations`, `window_chrome_height`,
+`window_chrome_metrics/layout/appearance`, and every `on_*` callback become the
+description's `title/width/height/always_on_top` plus `config`. That entry state
+has since been superseded by Stage B slice 1 below.
+
+### Stage B slice 1: hosted scheduler, synchronous clipboard, file drop, tick, and interaction policy (Windows, 2026-11-20)
+
+Stage B closes the remaining service-shape gaps that blocked a 1:1 mapping from
+Scratchpad's native `Application_Services`. The scheduler vocabulary now lives
+in `runtime/scheduler.odin`; `native/sdl_gpu` re-exports it with unchanged
+`Application_*` names.
+
+```text
+Hosted_Host_Services      windows dialogs quit clipboard scheduler
+Hosted_Runtime_Config     ... on_scheduled_wake(state, rt, class)
+                              on_file_drop(state, rt, path)
+                              on_tick(state, rt)
+                              interaction_update_policy
+                              monotonic_now / monotonic_now_data
+UI_Host_Services          clipboard (async) clipboard_text (sync)
+                              scheduler windows dialogs quit
+```
+
+- `Scheduled_Wake_Class` is `{Frequent, Opportunistic}`. The hosted scheduler
+  mirrors the native service one-for-one: one replaceable deadline per class,
+  replaceable scheduling, cancel, `Application_Scheduler_Stats`, and a 150 ms
+  input-quiet deferral for opportunistic work. The hosted input entry points
+  timestamp pointer, key, text, and scroll interaction automatically;
+  `hosted_runtime_note_interaction` is available for hosts with additional
+  event sources. `hosted_runtime_set_deadline` remains as a legacy
+  Frequent-class absolute deadline. Each `Hosted_Runtime` publishes its own
+  service, so primary and child surfaces schedule independently, exactly like
+  the reference host's per-window `Application_Scheduler`.
+- The canonical clipboard service moved to `runtime/clipboard.odin` and
+  `host/sdl3/clipboard` now forwards to it. The hosted service is the native
+  synchronous shape (`ClipboardGetText`/`ClipboardSetText`); SDL3 hosts install
+  the SDL3 implementation for primary and child surfaces. Browser hosts keep
+  the asynchronous Web Clipboard service and leave the sync shape empty.
+  Scratchpad's existing synchronous call sites work unchanged on native
+  WebGPU; browser consumption still needs the async API (Stage C).
+- `on_file_drop` mirrors `Application_File_Drop_Proc`. The SDL3 host routes
+  `SDL_EVENT_DROP_FILE` through `hosted_runtime_file_drop`, which invokes the
+  callback under the `.Host_Event` cause and invalidates the description. The
+  browser host has no drop event and records the policy only.
+- `on_tick` mirrors `Application_Tick_Proc` at the same 16.67 ms minimum
+  cadence. The hosted implementation arms one one-shot deadline instead of the
+  reference host's 1 ms delay pump: the callback timing is equivalent, and the
+  idle runtime still has no recurring wake. Ticks and scheduled wakes keep
+  running while the surface is hidden, as the reference loop does.
+- `interaction_update_policy` now reaches hosted descriptions. The hosted
+  description loop runs the same bounded four-pass stabilization as
+  `native_application_build_until_stable`; `.Correct_After_Interaction`
+  requests one corrective pass after a consumed widget interaction. Both
+  `ui.run` entry points default to `.Correct_After_Interaction`.
+- `ui.run`, `ui/webgpu.run`, and the browser `ui.run` now accept
+  `on_scheduled_wake(..., class)`, `on_file_drop`, `on_tick`, and
+  `interaction_update_policy`. `UI_Host_Services` adds `scheduler` and the
+  synchronous `clipboard_text`, while its existing `clipboard` remains the
+  asynchronous UI contract.
+
+Tests cover scheduler arm/cancel/coalescing/class/lateness/deferral, legacy
+deadline behavior, tick cadence, file-drop routing (including the SDL3 event
+bridge), the clipboard roundtrip through published services, and corrective
+versus explicit description policy. `examples/16_native_webgpu_ui
+--services-smoke` exercises scheduler, clipboard, file drop, and tick through
+`ui.run` on D3D12 and SDL_GPU.
+
+Stage B entry state for the Scratchpad consumption slice: the native
+`Application_Services` fields `scheduler`, `clipboard`, `windows`, `dialogs`,
+and `quit` map 1:1, and `Application.on_file_drop`, `Application.on_tick`,
+`Application.on_scheduled_wake`, and `interaction_update_policy` map 1:1 to the
+hosted config/UI run surface. Remaining gaps are browser-only: asynchronous
+clipboard consumption, browser file drops, browser menus/dialogs, and browser
+close policy.
+
+Validation on Windows x64 (NVIDIA RTX 2080 SUPER, `af28167`):
+
+- `tools/test.ps1 -Odin C:\odin\odin.exe` passed: AccessKit 8, runtime 399,
+  host/sdl3 3, host/sdl3/input 8, host/sdl3/clipboard 3, host/sdl3/dialogs 5,
+  host/menus 8, host/web 14, ui 50, testui 13, theme 37, renderer/cpu 22,
+  native/sdl_gpu 169, native/scroll_capture_tests 6, plus the foundation,
+  text-input/navigation, restoration, theme CLI, and `js_wasm32`
+  package-boundary checks. The AccessKit native UIA contract passed; its first
+  invocation in this session missed the fixture window and was rerun
+  successfully.
+- `examples/15_webgpu_feasibility/build.ps1` built all native and browser
+  fixtures. `examples/16_native_webgpu_ui` built (AccessKit + shared
+  wgpu-native) and `--smoke`, `--menu-smoke`, `--titlebar-smoke`,
+  `--child-smoke`, `--child-chrome-smoke`, and `--services-smoke` exited 0 on
+  both `--backend=d3d12` and `--backend=sdl-gpu`. Services smoke reported
+  `frequent=1 opportunistic=1` with both classes, clipboard roundtrip, one
+  file drop, and six ticks on both renderers.
+- `tools/validate_native_webgpu_ui.ps1 -Executable out\example16.exe -Backend
+  d3d12` reported `failures=0` with real UIA and SendInput, including the
+  auxiliary window lifecycle.
+- `odin check ui -target:js_wasm32` and `odin check host/web -target:js_wasm32`
+  passed; `git diff --check` passed.
+
+### Stage B2: hosted workbench first-present fix (Windows, 2026-11-20)
+
+Scratchpad's hosted WebGPU smoke presented its start screen and settings
+scene but failed the first frame of every open-document workbench scene:
+`Presenter_Failure` with `frames_presented=0`. The same session presented on
+SDL_GPU. The Vulkan hosted path initialized its adapter and device but never
+completed a first present.
+
+The failure was an encode rejection, not a surface or blend problem. The
+workbench paper is a rectangular analytic-relief surface whose connected tab
+opens the top optical edge with a gap beginning at the surface's left
+coordinate. The shared CPU preflight `Solid_Surface_Vertex_Count` reserves two
+quads for that split edge, while `Append_Material_Surface` correctly omits the
+zero-width left piece. The WebGPU solid path treated the preflight as an exact
+vertex contract (`len != required` -> `Resource_Failure`) and returned
+`Render_Failure` before submitting the first frame. SDL_GPU only used the count
+to reserve a dynamic array, so it was unaffected. The same encode rejection
+explains the Vulkan no-present observation; both backends now pass.
+
+Changes:
+
+- `renderer/webgpu/solid.odin` treats the CPU count as an allocation
+  reservation. A smaller emitted mesh is accepted; a larger one grows the
+  vertex buffer before upload. The equality assertion is removed.
+- `host/presentation/surface_presenter.odin` logs the encode result, command
+  count, and display revision when frame encoding is rejected. `host/sdl3/run.odin`
+  logs the presentation result, step count, and frames presented. These paths
+  previously discarded the stage, leaving only `Presenter_Failure`.
+- `examples/16_native_webgpu_ui --workbench-smoke` reproduces the workbench
+  paint: connected tabs, a rectangular negative-height analytic-relief paper
+  with a left-edge top gap, editor-like text rows, a selected row, and a rounded
+  relief sidebar. Before the fix the fixture failed at
+  `frame encode failed result Resource_Failure commands 20 revision 2`; after
+  the fix it exits 0 on D3D12, Vulkan, and SDL_GPU.
+- `renderer/cpu/solid_test.odin` records that the material preflight is an
+  upper bound (66 reserved, 54 emitted) for a left-edge gap, so a renderer must
+  not require exact equality.
+
+Validation is recorded below after the full suite and Scratchpad end-to-end run.
+
+Validation on Windows x64 (NVIDIA RTX 2080 SUPER, this branch):
+
+- Alicorn suites: runtime 399, host/sdl3 3, host/sdl3/input 8,
+  host/sdl3/clipboard 3, host/sdl3/dialogs 5, host/menus 8, host/web 14,
+  host/presentation 6, renderer/webgpu 6, ui 50, testui 13, theme 37,
+  renderer/cpu 23 (including the new preflight test), native/sdl_gpu 169, and
+  native/scroll_capture_tests 6. All passed. `tools/test.ps1` itself stopped at
+  its AccessKit native UIA stage (`Accessible Button missing`); the same UIA
+  check passed standalone with `UIA PASS` immediately afterward, and the
+  Alicorn suites above were run individually with the same arguments.
+- `examples/16_native_webgpu_ui` built and its `--smoke`,
+  `--workbench-smoke`, `--titlebar-smoke`, `--child-chrome-smoke`,
+  `--menu-smoke`, and `--services-smoke` modes passed on both
+  `--backend=d3d12` and `--backend=vulkan`; `--workbench-smoke` also passed on
+  `--backend=sdl-gpu`. Both hosted backends reported `frames_presented=1` for
+  the workbench fixture.
+- Scratchpad's dual-renderer frontend (`codex/issue-211-webgpu-frontend` at
+  `bfb2aed`, candidate root this branch) passed `smoke --renderer=webgpu` on
+  both `--backend=d3d12` and `--backend=vulkan`, including the restored
+  two-document workbench session: `publication_rendered`, `wake_observed`,
+  `ordered_shutdown`, and `session_restore` were all true for the clean and
+  recovery launches. No Scratchpad source or lock file was changed.
+
+## Stage B slice 3: backend-neutral diagnostics parity (2026-11-20)
+
+Stage B was reopened after real-world Scratchpad testing showed that the hosted
+WebGPU path had no developer diagnostics: an encode failure produced only
+`Presenter_Failure` plus a console line, with no retained state, counters, or
+image to investigate. The reference `native/sdl_gpu` host already had all of
+it, implemented directly inside its event loop.
+
+### What the reference host actually provides
+
+- `F10` toggles a performance HUD. It is consumed after menu accelerators and
+  before app key routing. The HUD classifies the latest wake as `IDLE`, `HOST`,
+  `PRESENT`, `APP`, or `SURFACE`, shows one-second build/present/submit/wake
+  counters, the last cause and retained-stage work, build/encode/input latency,
+  semantic/accessibility activity, the invalidation reason, and a bounded
+  activity strip. It is transient solid geometry; it adds no nodes and does not
+  change application `Frame_Stats`.
+- `F11` toggles retained-bounds inspection: one amber outline per visible paint
+  command, appended after application paint. It is non-consuming.
+- `F12` requests one capture (repeatable in a run), non-consuming.
+- Capture writes `diagnostics.json` (timing percentiles, GPU/renderer counters,
+  runtime state), `inspector.txt` (the human-readable retained tree),
+  `timeline.json` (the versioned 256-sample flight recorder), `screenshot.ppm`,
+  and `windows.json`, plus an opt-in `events.jsonl` breadcrumb recorder.
+- Flags: `--diagnostics`, `--capture-after=SECONDS`, `--capture-dir=PATH`,
+  `--debug-bounds`, `--diagnostic-events`.
+- `Capture` was gated on a presented frame and rendered the screenshot through
+  an offscreen SDL_GPU target.
+
+### What moved where
+
+`host/diagnostics` is now the single implementation: recorder/pointer samples,
+activity classification, HUD model and 5x7 glyph quad layout, bounds geometry,
+timing and text-event telemetry, options/path/bundle handling, JSON/window
+writers, timeline export, and breadcrumbs. It imports only
+`alicorn:runtime`. `native/sdl_gpu` keeps `Native_*` type aliases and thin
+proc shims, its metric capture (SDL_GPU structures), its offscreen PPM capture,
+and a quad sink that appends HUD/bounds geometry to its solid mesh. The shared
+HUD text now emits one quad per contiguous glyph-row run instead of per pixel,
+so the hosted renderer sees ~3x fewer commands for identical pixels.
+
+`Hosted_Runtime_Config` gained `diagnostics_paint` / `diagnostics_paint_data`.
+`hosted_runtime_presentation_list` appends those commands after application
+paint and host chrome, so diagnostics are part of every `ui/webgpu.run` surface
+without application code.
+
+### Hosted wiring
+
+- `host/sdl3/diagnostics.odin` owns options, the recorder, timing aggregation,
+  the HUD/bounds paint provider, capture, and backend identity. It is created
+  after application init and destroyed after teardown.
+- `sdl3_webgpu_application_key_down` calls the diagnostics handler after menu
+  keydown/accelerator handling and before Control+Tab/application keys. F10 is
+  consumed; F11/F12 are not. This matches `native/sdl_gpu`'s order.
+- Overlay frames are host-only re-composites: a presenter overlay-redraw flag
+  renders the current retained display without mutating the Runtime, and an
+  application display revision is acknowledged once. A visible HUD therefore
+  cannot feed a redraw loop or count as application work. Overlay commands are
+  staged in one reused host-owned buffer.
+- Backend identity is captured from `wgpu.AdapterGetInfo`:
+  `"gpu_driver": "webgpu/<backend>"`, a `backend` object (adapter type, vendor,
+  device, description), and `backend_counters` groups for solid, text, icons,
+  images, and surfaces with the shared compositor's mesh rebuild/cache-hit,
+  upload, upload-byte, transform, viewport, atlas, and texture counters.
+- Capture-on-failure: encoder/present failures call capture before returning
+  `Presenter_Failure`. The bundle does not depend on presentation, and the
+  screenshot is encoded from the retained display into an offscreen texture and
+  copied to a mapped buffer, so an acquire/present failure still yields an image.
+  A failure capture is written even without the diagnostic flags.
+
+### Validation (Windows x64, RTX 2080 SUPER)
+
+- Alicorn suites: `alicorn_tests`, runtime 401, host/sdl3 7, host/sdl3/input 8,
+  host/sdl3/clipboard 3, host/sdl3/dialogs 5, host/menus 8, host/web 14,
+  host/diagnostics 9, host/presentation 6, renderer/webgpu 6, ui 50, testui 13,
+  theme 37, renderer/cpu 23, native/sdl_gpu 169, native/scroll_capture_tests 6,
+  text-input contract, restoration, web-UI package build, and theme CLI checks
+  all passed. `tools/test.ps1` itself stopped at its AccessKit native UIA stage
+  (`Accessible Button missing`), the same environmental failure recorded for the
+  previous slice; every Alicorn suite was then run individually with the same
+  arguments and passed.
+- `examples/16_native_webgpu_ui` built and `--smoke` and `--workbench-smoke`
+  passed on `--backend=d3d12` and `--backend=vulkan`.
+- `--test-diagnostics-sequence` on both backends produced two five-artifact
+  bundles. The overlay capture had the HUD panel and bounds outlines in
+  `screenshot.ppm`; the plain capture did not. HUD activity cost four frames,
+  text mesh rebuilds stayed at one, and no per-frame persistent allocations
+  appeared in the timeline.
+- `--test-diagnostics-present-failure` (no `--diagnostics`) forced one encode
+  failure after the first frame and still wrote `diagnostics.json`,
+  `inspector.txt`, `timeline.json`, `screenshot.ppm`, `windows.json`, and
+  `events.jsonl`, with `failure_reason` = `primary presentation failed:
+  Render_Failure`.
+- The reference SDL_GPU host captured the same artifact set (`diagnostics.json`,
+  `inspector.txt`, `timeline.json`, `screenshot.ppm`, `windows.json`,
+  `events.jsonl`) from `--inspector-fixture --diagnostics --capture-after=0
+  --debug-bounds`.
+- Scratchpad (`codex/issue-211-webgpu-frontend` at `bfb2aed`, read-only
+  worktree, candidate root this branch) built with `--allow-alicorn-revision`
+  and passed `smoke --renderer=webgpu --backend=d3d12` and
+  `--backend=vulkan`, including the restored two-document session:
+  `publication_rendered`, `wake_observed`, `ordered_shutdown`, and
+  `session_restore` were true for clean and recovery launches. No Scratchpad
+  source or lock file was changed.
+
+Known limits: the hosted HUD still rebuilds the compositor's solid mesh when its
+activity strip or counters change (bounded, opt-in developer overlay); it does
+not rebuild text or allocate per frame. The browser host has no F10/F11/F12
+keyboard capture surface; the shared core is ready for one, but browser
+diagnostics remain future work.
+
+## Stage B slice 4: hosted root ownership and after-frame ordering (2026-11-20)
+
+Real Scratchpad dogfooding exposed two hosted-runtime contract defects that
+Scratchpad had been compensating for in its adapter:
+
+- `Hosted_Runtime` always opened its own `ui-root` `.Column` around the
+  application description. Scratchpad describes its workbench `.Root` directly
+  and then describes Quick Open, modals, context menus, and floating-window
+  scenes as top-level layers. Under the host wrapper those layers became
+  children of a column and laid out relative to the wrong ancestor; the
+  founder's screenshot showed Quick Open underneath a compressed workbench.
+- The hosted runtime had no post-frame hook. Scratchpad's `after_frame` work
+  (focus restoration, scroll restoration, deferred geometry) was deferred to
+  the next description, so it never ran when no later frame was requested.
+  Its smoke had moved publication assertions into the description phase to hide
+  that gap.
+
+The reference `native/sdl_gpu` host does not wrap: `Application.build` owns the
+root, runs `end_frame`, then runs the application's after-frame code before the
+host presents. The hosted runtime now matches that ordering and root contract.
+
+### Contract changes
+
+- `Hosted_Runtime` calls `begin_frame`/`end_frame` but does not add a host root.
+  `Hosted_Runtime_Config.render` must open and close the application's own
+  `.Root`, exactly like `Application.build`. The application root's bounds are
+  the content viewport; host-owned chrome continues through
+  `content_inset_top` (the application viewport is reduced and paint is
+  translated below the band), not through a wrapper. `render_overlays` runs at
+  top level after the application root closes.
+- `Hosted_Step_Result.root` is the application root described in the settled
+  pass (the top-level `.Root` node, with a top-level fallback for malformed
+  descriptions).
+- `Hosted_Runtime_Config.on_after_frame` and `Hosted_After_Frame_Proc` were
+  added. Ordering is `prepare -> begin_frame -> describe -> end_frame ->
+  after_frame -> present/commit acknowledgement`. The hook runs after
+  `end_frame` of the same pass, after layout, on every described frame
+  including the last one before idle, and does not wait for another
+  description. A hook that changes retained state calls `invalidate_root`; the
+  bounded stabilization loop then rebuilds in the same step.
+- `Hosted_Run_State` gained `on_after_frame` and an internal
+  `root_ownership` selector. `ui.run` and the browser `run` keep the
+  host-owned-root `ui.run` callback contract. `ui/webgpu.run` selects
+  `Hosted_Root_Ownership.Application`, so its `render` owns the root and
+  overlays are top-level, matching `native/sdl_gpu`. Native `ui.run` accepts
+  `on_after_frame` and runs it after `end_frame` in its build callback.
+- Alicorn-side hosted consumers that relied on the implicit wrapper now own
+  their root: example 15's native/browser feasibility render, example 16's
+  default and auxiliary render, the workload matrix hosted renderers, and the
+  runtime hosted fixtures. Example 16's smoke renderers already owned roots.
+
+Regression coverage lives in `runtime/hosted_contract_test.odin`: the
+application root is a top-level node with exact window content bounds, a modal
+overlay is a top-level sibling with viewport bounds, content inset reduces the
+root/viewport instead of adding a wrapper, after-frame runs after `end_frame`
+with finalized geometry on every described frame, a second step with no
+description does not defer it, and an after-frame invalidation rebuilds in the
+same step. The existing hosted, chrome, diagnostics, multisurface, services,
+menus, SDL3, and UI tests were updated where their fixtures relied on the
+wrapper.
+
+The earlier B2 smoke workaround (publication evidence asserted during the
+description phase) was Scratchpad-side. Once Scratchpad adopts
+`on_after_frame`, its adapter should move that work back to the after-frame
+position; Stage B wrap-up owns that Scratchpad change.
+
+### Validation (Windows x64, RTX 2080 SUPER)
+
+- Alicorn suites run individually with the pinned AccessKit arguments:
+  runtime 405 (including the four new hosted contract tests), host/sdl3 7,
+  host/sdl3/input 8, host/sdl3/clipboard 3, host/sdl3/dialogs 5, host/menus 8,
+  host/web 14, host/diagnostics 9, host/presentation 6, renderer/webgpu 6,
+  ui 50, testui 13, theme 37, renderer/cpu 23, native/sdl_gpu 169, and
+  native/scroll_capture_tests 6. All passed. `odin build tests` plus
+  `out/alicorn_tests.exe`, `tools/test_restoration.ps1`, and the SDL_GPU
+  `--text-input-contract-test` also passed. `tools/test.ps1` itself stopped in
+  the AccessKit binding check because its test runner writes INFO records to
+  stderr under Windows PowerShell 5.1 with `$ErrorActionPreference = 'Stop'`;
+  every stage was then run individually with the same arguments.
+- All examples built with `tools/build_examples.ps1`'s arguments (including
+  `-define:WGPU_SHARED=true` for example 16).
+- `examples/16_native_webgpu_ui` `--smoke`, `--workbench-smoke`,
+  `--titlebar-smoke`, `--child-chrome-smoke`, `--menu-smoke`, and
+  `--services-smoke` passed on `--backend=d3d12`, `--backend=vulkan`, and the
+  reference `--backend=sdl-gpu` path. `--test-diagnostics-sequence` on D3D12
+  still produced HUD, bounds, and plain capture bundles with the screenshot.
+- Scratchpad (`codex/issue-211-webgpu-frontend` at `bfb2aed`, read-only
+  worktree, candidate root this branch) built against this worktree and passed
+  the full native session smoke on `--renderer=webgpu --backend=d3d12` and
+  `--backend=vulkan`, including both clean and unsaved-recovery launches:
+  `publication_rendered`, `wake_observed`, `ordered_shutdown`, and
+  `session_restore` were true. No Scratchpad source or lock file was changed.
+  The Quick Open/modal visual regression remains for the founder's hands-on
+  check; the hosted contract test now proves the overlay ancestry directly.
+
+## Stage B slice 5: application parity for paint spans and pointer drag (2026-11-20)
+
+Real Scratchpad testing on the hosted WebGPU path reported two P1
+application-parity gaps: the Go editor looked like plain text (no syntax
+highlighting) and click-drag text selection did not work, while the SDL_GPU
+reference did both. This slice traced both flows end to end and fixed the
+hosted-side causes.
+
+### What the span flow actually showed
+
+The span data itself was never lost. In the same restored Scratchpad scene
+(`language/detection.go`, `builtin:cool-light`, settled frame) the hosted
+`inspector.txt` and the SDL_GPU `inspector.txt` contain the same 25 span-bearing
+text nodes with identical byte ranges and colors, for example
+
+```text
+text run: valid=true bytes=27 paint-spans=5 style-spans=0
+  [4,8)fg=(0.040,0.058,0.085,1.000) [15,17)fg=(0.018,0.107,0.141,1.000) ...
+```
+
+The retained runtime node, the composed display command, the WebGPU
+`Text_Prepare` glyph-color resolution, and the WGSL vertex path all consume those
+spans (`renderer/webgpu/text.odin` already fingerprints
+`cpu_renderer.Hash_Text_Spans`, so a span-only change invalidates the retained
+glyph mesh). The remaining hosted-only difference was *color*: the hosted frame
+was the sRGB encoding of the reference frame, channel for channel.
+
+```text
+editor text band          background      text          token          token
+hosted before             250,251,254     56,68,82      36,92,105      96,74,136
+SDL_GPU reference         244,246,253     10,15,22       4,27,36       30,17,63
+hosted after fix          244,246,253     10,15,22       4,27,36       30,17,63
+full-frame diff before    2,694,611 / 2,914,752 channels differ (92.45%), max 82
+full-frame diff after                         0 / 2,914,752 channels differ
+```
+
+Root cause: `docs/themes.md` defines `Theme_Color`/`Color` channels as
+linear-sRGB values uploaded unchanged and leaves output transfer to the
+swapchain. `SDL_GetGPUSwapchainTextureFormat` is a non-sRGB (`*_UNORM`) target on
+the reference host, but the hosted WebGPU hosts preferred `BGRA8UnormSrgb`.
+That applied a second transfer function to every hosted color. On a light theme
+this lightens text and compresses the contrast between base text and the
+low-chroma syntax token colors, so highlighting reads as plain text even though
+the spans are present. The more saturated the theme, the smaller the visible
+difference.
+
+Changes:
+
+- `host/presentation/surface_format.odin` selects the hosted presentation
+  format: non-sRGB BGRA/RGBA first, the sRGB variant only when it is the sole
+  capability. `host/sdl3/run.odin` (primary surface),
+  `host/sdl3/window_service.odin` (secondary surface), and
+  `host/web/webgpu_run.odin` (browser) all use it. Image textures already derive
+  their format from the target format (`renderer/webgpu/images.odin`), so the
+  whole hosted stack stays consistent with the reference.
+- `runtime/inspector.odin` records `text run: valid=... bytes=... paint-spans=N
+  style-spans=N [start,end)fg=(...)` per Text/Text_Field node, so a capture
+  bundle proves span provenance and per-span colors without a screenshot.
+- `docs/themes.md` documents the rule explicitly: do not switch one host to
+  sRGB output without the other; true color-managed output is a deliberate
+  contract change that must land on both hosts (and their image texture formats)
+  together.
+
+### Pointer drag selection
+
+The hosted runtime delivered `process_pointer` and then called the application
+pointer callback directly. `native/sdl_gpu` and `testui` instead dispatch through
+`application_dispatch_pointer`, which offers the event to interaction scopes
+first, and they suppress the application callback while a live drag or an open
+context menu consumes pointer input (a captured split handle keeps its callback
+so app-owned measurement can refresh). The hosted route skipped scope routing
+and both suppressions, so an application whose selection or drag gesture lives in
+a scope - or which relies on the reference host's drag ownership - diverged.
+
+`hosted_runtime_pointer` now mirrors the reference arbitration exactly: hit test,
+pending drag-event dispatch, `application_dispatch_pointer` (scope dispatch then
+`on_pointer`), context-menu and drag gates, and the captured-split exception.
+The callback's Down/Up invalidation now comes from
+`application_dispatch_pointer` instead of a duplicate hosted branch.
+
+### Fixtures
+
+- `runtime/hosted_parity_test.odin`
+  - `test_hosted_presentation_preserves_text_paint_spans` describes an
+    application-owned Root, a scroll region, a Text row with three ordered
+    color spans (Scratchpad's syntax shape), and a Text_Field; it asserts the
+    presentation list carries every span (ranges and colors) with
+    `content_inset_top` 0 and 24, that the inset translates geometry only, and
+    that retained nodes keep their spans.
+  - `test_hosted_pointer_drag_selection_matches_reference` presses at byte 1 of
+    a shaped Text_Field, moves to byte 8, and releases through
+    `hosted_runtime_pointer`; it asserts anchor/caret, capture release, and
+    callback order, then repeats the identical description through
+    `process_pointer` + `application_dispatch_pointer` and asserts the same
+    selection. Both hosts therefore produce the same drag range for the same
+    description and pointer stream.
+- `renderer/webgpu/text_span_test.odin` asserts per-glyph span colors for
+  keyword/function/string/unspanned clusters and proves a span-only color change
+  invalidates the retained text mesh fingerprint.
+- `host/presentation/surface_format_test.odin` pins the non-sRGB preference,
+  sRGB-only fallback, unknown-format fallback, and empty-capability rejection.
+
+### Validation (Windows x64, RTX 2080 SUPER, `28afb82` + this slice)
+
+- Alicorn suites run individually with the pinned AccessKit arguments: runtime
+  407 (including the two hosted parity fixtures), host/sdl3 7, host/sdl3/input 8,
+  host/sdl3/clipboard 3, host/sdl3/dialogs 5, host/menus 8, host/web 14,
+  host/diagnostics 9, host/presentation 7 (new format test), renderer/webgpu 8
+  (two new span tests), ui 50, testui 13, theme 37, renderer/cpu 23,
+  native/sdl_gpu 169, native/scroll_capture_tests 6, plus `odin build tests` and
+  `out/alicorn_tests.exe`, the accessibility contract fixture, restoration, and
+  the SDL_GPU text-input contract. All passed. `tools/test.ps1` itself still
+  stops in the AccessKit binding stage on this machine, so the same stages were
+  run individually as in the previous slices.
+- All examples built with `tools/build_examples.ps1` (including
+  `-define:WGPU_SHARED=true` for example 16). `16_native_webgpu_ui` passed
+  `--smoke`, `--workbench-smoke`, `--titlebar-smoke`, `--child-chrome-smoke`,
+  `--menu-smoke`, and `--services-smoke` on `--backend=d3d12`,
+  `--backend=vulkan`, and `--backend=sdl-gpu` (18/18 exits 0).
+  `--test-diagnostics-sequence --diagnostics` on D3D12 wrote three five-artifact
+  bundles, and each inspector now carries the text-run span lines.
+- Scratchpad (`codex/issue-211-webgpu-frontend` at `bfb2aed`, read-only worktree,
+  candidate root this branch) built with `--allow-alicorn-revision` and passed
+  `smoke --renderer=webgpu --backend=d3d12` and `--backend=vulkan` for the clean
+  and unsaved-recovery launches (`publication_rendered`, `wake_observed`,
+  `ordered_shutdown`, `session_restore` all true). No Scratchpad source or lock
+  file was changed. The settled Go-editor capture is byte-identical to the
+  SDL_GPU reference capture (0 of 2,914,752 channels differ) after this slice,
+  and the dark `charcoal-ink` theme agrees as well.
+- Full evidence, histograms, raw diffs, and the span inspector excerpts are in
+  [`validation/webgpu-scratchpad-span-selection-parity-windows-2026-11-20.md`](validation/webgpu-scratchpad-span-selection-parity-windows-2026-11-20.md).
+
+### Residual work and Scratchpad-side follow-ups for the wrap-up slice
+
+- `hosted_render` in Scratchpad's adapter still runs `after_frame` at the start
+  of the next description; `ui/webgpu.run` now provides `on_after_frame`, so the
+  adapter should pass it and run `scratchpad_build_after_frame` after
+  `end_frame`. This also makes the editor row trace sample the same phase on
+  both hosts; today hosted style/paint row fingerprints differ from the
+  reference even though text, geometry, and rendered pixels agree.
+- Scratchpad's `hosted_render` comment still describes a host-owned root wrapper
+  that no longer exists; the description already opens `.Root`, so only the
+  comment (and the deferred after-frame note) needs updating.
+- A scripted OS-level mouse drag could not be delivered in this automation
+  session (the window receives no synthetic pointer motion, while F10/F11/F12
+  host shortcuts work), so drag selection is verified at the hosted-runtime API
+  seam against the native/testui route. The founder's hands-on click-drag is the
+  confirming check.
+- True sRGB output (both hosts encoding linear theme values into an sRGB target)
+  is a separate, deliberate contract change; it must land on SDL_GPU, hosted
+  WebGPU, and both image-texture paths together.
+
+## Stage C slice 1: live resize and window movement parity (2026-11-20)
+
+Real Scratchpad testing on the hosted WebGPU build reported the P0 parity gap for
+this stage: resizing the window only landed when the mouse was released, and
+during the drag the window showed the pre-drag frame stretched into the live
+size. The SDL_GPU reference resized live and continuously.
+
+### What the reference host actually did
+
+`native/sdl_gpu` never waited for a queued resize event during an interactive
+drag. The platform owns a modal move/size loop between the pointer grab and
+release, so the host's `SDL_WaitEventTimeout` does not return. The reference host
+had two entry points that run inside that loop:
+
+- `native_live_resize_event_watch` on `WINDOW_EXPOSED` with `data1 == 1`. SDL
+  documents that this one event may be redrawn from the watcher callback and
+  delivers it on the main thread.
+- `native_live_resize_windows_message_hook` + `SetTimer(17 ms)` on the moving
+  HWND. The hook tracks `WM_ENTERSIZEMOVE`/`WM_EXITSIZEMOVE` (and counts
+  `WM_MOVING`/`WM_WINDOWPOSCHANGED`); the timer gives every renderable slot a
+  display-like presentation opportunity. `WM_EXITSIZEMOVE` can be consumed by
+  the modal loop before SDL's hook sees it, so the first ordinary host-loop turn
+  after the pointer is up reconciles any leftover move state.
+
+Both paths are re-entrant with respect to the host frame path, because a present
+can pump messages: a nested exposure sets a pending flag that the outer call
+services in one bounded second pass, and a timer callback re-entered from inside
+a present is dropped and counted. The Windows timer is only installed while a
+slot has renderable work, so a static window does not spin during a move.
+
+Per-window scheduling was already slot-shaped: the primary window and the single
+secondary window each had their own motion scheduler, timing, and move state; the
+timer serviced whichever slot the modal loop was moving.
+
+### What moved and what stayed
+
+The scheduling/windowing mechanism moved into `host/sdl3/live_resize`
+(package `sdl3_live_resize`) so both renderers use one implementation:
+
+- SDL event watch registration and the `WINDOW_EXPOSED` filter and dispatch;
+- the Windows message hook, per-HWND timer, move-state machine, release
+  reconciliation, and HWND lookup;
+- per-slot identity (`Primary`, `Secondary`) with move/timer state;
+- the re-entrancy guards and the counters every host publishes as telemetry.
+
+Renderers supply `live_resize.Ops`: `window`, `renderable`, `has_work`, and
+`render(slot, now_ns, cause)`. `render` is the only place frame policy lives, so
+the reference renderer keeps its "timer ticks only sample when the retained
+motion scheduler is due" rule while the hosted renderer keeps its
+"rebuild description + present" rule.
+
+`native/sdl_gpu/window_move_windows.odin` is now a thin adapter over that core:
+it supplies the slot window/renderability/work probes, routes the render callback
+into `native_live_resize_present_if_due`, republishes slots when a secondary
+window opens or closes, and publishes the shared counters under the historical
+telemetry names. The native event watch, message hook, timer, guards, and
+`move_*` per-window fields were deleted rather than kept as a second copy. The
+169 native tests and its smokes are the regression guard for that switch.
+
+### Hosted wiring
+
+`host/sdl3/live_resize_host.odin` installs the core for the primary application
+and the optional secondary window. Its render callback:
+
+1. polls the presenter (`hosted_surface_presenter_poll`) so queue completions
+   retire while the modal loop owns the thread;
+2. adopts the live geometry (`sdl3_webgpu_application_resize`) - this is the step
+   whose absence produced the stretched last frame, because a rebuilt description
+   was being presented into the previous swapchain size;
+3. runs `sdl3_webgpu_application_live_step`, which calls the new
+   `hosted_runtime_live_step`.
+
+`hosted_runtime_live_step` is one presentation opportunity inside a modal loop:
+it advances retained motion, rebuilds an invalidated description (application-
+owned root contract), runs `on_after_frame` for that pass, and reports pending
+presentation. It does not dispatch `on_tick` or application-scheduled wakes -
+those are ordinary host-loop turns. `sdl3_webgpu_application_step` gained a
+`step_in_progress` guard so a tick that lands while a step is running can never
+start a second description, and `hosted_surface_presenter_step_with_hook` gained
+a `live` parameter that selects the live runtime step.
+
+`host/sdl3/run.odin` installs the core after the presenter exists, republishes
+slot identity every loop turn (a secondary window may be created, destroyed, or
+replumbed by device recovery), reconciles leftover modal state, and releases the
+core before the application is destroyed. The install path's `defer`s are
+deliberately outside the `if` block that tests installation: defers are
+block-scoped, and the first version released the core at the end of the
+installation `if`.
+
+### Fixtures and scripted evidence
+
+- `examples/16_native_webgpu_ui --live-resize-smoke` keeps an animated retained
+  motion probe on the titlebar fixture and accounts every description the host
+  builds: frame count, width transitions, and the distinct logical widths seen.
+  A host that only re-lays out after release reports 1-2 width transitions; a
+  host that tracks the drag reports the intermediate sizes. It exits with
+  `live_resize_smoke PASS/FAIL` and a non-zero status on failure.
+- `tools/validate_native_webgpu_resize.ps1` performs real `SendInput` caption and
+  edge drags and counts `live_resize_frame` trace lines from a dedicated reader
+  thread (PowerShell event handlers cannot be used here: they are marshalled onto
+  the runspace that is busy inside the drag, so counting would be deferred past
+  the release). It asserts mid-drag frames, that the drawable tracked the live
+  client size, and that drawable and live client aspects agree. `-Mode
+  application` runs the same drags against a real consumer build (Scratchpad).
+- The hosted host prints `webgpu_live_resize frames ... expose_events ...
+  move_timer_wakes ...` at shutdown behind the `--test-live-resize-trace` test
+  seam, mirroring the reference host's telemetry line.
+
+### Validation (Windows x64, RTX 2080 SUPER, `9b31260` + this slice)
+
+- Hosted fixture, D3D12: 79 frames during the resize drag with pixel widths
+  stepping 1105 -> 1240, 24 frames during the caption move drag, drawable and
+  live client both 1240x700 (0.00 % aspect delta). Vulkan is equivalent (78
+  frames). The pre-fix build reports 0 mid-drag frames and 3 distinct widths.
+- Reference `--backend=sdl-gpu` with the same fixture: 120 exposures and 26
+  modal-loop redraws, 26 distinct widths from the shared fixture accounting.
+- Scratchpad (`b458d6e`, candidate root this branch): 24 mid-drag frames on both
+  hosted backends (D3D12 and Vulkan) with 0.00 % aspect delta and 24 frames
+  during the caption drag; `smoke --renderer=webgpu --backend=d3d12`,
+  `--backend=vulkan`, and `--renderer=sdl-gpu` pass both legs
+  (`publication_rendered`, `wake_observed`, `ordered_shutdown`,
+  `session_restore`).
+- Suites: runtime, host/sdl3 (plus the new host/sdl3/live_resize 9 tests),
+  host/sdl3/input, clipboard, dialogs, host/menus, host/web, host/diagnostics,
+  host/presentation, renderer/webgpu, renderer/cpu, ui, testui, theme,
+  native/sdl_gpu (169), native/scroll_capture_tests, `odin build tests` and
+  `out/alicorn_tests.exe`, and the accessibility contract fixture all pass. All
+  examples build, example 16 passes its six smokes on D3D12, Vulkan, and
+  SDL_GPU (18/18), and `--test-diagnostics-sequence --diagnostics` still writes
+  three five-artifact bundles.
+- Full numbers, trace excerpts, and the before/after comparison are in
+  [`validation/webgpu-live-resize-windows-2026-11-20.md`](validation/webgpu-live-resize-windows-2026-11-20.md).
+
+### Residual work
+
+- Interactive DPI transitions (`WM_DPICHANGED` mid-drag) re-read logical and
+  pixel metrics together on every live frame, but no scripted mixed-DPI monitor
+  arrangement exists in this environment; the founder's cross-monitor drag is the
+  confirming check.
+- The shared core owns windowing/scheduling for both SDL3 renderers now. The
+  remaining consolidation is outside this slice: the reference host still owns
+  its own frame encoder and end-of-frame bookkeeping around the core, and the
+  browser host has no modal move/resize loop to hook.
+- Live frames do not run `on_tick` or scheduled wakes by design; applications
+  that animate from `on_tick` rather than retained motion will hold their last
+  pose during a modal drag, exactly as on the reference host.
+
+## Stage C slice 2: tab drag reorder preview fidelity (2026-11-20)
+
+Founder testing on the hosted WebGPU build reported the last P1 in Scratchpad's
+tab drag: during a reorder the dragged tab became a dark, empty ~96x28
+rectangle instead of the tab that was lifted. The SDL_GPU reference app shows
+the real tab (contour, label, state) following the pointer with the source slot
+empty and the insertion marker in the strip.
+
+### What actually engaged the fallback
+
+The fallback is `drag_preview_begin`'s last resort in `runtime/drag_drop.odin`:
+when no preview could be built it paints a 96x28 dark card. Two things combined
+to reach it, and neither was hosted-specific:
+
+1. `Drag_Preview_Mode.Label` was the enum's zero value and therefore the
+   default for every `Tab_Bar_Options` that did not set `drag_preview_mode`.
+   Scratchpad's hosted frontend enabled `drag_type` and
+   `animate_drag_reorder` but not the preview mode, so both hosts went down the
+   label path. The reference Scratchpad branch happens to set
+   `.Source_Subtree` explicitly, which is why it looked right there.
+2. A tab is a composed button whose visible name is a child text node. The tab
+   root's own `label`/`text` are empty, so the label path had nothing to shape
+   and left `drag_preview.ready == false`; the card kept its 96x28 default.
+
+A probe through the hosted runtime settled the host question: with
+`.Source_Subtree` requested, `hosted_runtime_pointer` and the reference
+`process_pointer` + presentation-frame route captured the identical three
+commands (150x32 tab surface, its text run, its zero-height indicator), with
+`drag_preview.mode == .Source_Subtree` and the same geometry. The hosted
+capture hook, text-resource lifetime and transient translation updates were all
+functioning. The defect was the preview *choice* and the label fallback's
+inability to name a composed control.
+
+### Changes
+
+- `runtime/runtime.odin`: `Drag_Preview_Mode` gained `Auto = 0` before `Label`
+  and `Source_Subtree`. `Auto` means "the declaring widget's default".
+- `runtime/tab_bar.odin`: a tab bar resolves `Auto` to `.Source_Subtree`, so
+  `DEFAULT_TAB_BAR_OPTIONS` and plain `Tab_Bar_Options{...}` literals both lift
+  the real tab. Applications that want the compact card set `.Label`.
+- `runtime/drag_drop.odin`: `drag_preview_begin` now resolves its label through
+  `drag_preview_source_label`, which falls back to the first painted descendant
+  text run (value, size, font, weight, style spans) when the source node has no
+  label or text. The shaped preview is an owned copy, so the borrowed run may
+  retire with its node. `drag_source`'s default mode is `Auto`, which behaves as
+  the label card for non-tab sources.
+- `runtime/inspector.odin`: capture bundles now record the drag session and up
+  to 16 preview paint commands (`drag: phase=... preview=(mode=... commands=...)`
+  plus `preview[i] index= kind= bounds= clip= translation= opacity= text=`), so
+  a drag frame can be compared between hosts command for command.
+
+Nothing changed in the paint pipeline, stacking, clipping, or retained
+translation path: the lifted copy is still appended at the display tail, clipped
+by the window viewport, updated by `drag_preview_pointer_moved` without a
+display rebuild, and the source slot is still hidden by `drag_source_opacity`.
+Neighbor motion remains application-owned through
+`Tab_Bar_Result.item_nodes` + `ui.motion` (Scratchpad already does this), and
+the insertion marker remains the drop target's own paint below the copy.
+
+### Fixtures
+
+- `runtime/tab_bar_test.odin`:
+  - `test_tab_bar_default_drag_preview_lifts_the_real_tab` builds a tab bar that
+    leaves the preview mode at `Auto`, drags across a sibling, and asserts the
+    lifted mode/size, the tab's own contour and label text in the display tail,
+    viewport clipping, inert owner 0, source hidden/neighbor visible, the
+    insertion marker below the copy, and that a pointer move updates only the
+    bounded preview translations (no display full pass).
+  - `test_tab_bar_label_drag_preview_names_the_tab` forces `.Label` and asserts
+    the shaped preview is the tab's label rather than the 96x28 empty card, on
+    both the retained session and the composed display.
+- `runtime/hosted_parity_test.odin`:
+  `test_hosted_tab_drag_preview_matches_the_reference_route` describes
+  Scratchpad's tab shape (default options, magnetic tracking,
+  `animate_drag_reorder`, three semantic tabs), drags through
+  `hosted_runtime_pointer` and through `process_pointer`, and compares a
+  host-independent signature of the preview commands: mode, size, content kind,
+  bounds, clip, translation, opacity and resolved label. The two hosts must
+  describe the same visual.
+- `examples/16_native_webgpu_ui --tab-drag-smoke` drives a scripted drag from
+  `on_after_frame` (header tab 1 onto tab 2, magnetic track) and prints the
+  preview evidence: mode, commands, tab size, label text, insertion marker,
+  source/neighbor visibility, topmost stacking, owner 0, viewport clip and the
+  retained translation, plus the semantic drop target/position. The titlebar
+  tabs now carry stable semantic ids (the fixture's existing `titlebar_drag`
+  handler already reordered by that value), and the fixture enables the same
+  magnetic tracking as Scratchpad's connected titlebar tabs.
+  `--tab-drag-hold-ms=N` keeps the lift alive and nudges the pointer one pixel
+  per frame for an external capture.
+- `tools/validate_native_webgpu_tab_drag.ps1` launches that fixture with
+  `--diagnostics --capture-after=1 --capture-dir=...`, focuses the window and
+  presses F12, finds the bundle whose `inspector.txt` contains
+  `drag: phase=Dragging`, and writes the drag/preview lines to
+  `<backend>-drag-preview.txt` for cross-backend comparison.
+
+### Validation (Windows x64, RTX 2080 SUPER, `3df0f69` + this slice)
+
+- Root-cause probe: hosted and reference routes captured the same three preview
+  commands; the default-mode drag reported `mode=Label ready=false 96x28`, which
+  is the founder's rectangle.
+- `tab_drag_smoke` PASS with identical evidence on D3D12, Vulkan and SDL_GPU:
+  `mode=Source_Subtree commands=3 size=150.0x32.0 tab=150.0x32.0 text_found=true
+  marker=true source_hidden=true neighbor_visible=true topmost=true
+  owner_zero=true viewport_clip=true translation=150.0,0.0 drop_target=2
+  drop_position=After`.
+- Mid-drag capture, `inspector.txt` preview lines (D3D12 vs Vulkan byte-equal;
+  SDL_GPU differs only in node ids and the absolute display index):
+  `preview[0] surface bounds=(269.0,0.0 150.0x32.0) clip=(0.0,0.0 736.0x519.0)
+  translation=(150.0,0.0)`, `preview[1] text bounds=(289.0,6.0 110.0x20.0)
+  text="Alicorn Overvi."`, `preview[2] surface bounds=(269.0,31.0 150.0x0.0)`.
+- The captured mid-drag frames are pixel-identical between hosted D3D12 and the
+  SDL_GPU reference: 0 of 381,984 pixels differ over the full 736x519 frame, and
+  0 of 4,800 in the lifted-tab rectangle.
+- Suites run individually: runtime (410, including the three new fixtures),
+  host/sdl3, host/sdl3/live_resize, host/sdl3/input, host/sdl3/clipboard,
+  host/sdl3/dialogs, host/menus, host/web, host/diagnostics,
+  host/presentation, renderer/webgpu, renderer/cpu, ui, testui, theme,
+  native/sdl_gpu (169), native/scroll_capture_tests, `odin build tests` and
+  `out/alicorn_tests.exe`, and the accessibility contract fixture all pass.
+  All examples build; example 16 passes all seven smokes (`--smoke`,
+  `--workbench-smoke`, `--titlebar-smoke`, `--child-chrome-smoke`,
+  `--menu-smoke`, `--services-smoke`, `--tab-drag-smoke`) on D3D12, Vulkan and
+  SDL_GPU (21/21).
+- Scratchpad (`codex/issue-211-webgpu-frontend` at `b458d6e`, candidate root
+  this branch, no Scratchpad source or lock change) builds with
+  `--allow-alicorn-revision` and passes both smoke legs on
+  `--renderer=webgpu --backend=d3d12`, `--backend=vulkan`, and
+  `--renderer=sdl-gpu` (`publication_rendered`, `wake_observed`,
+  `ordered_shutdown`, `session_restore` all true).
+
+### Residual work and hands-on items
+
+- This automation session cannot deliver synthetic OS pointer input to the
+  Scratchpad window (the same limitation recorded in Stage B slice 5: host keys
+  such as F10-F12 arrive, pointer motion does not). The Scratchpad tab drag is
+  therefore verified at the hosted-runtime seam plus the instrumented example 16
+  fixture, not by a pixel capture of the real app. The founder's real tab drag
+  is the confirming check; the hosted frontend picks up the new default without
+  any Scratchpad change.
+- Neighbor "make room" motion is application policy. Scratchpad retargets
+  `ui.motion` on `Tab_Bar_Result.item_nodes`; the example 16 fixture does not,
+  so its strip shows an empty source slot rather than animated neighbors. The
+  runtime evidence asserted here is the marker, the lift, the hidden source and
+  the retained translation.
+- A drag that starts when the source subtree has already painted nothing (for
+  example a virtualized row that retired in the same frame) still falls back to
+  the label card; with the descendant-label resolution it now shows that row's
+  text instead of an empty rectangle.
+
+## Stage C slice 3: hosted font-initialization parity and the Pinned U+22EF control (2026-11-20)
+
+Real Scratchpad testing found the Pinned card's "more actions" button drawn as a
+missing-glyph box on the hosted WebGPU build. The control is a text button
+labelled U+22EF HORIZONTAL MIDLINE ELLIPSIS
+(`frontends/alicorn/pinned_surface.odin:998-1004`).
+
+What each backend actually resolved on the same restored pinned scene:
+
+| Build | Stack | U+22EF |
+| --- | --- | --- |
+| hosted before | bundled Atkinson only, 0 fallback faces | `.notdef`, primary face 1, glyph 0 |
+| SDL_GPU before | bundled + 5 DirectWrite faces + NotoSansJP-VF | face 10, glyph 17470 |
+| both after | the same shared desktop stack | face 10, glyph 17470 |
+
+The five DirectWrite startup faces do not cover U+22EF; the reference's success
+came from the optional `C:/Windows/Fonts/NotoSansJP-VF.ttf` fallback.
+`segoeui.ttf` does not cover it either, so a Windows machine without Noto Sans JP
+boxes the glyph on the reference too. This was an initialization-parity gap with
+an incidental reference-side cover, not a Runa coverage bug.
+
+Changes:
+
+- The native font seeding moved from `native/sdl_gpu/fonts*.odin` into a shared
+  `alicorn:host/fonts` package. `load_default_fonts` installs bundled defaults,
+  the bounded Windows DirectWrite startup mappings, and the optional UI and
+  monospace fallbacks. The SDL_GPU reference, `ui.run`'s native path, and the
+  hosted SDL3/WebGPU `ui/webgpu.run` all call it. `native/sdl_gpu/fonts.odin`
+  keeps aliases for the existing validation fixtures. The browser path remains
+  bundled-only (`#+build !js`) and is documented as such.
+- `runtime/inspector.odin` records `faces=[...] unresolved=...` on every text
+  run, including button labels, plus a bounded
+  `text fallback glyphs: [start,end)face=N gid=N` line. This made the actual
+  face/glyph visible in both F12 bundles and is the regression surface for
+  future fallback work.
+- Alicorn now provides the semantic alternative for the control: a 15th
+  built-in `More_Horizontal` icon (Reicon `ui/more-h`, pinned revision,
+  regenerated atlas). `icon_button(ui, "More actions", .More_Horizontal, ...)`
+  paints a tinted coverage mask with no text run and keeps the explicit
+  accessible name. The Pinned control should adopt it rather than depend on a
+  system face; the exact Scratchpad-side change is listed in the validation
+  record.
+
+Validation: the post-fix hosted frame is byte-identical to the SDL_GPU
+reference for the same pinned scene (0 of 2,914,752 channels differ). The
+pre-fix hosted frame differed in exactly the two `pinned-more` rectangles (642
+channels, 214 pixels, bbox `(1176,96)-(1193,304)`). Runtime, host/fonts, ui,
+native, and host suites pass; example 16's seven smokes exit 0 on D3D12, Vulkan,
+and SDL_GPU; Scratchpad's webgpu D3D12, webgpu Vulkan, and sdl-gpu smokes all
+report `publication_rendered`, `wake_observed`, `ordered_shutdown`, and
+`session_restore` true.
+
+Full evidence, coverage probes, the exact Scratchpad change list, and harness
+limits are in
+[`validation/issue-211-hosted-font-parity-ellipsis-windows-2026-11-20.md`](validation/issue-211-hosted-font-parity-ellipsis-windows-2026-11-20.md).
+
+## Stage C slice 4: theme color fidelity across the presentation matrix (2026-11-20)
+
+Founder finding on the hosted WebGPU build: syntax highlighting "seems to work,
+the colors are just super subtle". The only pixel evidence so far was one Go
+editor scene with one theme. This slice runs a matched real-application matrix
+before changing anything: parity everywhere means theme design, a mismatch means
+a renderer regression.
+
+### Matrix
+
+One Scratchpad build (Alicorn `3596387` + this slice, Scratchpad `b458d6e`,
+candidate root, `--allow-alicorn-revision`, no Scratchpad source or lock change)
+served every leg; `SCRATCHPAD_RENDERER` selected the host and `--backend=` the
+hosted GPU. Every leg used the founder's restored session bytes, the same
+theme preference, 1216x799 at 100% DPI, and two F12 captures that had to be
+byte-identical before the frame was accepted.
+
+Scenes: Go editor (`language/detection.go`), markdown (`README.md`), JSON
+(`caliber.config.json`), the Pinned fixture, and the workbench start screen.
+Themes: warm (default), cool-light, charcoal-ink, all with the
+`workbench-relief` treatment.
+
+Result over 5 scenes x 3 themes x 2 hosted backends (D3D12, Vulkan), against the
+SDL_GPU reference: **27 of 30 comparisons are byte-identical**
+(0 / 2,914,752 channels). All syntax-token colours, selection paints, chrome,
+the pinned editor and the start screen agree pixel for pixel, which confirms the
+Stage B5 surface-format fix holds across the app's presentation.
+
+### The one mismatch is an application status label
+
+The three `json-document` scenes differ in exactly one status-strip rectangle,
+`(415,774)-(494,783)`: the hosted legs draw the app's conditional "Editor
+focused" cue, the reference does not. Both hosted backends agree with each
+other byte for byte (1113-1116 channels, max 308-550), and the editor, tabs,
+sidebar and chrome are identical. A build-time trace showed both hosts run the
+identical startup/focus sequence; the reference performs **one more describe
+turn** after it, which lets the app's status strip read a valid current-pass
+caret anchor. The hosted host presents the previous turn's stale label. That is
+a host turn/scheduling parity gap, not a paint, material or colour difference:
+the app's own state is what differs. It is recorded for a follow-up host slice;
+no runtime change is made here.
+
+### Why the highlighting is subtle (measured)
+
+Both hosts follow the documented contract: generated theme channels are
+linear-sRGB after the compiler's sRGB decode, and they are written unchanged
+into a non-sRGB swapchain, so the displayed value is the linear channel read as
+an sRGB code. The authored palette never appears on either host. In the
+captured Go editor, cool-light's authored background `#fafbfe`, body text
+`#121a26` and keyword `#604a88` are displayed as `#f4f6fd`, `#020305` and
+`#1e113f`.
+
+WCAG contrast from the compiled styles: on the light themes every token is
+13.5-17.8:1 against its background (readable) but only **1.04-1.19:1 against
+plain text** (the `syntax.variable` baseline), so only hue (dE 8-31) separates
+highlighting from code. Warm is flattest; its comment colour is dE 8.9 from
+plain text. On charcoal-ink the compression goes the other way: keyword
+(2.91:1), number (2.82:1) and comment (2.22:1) fall **below the 3:1
+body-text threshold** against their own background, while the authored palette
+has 4.42-5.15:1.
+
+Options for the founder are in the validation record: (A) true sRGB output on
+both hosts together, restoring authored colours everywhere; (B) pre-compensate
+the syntax palette (exact replacement components are tabulated) so the current
+contract displays the authored colours, measured to move light-theme tokens from
+1.04-1.19:1 to 2.3-3.2:1 against plain text and to fix charcoal-ink's sub-3:1
+readability; (C) retune the palette itself for >=3:1 against plain text; (D)
+typographic separation instead. No theme or renderer change is applied without
+approval.
+
+### Evidence equipment
+
+`tools/compare_backends.ps1` is now the standard one-command matched comparison:
+it runs each renderer/backend with the same state, environment, arguments and
+window, drives F12 twice to prove the frame settled, diffs each candidate against
+the reference, and writes a full-frame plus per-region `report.md`/`report.json`.
+`tools/ppm_diff.py` is the dependency-free differ, `tools/theme_contrast.py`
+reports authored-versus-displayed contrast for generated themes, and
+`tools/test_compare_tools.py` covers the parser, region statistics and contrast
+math (10/10). Usage is documented in `docs/development.md`.
+
+Full matrix, region tables, the status-cue trace, the contrast tables, the
+pre-compensation values and the retuned example are in
+[`validation/issue-211-theme-fidelity-windows-2026-11-20.md`](validation/issue-211-theme-fidelity-windows-2026-11-20.md).
+
+### Validation
+
+All runtime, host, renderer, ui, testui, theme, native and accessibility suites
+pass unchanged (this slice changes no runtime or host code): runtime 412/412,
+host/fonts 5/5, host/sdl3 7/7, live_resize 9/9, input 8/8, clipboard 3/3,
+dialogs 5/5, host/menus 8/8, host/web 14/14, host/diagnostics 9/9,
+host/presentation 7/7, renderer/webgpu 8/8, renderer/cpu 23/23, ui 50/50,
+testui 13/13, theme 37/37, native/sdl_gpu 166/166, scroll_capture 6/6,
+`odin build tests` and `out/alicorn_tests.exe`, the accessibility contract
+fixture, restoration, the text-input contract, and the theme CLI checks all
+pass. `python tools/test_compare_tools.py` passes 10/10. Scratchpad smokes on
+`--renderer=webgpu --backend=d3d12`, `--backend=vulkan` and `--renderer=sdl-gpu`
+report `publication_rendered`, `wake_observed`, `ordered_shutdown` and
+`session_restore` true.
+
+### Residual work
+
+- Hosted host turn parity: present the same final describe turn after the
+  restore/focus sequence as the reference, or make the app's status read the
+  current pass's anchor. The trace and the exact rectangle are in the record.
+- The founder's hands-on judgement of whether the measured separation is
+  acceptable decides between options A-D.
+
+## Stage C slice 5: retained motion scheduling parity (2026-11-20)
+
+The founder acceptance for this slice is "no frozen animations or unnecessary
+idle rendering" on the hosted WebGPU path. The investigation compared how the
+reference `native/sdl_gpu` host schedules retained motion with what
+`runtime/hosted.odin` did, then measured both halves of the acceptance on real
+windows and in the runtime suite.
+
+### How the reference host schedules motion
+
+`native/sdl_gpu` owns one `Native_Motion_Scheduler_State` per window. Each host
+loop turn calls `native_motion_scheduler_advance`, which:
+
+1. reads `motion_activity` (active owners/properties, unestablished deadlines);
+2. calls `native_motion_scheduler_prepare`, which **consumes a due demand
+   exactly once**: the first active turn arms `now + 16.67 ms`, later turns only
+   sample when `now >= next_deadline`; a hidden/minimized/occluded window drops
+   its deadline and records a suspension, and restoring asks for one immediate
+   current-time sample;
+3. when due, calls `motion_tick(at)` once and then re-arms the deadline
+   (`native_motion_scheduler_finish_sample`), applying the bounded 5 s
+   uncertified snap;
+4. publishes the earliest deadline to the event wait (`Primary_Motion`,
+   `Child_Motion` per window).
+
+Crucially, an ordinary turn that is *not* due still updates the injected motion
+clock (`native_motion_clock_set_current_time`, before every description) but
+does not sample or request a frame. Retained-paint flushes that start a hover
+transition re-arm the first deadline with a second `prepare` pass after the
+frame. `native_application_build_until_stable` also injects the clock before
+every description.
+
+### What the hosted runtime did
+
+`hosted_runtime_advance_presentation` called `motion_tick(now)` on **every**
+step. That is correct for "the animation never freezes when the description does
+not change" - a 40-frame settle run reproduced on the hosted step - but it made
+the animation's sampling rate equal to the host's loop rate instead of the
+display cadence. A 1 ms pointer/completion-wake storm presented 200 frames in
+400 ms where the reference host presents ~24. Every one of those frames costs a
+surface acquire, encode, submit and present, which is exactly the "unnecessary
+rendering" half of the acceptance.
+
+The second half was a pre-existing hosted loop defect that the gating would have
+made much worse. `host/sdl3/run.odin` computed its wait with
+`ceil((next_wake-now)/1 ms)` and called `SDL_WaitEventTimeout` directly. SDL3's
+Windows backend truncates the *remaining* nanosecond timeout to milliseconds, so
+a remainder below 1 ms becomes a zero-millisecond OS wait and the host re-enters
+its loop. Before this slice the published deadline slid forward on every step,
+which hid the effect; with a fixed deadline the last fraction of every sampling
+interval spun. `native/sdl_gpu` already had
+`native_event_wait_windows_timeout_ms` for this reason; the hosted host did not.
+
+### Changes
+
+- `runtime/hosted.odin`: `Hosted_Runtime_State.motion_deadline_ns` is the
+  surface's retained-motion deadline.
+  - `hosted_motion_sample_due` gates sampling: no active owner clears the
+    deadline, an unarmed deadline samples (first response or restore), otherwise
+    only `now >= deadline` samples.
+  - A non-sampling step calls `motion_clock_set_time(now)` so a description in
+    that step still resolves `ui.motion` targets at the current time, without
+    sampling or requesting presentation (the reference host's pre-description
+    clock update).
+  - A sample re-arms `now + HOSTED_MOTION_SAMPLE_INTERVAL_NS` while owners remain
+    active and clears the deadline when the response settles.
+  - `hosted_motion_deadline` arms the first deadline for a response started by
+    this step's description or retained-paint flush, and
+    `hosted_runtime_next_deadline` publishes it. A hidden surface drops the
+    deadline, so restoration samples once at the current time instead of
+    replaying the gap. `hosted_runtime_live_step` shares the same deadline.
+- `host/sdl3/run.odin`: `sdl3_webgpu_run_wait_timeout_ms` adds one millisecond
+  of slack to a positive wait timeout on Windows, mirroring the reference host.
+- `benchmarks/workload_matrix/main.odin`: the fixture did not compile against
+  the current `ui.run` signature (positional `state`/`render` mixed with named
+  arguments, and `ui.run_webgpu`, which does not exist). It now calls
+  `ui.run`/`ui/webgpu.run` with named arguments. This is the harness used for the
+  real-window numbers below.
+
+### Fixtures
+
+`runtime/hosted_motion_test.odin` (six tests):
+
+- `test_hosted_motion_runs_to_settlement_without_description_changes`: one
+  description requests an opacity response; every following frame is
+  presentation-only, the cadence is re-armed from each sample's own time, the
+  response settles on its exact target, and a second of subsequent host turns
+  presents and describes nothing.
+- `test_hosted_motion_samples_on_its_cadence_not_on_host_turns`: 250 host turns
+  at 1 ms yield the display cadence (8-24 frames) and terminate; the storm
+  cannot stretch the response.
+- `test_hosted_motion_hidden_surface_drops_and_restores_its_deadline`: a hidden
+  surface publishes no frame/wake and does not advance the pose; restore samples
+  once and re-arms.
+- `test_hosted_tick_turns_do_not_present_settled_frames`: an installed `on_tick`
+  keeps its 16.67 ms turn cadence with zero presented frames and one description.
+- `test_hosted_motion_windows_schedule_independently`: two `Hosted_Runtime`
+  sessions stepped from one shared loop; an animating child presents its
+  bounded run while the settled primary presents zero frames, and vice versa.
+- `test_hosted_live_step_shares_the_motion_deadline`: modal-loop steps honour
+  the same cadence, do not dispatch ticks, and progress to settlement.
+
+### Measured results (Windows x64, RTX 2080 SUPER)
+
+Retained-motion matrix scenario (`benchmarks/workload_matrix`, one
+`ui.motion` reveal, `--frames=1 --smoke --smoke-hold-ms=1200`), hosted
+`frames_presented` from `--timings`:
+
+| Scenario | SDL_GPU reference submits | Hosted before | Hosted after |
+| --- | ---: | ---: | ---: |
+| `transform` D3D12 | 36 | 40 (steps 784) | 37 (steps 93-103) |
+| `transform` Vulkan | - | 43 (recorded) | 37 (steps 90) |
+| `multiwindow` D3D12 | 29 | 36 (steps 671) | 36 (steps 94) |
+| `multiwindow` Vulkan | - | 67 (recorded) | 35 (steps 93) |
+| `settled` D3D12 | 1 | 1 (steps 525-1138) | 1 (steps 7) |
+
+`steps` is hosted host-loop turns, not frames: after the change the loop runs
+about one turn per presented frame plus the bounded 250 ms device-loss poll, and
+the 1.2 s idle window presents nothing. The same binary with the wait slack
+disabled by environment for the A/B (probe build, not committed) reported 5256
+turns for `transform` and 642 for `settled`, isolating the quantization defect.
+
+Runtime seam, `storm-paced frames` probe before the gating: 200 frames over
+400 ms of 1 ms turns; after: 23 frames, still settling on its target.
+
+### Validation
+
+All suites pass: runtime 418 (six new hosted motion tests), host/fonts 5,
+host/sdl3 7, live_resize 9, input 8, clipboard 3, dialogs 5, host/menus 8,
+host/web 14, host/diagnostics 9, host/presentation 7, renderer/webgpu 8,
+renderer/cpu 23, ui 50, testui 13, theme 37, native/sdl_gpu 166,
+scroll_capture 6, accessibility contract 1, `odin build tests` and
+`out/alicorn_tests.exe`. `examples/16_native_webgpu_ui` passes its seven smokes
+(`--smoke`, `--workbench-smoke`, `--titlebar-smoke`, `--child-chrome-smoke`,
+`--menu-smoke`, `--services-smoke`, `--tab-drag-smoke`) on D3D12, Vulkan and
+SDL_GPU (21/21). Scratchpad (`codex/issue-211-webgpu-frontend` at `b458d6e`,
+read-only, candidate root this branch, no Scratchpad source or lock change)
+builds and passes `smoke --renderer=webgpu --backend=d3d12`, `--backend=vulkan`
+and `--renderer=sdl-gpu`. Full numbers and the before/after probe are in
+[`validation/issue-211-motion-scheduling-windows-2026-11-20.md`](validation/issue-211-motion-scheduling-windows-2026-11-20.md).
+
+### Residual work
+
+- **C4 describe-turn residual: not closed; scheduled.** The JSON-scene status
+  cue difference is not a motion-scheduling artifact. Both hosts run the same
+  three-pass startup turn and the same one-pass follow-up; the reference then
+  takes one more host turn whose description finds the caret anchor. That turn
+  is not a stabilization pass (hosted would run it inside the same step if the
+  application were still invalidated), and it cannot be synthesized by the
+  runtime without inventing a description the application did not request. The
+  traced cause is an application-state read: `editor_focus_needs_status_cue`
+  runs before the virtual list realizes the caret row, so the first pass of a
+  turn sees the previous anchor. The fix belongs either in Scratchpad (realize
+  the caret row before the status strip, or invalidate when the anchor is newly
+  resolved) or in a future host slice that identifies the remaining reference
+  turn's invalidation source (the startup pixel-resize event is the leading
+  candidate: SDL_GPU applies it after the first description, the hosted host
+  adopts the same metrics before its first step). The exact rectangle and trace
+  remain in `validation/issue-211-theme-fidelity-windows-2026-11-20.md`.
+- Hover and scroll still start style transitions from retained paint; they now
+  inherit the same deadline and settle to zero frames, but the interactive
+  hover-then-idle case is covered by the runtime fixture rather than a scripted
+  OS pointer run (this automation session cannot deliver synthetic pointer
+  motion to a real window, as recorded in earlier slices). The founder's
+  hands-on hover/scroll is the confirming check.
+
+## Stage C slice 6: high-DPI monitor transitions (2026-11-20)
+
+The founder acceptance for the last Stage C item is "high-DPI monitor
+transitions - correct geometry, text and hit testing." SDL3 exposes three
+distinct quantities: window coordinates (logical points), framebuffer pixels,
+and display scale. This slice audited every place the hosted WebGPU path
+consumes them, compared each against the `native/sdl_gpu` reference, and built
+an automated transition fixture for everything except the physical monitor
+drag.
+
+### The reference host's transition path
+
+`native/sdl_gpu` measures a window once per event turn
+(`read_window_metrics`): window size in points, drawable size in pixels,
+`SDL_GetWindowPixelDensity`, and `SDL_GetWindowDisplayScale`. It applies that
+measurement with `native_window_metrics_apply`:
+
+1. a logical-size change updates `rt.viewport` and invalidates the description;
+2. a `pixel_density` or `display_scale` change invalidates the description even
+   when the logical size is unchanged, because `Application.build` receives
+   `display_scale` and may size GPU surfaces from it;
+3. independent X/Y presentation scales are derived from
+   `pixel_width/logical_width` and `pixel_height/window_logical_height`;
+4. `set_presentation_scale` re-snaps retained geometry to the new device grid,
+   rebuilds the finalized display list from the unsnapped targets, and requests
+   presentation.
+
+WM_DPICHANGED itself is owned by SDL; the Windows integrated-titlebar subclass
+also observes it to refresh native chrome text, the caption-button layout, the
+DWM frame extension, and a redraw request. The live-resize path re-read the same
+measurement on every modal-loop frame but only invalidated on logical changes.
+
+### Divergences found and fixed
+
+1. **Hosted application scale was the drawable ratio, not display scale.**
+   `host/sdl3` passed `pixel_width/logical_width` as the `dpi_scale` received by
+   `Hosted_Render_Proc`; the reference passes `Window_Metrics.display_scale`.
+   They usually agree on Windows, but they are distinct inputs and different
+   platform modes can report them differently. The hosted host now reads both
+   `SDL_GetWindowPixelDensity` and `SDL_GetWindowDisplayScale`, stores them
+   separately, and passes display scale to the application description while
+   presentation continues to derive from the drawable ratio.
+2. **The hosted host did not track display scale independently.** A display
+   scale change that did not change the drawable ratio (Windows text scaling,
+   platform modes that keep the framebuffer fixed) was invisible; diagnostics
+   also reported `pixel_density == display_scale == dpi_scale`. `diagnostics`
+   now reports the two measured values separately, and
+   `sdl3_webgpu_application_apply_metrics` publishes a full measurement
+   (logical, pixel, pixel density, display scale) in one operation.
+3. **The hosted live-resize geometry check ignored scale-only changes.**
+   It compared only logical and pixel sizes, so a transition that reported the
+   same sizes but a different display scale would not adopt metrics during a
+   modal move/size loop. It now compares the two scale inputs as well.
+4. **The native live-resize path missed display-scale invalidation mid-drag.**
+   It called `set_presentation_scale` on a metadata scale change but invalidated
+   only on logical changes, so an application surface sized from
+   `display_scale` could keep its old pixel size until the drag ended. It now
+   performs the same `SDL display scale changed` invalidation as the ordinary
+   event path.
+5. **No double application of scale.** Retained paint commands remain in
+   logical units; `set_presentation_scale` only snaps the device-grid edges from
+   unsnapped targets and `layout_finalize_display` rebuilds from those targets.
+   The renderer then applies the pixel scale exactly once. Text glyphs are
+   keyed by physical size (`run.size * scale_y`) and subpixel bucket, and the
+   mesh fingerprint includes `scale_x/scale_y`, so a transition re-rasterizes
+   instead of stretching the previous atlas. Returning to an already-rasterized
+   scale reuses those slots; that is a cache hit, not a stale atlas.
+6. **State that was already correct and is now covered rather than changed.**
+   Per-window scale, Chrome Text Runs, and hit testing were already independent:
+   each `SDL3_WebGPU_Application` owns its own `Hosted_Runtime`, text engine, and
+   presenter; `win32_chrome_sync` re-reads `GetDpiForWindow`,
+   `GetWindowPixelDensity`, and `GetWindowDisplayScale` on every pre-present
+   sync and publishes the inset through `hosted_runtime_set_content_inset`;
+   pointer coordinates are divided into application space by that inset and hit
+   tested against logical `bounds`/`hit_bounds`, which presentation scaling
+   never rewrites.
+
+### Automated mixed-DPI method
+
+A real per-monitor transition cannot be originated on a single display, and
+this machine's two monitors both run 100%, so the fixture separates the two
+halves of the OS sequence:
+
+- **Window-proc half.** `tests/fixtures/dpi_transition` posts
+  `WM_DPICHANGED` and `WM_DISPLAYCHANGE` with `SendMessageW` to the real hosted
+  window. This runs the native subclass chrome branch (titlebar text refresh,
+  metrics/layout sync, DWM frame extend, redraw request) exactly as a real
+  transition does even though `GetDpiForWindow` still reports the monitor's
+  current DPI. The fixture asserts the previously idle window now presents a
+  frame and its chrome layout callback re-ran.
+- **Measurement half.** The fixture calls
+  `sdl3_webgpu_application_apply_metrics` with the measurement a real transition
+  produces: unchanged logical size, new drawable pixels, new pixel density and
+  display scale for 1.0/1.25/1.5/1.75. This drives the surface reconfigure,
+  presentation scale, description invalidation, text re-rasterization, and
+  hit-test remap deterministically.
+
+The same measurement sequence is exercised against the reference host in
+`native/sdl_gpu/dpi_transition_test.odin` through `native_window_metrics_apply`
+and in `runtime/hosted_test.odin` through `hosted_runtime_resize`, asserting the
+same observables (logical bounds, pointer target, presentation scale, display
+scale delivered to the description).
+
+### Per-window simultaneous DPI and text/hit-test acceptance
+
+The fixture runs two hosted windows on one device: a system-decorated text
+window and an integrated-titlebar chrome window. It adopts 1.25 on the first
+and 1.75 on the second, then asserts each runtime, presenter, application
+description, logical bounds, and hit-test target stays independent.
+
+For each scale on the first window it:
+
+- asserts the surface is configured at `logical * scale` and presenter scales
+  are `scale x scale`;
+- asserts the application description received `display_scale`;
+- asserts the known button's logical bounds are identical to the baseline and a
+  pointer at its logical center still targets the same node;
+- asserts the WebGPU text mesh rebuilt and, on the first visit to a scale, that
+  glyphs were rasterized;
+- captures the frame, crops to the text node, and checks glyph ink area (scales
+  with `scale^2`) and maximum adjacent luminance step (sharp edges, not a
+  bilinear rescale of the last frame).
+
+Measured on Windows 10 22H2 / RTX 2080 SUPER, D3D12, baseline 100%:
+ink 4150 at 1.0, 6026 at 1.25, 8733 at 1.5, 11440 at 1.75 (ratios 0.93-0.98 of
+`scale^2`), maximum adjacent luma step 1429/2550 at every scale, all logical
+bounds and hit targets identical. The 1.25 and 1.0 revisits re-used cached
+glyph slots and produced the same captures. Vulkan is equivalent.
+
+### Validation
+
+New or extended coverage:
+
+- `runtime/hosted_test.odin`: display-scale transitions at fixed logical size,
+  metadata-only scale changes, repeated round trips, hit-test stability, and
+  the display scale delivered to the description.
+- `host/sdl3/application_test.odin`: `apply_metrics` publishes drawable ratio
+  and display scale independently, rebuilds on a metadata change, and falls
+  back coherently on zero platform scales.
+- `native/sdl_gpu/dpi_transition_test.odin`: the same invariants through
+  `native_window_metrics_apply`.
+- `tests/fixtures/dpi_transition` + `tools/validate_native_webgpu_dpi.ps1`:
+  real hosted windows, posted monitor messages, captures, and per-window
+  scales. Passes on D3D12 and Vulkan.
+
+Suites: runtime 419, host/fonts 5, host/sdl3 8, live_resize 9, input 8,
+clipboard 3, dialogs 5, host/menus 8, host/web 14, host/diagnostics 9,
+host/presentation 7, renderer/webgpu 8, renderer/cpu 23, ui 50, testui 13,
+theme 37, native/sdl_gpu 168, scroll_capture 6, accessibility contract 1,
+`odin build tests`/`out/alicorn_tests.exe` (foundation PASS). Example 16 passes
+its seven smokes on D3D12, Vulkan, and SDL_GPU (21/21). Scratchpad at
+`b458d6e` (candidate root this branch, no source or lock change) passes
+`smoke --renderer=webgpu --backend=d3d12`, `--backend=vulkan`, and
+`--renderer=sdl-gpu` (clean and recovery legs). Details and raw logs are in
+[`validation/issue-211-dpi-transitions-windows-2026-11-20.md`](validation/issue-211-dpi-transitions-windows-2026-11-20.md).
+
+### Founder's hands-on monitor-drag checklist
+
+The automation cannot originate a real cross-monitor `WM_DPICHANGED`, so the
+remaining confirmation is physical. On the machine with two displays:
+
+1. Set the monitors to different scales (for example A 100%, B 150%) and note
+   which is primary. Use Windows 10 22H2, not a remote session.
+2. Start `out\examples\16_native_webgpu_ui.exe --workbench-smoke --interactive`
+   or Scratchpad on the hosted WebGPU build on monitor A at ~720x480.
+3. **Mid-drag DPI change:** grab the titlebar and drag slowly across the
+   boundary, then grab a window edge and drag-resize while crossing. The frame
+   must track the live size, never show the old frame stretched, and must not
+   stall until release.
+4. **Per-monitor scale:** leave the window on each monitor for several seconds.
+   Content logical size must be identical on both; text and controls must keep
+   the same apparent size, while quality increases on the higher-DPI monitor.
+5. **Text sharpness:** inspect small text, tabs, and menu labels immediately
+   after the transition. There must be no soft/blurred frame, no half-resolution
+   text, and no flash of a stretched atlas.
+6. **Chrome band:** with the integrated titlebar fixture, the band must keep
+   the same logical height, menu labels must stay vertically centered, and the
+   caption buttons must remain inside the window.
+7. **Hit testing after landing:** click a tab, close button, text field caret,
+   and scrollbar immediately after the transition. They must respond at the
+   visual target; no offset equal to the old scale factor.
+8. **Both directions:** repeat A→B, B→A, and a resize that starts on one monitor
+   and ends on the other. Watch for stale text, a blank/black frame, or a lost
+   surface. Record the monitor scales and any mismatch against this checklist.
+
+## Stage D slice 1: topmost floating-window re-entry position (Windows, 2026-11-20)
+
+Stage D opened with a founder-reported regression on the hosted build: a
+secondary topmost window "shifts to the left and up when the mouse re-enters
+it". This was a recurrence of a defect already fixed for the reference host in
+`bae58e9` ("preserve topmost window position on mouse entry"), which the hosted
+chrome port never carried over. Stage D slice 1 moves the fix into shared
+platform infrastructure, restores it on both hosts, and adds the regression
+coverage the original fix relied on.
+
+### Mechanism and the original discrimination logic
+
+SDL promotes an `ALWAYS_ON_TOP` window on mouse entry. `WIN_OnWindowEnter`
+(`SDL_windowswindow.c`, release 3.4.20) calls
+
+```c
+WIN_SetWindowPositionInternal(window, copybits | SWP_NOSIZE | SWP_NOACTIVATE,
+                              SDL_WINDOWRECT_CURRENT);
+```
+
+and `WIN_SetWindowPositionInternal` derives the requested origin with
+`WIN_AdjustWindowRect`, which adds the **standard** `AdjustWindowRectExForDpi`
+caption/border inset. An Alicorn integrated title bar answers `WM_NCCALCSIZE`
+with a full-client rectangle, so that inset is already inside the window
+rectangle. SDL adds it a second time and Windows moves the window down/right, so
+the next entry computes from the moved position and the window walks up and to
+the left by the caption and border inset (observed 8 px left, 31 px up).
+
+`bae58e9` intercepted `WM_WINDOWPOSCHANGING` in the native
+`native/sdl_gpu/menus_windows.odin` subclass and set `SWP_NOMOVE` only when the
+request was SDL's promotion. The discrimination was the important part, because
+a false positive freezes a legitimate move:
+
+- the integrated frame is active and the SDL window has `.ALWAYS_ON_TOP`;
+- the request has `SWP_NOSIZE | SWP_NOACTIVATE` and none of
+  `SWP_NOMOVE | SWP_NOZORDER | SWP_FRAMECHANGED`;
+- the requested origin equals `SDL_GetWindowPosition() + standard-frame inset`
+  from `AdjustWindowRectExForDpi`, with a nonzero inset. Windows may replace
+  `HWND_TOPMOST` with an insertion HWND before the message is delivered, so the
+  z-order target is deliberately not inspected.
+
+Explicit moves and placements keep `SWP_NOZORDER`; resizes, always-on-top
+toggles, DPI changes, and frame changes keep `SWP_NOMOVE` or
+`SWP_FRAMECHANGED`; and the coordinate signature excludes everything else.
+
+### What the hosted path was missing
+
+The Stage A slice 3 hosted port mirrored the native chrome in
+`host/menus/chrome_windows.odin` (WM_NCCALCSIZE, WM_NCHITTEST, caption
+controls, DWM frame, chrome regions) but its `win32_chrome_handle_message`
+never looked at `WM_WINDOWPOSCHANGING`. `host/menus/adapter_windows.odin`
+installs the subclass for hosted primary and secondary windows, so every hosted
+topmost window was exposed to the drift; the native host was protected only
+because it still carried its own copy of the predicate.
+
+### Shared implementation
+
+New package `host/sdl3/window_frame` owns the predicate for both hosts,
+matching the `host/sdl3/live_resize` precedent ("both renderers one host"):
+
+- `Context{hwnd, window, frame_enabled, menu_attached}` carries only what both
+  subclasses know; `menu_attached` mirrors the `bMenu` value SDL's own
+  adjustment derives.
+- `standard_frame_inset` exposes the origin offset SDL would add.
+- `preserve_topmost_promotion_position` applies the discrimination above and
+  sets `SWP_NOMOVE` in place.
+
+`native/sdl_gpu/menus_windows.odin` now delegates to the shared predicate and
+keeps only its own `windows.json` counter (`topmost_promotions_preserved`).
+The hosted chrome calls it from the new `WM_WINDOWPOSCHANGING` branch before
+`DefSubclassProc` and counts the preserved promotions on
+`Win32_Chrome_State`. There is one implementation, and the native 168-test
+suite plus the hosted regression exercise it from both sides.
+
+### Validation
+
+- `host/sdl3/window_frame`: a predicate test proves acceptance of the exact
+  promotion shape and rejection of explicit placement (`SWP_NOZORDER`), resize
+  (`SWP_NOMOVE`), frame/DPI change (`SWP_FRAMECHANGED`), the unadjusted client
+  origin, a half-inset origin, a system-decorated context, a non-topmost
+  window, and a nil request.
+- `host/menus/chrome_windows_test.odin`: port of the native
+  `test_integrated_topmost_window_mouse_entry_preserves_native_rectangle`
+  regression. Eight real SDL mouse-entry messages must preserve the HWND
+  rectangle, must not activate the window, and must increment the counter;
+  explicit move and resize still change geometry; topmost off/on entries add
+  eight more preserved promotions (16 total). Hosted suites: host/menus 9.
+- `native/sdl_gpu`: 168 tests pass with the shim, including the original
+  regression and the `windows.json` counter.
+- Negative control: with the shared predicate's `SWP_NOMOVE` temporarily
+  removed, the new physical runner reports `entry 0 rect=884,408,1668,907
+  delta=(-8,-31)` (the founder's exact symptom). Restoring the line makes every
+  entry `delta=(0,0)`.
+- `examples/16_native_webgpu_ui` gained `--topmost-child-smoke`: an
+  integrated-chrome `ALWAYS_ON_TOP` child that stays open.
+  `tools/validate_native_webgpu_topmost.ps1` moves the real cursor out of and
+  back into that child four times and asserts the rectangle and topmost state.
+  Passes on D3D12, Vulkan, and SDL_GPU with `delta=(0,0)` on every entry.
+- Example 16 `--child-chrome-smoke` and `--titlebar-smoke` pass on D3D12,
+  Vulkan, and SDL_GPU; the hosted 10-test chrome suite (`host/menus` 9 +
+  `host/sdl3/window_frame` 1) passes; Scratchpad `b458d6e` passes
+  `smoke --renderer=webgpu --backend=d3d12`, `--backend=vulkan`, and
+  `--renderer=sdl-gpu` (clean and recovery legs each).
+
+Suites: runtime 419, host/fonts 5, host/sdl3 8, live_resize 9, window_frame 1,
+input 8, clipboard 3, dialogs 5, host/menus 9, host/web 14, host/diagnostics 9,
+host/presentation 7, renderer/webgpu 8, renderer/cpu 23, ui 50, testui 13,
+theme 37, native/sdl_gpu 168, scroll_capture 6, accessibility contract 1,
+`odin build tests`/`out/alicorn_tests.exe` (foundation PASS). As in the previous
+slices, `tools/test.ps1` on this machine stops at the pinned AccessKit dependency
+check's `odin test accesskit` stage before the Alicorn suites run, so every
+Alicorn stage was run individually with the same compiler arguments. Raw logs
+and the negative-control record are in
+[`validation/issue-211-topmost-reentry-windows-2026-11-20.md`](validation/issue-211-topmost-reentry-windows-2026-11-20.md).
+
+### Founder's hands-on re-entry checklist
+
+The automated runner uses the fixture child; the founder's exact Scratchpad
+floating window still needs a physical pass:
+
+1. On Windows 10 22H2 with the hosted build, open Scratchpad and detach a
+   document into a floating window (drag the tab out and release outside the
+   window), then enable its "On top" action.
+2. Move the pointer out of the floating window, then re-enter it from each side
+   (left, right, top, bottom) at least four times each.
+3. The window rectangle must not change by even one pixel, must not activate on
+   hover, and must remain above the main window.
+4. Also move and resize the floating window deliberately; those must still
+   work, and a DPI change while dragging must still re-lay out the chrome.
+5. Repeat once with the window partially off-screen and once on a second
+   monitor at a different scale.
+
+## Stage D slice 2: syntax highlighting across edits (Windows, 2026-11-20)
+
+Real Scratchpad use on the hosted WebGPU build reported a P1 application gap:
+syntax highlighting vanished as soon as the founder typed, including on lines
+that were not edited. The SDL_GPU reference was assumed to keep highlighting.
+This slice traced the whole publication chain, reproduced the failure on both
+hosts, and found it in the shared frontend's stale-window handling rather than
+in the hosted renderer, wake transport, or text mesh. Alicorn's side of the
+chain is now covered by edit-sequence fixtures.
+
+### What the chain showed
+
+The chain is: optimistic edit and rebased spans, edit acknowledgement,
+asynchronous parser publication, host wake, description, retain/present, and
+text mesh invalidation. The failure is between the acknowledgement and the
+description.
+
+- `editor_window_replace_bytes` (`frontends/alicorn/editor_model.odin:906`)
+  rebases unaffected syntax records and marks the optimistic window
+  `presentation_stale=true` while keeping `presentation_ready`. The first frame
+  after a keystroke is therefore still highlighted.
+- `editor_handle_edit_result` (`frontends/alicorn/main.odin:3191`) advances only
+  the optimistic window's `editor_revision` (`:3311-3313`). Its
+  `presentation_revision` stays pre-edit until exact metadata arrives.
+- The post-ack visible-window reply has `presentation_ready=false` and no spans;
+  the view-scoped installer stores it as `source_window` (`:750`, `:807`) but
+  keeps the optimistic window.
+- When the language worker publishes, the exact window arrives with
+  `presentation_ready=true`, the accepted revision, and the real spans (the
+  temporary instrumentation read `srcReady=true srcPR=2 srcSpans=102`).
+- `editor_view_window` (`editor_model.odin:830`) still returns the optimistic
+  window because its `editor_revision` matches. The exact `source_window` is
+  never selected for painting.
+- `presentation_window_matches` (`frontends/alicorn/app_editor_view.odin:513`)
+  requires `!presentation_stale` and a matching `presentation_revision`, which
+  the stale optimistic window can never satisfy. `metadata_refresh_needed` stays
+  true (`:526`), and `:753` forces `window_covers_view=false` while a refresh is
+  pending. That makes `paint_current=false` (`:915`), so
+  `text_paint_spans` is not called for any row (`:933-935`). The retained
+  description carries empty span lists.
+
+Scratchpad's Go document does maintain a paint-only rebased `DisplayCode` cache
+(`document/document.go:31-33`, `:766-799`), but it is not part of the frontend
+presentation protocol; no bridge or frontend call reads it. The frontend's own
+rebase is what gets defeated by the refresh gate.
+
+### Host parity and evidence
+
+The same fixture and input produced identical results on the hosted D3D12 build
+and the SDL_GPU reference: 24 syntax-bearing text runs at rest, then 0 runs
+after the first keystroke, and 0 still at +8.3 s. Text kept updating (run byte
+counts grew with the typed characters), so the spans, not the text, were
+missing. Host wake, description cadence, retained presentation, and the WebGPU
+span/mesh path therefore behaved correctly; they were handed span-less
+descriptions. Settled-frame parity from Stage B slice 5 still holds.
+
+A temporary copy of the Scratchpad checkout (not the validator worktree) was
+instrumented to print the window state at description time. After publication it
+read `winStale=true winPR=0 winRev=2 spans=102`, `srcReady=true srcPR=2
+srcSpans=102`, `refresh=true`, `paint=false`. Dropping the stale optimistic
+window when an exact `presentation_ready` source window is installed, with no
+pending edits, restored 24 span-bearing runs in every capture phase on both
+hosts and kept the edited row's tokens visible. That is a Scratchpad-side fix
+proposal; no Scratchpad source or lock file was changed in this slice.
+
+Raw capture tables, the instrumentation lines, cropped screenshots, and the
+candidate-fix comparison are in
+[`validation/issue-211-highlight-persistence-windows-2026-11-20.md`](validation/issue-211-highlight-persistence-windows-2026-11-20.md).
+
+### Alicorn fixtures
+
+- `runtime/hosted_parity_test.odin`:
+  `test_hosted_presentation_preserves_spans_across_an_edit_sequence` describes
+  two highlighted rows, edits one value with rebased spans, then publishes exact
+  ranges/colors. It asserts the rebased presentation reaches the hosted list,
+  the edited row builds a new text product, the untouched row retains its spans
+  and reuses its text product, and publication replaces rather than merges the
+  rebased spans.
+- `renderer/webgpu/text_span_test.odin`:
+  `test_webgpu_text_span_edit_sequence_reuses_only_identical_meshes` proves an
+  identical description reuses the retained glyph mesh, a value-and-span edit
+  changes the fingerprint, and the settled edited description reuses the new
+  mesh instead of rebuilding per frame.
+
+### Validation (Windows x64, RTX 2080 SUPER)
+
+- `odin test runtime`: 420 tests pass, including the new edit-sequence fixture.
+- `odin test renderer/webgpu`: 9 tests pass, including the new mesh fixture.
+- Supporting suites: `host/presentation` 7, `renderer/cpu` 23, `theme` 37,
+  `host/web` 14, `host/diagnostics` 9, `ui` 50, `testui` 13,
+  `native/sdl_gpu` 168, `host/sdl3` 8, `odin build tests` and
+  `out/alicorn_tests.exe` pass. Example 16 `--smoke` and `--workbench-smoke`
+  pass on D3D12, Vulkan, and SDL_GPU (6/6).
+- Scratchpad validator `b458d6e` built against this branch and ran the same
+  typed sequence on hosted D3D12 and SDL_GPU; both reproduced the pre-fix
+  failure and both recovered with the temporary candidate fix. The validator
+  checkout and lock files were not modified.
+- Scratchpad validator `b458d6e` smoke legs against this branch: hosted
+  WebGPU/D3D12 and WebGPU/Vulkan pass, and SDL_GPU passes (clean and recovery
+  launches, all four smoke flags true). The first SDL_GPU attempt hit the
+  20 s timeout while three leftover capture-probe windows were still alive;
+  it passed immediately after they were closed. No Scratchpad source or lock
+  file changed.
+
+### Scratchpad follow-up
+
+The minimal fix is to retire (or refresh from) `view.optimistic_window` when the
+exact published window is installed with `optimistic_pending_edits == 0`
+(`main.odin:805-810`). A defensive second change is to keep painting safe stale
+spans while `metadata_refresh_needed` is true instead of clearing
+`window_covers_view` at `app_editor_view.odin:753`. Either path should be
+covered by a frontend regression that types into a highlighted document and
+asserts span-bearing rows through the post-publication frame.
+
+## Stage D slice 3: file and folder drag-and-drop (Windows, 2026-11-20)
+
+The founder's parity table names three drag-and-drop capabilities: moving items
+inside Scratchpad, dragging files/folders out to Explorer, and dropping files
+from Explorer into Scratchpad. The internal retained path and the SDL drop-in
+path existed on both hosts. The native OS drag source existed only in the
+reference `native/sdl_gpu` host; the hosted services had no field for it.
+
+### Inventory
+
+- `native/sdl_gpu/file_drag.odin` defined `File_Drag_Service` and
+  `application_file_drag_start`; `file_drag_windows.odin` implemented
+  `IDataObject`/`IDropSource` with one `CF_HDROP` path and `DoDragDrop`.
+- `runtime/drag_drop.odin` already provided retained drag sessions, previews,
+  drop-target arbitration, autoscroll, and the B5/C2 fixes.
+- B1 wired `SDL_EVENT_DROP_FILE` to `hosted_runtime_file_drop` ->
+  `on_file_drop`; the native host dispatches the same SDL event to
+  `Application.on_file_drop`.
+
+### Shared service
+
+The vocabulary moved to `runtime/file_drag.odin` (one `File_Drag_Service`,
+`application_file_drag_start`, and `File_Drag_Start_Proc`) so the native and
+hosted APIs are the same values. The OLE implementation moved to
+`host/sdl3/file_drag`; `native_file_drag_service` now delegates to it, and the
+old native Windows implementation was deleted. `Hosted_Host_Services.file_drag`,
+`UI_Host_Services.file_drag`, both `ui.run` adapters, and hosted secondary
+windows publish it. Non-Windows hosts publish an empty service.
+
+OLE `DoDragDrop` is modal and re-enters the owning thread's message loop while
+the application is suspended in its pointer callback. The shared source exposes
+`sdl3_file_drag.is_active`, and both hosts refuse nested live-resize/expose
+presentation while it is set, mirroring the Stage C slice 1 guard.
+
+### Validation
+
+- Internal DnD: `runtime/hosted_parity_test.odin` adds
+  `test_hosted_retained_drag_drop_between_targets_matches_the_reference_route`,
+  comparing the hosted `Started`/`Target_Changed`/`Dropped` sequence against
+  `process_pointer`. Runtime suite: 421 tests. Example 16 `--tab-drag-smoke`
+  still passes on D3D12, Vulkan, and SDL_GPU with three preview commands.
+- Drag out: `host/sdl3/file_drag` has three mock-consumer tests covering
+  `QueryInterface`, format enumeration/negotiation, the wide `DROPFILES`
+  payload (including a non-ASCII path and a folder), `E_NOTIMPL`/no-advise
+  behavior, Escape cancel, button-held continuation, and release-drop. Example
+  16 `--services-smoke` reports `file_drag true` on all three backends, proving
+  the service reaches both renderers. A synthetic OLE drag cannot complete
+  headlessly; example 16 gained `--file-drag-demo` as the interactive call site.
+- Drop in: `native/sdl_gpu/file_drop_test.odin` and
+  `host/sdl3/application_test.odin` push a real `SDL_EVENT_DROP_FILE` through
+  SDL's queue and assert the exact path reaches `on_file_drop`; example 16
+  `--services-smoke` reports `drops 1 drop_ok true` on all three backends.
+- Suites: runtime 421, host/fonts 5, host/sdl3 8, host/sdl3/file_drag 3,
+  live_resize 9, window_frame 1, input 8, clipboard 3, dialogs 5, host/menus 9,
+  host/web 14, host/diagnostics 9, host/presentation 7, renderer/webgpu 9,
+  renderer/cpu 23, ui 50, testui 13, theme 37, native/sdl_gpu 169,
+  scroll_capture 6, accessibility contract 1, `odin build tests`/foundation
+  PASS. Scratchpad `b458d6e` smoke passes hosted D3D12 and SDL_GPU (clean and
+  recovery).
+- `tools/check_web_ui_package.ps1` fails on this Odin installation with
+  `DevicePoll is not declared by wgpu`; the same failure reproduces at base
+  `b79ef57` and is not introduced here.
+
+The Scratchpad validator has no `Scratchpad_Services.file_drag` mapping or
+workspace drag-out call site yet, so the founder's real Scratchpad drag-out
+requires that one-line adapter change. Alicorn's hosted API now matches native
+1:1, and example 16 `--file-drag-demo` is the reference call site. Full evidence,
+raw logs, and the founder checklist are in
+[`validation/issue-211-drag-and-drop-windows-2026-11-20.md`](validation/issue-211-drag-and-drop-windows-2026-11-20.md).
+
+## Stage D slice 5: live-resize presentation latency (Windows, 2026-11-20)
+
+The founder accepted the Stage C live-resize behavior (frames present during the
+drag, no release-only jump) but reported that it "isn't the fastest" and that
+screenshots still showed momentary stretching. This slice measured the identical
+scripted resize gesture on the hosted D3D12, hosted Vulkan, and SDL_GPU reference
+paths before changing anything, then fixed the dominant cost the data indicted.
+
+### Measurement
+
+C1's `tools/validate_native_webgpu_resize.ps1` already drives a real 24-step,
++140 px right-edge drag with `SendInput`. It now records, for every live frame on
+both hosts: inter-present interval, the interval from the `WM_WINDOWPOSCHANGED`
+that changed the outer size to the first frame presented at that size
+(`geometry_to_present_ns` - the window in which the desktop compositor holds and
+stretches the previous frame), `wgpu.SurfaceConfigure` count and CPU cost, the
+whole geometry-adoption cost, application description cost and stabilization
+pass count, reconcile/layout/paint node deltas, chrome pre-present and host
+post-present cost, device poll, encode/submit/present, whole-frame time, and
+retained mesh rebuild counters. Both hosts print the same vocabulary; SDL_GPU
+performs its swapchain resize inside `SDL_AcquireGPUSwapchainTexture`, so
+`acquire_ns` is its comparable surface cost.
+
+The harness writes a per-frame CSV and prints p50/p95/p99/max plus counts of
+intervals over one and two 60 Hz budgets. It records these without a pass/fail
+threshold: the compositor floor is session-dependent and C1's correctness
+assertions (mid-drag frames, drawable tracks client, 0.00 % aspect delta,
+fixture accounting) remain the hard gates.
+
+### Baseline
+
+Fixture resize gesture. The "before" build is this branch with only the geometry
+dispatch disabled, so timestamping, frame policy, and harness are identical.
+
+| metric | hosted D3D12 before | hosted D3D12 after | SDL_GPU |
+| --- | ---: | ---: | ---: |
+| mid-drag frames | 45 | 75 | 58 |
+| geometry-to-present p50 / p95 | 7.34 / 16.46 ms | 2.58 / 7.34 ms | 2.30 / 15.96 ms |
+| inter-present p50 / p95 | 18.22 / 31.04 ms | 8.07 / 25.24 ms | 15.77 / 23.99 ms |
+| surface reconfigure p50 / p95 | 1.56 / 2.23 ms | 1.70 / 1.89 ms | n/a |
+| renderer encode p50 / p95 | 0.24 / 0.33 ms | 0.18 / 0.30 ms | 0.08 / 0.60 ms |
+| whole live frame p50 / p95 | 2.12 / 2.98 ms | 0.49 / 4.44 ms | 0.28 / 2.29 ms |
+
+The hosted path waited 7.3 ms at p50 and 16.5 ms at p95 between the size message
+and the present that adopted it, while that frame cost 2.1-3.0 ms. The wait, not
+the encode or `SurfaceConfigure`, was the stretch window. The reference still
+follows the exposure path: half its size changes happened to paint immediately
+and half waited about a frame.
+
+### Change
+
+`host/sdl3/live_resize` gained an opt-in geometry dispatch. While
+`WM_ENTERSIZEMOVE` marks a slot's modal move active, SDL's queued
+`WINDOW_RESIZED` / `WINDOW_PIXEL_SIZE_CHANGED` events (derived from
+`WM_WINDOWPOSCHANGED` after SDL caches the new size) drive the guarded render
+callback with `Cause.Geometry`. The hosted host enables it in
+`sdl3_webgpu_live_resize_install`; the reference host does not, so its behavior
+is unchanged and remains the control. The Windows hook also timestamps a
+`WM_WINDOWPOSCHANGED` that changes the outer size (pure moves do not), and the
+first frame that adopts it reports the message-to-present age.
+
+Instrumentation was added without new device features: `Hosted_Step_Result`
+carries description cost/passes and reconcile/layout/paint deltas;
+`Hosted_Surface_Timing_Sample` carries reconfigure attribution, description
+metrics, and the chrome hook cost; the hosted presenter exposes its last sample
+and `SurfaceConfigure` statistics; the reference host records a per-frame sample
+of build/acquire/encode/submit. All of it is read-only and off the frame policy.
+
+### After
+
+Same binary and gesture, all three backends:
+
+| metric | hosted D3D12 | hosted Vulkan | SDL_GPU |
+| --- | ---: | ---: | ---: |
+| mid-drag frames | 75 | 74 | 58 |
+| geometry-to-present p50 / p95 | **2.58 / 7.34 ms** | **4.67 / 5.61 ms** | 2.30 / 15.96 ms |
+| surface reconfigure p50 / p95 | 1.70 / 1.89 ms | 4.03 / 4.69 ms | n/a |
+| renderer encode p50 / p95 | 0.18 / 0.30 ms | 0.10 / 0.20 ms | 0.08 / 0.60 ms |
+| whole live frame p50 / p95 | 0.49 / 4.44 ms | 0.27 / 5.45 ms | 0.28 / 2.29 ms |
+| mesh rebuilds during gesture | 46 | 46 | 24 (text) |
+
+D3D12's stretch window dropped 65 % at p50 and 55 % at p95. Vulkan's
+4.7 ms is entirely its swapchain recreation; its stretch window is still below
+the reference's tail. Hosted presents 74-75 frames where the reference presents
+58 because the reference also redraws exposures that change nothing; the hosted
+path skips those and still presents more often than before.
+
+Scratchpad via `-Mode application` shows where the remaining cost sits. The app's
+two-pass, 393-node description is 8.2-9.0 ms on both renderers, so the hosted
+frame is 12.2 ms (D3D12) / 15.3 ms (Vulkan) and the message-driven response is
+immediate. The reference still waits for the exposure before running the same
+12 ms frame: `geometry_to_present` p50 22.8 ms, p95 24.8 ms. Hosted is ~10 ms
+ahead at p50 and ~11 ms at p95, with zero mesh rebuilds during the drag. Its
+caption-band move probe fails on validator `adb28fc` because that revision's
+integrated titlebar classifies the probed point inconsistently between two
+`WM_NCHITTEST` calls; the fixture caption move passes on all three backends, and
+the resize gesture (this slice's subject) passes everywhere.
+
+### Validation
+
+- Runnable fixture assertions: unchanged and passing on D3D12, Vulkan, and
+  SDL_GPU (16 pass, 1 hands-on per backend), with the new metrics recorded.
+- Additive tests: `runtime/hosted_test.odin` asserts the new description
+  cost/pass/node-delta fields on a real description and resize step;
+  `host/sdl3/live_resize` gained the opt-in/move-gated geometry dispatch test and
+  a Windows test proving the geometry timestamp is size-gated, for 11 tests.
+- Suites: runtime 421, host/fonts 5, host/sdl3 8, host/sdl3/live_resize 11,
+  host/sdl3/window_frame 1, input 8, clipboard 3, file_drag 3, dialogs 5,
+  host/menus 9, host/web 14, host/diagnostics 9, host/presentation 7,
+  renderer/webgpu 9, renderer/cpu 23, ui 50, testui 13, theme 37,
+  native/sdl_gpu 169, native/scroll_capture 6, accessibility contract 1,
+  AccessKit binding 8, `odin build tests` + `out/alicorn_tests.exe`, and
+  `test_restoration.ps1` all pass.
+- `tools/check_web_ui_package.ps1` still fails on this Odin installation with
+  `DevicePoll is not declared by wgpu` in `host/presentation` (the same failure
+  recorded for earlier slices at base `b79ef57`; the line moved, the defect did
+  not change).
+- Example 16 passes all seven smokes on D3D12, Vulkan, and SDL_GPU (21/21).
+  `--smoke --timings` still presents exactly one frame
+  (`frames_presented=1`) with no motion frames, so the settled idle contract is
+  unchanged.
+- Scratchpad validator `adb28fc` built against this branch: hosted D3D12,
+  hosted Vulkan, and SDL_GPU smoke legs pass (clean and recovery). Full evidence,
+  per-metric tables, and raw CSVs:
+  [`validation/issue-211-live-resize-performance-windows-2026-11-20.md`](validation/issue-211-live-resize-performance-windows-2026-11-20.md).
+
+### Residual work
+
+- A real application's description build, not the presenter, is the remaining
+  per-step floor. Scratchpad cannot fit a 120 Hz drag (8.3 ms budget) with a
+  12 ms two-pass rebuild on either renderer.
+- Vulkan swapchain recreation (4.0-4.7 ms p50) is the widest remaining
+  backend-specific gap. It is the API's only way to change extent.
+- Window movement (not resizing) still has no message-driven adoption; it does
+  not stretch, and its interval is the drag cadence. The fixture reports 24
+  mid-drag move frames on D3D12 and Vulkan.
+
+## Release blocker fix: browser package boundary (Windows, 2026-11-20)
+
+`tools/check_web_ui_package.ps1` failed on the `js_wasm32` fixture with
+`host/presentation/surface_presenter.odin(571): DevicePoll is not declared by
+wgpu`. The failure reproduced at base `b79ef57` and on the Stage A-D branch, so
+it blocked the v0.2.2 release check rather than coming from this slice.
+
+### Root cause
+
+The shared presenter's `hosted_surface_presenter_poll` called
+`wgpu.DevicePoll(device, false)` unconditionally. wgpu-native exposes
+`wgpuDevicePoll` and Odin's native `vendor:wgpu` binding declares it, but Odin's
+JS/WASM binding (`vendor/wgpu/wgpu.js` plus the generated copy that the browser
+build scripts patch with `tools/patch_odin_wgpu_js.js`) does not declare
+`DevicePoll` at all. That is correct: `DevicePoll(mode, timeout)` is a
+wgpu-native concept. Browser WebGPU has no device-poll entry point; the browser
+drives device lifetime through events and the queue, and Odin's JS wrapper
+already reports `InstanceProcessEvents` as unimplemented. The browser host does
+not need polling: the shared presenter registers
+`QueueOnSubmittedWorkDone(..., callback=hosted_surface_presenter_queue_done)`,
+the demand-driven scheduler dispatches it, and the recorded browser validation
+shows `queue work done status=Success`.
+
+Polling is therefore unnecessary on the web target; faking the native
+`DevicePoll(mode, timeout)` contract in the JS binding would invent semantics
+the browser does not have. The fix is a target split, not a binding patch.
+
+### Fix
+
+- `host/presentation/surface_present_native.odin` (`#+build !js`) now owns
+  `hosted_surface_presenter_poll` and keeps the existing
+  `wgpu.DevicePoll(state.device, false)` call byte-identically for the native
+  modal move/resize loop (`host/sdl3/live_resize_host.odin`).
+- `host/presentation/surface_present_web.odin` (`#+build js`) defines the same
+  symbol as a documented no-op, so every consumer still compiles on both
+  targets and the browser path relies on its existing asynchronous completion
+  callback. The shared `surface_presenter.odin` keeps only a pointer to the two
+  platform definitions.
+
+### Validation
+
+- `.\tools\check_web_ui_package.ps1 -Odin C:\odin\odin.exe` now passes and
+  writes `out\web_ui_package.wasm`; before the change it failed at
+  `surface_presenter.odin(571)`.
+- Native suites unchanged and green: runtime 421, host/presentation 7,
+  renderer/webgpu 9, host/web 14, host/sdl3 8, host/sdl3/live_resize 11.
+- Node host tests: `tools/test_webgpu_ui_host.js`,
+  `tools/test_web_scheduler.js`, `tools/test_accessibility_dom.js`, and
+  `tools/test_odin_wgpu_js_patch.js` pass.
+- `examples\17_browser_webgpu_ui\build.ps1 -Odin C:\odin\odin.exe` builds
+  `out\web\app.wasm` and applies the eight-chain callback patch.
