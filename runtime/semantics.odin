@@ -1026,6 +1026,9 @@ semantic_collection_begin :: proc(
 	return {}
 }
 
+// semantic_collection_item attaches one realized row to a collection. An
+// explicit item.parent names a semantic subgroup (for example a labeled Select
+// group); otherwise the collection itself is the parent.
 semantic_collection_item :: proc(
 	ui: ^UI,
 	collection: Semantic_Collection_Handle,
@@ -1047,6 +1050,7 @@ semantic_collection_item :: proc(
 	pending.semantic.states = item.states
 	pending.semantic.actions = item.actions
 	pending.semantic.parent = collection.id
+	if semantic_id_is_valid(item.parent) { pending.semantic.parent = item.parent }
 	pending.semantic.collection_id = collection.id
 	pending.semantic.collection_index = position
 	ui.runtime.semantic_collection_touched[collection.id] = collection.generation

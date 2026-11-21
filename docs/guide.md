@@ -330,6 +330,33 @@ type-ahead, focus restoration, and Combo_Box/List_Box accessibility semantics.
 Keep keys stable when the option order changes. The popup is an Alicorn overlay
 and is added automatically when `end_frame` describes the retained frame.
 
+Use `select_control_grouped` when the choices belong to named sections, such as
+Audacity's Snap-to registry. Groups are single-level; keep one flat list of
+stable keys and let the control render the section headers:
+
+```odin
+content_options := [2]alicorn.Select_Option{{key=1, label="Clips"}, {key=2, label="Markers"}}
+grid_options := [2]alicorn.Select_Option{{key=3, label="Seconds"}, {key=4, label="Triplets"}}
+snap_groups := [2]alicorn.Select_Group{
+	{label="Content", options=content_options[:]},
+	{label="Grid", options=grid_options[:]},
+}
+snap := alicorn.select_control_grouped(
+	&ui,
+	"toolbar-snap-to",
+	"Snap to",
+	snap_groups[:],
+	app.snap_key,
+)
+if snap.changed {
+	app.snap_key = snap.selected_key
+}
+```
+
+Group headers are not focusable; arrow keys, Home/End, and type-ahead move
+directly between options across group boundaries. Empty groups are skipped, and
+`disabled=true` on a group disables all of its options.
+
 ## Describe layout with containers
 
 Calls are nested in the same order as the layout. Choose `.Row` for horizontal

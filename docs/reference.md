@@ -1332,6 +1332,47 @@ requests use the same retained state and controlled result path. The popup is
 described automatically at `end_frame`; applications do not calculate popup
 coordinates or add overlay roots themselves.
 
+`select_control_grouped(ui, key, label, groups, selected_key, style)` is the
+opt-in grouped form and keeps the same controlled result. `Select_Group` carries
+a group `label`, its `options`, and an optional `disabled` flag that disables
+every option the group owns. Grouping is intentionally single-level: applications
+adapt deeper registries by flattening them into one level of groups. Empty
+groups render nothing, an unlabeled group renders its options without a header,
+and option keys must stay unique across every group. At most 128 options and 32
+groups are accepted.
+
+```odin
+snap_content := [2]alicorn.Select_Option{
+	{key=1, label="Clips"},
+	{key=2, label="Markers"},
+}
+snap_grid := [2]alicorn.Select_Option{
+	{key=3, label="Seconds"},
+	{key=4, label="Triplets"},
+}
+snap_groups := [2]alicorn.Select_Group{
+	{label="Content", options=snap_content[:]},
+	{label="Grid", options=snap_grid[:]},
+}
+snap := alicorn.select_control_grouped(
+	&ui,
+	"toolbar-snap-to",
+	"Snap to",
+	snap_groups[:],
+	app.snap_key,
+)
+if snap.changed {
+	app.snap_key = snap.selected_key
+}
+```
+
+Labeled group headers are noninteractive rows. They expose semantic `Group`
+nodes under the List_Box, and each option remains a List_Box_Option whose parent
+is its group; options in unlabeled groups stay direct List_Box children. The
+List_Box still counts options rather than headers. Up/Down, Home/End, type-ahead,
+pointer activation, focus restoration, and scroll reveal cross group boundaries
+in declared order while skipping disabled options and headers.
+
 ### Icons
 
 Built-in indicators use embedded antialiased Reicon filled coverage masks and

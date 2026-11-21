@@ -18,6 +18,7 @@ CONTROL_GALLERY_THEME_PATH :: "examples/08_control_gallery/theme.json"
 App :: struct {
 	searches: int,
 	settings_selected: bool,
+	snap_key: u64,
 	allocator: mem.Allocator,
 	waker: ui.Application_Waker,
 	worker: ^thread.Thread,
@@ -188,6 +189,24 @@ render :: proc(app: ^App, ctx: ^ui.UI) {
 			}
 			ui.text(ctx, "Settings toggle")
 		}
+		snap_clips := [2]alicorn.Select_Option{{key=1, label="Clips"}, {key=2, label="Markers"}}
+		snap_grid := [2]alicorn.Select_Option{{key=3, label="Seconds"}, {key=4, label="Triplets"}}
+		snap_groups := [2]alicorn.Select_Group{
+			{label="Content", options=snap_clips[:]},
+			{label="Grid", options=snap_grid[:]},
+		}
+		if ui.row(ctx, gap=8, align=.Center) {
+			snap := alicorn.select_control_grouped(
+				ctx,
+				alicorn.key_string("gallery-snap-to"),
+				"Snap to",
+				snap_groups[:],
+				app.snap_key,
+				style=alicorn.layout_style(.Row, width=220, height=36),
+			)
+			if snap.changed { app.snap_key = snap.selected_key }
+			ui.text(ctx, "Grouped Select (Audacity-style Snap-to)")
+		}
 		ui.text(ctx, "Opt-in Button hover fill · CSS Ease")
 		if ui.row(ctx, gap=8) {
 			_ = ui.button(ctx, "120 ms", key=alicorn.key_string("gallery-transition-120"),
@@ -222,6 +241,7 @@ render :: proc(app: ^App, ctx: ^ui.UI) {
 start_app :: proc(app: ^App, waker: ui.Application_Waker) {
 	app.allocator = context.allocator
 	app.waker = waker
+	app.snap_key = 1
 	gallery_status_set(app, "Loading the Control Gallery theme…")
 	gallery_start_compile(app)
 }

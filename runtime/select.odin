@@ -6,7 +6,10 @@ import "core:unicode"
 // Select is a controlled, select-only choice control. Options are ordinary
 // application data; stable keys, rather than list positions, name choices.
 SELECT_MAX_OPTIONS :: 128
+SELECT_MAX_GROUPS :: 32
+SELECT_MAX_ROWS :: SELECT_MAX_OPTIONS+SELECT_MAX_GROUPS
 SELECT_OPTION_LABEL_MAX_BYTES :: 256
+SELECT_GROUP_LABEL_MAX_BYTES :: 256
 SELECT_DEFAULT_WIDTH :: f32(240)
 SELECT_TRIGGER_HEIGHT :: f32(36)
 SELECT_OPTION_HEIGHT :: f32(32)
@@ -25,6 +28,25 @@ Select_Option :: struct {
 	key: u64,
 	label: string,
 	disabled: bool,
+}
+
+// Select_Group is one opt-in group of Select options. Grouping is single-level;
+// nested groups are deliberately not part of the public contract. A nonempty
+// label renders a noninteractive header and exposes a semantic Group around its
+// options. An empty label renders an unlabeled group whose options remain in
+// the List_Box collection. disabled disables every option the group owns.
+// Empty groups render nothing and do not create a dangling header.
+Select_Group :: struct {
+	label: string,
+	options: []Select_Option,
+	disabled: bool,
+}
+
+// Select_Row is one realized popup row. option < 0 marks a group header; rows
+// never appear in the public API or in the controlled result.
+Select_Row :: struct {
+	group: int,
+	option: int,
 }
 
 Select_Result :: struct {
@@ -50,6 +72,12 @@ Select_State :: struct {
 	described_frame: u64,
 	frame_options: []Select_Option,
 	option_count: int,
+	rows: [SELECT_MAX_ROWS]Select_Row,
+	row_count: int,
+	option_row: [SELECT_MAX_OPTIONS]int,
+	group_count: int,
+	group_labels: [SELECT_MAX_GROUPS]string,
+	group_semantic_ids: [SELECT_MAX_GROUPS]Semantic_ID,
 	option_keys: [SELECT_MAX_OPTIONS]u64,
 	option_disabled: [SELECT_MAX_OPTIONS]bool,
 	option_nodes: [SELECT_MAX_OPTIONS]Node_ID,
@@ -81,34 +109,132 @@ select_option_semantic_id :: proc(trigger: Node_ID, key: u64) -> Semantic_ID {
 	return Semantic_ID{namespace=select_semantic_namespace, value=value}
 }
 
-select_option_index :: proc(options: []Select_Option, key: u64) -> int {
-	for option, index in options { if option.key == key { return index } }
+select_group_semantic_id :: proc(trigger: Node_ID, group_index: int) -> Semantic_ID {
+	value := hash_mix(u64(trigger), 0x47524F5550)
+	value = hash_mix(value, u64(group_index+1))
+	if value == 0 { value = 1 }
+	return Semantic_ID{namespace=select_semantic_namespace, value=value}
+}
+
+select_groups_option_count :: proc(groups: []Select_Group) -> int {
+	total := 0
+	for group in groups { total += len(group.options) }
+	return total
+}
+
+select_groups_option_index :: proc(groups: []Select_Group, key: u64) -> int {
+	index := 0
+	for group in groups {
+		for option in group.options {
+			if option.key == key { return index }
+			index += 1
+		}
+	}
 	return -1
 }
 
-select_options_valid :: proc(options: []Select_Option) -> bool {
-	if len(options) > SELECT_MAX_OPTIONS { return false }
-	for option, index in options {
-		if len(option.label) == 0 || len(option.label) > SELECT_OPTION_LABEL_MAX_BYTES { return false }
-		for other in options[:index] { if other.key == option.key { return false } }
+select_groups_option_label :: proc(groups: []Select_Group, key: u64) -> (label: string, found: bool) {
+	for group in groups {
+		for option in group.options {
+			if option.key == key { return option.label, true }
+		}
+	}
+	return
+}
+
+select_groups_valid :: proc(groups: []Select_Group) -> bool {
+	if len(groups) > SELECT_MAX_GROUPS { return false }
+	total := 0
+	for group, group_index in groups {
+		if len(group.label) > SELECT_GROUP_LABEL_MAX_BYTES { return false }
+		for option, option_index in group.options {
+			if len(option.label) == 0 || len(option.label) > SELECT_OPTION_LABEL_MAX_BYTES { return false }
+			total += 1
+			if total > SELECT_MAX_OPTIONS { return false }
+			for previous_group, previous_group_index in groups {
+				if previous_group_index > group_index { break }
+				for previous_option, previous_option_index in previous_group.options {
+					if previous_group_index == group_index && previous_option_index >= option_index { break }
+					if previous_option.key == option.key { return false }
+				}
+			}
+		}
 	}
 	return true
 }
 
-select_has_enabled_option :: proc(options: []Select_Option) -> bool {
-	for option in options { if !option.disabled { return true } }
+select_groups_has_enabled_option :: proc(groups: []Select_Group) -> bool {
+	for group in groups {
+		for option in group.options {
+			if !option.disabled && !group.disabled { return true }
+		}
+	}
 	return false
 }
 
-select_options_clone :: proc(rt: ^Runtime, options: []Select_Option) -> (copy: []Select_Option, ok: bool) {
-	copy = make([]Select_Option, len(options), allocator=rt.scratch_allocator)
-	if copy == nil && len(options) > 0 { return nil, false }
-	for option, index in options {
-		label, err := strings.clone(option.label, rt.scratch_allocator)
-		if err != nil { return nil, false }
-		copy[index] = Select_Option{option.key, label, option.disabled}
+// select_state_apply fills the bounded option/row plan. Group labels are
+// materialized only when clone_labels is set; the trigger-description pass
+// records row geometry without retaining application strings.
+select_state_apply :: proc(
+	rt: ^Runtime,
+	state: ^Select_State,
+	trigger: Node_ID,
+	groups: []Select_Group,
+	clone_labels: bool,
+) -> bool {
+	state.group_count = len(groups)
+	state.row_count = 0
+	state.option_count = 0
+	row := 0
+	option_index := 0
+	copy: []Select_Option
+	if clone_labels {
+		total := select_groups_option_count(groups)
+		copy = make([]Select_Option, total, allocator=rt.scratch_allocator)
+		if copy == nil && total > 0 { return false }
 	}
-	return copy, true
+	for group, group_index in groups {
+		has_label := len(group.label) > 0
+		label: string
+		if clone_labels && has_label {
+			cloned, err := strings.clone(group.label, rt.scratch_allocator)
+			if err != nil { return false }
+			label = cloned
+		}
+		// Borrowed labels are never retained: the popup rebuild clones them
+		// before the overlay is described in the same frame.
+		state.group_labels[group_index] = label
+		if has_label {
+			state.group_semantic_ids[group_index] = select_group_semantic_id(trigger, group_index)
+		} else {
+			state.group_semantic_ids[group_index] = Semantic_ID{}
+		}
+		if len(group.options) == 0 { continue }
+		if has_label {
+			state.rows[row] = Select_Row{group=group_index, option=-1}
+			row += 1
+		}
+		for option in group.options {
+			disabled := option.disabled || group.disabled
+			if clone_labels {
+				option_label, err := strings.clone(option.label, rt.scratch_allocator)
+				if err != nil { return false }
+				copy[option_index] = Select_Option{key=option.key, label=option_label, disabled=disabled}
+			}
+			state.option_keys[option_index] = option.key
+			state.option_disabled[option_index] = disabled
+			state.option_nodes[option_index] = 0
+			state.option_semantic_ids[option_index] = select_option_semantic_id(trigger, option.key)
+			state.option_row[option_index] = row
+			state.rows[row] = Select_Row{group=group_index, option=option_index}
+			row += 1
+			option_index += 1
+		}
+	}
+	state.option_count = option_index
+	state.row_count = row
+	if clone_labels { state.frame_options = copy }
+	return true
 }
 
 select_trigger_environment :: proc(rt: ^Runtime, trigger: Node_ID) -> Style_Environment {
@@ -150,30 +276,21 @@ select_refresh_options :: proc(
 	trigger: Node_ID,
 	semantic_id: Semantic_ID,
 	field_label: string,
-	options: []Select_Option,
+	groups: []Select_Group,
 	selected_key: u64,
 	frame: u64,
 ) -> bool {
 	state := &rt.select
 	if !select_open_owned(rt, state) || state.trigger_node != trigger { return false }
-	copy, copied := select_options_clone(rt, options)
-	if !copied { return false }
-	state.frame_options = copy
 	state.described_frame = frame
 	state.trigger_semantic_id = semantic_id
 	state.list_semantic_id = select_list_semantic_id(trigger)
 	state.field_label = field_label
-	state.option_count = len(options)
 	state.selected_key = selected_key
 	previous_active := state.active_key
 	previous_active_index := state.active_index
 	reveal_typeahead_match := state.typeahead_pending
-	for option, index in options {
-		state.option_keys[index] = option.key
-		state.option_disabled[index] = option.disabled
-		state.option_nodes[index] = 0
-		state.option_semantic_ids[index] = select_option_semantic_id(trigger, option.key)
-	}
+	if !select_state_apply(rt, state, trigger, groups, true) { return false }
 	if state.option_count == 0 {
 		state.active_index = -1
 		state.active_key = 0
@@ -194,9 +311,10 @@ select_refresh_options :: proc(
 	return true
 }
 
-// select emits a themed button-like trigger and reports the controlled value.
-// The caller owns the selection: apply result.selected_key when result.changed
-// is true, then pass that key on the next description.
+// select_control emits a themed button-like trigger and reports the controlled
+// value. The caller owns the selection: apply result.selected_key when result.changed
+// is true, then pass that key on the next description. The flat API remains
+// source-compatible and describes one unlabeled option group.
 select_control :: proc(
 	ui: ^UI,
 	key: UI_Key,
@@ -206,25 +324,47 @@ select_control :: proc(
 	style := DEFAULT_SELECT_STYLE,
 	loc := #caller_location,
 ) -> Select_Result {
+	groups := [1]Select_Group{{options=options}}
+	return select_control_grouped(ui, key, label, groups[:], selected_key, style, loc)
+}
+
+// select_control_grouped is the opt-in grouped Select contract. Groups are
+// single-level and rendered in order; labeled groups add a noninteractive
+// header row, while unlabeled groups keep their options in the surrounding
+// List_Box. Option keys remain stable across groups, disabled group options are
+// skipped by navigation, type-ahead, and the pointer, and the controlled result
+// carries the same flat selected_key as select_control.
+select_control_grouped :: proc(
+	ui: ^UI,
+	key: UI_Key,
+	label: string,
+	groups: []Select_Group,
+	selected_key: u64,
+	style := DEFAULT_SELECT_STYLE,
+	loc := #caller_location,
+) -> Select_Result {
 	if ui == nil || ui.runtime == nil || !ui.runtime.frame_open { return Select_Result{selected_key=selected_key} }
 	rt := ui.runtime
 	state := &rt.select
 	source := resolve_source(Source_Site{}, "select", loc)
 	expected_trigger := identity_hash_key(current_identity_parent(ui), source, key)
-	valid := select_options_valid(options)
-	selected_index := select_option_index(options, selected_key)
-	if len(options) > 0 && selected_index < 0 { valid = false }
-	if !valid { append_diagnostic(rt, "select requires unique stable option keys, labels of 1 to 256 bytes, at most 128 options, and a selected key present in the options") }
+	valid := select_groups_valid(groups)
+	option_count := select_groups_option_count(groups)
+	selected_index := select_groups_option_index(groups, selected_key)
+	if option_count > 0 && selected_index < 0 { valid = false }
+	if !valid { append_diagnostic(rt, "select requires unique stable option keys, labels of 1 to 256 bytes, at most 128 options in at most 32 single-level groups, and a selected key present in the options") }
 
 	if state.open && (!rt.context_menu.open || rt.context_menu.restore_focus != state.trigger_node) { state.open = false }
 	display_value := label
-	if selected_index >= 0 { display_value = options[selected_index].label }
+	if selected_index >= 0 {
+		if selected_label, found := select_groups_option_label(groups, selected_key); found { display_value = selected_label }
+	}
 	if state.changed_pending && state.changed_trigger == expected_trigger {
-		if changed_index := select_option_index(options, state.changed_key); changed_index >= 0 {
-			display_value = options[changed_index].label
+		if changed_label, found := select_groups_option_label(groups, state.changed_key); found {
+			display_value = changed_label
 		}
 	}
-	disabled := !valid || len(options) == 0 || !select_has_enabled_option(options)
+	disabled := !valid || option_count == 0 || !select_groups_has_enabled_option(groups)
 	trigger := emit_key(
 		ui,
 		.Button,
@@ -256,15 +396,13 @@ select_control :: proc(
 		state.anchor = anchor
 		state.field_label = label
 		state.style_environment = select_trigger_environment(rt, trigger)
-		state.option_count = len(options) if valid else 0
 		state.selected_key = selected_key
 		if valid {
-			for option, index in options {
-				state.option_keys[index] = option.key
-				state.option_disabled[index] = option.disabled
-				state.option_nodes[index] = 0
-				state.option_semantic_ids[index] = select_option_semantic_id(trigger, option.key)
-			}
+			_ = select_state_apply(rt, state, trigger, groups, false)
+		} else {
+			state.option_count = 0
+			state.row_count = 0
+			state.group_count = 0
 		}
 	}
 	owned_open := state.open && rt.context_menu.open && rt.context_menu.restore_focus == trigger
@@ -273,8 +411,8 @@ select_control :: proc(
 			context_menu_open(rt, anchor, trigger, maxf(style.width, SELECT_DEFAULT_WIDTH), SELECT_OPTION_HEIGHT) {
 			state.open = true
 			state.scroll_node = 0
-			selected_option := select_option_index(options, selected_key)
-			state.active_index = selected_option if selected_option >= 0 && !options[selected_option].disabled else select_first_enabled(state)
+			state.active_index = selected_index if selected_index >= 0 && selected_index < state.option_count &&
+				!state.option_disabled[selected_index] else select_first_enabled(state)
 			state.active_key = state.option_keys[state.active_index] if state.active_index >= 0 else 0
 			state.typeahead_length = 0
 			state.typeahead_pending = false
@@ -295,7 +433,8 @@ select_control :: proc(
 				state.open = true
 				state.scroll_node = 0
 				state.list_semantic_id = select_list_semantic_id(trigger)
-				state.active_index = selected_index if selected_index >= 0 && !options[selected_index].disabled else select_first_enabled(state)
+				state.active_index = selected_index if selected_index >= 0 && selected_index < state.option_count &&
+					!state.option_disabled[selected_index] else select_first_enabled(state)
 				state.active_key = state.option_keys[state.active_index] if state.active_index >= 0 else 0
 				state.typeahead_length = 0
 				state.typeahead_pending = false
@@ -324,9 +463,9 @@ select_control :: proc(
 		}
 	}
 	_ = semantic_description(ui, .Combo_Box, label, value=display_value, states=states, actions=actions)
-	if owned_open && valid && len(options) > 0 {
+	if owned_open && valid && option_count > 0 {
 		state.style_environment = select_trigger_environment(rt, trigger)
-		if !select_refresh_options(rt, trigger, trigger_semantic, label, options, selected_key, rt.stats.frames_built) {
+		if !select_refresh_options(rt, trigger, trigger_semantic, label, groups, selected_key, rt.stats.frames_built) {
 			state.open = false
 			context_menu_close_internal(rt, true)
 			owned_open = false
@@ -438,7 +577,7 @@ select_ensure_active_visible :: proc(rt: ^Runtime) {
 	if state.scroll_node == 0 || state.active_index < 0 { return }
 	region := scroll_region_state(rt, state.scroll_node)
 	if region.id == 0 || region.viewport_height <= 0 { return }
-	item_top := f32(state.active_index)*SELECT_OPTION_HEIGHT
+	item_top := f32(state.option_row[state.active_index])*SELECT_OPTION_HEIGHT
 	item_bottom := item_top+SELECT_OPTION_HEIGHT
 	next := region.offset_y
 	if item_top < next { next = item_top }
@@ -608,7 +747,8 @@ select_overlay_describe :: proc(ui: ^UI) {
 		append_diagnostic(rt, "select_overlay_describe must follow the ordinary root")
 		return
 	}
-	if state.described_frame != rt.stats.frames_built || len(state.frame_options) != state.option_count || state.option_count <= 0 {
+	if state.described_frame != rt.stats.frames_built || len(state.frame_options) != state.option_count ||
+		state.option_count <= 0 || state.row_count <= 0 {
 		state.open = false
 		context_menu_close_internal(rt, true)
 		return
@@ -656,14 +796,14 @@ select_overlay_describe :: proc(ui: ^UI) {
 	}
 
 	item_height := rt.context_menu.item_height
-	content_height := f32(state.option_count)*item_height
+	content_height := f32(state.row_count)*item_height
 	max_panel_height := maxf(rt.viewport.h-2*CONTEXT_MENU_VIEWPORT_MARGIN, item_height+2*rt.context_menu.padding)
 	visible_height := minf(content_height, maxf(max_panel_height-2*rt.context_menu.padding, item_height))
 	content_width := maxf(rt.context_menu.preferred_width-2*rt.context_menu.padding, 0)
 	list_style := layout_style(.Column, width=content_width, height=visible_height, clip=true)
 	list := virtual_list_begin(
 		ui,
-		state.option_count,
+		state.row_count,
 		item_height,
 		key=key_string("select-options-scroll"),
 		style=list_style,
@@ -680,10 +820,41 @@ select_overlay_describe :: proc(ui: ^UI) {
 	reveal_active := state.scroll_node == 0 || state.typeahead_pending
 	state.scroll_node = list.scroll.id
 	rt.context_menu.content_height = 2*rt.context_menu.padding+visible_height
-	for option, index in state.frame_options {
-		option_semantic_id := state.option_semantic_ids[index]
+	for row, row_index in state.rows[:state.row_count] {
+		if row.option < 0 {
+			// Group headers are noninteractive visual rows. They never enter the
+			// List_Box working set as options; options below them point at the
+			// header's semantic Group as their parent.
+			label := state.group_labels[row.group]
+			group_id := state.group_semantic_ids[row.group]
+			if len(label) == 0 || !semantic_id_is_valid(group_id) { continue }
+			header_key := key_pair(hash_mix(u64(state.trigger_node), 0x53454C475250), u64(row.group+1))
+			header := text(
+				ui,
+				label,
+				key=header_key,
+				style=layout_style(.Row, height=item_height, padding=8, align=.Center),
+				color=style_color(ui, .Muted_Text),
+				text_style=Text_Style{font_size=11, font_weight=FONT_WEIGHT_SEMIBOLD},
+			)
+			if header != 0 && semantic_describe_as(ui, group_id, .Group, label, value=label) {
+				last := &rt.pending[len(rt.pending)-1]
+				last.semantic.parent = state.list_semantic_id
+				last.semantic.collection_id = state.list_semantic_id
+				rt.semantic_collection_touched[state.list_semantic_id] = collection.generation
+			}
+			continue
+		}
+		option_index := row.option
+		option := state.frame_options[option_index]
+		option_semantic_id := state.option_semantic_ids[option_index]
 		row_key := key_pair(u64(state.trigger_node), option.key)
-		row := emit_key(
+		option_parent := Semantic_ID{}
+		if row.group >= 0 && row.group < state.group_count &&
+			semantic_id_is_valid(state.group_semantic_ids[row.group]) {
+			option_parent = state.group_semantic_ids[row.group]
+		}
+		visual := emit_key(
 			ui,
 			.Button,
 			resolve_source(Source_Site{}, "select-option"),
@@ -696,8 +867,8 @@ select_overlay_describe :: proc(ui: ^UI) {
 			button_content=button_content_style(.Start, .Center, padding_x=10, padding_y=2),
 			button_variant=.Quiet,
 		)
-		state.option_nodes[index] = row
-		if row != 0 {
+		state.option_nodes[option_index] = visual
+		if visual != 0 {
 			option_states := Semantic_States{}
 			option_actions := Semantic_Actions{}
 			if option.key == state.selected_key { option_states = semantic_states_add(option_states, .Selected) }
@@ -707,17 +878,18 @@ select_overlay_describe :: proc(ui: ^UI) {
 				option_actions = semantic_actions_add(option_actions, .Select)
 				option_actions = semantic_actions_add(option_actions, .Focus)
 			}
-			_ = semantic_collection_item(ui, collection, u64(index), Semantic_Node_Description{
+			_ = semantic_collection_item(ui, collection, u64(option_index), Semantic_Node_Description{
 				id=option_semantic_id,
 				role=.List_Box_Option,
 				label=option.label,
 				value=option.label,
+				parent=option_parent,
 				states=option_states,
 				actions=option_actions,
-				visual_node=row,
+				visual_node=visual,
 			})
-			if consume_activation(rt, row) {
-				_ = select_overlay_result_set(rt, index)
+			if consume_activation(rt, visual) {
+				_ = select_overlay_result_set(rt, option_index)
 			}
 		}
 	}
@@ -726,7 +898,7 @@ select_overlay_describe :: proc(ui: ^UI) {
 		if id := state.option_nodes[state.active_index]; id != 0 { _ = context_menu_set_focus(rt, id) }
 		if reveal_active {
 			region := list.scroll
-			item_top := f32(state.active_index)*item_height
+			item_top := f32(state.option_row[state.active_index])*item_height
 			item_bottom := item_top+item_height
 			desired := region.offset_y
 			if item_top < desired { desired = item_top }
