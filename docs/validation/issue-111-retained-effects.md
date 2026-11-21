@@ -247,6 +247,103 @@ not bypassed using a dummy video driver.
 
 Raw Gaussian output: [Metal fixture and readbacks](raw/issue-111-gaussian-metal-2026-11-04.txt); [full foundation suite](raw/issue-111-gaussian-foundation-macos-2026-11-04.txt).
 
+## WebGPU and native validation reconciliation
+
+2026-11-20. This section maps the evidence now held on the SDL_GPU and WebGPU
+paths onto the acceptance gate the
+[primary-source review](../research/retained-effects-issue-111.md) fixed before
+implementation (`docs/research/retained-effects-issue-111.md:51-53`). It adds no
+new measurements. **PASS** means the cited record satisfies that criterion
+within the scope it states. **PARTIAL** means evidence covers only part of the
+required scope. **UNVERIFIED** means no record exists.
+
+### Decision status
+
+The GO recorded in "Scope and decision" is **provisional for the bounded blur
+capability**, not a full pass of the original gate. The gate requires two named
+real application interactions that visibly and materially beat cheaper
+alternatives. Only **one** is documented: Scratchpad Quick Open ("Scratchpad
+Quick Open integration"). The research note's second candidate — localized
+glow/shadow around ordinary content — is still produced by the existing
+analytic materials, and that note's own source review already observed that
+many ordinary shape and text glows and shadows need no separate render effect
+(`docs/research/retained-effects-issue-111.md:11`). No matched trace compares
+Quick Open against a cheaper alternative (opaque panel, cached mask, analytic
+treatment) in the real application, so "materially beats the cheaper
+alternative" rests on visual review alone.
+
+### Gate criteria
+
+| Gate criterion (`docs/research/retained-effects-issue-111.md:51`) | Status | Evidence |
+| --- | --- | --- |
+| Two named real app interactions materially beat cheaper alternatives | PARTIAL | Quick Open is the only documented consumer (this report, "Scratchpad Quick Open integration"). Glow/shadow remains analytic (this report, "Scope and decision"; research note line 11). No real-application comparison against a cheap alternative. |
+| Measured cold/warm costs fit agreed budgets | PARTIAL | Fixture warm encode/submit p95 exist (this report, "Gaussian native results"), but no absolute product budget was agreed before measuring as the research note requires (line 45), and no application frame-pacing measurement exists. |
+| Repeated resize/open/close stays bounded | PARTIAL | The WebGPU D3D12 fixture prepared a resize before the prior effect submission completed, retired the old set, and returned residency to the active set (`docs/validation/webgpu-backdrop-effects-windows-browser-2026-11-15.md:60-65`). The SDL fixture covers reset/recreation and cache reuse (this report, "Validation and measurement boundaries"). Resize/close stress with two frames in flight remains open (same section, remaining-validation list). |
+| Failure paths never show stale pixels | PARTIAL | Direct-fallback identity, cancellation, over-budget fallback parity, and the deferred-effect retry are recorded (this report, "Bounded retention and failure behavior"; `docs/validation/webgpu-backdrop-effects-windows-browser-2026-11-15.md:66-69,109-110`). Injected creation/submission failure and device removal are untested, and device loss is not transparently recovered (this report, same section). |
+| No-effect control and return to true idle unchanged | PASS (cited scope) | No-effect native idle smoke: one submission/retirement, two event waits, zero application wake events or motion timers, and no `native_effect_*` symbols in the default binary (this report, "Gaussian native results"). Inactive scenes allocate nothing; cached scenes schedule no filter, allocation, submission, timer, or wake (this report, "Bounded retention and failure behavior"). Browser replay requested no animation frames for 500 ms after settling (`docs/validation/webgpu-backdrop-effects-windows-browser-2026-11-15.md:70-75,118-120`). Native idle tracing with an enabled but cached effect remains open. |
+| Readback/native evidence covers Metal, Vulkan, D3D12 plus lower-power baseline | PARTIAL | See the backend matrix below. Vulkan is unverified on the Metal host, there is no Metal WebGPU effects readback, no effects evidence in a real native application window, and no integrated/low-power GPU record. |
+
+### Backend matrix
+
+| Backend | SDL_GPU path | WebGPU path |
+| --- | --- | --- |
+| Metal | PASS. Fixture readbacks on Apple M1 (this report, "Gaussian native results") and hosted readback on PR head `6a5a104` ([macOS workflow](https://github.com/samanshaiza004/alicorn/actions/runs/42293184017)). | UNVERIFIED for effects. No Metal WebGPU effects readback is recorded; the WebGPU effect evidence is Windows and browser only (`docs/validation/webgpu-backdrop-effects-windows-browser-2026-11-15.md:84-95`). |
+| D3D12 | PASS. Hosted readback on PR head `6a5a104` ([Windows workflow](https://github.com/samanshaiza004/alicorn/actions/runs/42293184107)). | PASS. Fixture readback, including the two-marker case, on an RTX 2080 SUPER (`docs/validation/webgpu-backdrop-effects-windows-browser-2026-11-15.md:52-69,112-120`). |
+| Vulkan | UNVERIFIED. The validation Mac reports `SDL_HINT_GPU_DRIVER vulkan unsupported!` (this report, "Gaussian native results"). | PASS at fixture scale on the RTX 2080 SUPER (`docs/validation/webgpu-backdrop-effects-windows-browser-2026-11-15.md:116-117`), plus browser WebGPU readback with the adapter acceleration class unclassified (`docs/validation/webgpu-backdrop-effects-windows-browser-2026-11-15.md:70-75`). |
+| Real native application window | PARTIAL. Quick Open is user-reviewed on the interactive Mac; there is no scripted or readback capture of the application window (this report, "Scratchpad Quick Open integration"). | UNVERIFIED. The native WebGPU UI records cover smoke, text, UIA, and window lifecycle without effects (`docs/validation/native-webgpu-ui-windows-2026-11-16.md:7-50`; `docs/validation/native-webgpu-ui-interactive-windows-2026-11-19.md:10-12,70-94`). |
+| Lower-power / integrated GPU | UNVERIFIED. | UNVERIFIED. |
+| Genuine device loss | UNVERIFIED. Actual device removal and injected submit failure are untested, and recovery is not transparent (this report, "Bounded retention and failure behavior"). | UNVERIFIED for the effect cache. Induced D3D12 removal covers the wider host, not this cache (`docs/validation/webgpu-native-backend-removal-windows-2026-11-19.md`), and the migration tracker still counts genuine driver loss as open (`docs/webgpu-migration.md:88-90`). |
+
+### Deferral triggers
+
+| NO-GO trigger (`docs/research/retained-effects-issue-111.md:53`) | Finding |
+| --- | --- |
+| Analytic geometry/cached masks suffice | Not settled. No real-application comparison exists, and the glow/shadow interaction is still analytic, so this trigger stays live for that interaction. |
+| Only one interaction benefits | **Present.** This is why the GO is provisional rather than a gate pass. |
+| Backdrop capture requires mandatory whole-window composition | Avoided. The capability captures a bounded paint prefix and otherwise draws directly; there is no full-window target (this report, "Bounded retention and failure behavior"). |
+| Correctness depends on undefined contents/aliasing | Avoided in the validated cases. Source and destination never alias, slots are fence-tracked and non-cycling, and load/store discipline is explicit (this report, "Boundary and rendering contract"). |
+| Memory grows with cycling/in-flight work | Not observed. Fixture live/peak charges returned to zero on reset and the application cache is two bounded slots, but driver residency and allocation churn are unmeasured (this report, "Validation and measurement boundaries"). |
+| Color contract unresolved | Resolved by an explicit decision, not by linear-light filtering; see the accepted deviation below. |
+| Static scenes acquire new work | Avoided in the cited idle evidence. |
+
+### Accepted deviation: encoded-SDR filtering
+
+The research note prefers linear-light color filtering and treats the color
+contract as a gate input (`docs/research/retained-effects-issue-111.md:31,51`).
+The shipped slice filters encoded SDR RGBA8 values through capture, both
+Gaussian passes, and composition, matching the ordinary UNORM renderer
+("Boundary and rendering contract"). This is an accepted, documented deviation
+scoped to this feature slice: HDR, sRGB render targets, wide-gamut/native
+display color management, and rounded output masks stay unimplemented, and
+changing the whole renderer's color contract remains outside the slice. The
+readbacks establish numeric agreement with the CPU Gaussian in encoded space;
+they do not establish linear-light perceptual output. The WebGPU compositor
+inherits the same encoded-SDR filtering and records no SDR parity across output
+formats (`docs/validation/webgpu-backdrop-effects-windows-browser-2026-11-15.md:84-95`).
+
+### What the recorded numbers do and do not measure
+
+- All SDL_GPU timing rows are fixture-scale: a 384×256 final target with a
+  192×144 effect output, run in a warmed process after correctness probes
+  (this report, "Gaussian native results"). They are not product benchmarks and
+  the first frames are not cold application or driver startup.
+- Submission-to-fence wall time includes queue, driver, and fence-wait costs
+  and is **not hardware GPU duration**; SDL_GPU exposes no portable timestamp
+  query used by the fixture, so no GPU-time figure exists on either path
+  (this report, "Validation and measurement boundaries").
+- The WebGPU residency figures (74,120 bytes active, 100,040 bytes peak under
+  the 48 MiB aggregate budget) are tracked mesh+texture allocations, not total
+  device residency or driver memory
+  (`docs/validation/webgpu-backdrop-effects-windows-browser-2026-11-15.md:54-56`).
+  Hardware GPU time and residency measurements remain open on both paths.
+
+### Out of scope
+
+General shader compilation and shader libraries, a material or effect graph,
+GPU PBR/GI, and any v0.3 ship commitment remain out of scope for this record and
+are not advanced by the evidence above. This reconciliation amends only the
+issue #111 decision record.
+
 ## Visual comparison
 
 These deterministic captures show the same static palette/content scene, not

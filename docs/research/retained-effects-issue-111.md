@@ -6,6 +6,8 @@
 
 **Implementation status (2026-11-04):** the [validation report](../validation/issue-111-retained-effects.md) now documents a supported `backdrop_blur` semantic-surface API, a fence-tracked SDL_GPU Gaussian compositor, deferred-effect retry, and Scratchpad Quick Open as its first ordinary consumer. The user reviewed the Gaussian presentation and approved using it. This supersedes the original NO-GO decision for the narrow bounded blur capability; it does not promote a general effects graph or claim unverified Windows/D3D12 acceptance.
 
+**Gate reconciliation (2026-11-20):** the validation report's [WebGPU and native validation reconciliation](../validation/issue-111-retained-effects.md#webgpu-and-native-validation-reconciliation) maps the SDL_GPU and WebGPU evidence against the GO/NO-GO criteria below. The GO remains provisional for the bounded blur capability: Quick Open is still the only named consumer, and encoded-SDR filtering is an accepted deviation from the linear-light preference stated here.
+
 ## What the primary sources establish
 
 - [PanGui's September update](https://pangui.io/blog/07-progress-update-september/#render-effects) reports arbitrary-content render effects, platform-specific support, and precompiled/custom effects. It also explicitly says many ordinary shape/text glows and shadows need no separate render effect. It supplies no Alicorn-relevant memory, idle, invalidation, or cross-backend performance evidence.

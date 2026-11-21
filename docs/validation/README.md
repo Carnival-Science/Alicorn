@@ -165,8 +165,9 @@ slice's method, fixtures, and limits.
 - [Live theme editing prototype (2026-11-08)](issue-166-windows-2026-11-08.md)
   — the opt-in watcher example and its Windows validation.
 - [Bounded retained backdrop blur (2026-11-04)](issue-111-retained-effects.md)
-  — the supported `backdrop_blur` capability, cache retry, and Scratchpad Quick
-  Open.
+  — the supported `backdrop_blur` capability, cache retry, Scratchpad Quick
+  Open, and the 2026-11-20 reconciliation of SDL_GPU/WebGPU evidence against the
+  research gate.
 
 ## Physical-session WebGPU runbooks
 
