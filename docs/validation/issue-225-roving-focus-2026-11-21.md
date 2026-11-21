@@ -236,7 +236,7 @@ navigation-key mappings.
 controls. Example 18 grew from 12 to 13 with the `Roving_List` positive control.
 
 AliKit cross-repo validation (branch `codex/issue-3-parts-pilot`, pin
-`4b2bec7e4e4cb09ec2cc7bfe07aa3f4f0dd8c43f`):
+`5f6fe8ec7bd4bf5e87a2a27cdf71980b03b48b9c`):
 
 ```text
 icon_picker                            12 tests, all successful (was 11)
