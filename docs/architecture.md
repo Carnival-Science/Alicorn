@@ -178,9 +178,13 @@ stream as other controls.
 
 Theme/accent changes are Paint-only today because current recipes consume color
 roles only. No theme length token drives recipe metrics, typography, or material
-selection. A text-scale scope advances Metrics and Typography only for its
-subtree and triggers layout there, while the color-only computed-style cache
-remains valid. Material-only surface description changes advance Material,
+selection. An affected Text node's description-resolved ink records that it came
+from the theme's Text role, so a color-only `style_theme_replace` recomputes that
+baked color in the same per-node walk that advances paint generations; explicit
+caller colors stay caller-owned. A text-scale scope advances Metrics and
+Typography only for its subtree and triggers layout there, while the color-only
+computed-style cache remains valid. Material-only surface description changes
+advance Material,
 preserve Paint and leave layout/hit geometry untouched. Themes/materials are
 immutable after registration, and semantic recipe or surface description
 inputs participate in cache signatures. Optional authored token names,

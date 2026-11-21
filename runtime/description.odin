@@ -208,8 +208,10 @@ report_repeated_identity :: proc(rt: ^Runtime, id: Node_ID, first, duplicate: Id
 	effective_layout_scroll_offset_x := layout_scroll_offset_x
 	if effective_layout_scroll_offset_x < 0 { effective_layout_scroll_offset_x = scroll_offset_x }
 	resolved_color := color
+	color_theme_resolved := false
 	if (kind == .Text || kind == .Text_Field || kind == .Text_Composition) && color_equal(resolved_color, DEFAULT_COLOR) {
 		resolved_color = style_environment_color(rt, rt.style_environment, .Text)
+		color_theme_resolved = true
 	}
 	description := Description{
 		id=id, parent=parent_node, site=source, key=key, explicit_key=explicit_key,
@@ -217,6 +219,7 @@ report_repeated_identity :: proc(rt: ^Runtime, id: Node_ID, first, duplicate: Id
 		style_environment=style_environment_core(rt.style_environment), style_scope_boundary=false,
 		layout_boundary_axes=kind == .Root ? Layout_Axes{.Width, .Height} : {},
 		button_content_style=button_content, button_variant=button_variant, button_presentation=button_presentation, style=style, color=resolved_color, paint_background=paint_background,
+		color_theme_resolved=color_theme_resolved,
 		paint_value=paint_value, region_revision=region_revision, region=is_region,
 		focusable=focusable, identity_key=identity_key,
 		identity_key_u64=identity_key_u64, identity_key_numeric=identity_key_numeric,
@@ -287,8 +290,10 @@ report_repeated_identity :: proc(rt: ^Runtime, id: Node_ID, first, duplicate: Id
 	effective_layout_scroll_offset_x := layout_scroll_offset_x
 	if effective_layout_scroll_offset_x < 0 { effective_layout_scroll_offset_x = scroll_offset_x }
 	resolved_color := color
+	color_theme_resolved := false
 	if (kind == .Text || kind == .Text_Field || kind == .Text_Composition) && color_equal(resolved_color, DEFAULT_COLOR) {
 		resolved_color = style_environment_color(rt, rt.style_environment, .Text)
+		color_theme_resolved = true
 	}
 	description := Description{
 		id=id, parent=parent_node, site=source, key=key_string_value, explicit_key=ui_key_is_explicit(key),
@@ -297,6 +302,7 @@ report_repeated_identity :: proc(rt: ^Runtime, id: Node_ID, first, duplicate: Id
 		style_environment=style_environment_core(rt.style_environment), style_scope_boundary=false,
 		layout_boundary_axes=kind == .Root ? Layout_Axes{.Width, .Height} : {},
 		button_content_style=button_content, button_variant=button_variant, button_presentation=button_presentation, style=style, color=resolved_color, paint_background=paint_background,
+		color_theme_resolved=color_theme_resolved,
 		paint_value=state_bits, region_revision=region_revision, region=is_region,
 		focusable=focusable, selected=selected, disabled=disabled, identity_key=identity_key,
 		identity_key_u64=identity_key_u64, identity_key_numeric=identity_key_numeric,

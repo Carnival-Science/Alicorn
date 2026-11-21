@@ -3,6 +3,8 @@ package alicorn
 
 import "core:testing"
 
+STYLE_THEME_REPLACE_TEST_FONT :: #load("../assets/fonts/AtkinsonHyperlegibleNext-Variable.ttf")
+
 test_theme_for_live_replace :: proc(color: Color) -> Style_Theme {
 	theme := DEFAULT_STYLE_THEME
 	theme.colors[int(Style_Color_Role.Accent)] = color
@@ -145,3 +147,193 @@ test_live_theme_replacement_is_runtime_local :: proc(t: ^testing.T) {
 	testing.expect(t, style_theme_color(&right, right_id, .Accent) == Color{0.3, 0.1, 0.1, 1},
 		"a separate runtime's window theme must remain unchanged")
 }
+
+test_theme_for_live_text_color :: proc(text_color: Color) -> Style_Theme {
+	theme := DEFAULT_STYLE_THEME
+	theme.colors[int(Style_Color_Role.Text)] = text_color
+	return theme
+}
+
+// Describes one description-resolved Text node and one description-resolved
+// Text_Field under the given theme. Both pass the default color so their ink is
+// resolved from the theme's Text role at description time. explicit_color can
+// override the plain Text node to cover caller-owned colors.
+style_theme_replace_text_tree :: proc(
+	rt: ^Runtime,
+	theme_id: Style_Theme_ID,
+	explicit_color := DEFAULT_COLOR,
+) -> (text_id, field_id: Node_ID) {
+	invalidate_root(rt, "theme text replacement fixture description")
+	ui, build := begin_frame(rt)
+	if !build { return }
+	container_begin(&ui, .Root, key=key_string("theme-text-root"), style=layout_style(.Column, width=320, height=140, gap=4))
+	scope := style_environment_push(&ui, Style_Environment{theme=theme_id})
+	text_id = text_simple(&ui, "theme resolved text", key=key_string("theme-text"), style=layout_style(width=200, height=24), color=explicit_color)
+	field_id = text_field_simple(&ui, "theme resolved field", key=key_string("theme-text-field"), style=layout_style(width=200, height=28))
+	style_environment_pop(&ui, scope)
+	container_end(&ui)
+	end_frame(&ui)
+	return
+}
+
+style_theme_replace_settle :: proc(rt: ^Runtime) {
+	for _ in 0..<4 {
+		ui, more := begin_frame(rt)
+		if !more { break }
+		end_frame(&ui)
+	}
+}
+
+style_theme_replace_text_paint_color :: proc(rt: ^Runtime, owner: Node_ID) -> (color: Color, found: bool) {
+	view, view_ok := paint_display_list(rt)
+	if !view_ok { return }
+	for command in view.commands {
+		if command.owner != owner { continue }
+		if text, is_text := command.payload.(Text_Paint); is_text { return text.color, true }
+	}
+	return
+}
+
+@(test)
+test_paint_only_theme_replace_recomputes_description_resolved_text_color :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 320, 140})
+	defer destroy_runtime(&rt)
+	testing.expect(t, text_engine_load_font(&rt.text_engine, STYLE_THEME_REPLACE_TEST_FONT),
+		"theme text replacement fixture font should load")
+
+	first := test_theme_for_live_text_color(Color{0.11, 0.22, 0.33, 1})
+	second := test_theme_for_live_text_color(Color{0.66, 0.55, 0.44, 1})
+	id := style_theme_register(&rt, first)
+	testing.expect(t, id != 0, "the fixture theme should register")
+	if id == 0 { return }
+
+	text_id, field_id := style_theme_replace_text_tree(&rt, id)
+	style_theme_replace_settle(&rt)
+	text_node, text_ok := rt.nodes[text_id]
+	field_node, field_ok := rt.nodes[field_id]
+	testing.expect(t, text_ok && field_ok, "the fixture should retain both text nodes")
+	if !text_ok || !field_ok { return }
+	expect_text := first.colors[int(Style_Color_Role.Text)]
+	testing.expect(t, text_node.color_theme_resolved && text_node.color == expect_text,
+		"default Text ink should be recorded as theme-resolved with the first theme's Text color")
+	testing.expect(t, field_node.color_theme_resolved && field_node.color == expect_text,
+		"default Text_Field ink should be recorded as theme-resolved with the first theme's Text color")
+	before_text_color, before_text_ok := style_theme_replace_text_paint_color(&rt, text_id)
+	before_field_color, before_field_ok := style_theme_replace_text_paint_color(&rt, field_id)
+	testing.expect(t, before_text_ok && before_text_color == expect_text,
+		"the initial Text paint should use the first theme's Text color")
+	testing.expect(t, before_field_ok && before_field_color == expect_text,
+		"the initial Text_Field paint should use the first theme's Text color")
+
+	descriptions_before := rt.stats.descriptions_emitted
+	frames_before := rt.stats.frames_built
+	testing.expect(t, style_theme_replace(&rt, id, second) == .Replaced,
+		"the color-only replacement should be accepted")
+	testing.expect(t, !rt.invalidated && rt.presentation_pending,
+		"the color-only replacement should only request presentation")
+	expect_replaced := second.colors[int(Style_Color_Role.Text)]
+	testing.expect(t, text_node.color == expect_replaced && field_node.color == expect_replaced,
+		"the replacement walk should recompute theme-resolved ink before repainting")
+
+	presentation, ready := begin_presentation_frame(&rt)
+	testing.expect(t, ready, "the paint-only replacement should schedule a retained presentation frame")
+	if ready { end_presentation_frame(&presentation) }
+	testing.expect(t, rt.stats.descriptions_emitted == descriptions_before && rt.stats.frames_built == frames_before,
+		"recomputing theme-resolved ink must not rebuild application descriptions")
+
+	after_text_color, after_text_ok := style_theme_replace_text_paint_color(&rt, text_id)
+	after_field_color, after_field_ok := style_theme_replace_text_paint_color(&rt, field_id)
+	testing.expect(t, after_text_ok && after_text_color == expect_replaced,
+		"the retained Text paint should adopt the replacement theme's Text color")
+	testing.expect(t, after_field_ok && after_field_color == expect_replaced,
+		"the retained Text_Field paint should adopt the replacement theme's Text color")
+}
+
+@(test)
+test_paint_only_theme_replace_preserves_explicit_text_color :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 320, 140})
+	defer destroy_runtime(&rt)
+	testing.expect(t, text_engine_load_font(&rt.text_engine, STYLE_THEME_REPLACE_TEST_FONT),
+		"theme text replacement fixture font should load")
+
+	first := test_theme_for_live_text_color(Color{0.11, 0.22, 0.33, 1})
+	second := test_theme_for_live_text_color(Color{0.66, 0.55, 0.44, 1})
+	id := style_theme_register(&rt, first)
+	testing.expect(t, id != 0, "the fixture theme should register")
+	if id == 0 { return }
+
+	explicit := Color{0.95, 0.2, 0.25, 1}
+	text_id, field_id := style_theme_replace_text_tree(&rt, id, explicit)
+	style_theme_replace_settle(&rt)
+	text_node, text_ok := rt.nodes[text_id]
+	field_node, field_ok := rt.nodes[field_id]
+	testing.expect(t, text_ok && field_ok, "the fixture should retain both text nodes")
+	if !text_ok || !field_ok { return }
+	testing.expect(t, !text_node.color_theme_resolved && text_node.color == explicit,
+		"an explicit caller color must remain caller-owned")
+	testing.expect(t, field_node.color_theme_resolved,
+		"a default Text_Field color remains theme-resolved alongside the explicit Text node")
+
+	testing.expect(t, style_theme_replace(&rt, id, second) == .Replaced,
+		"the color-only replacement should be accepted")
+	presentation, ready := begin_presentation_frame(&rt)
+	if ready { end_presentation_frame(&presentation) }
+
+	testing.expect(t, !text_node.color_theme_resolved && text_node.color == explicit,
+		"the replacement walk must not overwrite an explicit caller color")
+	paint_color, paint_ok := style_theme_replace_text_paint_color(&rt, text_id)
+	testing.expect(t, paint_ok && paint_color == explicit,
+		"the retained explicit caller color must keep painting after replacement")
+	expect_replaced := second.colors[int(Style_Color_Role.Text)]
+	testing.expect(t, field_node.color == expect_replaced,
+		"theme-resolved siblings should still follow the replacement theme")
+}
+
+@(test)
+test_paint_only_theme_replace_matches_fresh_runtime_text_paint :: proc(t: ^testing.T) {
+	incremental := new_runtime(Rect{0, 0, 320, 140})
+	defer destroy_runtime(&incremental)
+	testing.expect(t, text_engine_load_font(&incremental.text_engine, STYLE_THEME_REPLACE_TEST_FONT),
+		"theme text replacement fixture font should load")
+
+	first := test_theme_for_live_text_color(Color{0.11, 0.22, 0.33, 1})
+	second := test_theme_for_live_text_color(Color{0.66, 0.55, 0.44, 1})
+	id := style_theme_register(&incremental, first)
+	testing.expect(t, id != 0, "the incremental fixture theme should register")
+	if id == 0 { return }
+	text_id, field_id := style_theme_replace_text_tree(&incremental, id)
+	style_theme_replace_settle(&incremental)
+	testing.expect(t, style_theme_replace(&incremental, id, second) == .Replaced,
+		"the incremental runtime should accept the color-only replacement")
+	presentation, ready := begin_presentation_frame(&incremental)
+	if ready { end_presentation_frame(&presentation) }
+	testing.expect(t, ready, "the incremental runtime should present the replacement")
+
+	fresh := new_runtime(Rect{0, 0, 320, 140})
+	defer destroy_runtime(&fresh)
+	testing.expect(t, text_engine_load_font(&fresh.text_engine, STYLE_THEME_REPLACE_TEST_FONT),
+		"the fresh comparison fixture font should load")
+	fresh_id := style_theme_register(&fresh, second)
+	testing.expect(t, fresh_id == id, "the fresh runtime should register the same theme ID")
+	fresh_text_id, fresh_field_id := style_theme_replace_text_tree(&fresh, fresh_id)
+	style_theme_replace_settle(&fresh)
+
+	for pair in ([2][2]Node_ID{{text_id, fresh_text_id}, {field_id, fresh_field_id}}) {
+		incremental_node, incremental_ok := incremental.nodes[pair[0]]
+		fresh_node, fresh_ok := fresh.nodes[pair[1]]
+		testing.expect(t, incremental_ok && fresh_ok, "both runtimes should retain the compared text node")
+		if !incremental_ok || !fresh_ok { continue }
+		testing.expect(t, !incremental_node.color_theme_resolved || incremental_node.color == fresh_node.color,
+			"the retained theme-resolved color should match a fresh description of the replaced theme")
+		incremental_color, incremental_color_ok := style_theme_replace_text_paint_color(&incremental, pair[0])
+		fresh_color, fresh_color_ok := style_theme_replace_text_paint_color(&fresh, pair[1])
+		testing.expect(t, incremental_color_ok && fresh_color_ok && incremental_color == fresh_color &&
+			incremental_color == second.colors[int(Style_Color_Role.Text)],
+			"the retained text paint should match a fresh runtime describing the replaced theme")
+		incremental_info, incremental_info_ok := node_info(&incremental, pair[0])
+		fresh_info, fresh_info_ok := node_info(&fresh, pair[1])
+		testing.expect(t, incremental_info_ok && fresh_info_ok && incremental_info == fresh_info,
+			"the public Node_Info projection should match the fresh runtime")
+	}
+}
+

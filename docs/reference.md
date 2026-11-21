@@ -726,6 +726,16 @@ system below. The scope container must keep parent-assigned bounds stable while
 its contents reflow. Theme IDs are immutable and local to a runtime; do not
 reuse IDs across runtimes.
 
+`style_theme_replace` updates a registered non-default theme in place between
+frames. A replacement that changes only color roles is Paint-only: retained
+control recipes, semantic surfaces, and description-resolved text colors are
+recomputed for affected nodes without a description rebuild or layout. Text,
+Text_Field, and Text_Composition ink that defaulted to the theme's `Text` role
+is recomputed by the replacement walk; an explicit caller color is never
+modified. Metric changes still invalidate the root so application-authored
+metric consumers re-describe, and motion-policy changes re-describe declarative
+motion requests.
+
 The separate [`theme` compiler contract](themes.md) compiles typed color and
 logical-length tokens, aliases, core roles, and namespaced extension roles.
 This is not a general selector/cascade system. Button, Checkbox, Slider, Text

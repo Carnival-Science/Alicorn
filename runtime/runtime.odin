@@ -1299,6 +1299,10 @@ Description :: struct {
 	placement: Positioned_Placement,
 	color:       Color,
 	paint_background: bool,
+	// True only when color came from the subtree style environment's Text role
+	// rather than an explicit caller color. Paint-only theme replacement uses
+	// this provenance to recompute the baked color without a description.
+	color_theme_resolved: bool,
 	paint_value: u64,
 	control_value: f32,
 	control_minimum: f32,
@@ -1440,6 +1444,9 @@ Node :: struct {
 	placement: Positioned_Placement,
 	color:       Color,
 	paint_background: bool,
+	// Provenance for description-resolved text ink: paint-only theme
+	// replacement recomputes color from the retained style environment when set.
+	color_theme_resolved: bool,
 	paint_value: u64,
 	control_value: f32,
 	control_minimum: f32,

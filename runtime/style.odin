@@ -585,6 +585,14 @@ style_theme_replace_commit :: proc(
 		if node == nil || node.style_environment.theme != id { continue }
 		style_generations_advance(&node.style_generations, domains)
 		style_computed_cache_invalidate(rt, node_id)
+		// Text ink resolved during description from the Text role is baked into
+		// node.color with no computed-style cache behind it. Recompute it here,
+		// before the queued repaint rebuilds this node's paint commands, so a
+		// paint-only replacement does not leave stale theme ink. Explicit caller
+		// colors are never theme-resolved and stay untouched.
+		if node.color_theme_resolved {
+			node.color = style_environment_color(rt, node.style_environment, .Text)
+		}
 		stages := style_domains_dirty_stages(domains)
 		for stage in Dirty_Stage { if stage in stages { dirty_set(&node.dirty, stage, true) } }
 		if Dirty_Stage.Measure in stages { layout_measure_mark_dirty(rt, node) }

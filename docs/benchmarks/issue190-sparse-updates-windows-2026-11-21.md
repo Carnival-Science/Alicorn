@@ -312,6 +312,10 @@ must re-describe text or use explicit/token-resolved text colors. It is recorded
 as an observation, not as a benchmark failure, because the sparse-update fixture
 isolates explicit text colors.
 
+Fixed on master in issue #219: the per-node replacement walk now recomputes
+description-resolved text ink, so this fixture's probe reports
+`theme_text_probe status=updated`. The capture above remains pre-fix evidence.
+
 ## True idle
 
 Every scenario that still had a runtime (all but destroy) polled 200

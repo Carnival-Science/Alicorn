@@ -533,6 +533,7 @@ copy_node_description :: proc(
 	node.button_variant = d.button_variant
 	node.button_presentation = d.button_presentation
 	node.color = d.color
+	node.color_theme_resolved = d.color_theme_resolved
 	node.paint_background = d.paint_background
 	if semantic_surface_style.defined {
 		rt.semantic_surfaces[node.id] = semantic_surface_style
