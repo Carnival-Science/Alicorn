@@ -199,6 +199,36 @@ focused scopes; otherwise, keyboard input follows the focused node's ancestor
 chain and pointer input follows the hit target's ancestor chain. Native text
 composition keeps priority for keys listed in `composition_yield_keys`.
 
+A focused text-input owner (a built-in `Text_Field` or any
+`ui.text_input_target`) normally keeps editing keys even when a scope also
+declares them. `text_preempt_keys` is the opt-in exception: list the scope's
+command keys that should still reach the scope while a text owner *inside that
+scope* has focus. The key must also appear in `keys`. The default empty set
+preserves the command-vocabulary precedence, so existing fields, selects, and
+editors are unchanged.
+
+```odin
+// A search field and a roving grid share one scope. While the field is
+// focused, arrows and Space drive the grid; characters and Backspace still
+// edit the query.
+grid_keys := alicorn.Interaction_Key_Set{
+    .Left, .Right, .Up, .Down, .Home, .End, .Page_Up, .Page_Down, .Return, .Toggle,
+}
+_ = ui.interaction_scope(ctx, grid_owner, rawptr(app), ui.Interaction_Scope_Options{
+    keys=grid_keys,
+    text_preempt_keys={.Left, .Right, .Up, .Down, .Home, .End, .Page_Up, .Page_Down, .Toggle},
+})
+```
+
+`text_preempt_keys` never overrides active IME composition: a key that the
+command policy would not normally preempt stays with the text owner until the
+composition ends. Add it to `composition_yield_keys` when a declared key should
+also remain with the text owner during composition (for example, arrows inside
+a multiline editor). Composition, character input, Backspace/Delete, and other
+`Application_Text_Key_Event` values are not `Application_Key` values and are
+never affected. Plain Tab continues to use the text-key and focus-traversal
+routes; `Tab_Next`/`Tab_Previous` are ordinary command keys.
+
 Text changes can use the scope's typed `on_text_change` callback; return `true`
 only when the component consumed the change. This callback runs during native
 event dispatch, and the change's text is borrowed until it returns. The owner
