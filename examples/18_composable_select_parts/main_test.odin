@@ -126,6 +126,7 @@ Semantic_Record :: struct {
 	label: string,
 	value: string,
 	parent: string,
+	collection: string,
 	states: string,
 	actions: string,
 	logical_count: u64,
@@ -156,6 +157,7 @@ select_parts_semantic_records :: proc(rt: ^alicorn.Runtime) -> []Semantic_Record
 				label=node.label,
 				value=node.value,
 				parent=select_parts_parent_name(by_id, node.parent),
+				collection=select_parts_parent_name(by_id, node.collection_id),
 				states=fmt.tprintf("%v", node.states),
 				actions=fmt.tprintf("%v", node.actions),
 				logical_count=node.logical_count,
@@ -258,6 +260,7 @@ test_select_parts_semantic_parity_with_stock_select :: proc(t: ^testing.T) {
 			stock_record.label == parts_record.label &&
 			stock_record.value == parts_record.value &&
 			stock_record.parent == parts_record.parent &&
+			stock_record.collection == parts_record.collection &&
 			stock_record.states == parts_record.states &&
 			stock_record.actions == parts_record.actions &&
 			stock_record.logical_count == parts_record.logical_count &&
