@@ -388,7 +388,7 @@ focus without rebuilding the description. Visual-part identity adds
 inspectable owner/state metadata; ordinary retained layout still controls
 ordering, bounds, and clipping. Use visual parts to describe presentation, not
 to create another interaction system.
-See [Visual parts under an existing control](reference.md#visual-parts-under-an-existing-control)
+See [Visual parts](reference.md#visual-parts)
 for attachment validation, core roles, namespaced identities, and owner-state
 visibility policies.
 
