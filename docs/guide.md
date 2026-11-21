@@ -747,8 +747,10 @@ and locale; `02_form` demonstrates this for its sliders.
 
 Virtual collections use `semantic_collection_begin` with
 `semantic_collection_item` for realized rows and `semantic_collection_virtual_item`
-for logical items that need description without visual realization. The
-application supplies only its semantic working set; Alicorn retains collection
+for logical items that need description without visual realization. Pass the
+collection's `parent` when its owner does not sit inside the semantic ancestor
+it belongs to, such as a popup list owned by a trigger; zero keeps the nearest
+described semantic ancestor. The application supplies only its semantic working set; Alicorn retains collection
 metadata rather than eagerly constructing one semantic record for every
 logical item. Items described for a collection are pruned as its working set
 moves, except items pinned as current, selected, or semantic-focus targets.

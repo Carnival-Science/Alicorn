@@ -141,10 +141,13 @@ results**, and **NO-GO for a generic behavior framework** or further migration.
 It patched no Alicorn code.
 
 Both pilots also found real core gaps and recorded them instead of smuggling a
-framework around them: collection parent identity, generic transient-popup
-keyboard routing, roving semantic focus, type-ahead ownership for a generic text
-target, and a roving grid/list pattern check. Until a public API closes a gap,
-compose with what exists and document the limit. The `icon_picker` pilot, for
+framework around them. Collection parent identity is now closed by issue #223:
+`semantic_collection_begin` accepts an optional `parent`, and the pilot package
+passes its trigger there instead of editing the pending collection record.
+Generic transient-popup keyboard routing, roving semantic focus, type-ahead
+ownership for a generic text target, and a roving grid/list pattern check remain
+open. Until a public API closes a gap, compose with what exists and document the
+limit. The `icon_picker` pilot, for
 example, documents that Space activation is unavailable under the current text
 preemption rule rather than inventing a private workaround.
 

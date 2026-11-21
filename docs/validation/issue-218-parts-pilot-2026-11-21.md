@@ -152,7 +152,7 @@ changing the stock contract.
 | Type-ahead match/restart policy | ~45 LOC | **NO-GO for #218** | The package receives committed text through a generic text target and its own callback; stock owns runtime text-input routing. A model-only helper would still leave both routing paths. |
 | Popup placement/flip/clamp | `context_menu_placement` reused | **GO (already shared)** | No new API; both consumers use the same public helper. |
 | Popup keyboard routing | different mechanisms | **NO-GO** | Context Menu routes only direct Button children and consumes other keys; nested virtualized rows need a generic owner-routed transient popup. Recorded as a core candidate below. |
-| Semantic collection publication | shared public API | **GO (already shared)** | `semantic_collection_begin` / `semantic_collection_item` provide parity; only the collection-parent patch is missing. |
+| Semantic collection publication | shared public API | **GO (already shared)** | `semantic_collection_begin` / `semantic_collection_item` provide parity, including the collection-level `parent` added by #223. |
 | Visual row recipes | package-owned by design | **NO-GO** | The point of parts is app ownership; a shared recipe would recreate the framework this pilot rejects. |
 
 ## Core-candidate findings (not solved by this pilot)
@@ -169,6 +169,9 @@ recorded for a future issue; none were patched in this branch.
    pending-record access. The only other pending scan detects a foreign modal
    described earlier in the same frame, because retained top-level state advances
    only during reconciliation.
+   **Resolved by #223.** `semantic_collection_begin` now takes an optional
+   `parent`; stock Select, the testui custom-combobox fixture, and this package
+   pass it directly, and `select_parts_set_collection_parent` is deleted.
 2. **Generic transient-popup keyboard routing.** Context Menu consumes
    Up/Down/Home/End/Enter/Escape before scoped owners and routes only direct
    Button children. A virtualized, nested listbox therefore cannot receive its
