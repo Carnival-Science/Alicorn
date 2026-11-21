@@ -263,8 +263,9 @@ callback only.
   `Application_Services.clipboard` exactly. Browser hosts cannot provide it
   synchronously (the Web Clipboard API is asynchronous); they publish the
   renderer-neutral asynchronous service in `alicorn:host/clipboard` through
-  `UI_Host_Services.clipboard` instead. Browser applications must consume the
-  async request/completion shape; that migration is a Stage C concern.
+  `UI_Host_Services.clipboard` instead. Browser applications consume the async
+  request/completion shape; the adapter and its JS tests exist, but a physical
+  browser permission flow remains unverified.
 - `file_drag` is the native drag-out capability and has exactly the
   `Application_Services.file_drag` shape: `File_Drag_Service` with
   `application_file_drag_start(service, path)`. The Windows SDL3 host installs
@@ -867,6 +868,17 @@ reference path translates the hosted description at its boundary. See
 [`webgpu-migration.md`](webgpu-migration.md) for the slice record and
 [`validation/webgpu-chrome-interactive-windows-2026-11-19.md`](validation/webgpu-chrome-interactive-windows-2026-11-19.md)
 for Windows interaction evidence.
+
+Stages B-D close the remaining reference-host gaps on Windows: the hosted
+service surface (`Hosted_Host_Services` with synchronous clipboard, file drag,
+dialogs, quit, and a per-surface scheduler), backend-neutral diagnostics,
+application-owned roots and `on_after_frame`, paint-span and pointer
+arbitration parity, live resize, tab drag previews, shared font seeding, theme
+color parity, display-deadline motion scheduling, high-DPI transitions, topmost
+re-entry, syntax-span persistence, and file/folder drag-and-drop. Each slice
+has a dated record in the
+[validation index](validation/README.md); browser equivalents for menus,
+dialogs, close, and drag-out are still absent.
 
 This API still does not wrap a wx window in SDL, own a GPU device, or implement
 a wx event adapter. The wx fixture still needs to validate surface

@@ -38,8 +38,9 @@ manual builds.
 
 ### Native WebGPU builds are opt-in and need wgpu-native
 
-The default `ui.run` path, examples 01–14, and the headless checks render with
-SDL_GPU and do **not** need wgpu-native. The opt-in native WebGPU entry lives in
+There are two renderer paths. The default `ui.run` path, examples 01-14 and
+`15_host_owned_sdl_gpu`, and the headless checks render with SDL_GPU and do
+**not** need wgpu-native. The opt-in native WebGPU entry lives in
 `alicorn:ui/webgpu`; the WebGPU examples (`15_webgpu_feasibility`,
 `16_native_webgpu_ui`) require the pinned wgpu-native `v29.0.1.1` library that
 matches Odin's `vendor:wgpu` bindings. Install it into the Odin distribution:
@@ -57,6 +58,40 @@ If the library is missing, compiling a WebGPU consumer fails with a
 unaffected. See
 [dependencies/webgpu-toolchain.md](../dependencies/webgpu-toolchain.md) for the
 pin and hashes.
+
+To try the native WebGPU host, build all examples and run the native UI
+fixture. On Windows, `build_examples` stages `SDL3.dll` and the shared
+`wgpu_native.dll` beside the executable:
+
+```powershell
+.\tools\build_examples.ps1
+.\out\examples\16_native_webgpu_ui.exe
+```
+
+```sh
+./tools/build_examples.sh
+./out/examples/16_native_webgpu_ui
+```
+
+The browser path uses `ui.run` on `js_wasm32` without the SDK or Linux/macOS
+setup scripts. Example 17 builds with its own script and must be served over
+localhost because WebGPU requires a secure context:
+
+```powershell
+cd examples\17_browser_webgpu_ui
+.\build.ps1
+python -m http.server 8092 --directory out/web
+```
+
+```sh
+cd examples/17_browser_webgpu_ui
+./build.sh
+python3 -m http.server 8092 --directory out/web
+```
+
+Open `http://localhost:8092/` in a Chromium-family browser with WebGPU. Browser
+evidence in this release is Chromium-family only; Firefox and Safari are
+untested.
 
 Put the directory containing `odin` on `PATH`. In a new terminal, verify it:
 
@@ -86,7 +121,14 @@ Build the headless examples and run Alicorn's tests:
 ./tools/check.sh
 ```
 
-The check is headless; it does not open a window.
+The check is headless; it does not open a window. The same script and
+`.\tools\test.ps1` also compile the native entry point and run the platform
+suites. Two harness caveats are recorded for the current toolchain: on Windows
+PowerShell 5.1 the AccessKit binding check can abort because a native test
+runner writes progress to stderr, which that shell treats as a terminating
+error (use PowerShell 7 or run the stages directly), and
+`tools/check_web_ui_package.ps1` currently fails to compile the wasm fixture
+with `DevicePoll is not declared by wgpu`. See [Development](development.md).
 
 ## 3. Run the native starter app
 
@@ -162,10 +204,16 @@ distribution before using a custom compiler path.
 ## Platform status
 
 The native path is exercised on Windows and macOS. Linux has a conditional
-validation record from one NixOS 26.11/Mango 0.16.2 machine, but this is not
-broad Linux support; the native app remains experimental. See the
+validation record from one NixOS 26.11/Mango 0.16.2 Wayland machine, but this is
+not broad Linux support, Linux has no AccessKit adapter, and the native app
+remains experimental. See the
 [Linux validation record](validation/linux-nixos-mangowc-2026-10-23.md) and the
 [repeatable acceptance matrix](validation/linux-native-acceptance.md).
+
+The opt-in WebGPU host has Windows D3D12/Vulkan validation and CI smoke
+evidence on macOS Metal and Linux lavapipe; physical macOS/Linux WebGPU
+sessions are still pending. The browser target is Chromium-family only in this
+release.
 
 If a build fails, check `odin version`, the platform prerequisites above, and
 the compiler's complete `base`, `core`, and `vendor` installation. The

@@ -14,7 +14,7 @@ application-owned Odin state
 identity → reconcile → layout → paint → presentation
               │
               ▼
-      native host / SDL_GPU
+      native host / SDL_GPU or opt-in WebGPU
 ```
 
 ## Ownership
@@ -315,9 +315,9 @@ Gradient strokes remain independent solid colors. Equal stop alpha keeps
 interpolation compatible with the existing straight-alpha source-over path;
 Increased Contrast flattens the fill and Reduce Transparency makes both stops
 opaque. Theme changes invalidate paint only. The surface APIs stay renderer
-neutral, but this prototype currently has native SDL_GPU pixel validation only;
-other renderer implementations must resolve the same semantic surface product
-before they can display the gradient.
+neutral; native SDL_GPU and the hosted WebGPU path (Windows D3D12 and browser
+readback) resolve the same semantic surface product. Other renderer
+implementations must do the same before they can display the gradient.
 
 The host waits for events when idle. Worker completions can wake it through an
 opaque `Application_Waker`; the UI remains on the window thread. The runtime

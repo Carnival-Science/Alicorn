@@ -25,6 +25,8 @@ Install Odin and the native prerequisites from
 | 12 | [Custom Segmented Control](12_custom_segmented_control/main.odin) | A third-party control that owns its complete visual presentation while public Button owners provide hit testing, focus, semantics, and activation |
 | 13 | [Surface Gradients](13_surface_gradients/main.odin) | Theme-resolved horizontal and vertical two-stop semantic surface fills with rounded geometry and clipping |
 | 14 | [Shape Primitives](14_shape_primitives/main.odin) | Bounded circle, arc, and cubic Bezier surfaces plus opt-in circular Button hit geometry |
+| 15 | [Host-Owned SDL_GPU](15_host_owned_sdl_gpu/main.odin) | A host owning the SDL window, device, command buffer, target, and event loop while Alicorn supplies retained UI and the SDL_GPU presenter |
+| 15* | [WebGPU Feasibility](15_webgpu_feasibility/main.odin) | The opt-in shared WebGPU fixture: offscreen readback, compositor slices, effects, and device-loss probes |
 | 16 | [Native WebGPU UI](16_native_webgpu_ui/main.odin) | Opt-in `webgpu.run` (`alicorn:ui/webgpu`) using SDL3 input and the shared Hosted_Runtime/WebGPU surface presenter, with an app-owned wake callback probe |
 | 17 | [Browser WebGPU UI](17_browser_webgpu_ui/main.odin) | `ui.run` on `js_wasm32` with async WebGPU bootstrap, browser input, and demand-driven frames |
 
@@ -117,6 +119,31 @@ build. Program arguments follow the example name on the shell runner and use
     the output arc, and follow the curved signal cable. The Button keeps its
     ordinary keyboard/accessibility contract while pointer hits use the
     inscribed circle. See the [example notes](14_shape_primitives/README.md).
+
+## Opt-in WebGPU examples
+
+`15_webgpu_feasibility`, `16_native_webgpu_ui`, and `17_browser_webgpu_ui`
+use the WebGPU renderer. (`15_host_owned_sdl_gpu` is the SDL_GPU host-owned
+presentation lesson.) The WebGPU examples are not part of the default
+`run_example` set and need the pinned wgpu-native `v29.0.1.1` runtime described
+in [Getting Started](../docs/getting-started.md#native-webgpu-builds-are-opt-in-and-need-wgpu-native).
+Build them with `tools/build_examples.ps1` or `tools/build_examples.sh`, which
+pass `-define:WGPU_SHARED=true` for example 16; on Windows the script also
+stages `SDL3.dll` and `wgpu_native.dll` beside the executable:
+
+```powershell
+.\tools\build_examples.ps1
+.\out\examples\16_native_webgpu_ui.exe
+```
+
+```sh
+./tools/build_examples.sh
+./out/examples/16_native_webgpu_ui
+```
+
+Example 17 has its own script and must be served over localhost because WebGPU
+requires a secure context. See
+[`17_browser_webgpu_ui/README.md`](17_browser_webgpu_ui/README.md).
 
 ## Build and validation
 

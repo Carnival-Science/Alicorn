@@ -238,6 +238,15 @@ The application state pointer is borrowed for the duration of `Run`; keep the
 state alive until it returns. See the complete
 [native starter](../examples/01_hello/main.odin).
 
+The opt-in native WebGPU host lives in `alicorn:ui/webgpu` (`webgpu.run`). It
+reuses the same application callback vocabulary and the shared
+`Hosted_Runtime`, but is a separate package so SDL_GPU consumers of
+`alicorn:ui` do not compile the WebGPU host or require wgpu-native. Keep using
+`ui.run` for the default SDL_GPU host, or use the `hosted_runtime_*` API
+directly when the application owns its window and event loop. See
+[Host-owned UI loops](hosted-runtime.md) and the
+[WebGPU migration plan](webgpu-migration.md).
+
 ### Host-owned SDL_GPU presentation
 
 For a host that owns its own SDL event loop, create an `Sdl_GPU_Presenter` with
@@ -448,7 +457,7 @@ checker verifies only the mutation scopes the application explicitly reports.
 | `GPU_Surface_Image` / `gpu_surface_image` / `gpu_surface_update_images` | Retain up to 256 Runtime-owned image handles as surface-local layers above the background and below custom geometry. |
 | `Image_Handle` / `Image_Load_Error` | Identify a retained image resource and report bounded decode failures. |
 | `font_load_bytes` / `font_load_italic_bytes` / `font_load_fallback_bytes` | Install app-owned fonts by `Font_Role`; the host keeps defaults for faces not supplied. |
-| `font_file_load_bytes` / `font_face_load` | Register a bounded, Runtime-owned SFNT/TTC file and parse one face by collection index. Returns stable `Font_File_ID` / `Font_Face_ID` values; this registry stage does not yet enable automatic glyph fallback. |
+| `font_file_load_bytes` / `font_face_load` / `font_face_add_fallback` | Register a bounded, Runtime-owned SFNT/TTC file and parse one face by collection index, returning stable `Font_File_ID` / `Font_Face_ID` values. `font_face_add_fallback` appends a registered face to one role's ordered fallback stack; a candidate must cover every non-ignorable scalar in an extended grapheme cluster, and only unresolved retained runs for that role are reshaped. |
 | `button` | Emit an interactive button; returns `bool` when activated. |
 | `checkbox` | Emit a controlled checkbox; returns `{value, changed}`. |
 | `slider_f32` | Emit a controlled horizontal `f32` slider; returns `{value, changed}`. |

@@ -8,10 +8,21 @@ native starter app, use [Getting Started](getting-started.md).
 ```text
 runtime/          retained runtime and lower-level public API
 ui/               convenience API for ordinary native application UI
-native/sdl_gpu/   SDL3 / SDL_GPU host and compositor
-host/sdl3/        shared SDL3 windowing, events, live resize, frame geometry, dialogs, accessibility
+ui/webgpu/        opt-in native WebGPU entry for SDL3 hosts (`webgpu.run`)
+renderer/cpu/     shared backend-neutral mesh, text, image, and material prep
+renderer/webgpu/  shared WebGPU renderer; the host owns device and submission
+native/sdl_gpu/   SDL3 / SDL_GPU host and compositor (default renderer)
+host/sdl3/        SDL3 WebGPU host plus shared window/event/chrome/accessibility code
+host/sdl3/input/  WebGPU-agnostic SDL3 key, pointer, wheel, and text mapping
+host/sdl3/clipboard/  shared synchronous SDL3 clipboard service
+host/sdl3/dialogs/    shared native file-dialog bridge
+host/sdl3/file_drag/  shared native drag-out source (Windows OLE)
+host/sdl3/live_resize/  shared modal resize/move dispatch and window-frame geometry
+host/sdl3/window_frame/ shared integrated-frame window predicates
+host/web/         browser (`js_wasm32`) host: input, composition, scheduling, DOM/ARIA
 host/presentation shared hosted-surface presenter (WebGPU)
 host/diagnostics/ shared, renderer-neutral developer diagnostics
+host/fonts/       shared desktop font seeding
 host/menus/       shared native menu model and platform adapters
 examples/         numbered native application lessons
 tests/fixtures/   focused runtime and lifecycle validation applications
@@ -51,6 +62,44 @@ For focused work:
 ./tools/bench_text_layout.sh
 ./tools/native_sdl_gpu.sh
 ```
+
+### WebGPU and hosted checks
+
+The default checks never compile wgpu-native. WebGPU-specific work adds:
+
+```powershell
+# Builds every example; example 16 uses -define:WGPU_SHARED=true and stages
+# SDL3.dll plus wgpu_native.dll in out\examples\.
+.\tools\build_examples.ps1
+# Proves an SDL_GPU consumer builds and smokes when wgpu-native is unavailable.
+.\tools\test_sdl_gpu_without_wgpu_native.ps1
+# Scripted real-window runners for example 16.
+.\tools\validate_native_webgpu_ui.ps1 -Executable out\examples\16_native_webgpu_ui.exe -Backend d3d12
+.\tools\validate_native_webgpu_resize.ps1 -Executable out\examples\16_native_webgpu_ui.exe -Backend d3d12
+.\tools\validate_native_webgpu_dpi.ps1 -Executable out\examples\16_native_webgpu_ui.exe -Backend d3d12
+.\tools\validate_native_webgpu_tab_drag.ps1 -Executable out\examples\16_native_webgpu_ui.exe -Backend d3d12
+# Test-only wgpu-native export: induce D3D12 backend removal, then recover.
+.\tools\validate_wgpu_native_backend_removal.ps1
+```
+
+Browser host code is exercised with `odin check ... -target:js_wasm32` and the
+Node tests `tools/test_web_scheduler.js` and `tools/test_webgpu_ui_host.js`.
+Example 17's `build.ps1`/`build.sh` stages a localhost page; WebGPU requires a
+secure context.
+
+Two harness caveats are recorded for this toolchain and host combination:
+
+- `tools/check.ps1` and `tools/test.ps1` run the AccessKit binding check, whose
+  `verify-uia.ps1` window-selection step is intermittently failing upstream in
+  [odin-accesskit#1](https://github.com/samanshaiza004/odin-accesskit/issues/1).
+  It selects the console or IME window instead of the fixture window under
+  Windows PowerShell 5.1; run the stages individually or use PowerShell 7 when
+  reproducing.
+- `tools/check_web_ui_package.ps1` currently fails to compile the
+  `tests/fixtures/web_ui_package` wasm target with `DevicePoll is not declared
+  by wgpu`. The failure is recorded in
+  [`webgpu-migration.md`](webgpu-migration.md) and is independent of the
+  renderer slices.
 
 ### Headless application interaction tests
 Import `alicorn:testui` to drive an application's normal render procedure and
