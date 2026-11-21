@@ -10,6 +10,7 @@ UI_Authoring_Test_App :: struct {
 	name: ^Text_Buffer,
 	enabled: bool,
 	gain: f32,
+	selected_icon: bool,
 	static_text: Node_ID,
 	decorative_text: Node_ID,
 	field: Node_ID,
@@ -27,6 +28,10 @@ ui_authoring_test_render :: proc(app: ^UI_Authoring_Test_App, ctx: ^UI) {
 		app.slider_changed = slider_f32(ctx, "Gain", &app.gain, 0, 1, step=0.1, key="authoring-gain", height=32)
 		_ = icon(ctx, .Search, key="authoring-search")
 		_ = icon_button(ctx, "Search now", .Search, key="authoring-search-button")
+		if icon_button(ctx, "Selection tool", .Settings, key="authoring-selected-icon-button",
+			selected=app.selected_icon) {
+			app.selected_icon = !app.selected_icon
+		}
 	}
 }
 
@@ -516,7 +521,7 @@ test_beginner_ui_controls_expose_accessible_names_and_preserve_field_semantics :
 	buffer, buffer_ok := text_buffer("Alicorn")
 	if !buffer_ok { testing.expect(t, false, "managed UI text buffer should initialize"); return }
 	defer text_buffer_destroy(&buffer)
-	app := UI_Authoring_Test_App{name=&buffer, gain=0.5}
+	app := UI_Authoring_Test_App{name=&buffer, gain=0.5, selected_icon=true}
 	testing.expect(t, ui_authoring_test_frame(&rt, &app), "the authoring example should describe its initial frame")
 
 	static_id := app.static_text
@@ -526,20 +531,24 @@ test_beginner_ui_controls_expose_accessible_names_and_preserve_field_semantics :
 	checkbox_id, checkbox_found := alicorn.node_by_key(&rt, "authoring-enabled", .Checkbox)
 	slider_id, slider_found := alicorn.node_by_key(&rt, "authoring-gain", .Slider)
 	button_id, button_found := alicorn.node_by_key(&rt, "authoring-search-button", .Button)
+	selected_button_id, selected_button_found := alicorn.node_by_key(&rt, "authoring-selected-icon-button", .Button)
 	static, static_semantic_found := rt.semantic_entities[alicorn.semantic_visual_id(static_id)]
 	_, decorative_semantic_found := rt.semantic_entities[alicorn.semantic_visual_id(decorative_id)]
 	field, field_found := rt.semantic_entities[alicorn.semantic_visual_id(app.field)]
 	checkbox_semantic, checkbox_semantic_found := rt.semantic_entities[alicorn.semantic_visual_id(checkbox_id)]
 	slider_semantic, slider_semantic_found := rt.semantic_entities[alicorn.semantic_visual_id(slider_id)]
 	button_semantic, button_semantic_found := rt.semantic_entities[alicorn.semantic_visual_id(button_id)]
+	selected_button_semantic, selected_button_semantic_found := rt.semantic_entities[alicorn.semantic_visual_id(selected_button_id)]
 	field_actions := field.node.actions
 	static_node := static.node
 	checkbox_node := checkbox_semantic.node
 	slider_node := slider_semantic.node
 	button_node := button_semantic.node
+	selected_button_node := selected_button_semantic.node
 	_ = checkbox_found
 	_ = slider_found
 	_ = button_found
+	_ = selected_button_found
 	testing.expect(t, static_found && static_semantic_found && static_node.role == .Static_Text && static_node.value == "Accessible status",
 		"ordinary ui.text should expose informational text as a static-text semantic")
 	testing.expect(t, decorative_found && !decorative_semantic_found,
@@ -557,6 +566,10 @@ test_beginner_ui_controls_expose_accessible_names_and_preserve_field_semantics :
 		"a normal slider description should expose its numeric semantics without reporting an interaction")
 	testing.expect(t, button_semantic_found && button_node.role == .Button && button_node.label == "Search now",
 		"icon_button should keep its accessible name while drawing a decorative icon")
+	testing.expect(t, selected_button_found && selected_button_semantic_found &&
+		selected_button_node.role == .Button && selected_button_node.label == "Selection tool" &&
+		alicorn.semantic_states_has(selected_button_node.states, .Selected),
+		"a controlled selected icon_button should preserve its name and expose selected state")
 
 	change := alicorn.process_text_edit(&rt, app.field, alicorn.Text_Edit{.Insert, "!"})
 	testing.expect(t, change.changed, "the named UI text field should accept committed text edits")

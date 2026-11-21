@@ -1332,13 +1332,68 @@ requests use the same retained state and controlled result path. The popup is
 described automatically at `end_frame`; applications do not calculate popup
 coordinates or add overlay roots themselves.
 
+`select_control_grouped(ui, key, label, groups, selected_key, style)` is the
+opt-in grouped form and keeps the same controlled result. `Select_Group` carries
+a group `label`, its `options`, and an optional `disabled` flag that disables
+every option the group owns. Grouping is intentionally single-level: applications
+adapt deeper registries by flattening them into one level of groups. Empty
+groups render nothing, an unlabeled group renders its options without a header,
+and option keys must stay unique across every group. At most 128 options and 32
+groups are accepted.
+
+```odin
+snap_content := [2]alicorn.Select_Option{
+	{key=1, label="Clips"},
+	{key=2, label="Markers"},
+}
+snap_grid := [2]alicorn.Select_Option{
+	{key=3, label="Seconds"},
+	{key=4, label="Triplets"},
+}
+snap_groups := [2]alicorn.Select_Group{
+	{label="Content", options=snap_content[:]},
+	{label="Grid", options=snap_grid[:]},
+}
+snap := alicorn.select_control_grouped(
+	&ui,
+	"toolbar-snap-to",
+	"Snap to",
+	snap_groups[:],
+	app.snap_key,
+)
+if snap.changed {
+	app.snap_key = snap.selected_key
+}
+```
+
+Labeled group headers are noninteractive rows. They expose semantic `Group`
+nodes under the List_Box, and each option remains a List_Box_Option whose parent
+is its group; options in unlabeled groups stay direct List_Box children. The
+List_Box still counts options rather than headers. Up/Down, Home/End, type-ahead,
+pointer activation, focus restoration, and scroll reveal cross group boundaries
+in declared order while skipping disabled options and headers.
+
 ### Icons
 
 Built-in indicators use embedded antialiased Reicon filled coverage masks and
 do not depend on text-font glyph coverage. `icon(ui, icon_id, key, size, color_role)` adds a decorative icon to
 ordinary layout; the surrounding control or adjacent text remains responsible
 for its accessible name. `icon_button(ui, accessible_label, icon_id, key,
-style)` creates an icon-only button with an explicit semantic name. Available
+style, variant, disabled, selected)` creates an icon-only button with an
+explicit semantic name. `selected` is controlled application state: it changes
+the retained button paint through the same recipe and state transforms as a
+regular button and adds the semantic `Selected` state, while activation stays a
+one-shot press and identity does not change. Keep the flag in application state
+and pass it on the next description:
+
+```odin
+if ui.icon_button(ctx, "Selection tool", .Settings,
+	key="selection-tool", selected=app.selection_tool) {
+	app.selection_tool = !app.selection_tool
+}
+```
+
+Available
 IDs include check, chevrons, close, minus, radio, warning, info, folder-open and
 folder-closed, file, search, settings, terminal, and more-horizontal.
 `More_Horizontal` is the font-independent three-dot "more actions" affordance:

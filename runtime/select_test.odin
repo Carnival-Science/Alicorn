@@ -437,6 +437,216 @@ select_test_settle_options :: proc(rt: ^Runtime, options: []Select_Option) {
 	}
 }
 
+select_test_group_header :: proc(rt: ^Runtime, label: string) -> Node_ID {
+	for id in rt.order {
+		if node, ok := rt.nodes[id]; ok && node.active && node.kind == .Text && node.text == label && node.parent != 0 {
+			if parent, parent_ok := rt.nodes[node.parent]; parent_ok && parent.kind == .Virtual_List { return id }
+		}
+	}
+	return 0
+}
+
+select_test_build_groups :: proc(rt: ^Runtime, groups: []Select_Group, selected_key: u64) -> (result: Select_Result, trigger: Node_ID) {
+	if !rt.invalidated { invalidate_root(rt, "grouped Select test rebuild") }
+	ui, build := begin_frame(rt)
+	if !build { return }
+	container_begin_simple(&ui, .Root, label="grouped-select-root", key=key_string("root"),
+		style=layout_style(.Column, width=300, height=240, gap=8, padding=10))
+	result = select_control_grouped(&ui, key_string("grouped-choice"), "Snap to", groups, selected_key)
+	trigger = rt.pending[len(rt.pending)-1].description.id
+	container_end(&ui)
+	end_frame(&ui)
+	return
+}
+
+select_test_open_groups :: proc(rt: ^Runtime, groups: []Select_Group, selected_key: u64) -> (trigger: Node_ID) {
+	_, trigger = select_test_build_groups(rt, groups, selected_key)
+	if trigger == 0 { return }
+	if node, ok := rt.nodes[trigger]; ok && !node.disabled {
+		x := node.bounds.x+node.bounds.w/2
+		y := node.bounds.y+node.bounds.h/2
+		_ = process_pointer(rt, Pointer_Event{kind=.Down, x=x, y=y, button=POINTER_BUTTON_PRIMARY})
+		_ = process_pointer(rt, Pointer_Event{kind=.Up, x=x, y=y, button=POINTER_BUTTON_PRIMARY})
+	}
+	_, trigger = select_test_build_groups(rt, groups, selected_key)
+	return
+}
+
+@(test)
+test_select_grouped_options_render_headers_navigate_across_groups_and_select :: proc(t: ^testing.T) {
+	snap := [3]Select_Option{{key=10, label="Alpha"}, {key=20, label="Beta"}, {key=30, label="Charlie"}}
+	playback := [3]Select_Option{{key=40, label="Delta"}, {key=50, label="Echo"}, {key=60, label="Fox", disabled=true}}
+	ungrouped_options := [1]Select_Option{{key=70, label="Ungrouped"}}
+	groups := [3]Select_Group{
+		{label="Snap", options=snap[:]},
+		{label="Playback", options=playback[:]},
+		{options=ungrouped_options[:]},
+	}
+	rt := new_runtime(Rect{0, 0, 360, 260})
+	defer destroy_runtime(&rt)
+	trigger := select_test_open_groups(&rt, groups[:], 20)
+	if trigger == 0 || !context_menu_is_open(&rt) {
+		testing.expect(t, false, "grouped Select should open its owned listbox")
+		return
+	}
+	snap_header := select_test_group_header(&rt, "Snap")
+	playback_header := select_test_group_header(&rt, "Playback")
+	alpha := select_test_row(&rt, "Alpha")
+	beta := select_test_row(&rt, "Beta")
+	charlie := select_test_row(&rt, "Charlie")
+	delta := select_test_row(&rt, "Delta")
+	ungrouped := select_test_row(&rt, "Ungrouped")
+	testing.expect(t, snap_header != 0 && playback_header != 0 && alpha != 0 && beta != 0 && charlie != 0 && delta != 0 && ungrouped != 0,
+		"labeled groups should add header rows without hiding any grouped or unlabeled option")
+	testing.expect(t, rt.nodes[snap_header].bounds.y < rt.nodes[alpha].bounds.y &&
+		rt.nodes[alpha].bounds.y < rt.nodes[beta].bounds.y &&
+		rt.nodes[beta].bounds.y < rt.nodes[playback_header].bounds.y &&
+		rt.nodes[playback_header].bounds.y < rt.nodes[delta].bounds.y &&
+		rt.nodes[delta].bounds.y < rt.nodes[ungrouped].bounds.y,
+		"popup rows should follow declared group order with contiguous options under each header")
+	testing.expect(t, !rt.nodes[snap_header].focusable && !rt.nodes[snap_header].hovered,
+		"group headers should stay noninteractive and out of keyboard focus order")
+
+	listbox, listbox_found := semantic_node_lookup(&rt, rt.select.list_semantic_id)
+	snap_group, snap_group_found := semantic_node_lookup(&rt, select_group_semantic_id(trigger, 0))
+	playback_group, playback_group_found := semantic_node_lookup(&rt, select_group_semantic_id(trigger, 1))
+	beta_semantic, beta_found := semantic_node_lookup(&rt, rt.select.option_semantic_ids[1])
+	charlie_semantic, charlie_found := semantic_node_lookup(&rt, rt.select.option_semantic_ids[2])
+	ungrouped_semantic, ungrouped_found := semantic_node_lookup(&rt, rt.select.option_semantic_ids[6])
+	testing.expect(t, listbox_found && listbox.role == .List_Box && listbox.logical_count == 7,
+		"the grouped List_Box should count options, not group headers")
+	testing.expect(t, snap_group_found && snap_group.role == .Group && snap_group.label == "Snap" &&
+		snap_group.parent == rt.select.list_semantic_id && playback_group_found && playback_group.label == "Playback",
+		"each labeled group should publish a named Group under the List_Box")
+	testing.expect(t, beta_found && beta_semantic.role == .List_Box_Option &&
+		beta_semantic.parent == select_group_semantic_id(trigger, 0) &&
+		semantic_states_has(beta_semantic.states, .Selected) && semantic_actions_has(beta_semantic.actions, .Select),
+		"options should be children of their group while retaining the controlled selected state")
+	testing.expect(t, charlie_found && charlie_semantic.parent == select_group_semantic_id(trigger, 0) &&
+		ungrouped_found && ungrouped_semantic.parent == rt.select.list_semantic_id,
+		"options in unlabeled groups should remain direct List_Box children")
+
+	testing.expect(t, select_handle_key(&rt, .Down) && rt.select.active_key == 30,
+		"Down should cross from the last option of one group to the first option of the next")
+	_, _ = select_test_build_groups(&rt, groups[:], 20)
+	testing.expect(t, rt.focused == select_test_row(&rt, "Charlie"),
+		"focus should land on the next group's option rather than its header")
+	testing.expect(t, select_handle_key(&rt, .Up) && rt.select.active_key == 20,
+		"Up should cross the same group boundary in reverse")
+	_, _ = select_test_build_groups(&rt, groups[:], 20)
+	testing.expect(t, select_handle_key(&rt, .Home) && rt.select.active_key == 10,
+		"Home should find the first enabled option across headers")
+	_, _ = select_test_build_groups(&rt, groups[:], 20)
+	testing.expect(t, select_handle_key(&rt, .End) && rt.select.active_key == 70,
+		"End should find the last enabled option and skip disabled group members")
+	_, _ = select_test_build_groups(&rt, groups[:], 20)
+
+	testing.expect(t, select_typeahead(&rt, "d"), "type-ahead should accept text in grouped Select")
+	result, _ := select_test_build_groups(&rt, groups[:], 20)
+	testing.expect(t, rt.select.active_key == 40 && rt.focused == select_test_row(&rt, "Delta") && !result.changed,
+		"type-ahead should match later groups without committing a controlled change")
+	testing.expect(t, select_handle_key(&rt, .Activate), "Enter should activate the grouped active option")
+	result, _ = select_test_build_groups(&rt, groups[:], 20)
+	testing.expect(t, result.changed && result.selected_key == 40 && !result.open && result.valid,
+		"Enter should return the stable key of the option chosen across a group boundary")
+	testing.expect(t, rt.focused == trigger,
+		"closing a grouped Select should restore focus to its trigger")
+}
+
+@(test)
+test_select_grouped_pointer_selection_reveal_and_disabled_groups :: proc(t: ^testing.T) {
+	group_a: [8]Select_Option
+	group_b: [8]Select_Option
+	for index in 0..<8 {
+		group_a[index] = Select_Option{key=u64(100+index), label=fmt.tprintf("A%02d", index)}
+		group_b[index] = Select_Option{key=u64(200+index), label=fmt.tprintf("B%02d", index)}
+	}
+	group_b[7].disabled = true
+	groups := [3]Select_Group{
+		{label="Group A", options=group_a[:]},
+		{label="Group B", options=group_b[:]},
+		{label="Empty group"},
+	}
+	rt := new_runtime(Rect{0, 0, 300, 220})
+	defer destroy_runtime(&rt)
+	trigger := select_test_open_groups(&rt, groups[:], 206)
+	if trigger == 0 || !context_menu_is_open(&rt) {
+		testing.expect(t, false, "long grouped Select should open")
+		return
+	}
+	testing.expect(t, select_test_group_header(&rt, "Empty group") == 0,
+		"empty groups should not leave a dangling header row")
+	region := scroll_region_state(&rt, rt.select.scroll_node)
+	selected := select_test_row(&rt, "B06")
+	testing.expect(t, region.max_scroll_y > 0 && selected != 0,
+		"a grouped list longer than its panel should be scrollable")
+	if selected != 0 {
+		row := rt.nodes[selected]
+		testing.expect(t, row.bounds.y >= region.viewport_bounds.y && row.bounds.y+row.bounds.h <= region.viewport_bounds.y+region.viewport_bounds.h,
+			"the controlled selected option should be revealed inside a later group")
+	}
+	testing.expect(t, rt.select.option_disabled[15],
+		"a disabled option inside an enabled group should stay disabled")
+	b07 := select_test_row(&rt, "B07")
+	testing.expect(t, b07 != 0 && rt.nodes[b07].disabled,
+		"disabled options in a group should remain present but noninteractive")
+
+	testing.expect(t, rt.select.option_keys[8] == 200 && rt.select.option_row[8] == 10,
+		"an option row index should include the preceding labeled group header")
+	testing.expect(t, select_handle_key(&rt, .Home), "Home should navigate the long grouped list")
+	_, _ = select_test_build_groups(&rt, groups[:], 206)
+	testing.expect(t, select_typeahead(&rt, "b03"),
+		"type-ahead should match prefixes inside a later group")
+	_, _ = select_test_build_groups(&rt, groups[:], 206)
+	target := select_test_row(&rt, "B03")
+	if target == 0 { testing.expect(t, false, "type-ahead should reveal B03"); return }
+	row := rt.nodes[target]
+	x, y := row.bounds.x+row.bounds.w/2, row.bounds.y+row.bounds.h/2
+	_ = process_pointer(&rt, Pointer_Event{kind=.Down, x=x, y=y, button=POINTER_BUTTON_PRIMARY})
+	_ = process_pointer(&rt, Pointer_Event{kind=.Up, x=x, y=y, button=POINTER_BUTTON_PRIMARY})
+	_, _ = select_test_build_groups(&rt, groups[:], 206)
+	result, _ := select_test_build_groups(&rt, groups[:], 206)
+	testing.expect(t, result.changed && result.selected_key == 203 && !context_menu_is_open(&rt),
+		"pointer activation inside a later group should return that group's stable option key")
+}
+
+@(test)
+test_select_grouped_validation_disabled_groups_and_flat_compatibility :: proc(t: ^testing.T) {
+	enabled := [2]Select_Option{{key=1, label="One"}, {key=2, label="Two"}}
+	unavailable := [2]Select_Option{{key=3, label="Three"}, {key=4, label="Four"}}
+	rt := new_runtime(Rect{0, 0, 320, 240})
+	defer destroy_runtime(&rt)
+	groups := [2]Select_Group{
+		{label="Enabled", options=enabled[:]},
+		{label="Unavailable", options=unavailable[:], disabled=true},
+	}
+	_, trigger := select_test_build_groups(&rt, groups[:], 1)
+	testing.expect(t, trigger != 0 && rt.select.option_count == 4 && rt.select.option_disabled[2] && rt.select.option_disabled[3],
+		"a disabled group should disable every option it owns without removing the group")
+	testing.expect(t, rt.nodes[trigger].disabled == false,
+		"a Select remains enabled while at least one option is enabled")
+
+	all_disabled := [1]Select_Group{{label="Unavailable", options=unavailable[:], disabled=true}}
+	result, disabled_trigger := select_test_build_groups(&rt, all_disabled[:], 3)
+	testing.expect(t, result.valid && disabled_trigger != 0 && rt.nodes[disabled_trigger].disabled && !result.open,
+		"an all-disabled grouped Select should be valid but not openable")
+
+	first_group := [1]Select_Option{{key=9, label="Nine"}}
+	second_group := [1]Select_Option{{key=9, label="Nine again"}}
+	duplicate := [2]Select_Group{
+		{label="First", options=first_group[:]},
+		{label="Second", options=second_group[:]},
+	}
+	result, _ = select_test_build_groups(&rt, duplicate[:], 9)
+	testing.expect(t, !result.valid && rt.select.option_count == 0 && !context_menu_is_open(&rt),
+		"duplicate option keys across groups should reject the whole grouped description")
+
+	flat := [2]Select_Option{{key=1, label="Flat one"}, {key=12, label="Flat two"}}
+	flat_result, flat_trigger := select_test_build_options(&rt, flat[:])
+	testing.expect(t, flat_result.valid && flat_trigger != 0 && rt.select.option_count == 2 && rt.select.row_count == 2,
+		"the flat API should keep its ungrouped single-row-per-option plan and source compatibility")
+}
+
 @(test)
 test_select_preserves_manual_wheel_offset_across_description_rebuilds :: proc(t: ^testing.T) {
 	options: [16]Select_Option
