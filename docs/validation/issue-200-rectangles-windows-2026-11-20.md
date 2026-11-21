@@ -144,7 +144,8 @@ after warm-up.
   `tools/wx_reference`, not a capture from a built Audacity/Acetate binary. The
   drawing call (`wxDC::DrawRectangle(wxRect)`), rect construction, and DPI
   rounding match the Audacity path; the wx library version is recorded in each
-  capture's `.meta`.
+  capture's `.meta`. The Acetate build attempt and its Conan blocker are
+  recorded in the [issue #201 marker record](issue-201-markers-windows-2026-11-20.md#acetate-wx-host-attempt).
 - GPU execution time is unavailable: SDL's Odin binding does not expose
   timestamp queries. `submit-to-fence` is wall time.
 - Rect edge pixels at fractional logical coordinates differ by one pixel between

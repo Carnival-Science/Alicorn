@@ -140,6 +140,30 @@ counter increments, so a host can fall back to wx without a visual gap.
 | Geometry overflow is atomic and bounded; the old payload is retained | 1,366 / 10,000 / 100,000 rejected; revision and retained markers preserved; counter incremented. |
 | The visual marker remains presentation only; Audacity keeps hit testing, edits, audio state, undo | Unchanged: the marker primitive carries only center, diameter, and color; the host owns all sample-edit behavior. |
 
+## Acetate wx host attempt
+
+The strongest possible reference would be a bitmap captured from the Acetate
+build of Audacity itself. That build was attempted and blocked on the
+dependency bootstrap, not on wx:
+
+- CMake 4.4.4 is installed (`C:\Program Files\CMake\bin`, not on `PATH`).
+  `cmake -S C:\Users\saman\dev\Acetate -B <temp> -Daudacity_host_spike=ON`
+  detected MSVC 19.51 and reached the project's Conan step.
+- Conan 2.34.0 bootstrapped into the build tree and tried to install the
+  Audacity dependency graph. The `audacity-binaries-conan2` remote is not
+  configured in a fresh Conan home, so packages were built from source;
+  `expat/2.5.0@audacity/stable` failed in its `cmake.configure()`, aborting the
+  configure before wxWidgets or `acetate-host-backend` existed.
+- `host-spike/app` is an Odin host that links the resulting
+  `acetate-host-backend` shared library, so no Acetate binary could be produced
+  without that full dependency build.
+
+The comparison therefore uses wxWidgets 3.2.11 (MSW) directly — the same
+`wxDC`/GDI code path and the same `WaveformView.cpp` rect arithmetic — and
+records the wx library and scene in each capture's `.meta`. A capture from a
+built Audacity binary, and a macOS capture with Audacity's disabled
+graphics-context antialiasing, remain outside this session.
+
 ## Remaining acceptance
 
 - Metal: not run here. The wx comparison and sweep are backend-independent at
