@@ -399,10 +399,14 @@ using Alicorn's built-in semantic roles need no theme registration; custom
 theme contracts can be checked once after registration.
 
 The Control Gallery demonstrates this flow. From the repository root, run
-`./tools/run_example.sh 08_control_gallery`, edit
-`examples/08_control_gallery/theme.json`, then choose **Reload Theme**. Change
-the `gallery.accent` color value to see the themed gallery update. Token names,
-bindings, lengths, recipes, and materials are fixed for this initial slice.
+`./tools/run_example.sh 08_control_gallery`, open **Motion & themes**, then
+switch between the default theme and a light `Style_Theme` registered in code.
+Edit `examples/08_control_gallery/theme.json` and choose **Reload Theme** to
+compile and apply the custom JSON theme. Change the `gallery.accent` color value
+to see the themed gallery update. Token names, bindings, lengths, recipes, and
+materials are fixed for this initial slice. See the
+[theme recipe](recipes.md#theme-variants-and-a-scoped-accent) for the scoped
+environment and registration shape.
 
 ### Staging a replacement across runtimes
 

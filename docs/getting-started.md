@@ -177,14 +177,46 @@ controls expose their accessibility semantics by default; use
 ```
 
 The app source is [`examples/02_form/main.odin`](../examples/02_form/main.odin).
-Browse icons and named icon buttons in the
-[Control Gallery](../examples/08_control_gallery/main.odin).
-The [Retained Motion example](../examples/09_retained_motion/main.odin) shows a
+
+## Explore the Control Gallery
+
+The [Control Gallery](../examples/08_control_gallery/README.md) is the fastest
+way to see what Alicorn actually provides. It is one native SDL_GPU example with
+six sections: **Foundations**, **Controls**, **Collections**, **Layout &
+surfaces**, **Overlays & commands**, and **Motion & themes**. Every control is
+usable, and every section lists the source file to copy.
+
+```powershell
+.\tools\run_example.ps1 -Example 08_control_gallery
+```
+
+```sh
+./tools/run_example.sh 08_control_gallery
+```
+
+Try the form validation, scroll the 500-row virtual list, close a document tab,
+drag a row to reorder it, resize the split panes, open the modal and context menu,
+then switch to the light theme. The gallery also loads
+`examples/08_control_gallery/theme.json`; edit its accent color and choose
+**Reload theme.json** to see live color replacement.
+
+The gallery's patterns are collected in [Component recipes](recipes.md). The
+[Retained Motion example](../examples/09_retained_motion/main.odin) focuses on a
 decorative retained indicator driven by the native motion clock and scheduler.
 Continue through the [numbered example progression](../examples/README.md) for
 worker-backed virtualization, custom GPU surfaces, and the built-in inspector.
 Step 3 keeps the same typed render procedure and `alicorn:ui` import, adding
 app-owned workers through `ui.run` lifecycle hooks and a scoped virtual list.
+
+For a bounded check of every gallery section plus the modal, pass `--smoke`:
+
+```powershell
+.\tools\run_example.ps1 -Example 08_control_gallery -AppArgs @('--smoke')
+```
+
+```sh
+./tools/run_example.sh 08_control_gallery --smoke
+```
 
 ## If Odin is not on `PATH`
 
