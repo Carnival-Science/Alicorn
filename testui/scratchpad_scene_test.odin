@@ -94,6 +94,8 @@ test_headless_scratchpad_scene_drives_interactions_and_stage_timings :: proc(t: 
 		testing.expect(t, after_scroll.layout_nodes_visited > before_scroll.layout_nodes_visited ||
 			after_scroll.descriptions_reused > before_scroll.descriptions_reused,
 			"scroll should either relayout retained rows or reuse their descriptions")
+		testing.expect(t, after_scroll.descriptions_retained_match > before_scroll.descriptions_retained_match,
+			"scroll should take the exact description-reuse gate for unchanged rows")
 	}
 
 	// Tab switching changes application state and repaints retained tabs.
