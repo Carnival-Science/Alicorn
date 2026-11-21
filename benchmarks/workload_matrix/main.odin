@@ -8,6 +8,7 @@ import "core:sync"
 import "core:thread"
 import "core:time"
 import alicorn "alicorn:runtime"
+import scratchpad "alicorn:benchmarks/scratchpad_scene"
 import host "alicorn:host/sdl3"
 import sdl_gpu "alicorn:native/sdl_gpu"
 import ui "alicorn:ui"
@@ -33,6 +34,93 @@ WORKLOAD_ROW_HEIGHT :: 24
 WORKLOAD_VISIBLE_ROWS :: 8
 WORKLOAD_SCROLL_STEP :: 12
 
+// Scratchpad scenarios record one sample per bounded description pass. The
+// capacity is larger than any smoke run so percentile summaries stay
+// allocation-free.
+SCRATCHPAD_MAX_SAMPLES :: 256
+SCRATCHPAD_DEFAULT_FRAMES :: 64
+SCRATCHPAD_WARMUP_SAMPLES :: 2
+
+// Timing_Stage mirrors the runtime's per-stage attribution. The benchmark
+// keeps its own enum so the harness compiles against an uninstrumented runtime
+// for the issue #229 instrumentation-overhead comparison.
+Timing_Stage :: enum {
+	Description,
+	Reconcile,
+	Reconcile_Hash,
+	Reconcile_Copy,
+	Structure_Diff,
+	Measure,
+	Measure_Text,
+	Layout,
+	Semantic_Sync,
+	Paint,
+	Composition,
+	Finalize,
+	Application_Build,
+	Reconcile_Other,
+}
+
+timing_stage_name :: proc(stage: Timing_Stage) -> string {
+	switch stage {
+	case .Description: return "description"
+	case .Reconcile: return "reconcile"
+	case .Reconcile_Hash: return "reconcile_hash"
+	case .Reconcile_Copy: return "reconcile_copy"
+	case .Structure_Diff: return "structure_diff"
+	case .Measure: return "measure"
+	case .Measure_Text: return "measure_text"
+	case .Layout: return "layout"
+	case .Semantic_Sync: return "semantic_sync"
+	case .Paint: return "paint"
+	case .Composition: return "composition"
+	case .Finalize: return "finalize"
+	case .Application_Build: return "application_build"
+	case .Reconcile_Other: return "reconcile_other"
+	}
+	return "unknown"
+}
+
+TIMING_STAGES :: [?]Timing_Stage{
+	.Description,
+	.Reconcile,
+	.Reconcile_Hash,
+	.Reconcile_Copy,
+	.Structure_Diff,
+	.Measure,
+	.Measure_Text,
+	.Layout,
+	.Semantic_Sync,
+	.Paint,
+	.Composition,
+	.Finalize,
+	.Application_Build,
+	.Reconcile_Other,
+}
+
+Frame_Sample :: struct {
+	stage_ns: [Timing_Stage]u64,
+	descriptions_emitted: u64,
+	descriptions_reused: u64,
+	reconcile_nodes_visited: u64,
+	measure_requests: u64,
+	measure_cache_hits: u64,
+	measure_cache_misses: u64,
+	layout_nodes_visited: u64,
+	paint_nodes_visited: u64,
+	composition_nodes_visited: u64,
+	text_shape_requests: u64,
+	semantic_entities_resolved: u64,
+	semantic_structure_changes: u64,
+	semantic_property_changes: u64,
+	nodes_created: u64,
+	nodes_retired: u64,
+	display_finalization_full_passes: u64,
+	global_fallbacks: u64,
+	persistent_alloc_calls: u64,
+	scratch_alloc_calls: u64,
+}
+
 Scenario :: enum {
 	Demo,
 	Identical,
@@ -42,6 +130,7 @@ Scenario :: enum {
 	Scroll,
 	Multiwindow,
 	Settled,
+	Scratchpad,
 }
 
 scenario_from_name :: proc(name: string) -> (Scenario, bool) {
@@ -54,6 +143,7 @@ scenario_from_name :: proc(name: string) -> (Scenario, bool) {
 	case "scroll": return .Scroll, true
 	case "multiwindow": return .Multiwindow, true
 	case "settled": return .Settled, true
+	case "scratchpad": return .Scratchpad, true
 	}
 	return .Demo, false
 }
@@ -68,6 +158,7 @@ scenario_name :: proc(scenario: Scenario) -> string {
 	case .Scroll: return "scroll"
 	case .Multiwindow: return "multiwindow"
 	case .Settled: return "settled"
+	case .Scratchpad: return "scratchpad"
 	}
 	return "unknown"
 }
@@ -80,6 +171,7 @@ Scene_State :: struct {
 	item_count:   int,
 	scroll_id:    alicorn.Node_ID,
 	scroll_offset: f32,
+	scratch:      scratchpad.Scene,
 }
 
 App :: struct {
@@ -98,6 +190,16 @@ App :: struct {
 	start_tick:       time.Tick,
 	first_describe_ns: u64,
 	last_describe_ns:  u64,
+	frame_tick:        time.Tick,
+	// Scratchpad scenarios keep one sample per bounded description pass. The
+	// sampling window starts at the first pass whose previous counters were
+	// already recorded.
+	samples:          [SCRATCHPAD_MAX_SAMPLES]Frame_Sample,
+	sample_count:     int,
+	stats_valid:      bool,
+	prev_stats:       alicorn.Frame_Stats,
+	prev_allocs:      alicorn.Runtime_Allocation_Stats,
+	interaction:      scratchpad.Interaction,
 	// Allocations are sampled at the first description and again at stop so the
 	// report covers the scenario phase, not host startup.
 	alloc_start: alicorn.Runtime_Allocation_Stats,
@@ -146,6 +248,10 @@ solid_box :: proc(ctx: ^ui.UI, key: ui.UI_Key, width, height: f32, color: ui.Col
 // workload_content describes the shared scene. Callers own the Root scope so
 // ui.run, raw host.Run, and hosted child windows all use one description.
 workload_content :: proc(scene: ^Scene_State, ctx: ^ui.UI) {
+	if scene.scenario == .Scratchpad {
+		scratchpad.scene_describe(&scene.scratch, ctx)
+		return
+	}
 	boxes := [3]ui.Color{SURFACE_PRIMARY, SURFACE_SECONDARY, SURFACE_ACCENT}
 	animated := boxes[int(scene.frame_index % 3)]
 	if ui.column(ctx, grow=1, padding=16, gap=8, clip=true, label="workload-root") {
@@ -212,6 +318,7 @@ describe_frame :: proc(app: ^App, ctx: ^ui.UI) {
 	}
 	app.frames_described += 1
 	sync.atomic_store(&app.frames_described, app.frames_described)
+	app.frame_tick = time.tick_now()
 	now_ns := u64(time.duration_nanoseconds(time.tick_diff(app.start_tick, time.tick_now())))
 	if app.first_describe_ns == 0 { app.first_describe_ns = now_ns }
 	app.last_describe_ns = now_ns
@@ -225,6 +332,12 @@ describe_frame :: proc(app: ^App, ctx: ^ui.UI) {
 workload_wake :: proc(app: ^App, ctx: ui.Application_Context) {
 	app.wake_deliveries += 1
 	if app.driver == nil { return }
+	if app.scene.scenario == .Scratchpad {
+		rt := cast(^alicorn.Runtime)ctx
+		if rt == nil { return }
+		workload_scratchpad_step(app, rt)
+		return
+	}
 	if app.scene.scenario == .Multiwindow {
 		if sync.atomic_load(&app.close_child) != 0 {
 			if app.sdl_windows.close != nil {
@@ -261,7 +374,19 @@ workload_start :: proc(app: ^App, waker: ui.Application_Waker) {
 
 scenario_has_driver :: proc(scenario: Scenario) -> bool {
 	return scenario == .Identical || scenario == .Color || scenario == .Layout ||
-		scenario == .Scroll
+		scenario == .Scroll || scenario == .Scratchpad
+}
+
+// workload_scratchpad_step focuses the command field after the cold frame, then
+// applies one interaction step per wake. The step is applied on the owner
+// thread, matching how a native input event mutates application state before a
+// description.
+workload_scratchpad_step :: proc(app: ^App, rt: ^alicorn.Runtime) {
+	if app.frames_described <= 1 {
+		_ = scratchpad.scene_focus_field(&app.scene.scratch, rt)
+		return
+	}
+	_ = scratchpad.scene_apply_step(&app.scene.scratch, rt, app.scene.scratch.step)
 }
 
 workload_driver :: proc(data: rawptr) {
@@ -317,6 +442,185 @@ allocation_calls_since :: proc(
 	return
 }
 
+counter_delta :: proc(current, previous: u64) -> u64 {
+	return current-previous if current >= previous else 0
+}
+
+stage_timing_delta :: proc(
+	current, previous: alicorn.Frame_Stats,
+	stage: alicorn.Runtime_Timing_Stage,
+) -> u64 {
+	return counter_delta(current.stage_timings_ns[stage], previous.stage_timings_ns[stage])
+}
+
+// capture_scratchpad_sample records one bounded description pass. The pass
+// description wall time starts at the application render callback and ends
+// after end_frame, so it covers application build plus reconcile/layout/paint.
+capture_scratchpad_sample :: proc(app: ^App, rt: ^alicorn.Runtime) {
+	if app == nil || rt == nil || app.scene.scenario != .Scratchpad { return }
+	stats := alicorn.frame_stats_snapshot(rt)
+	allocs := alicorn.Runtime_Allocation_Stats{}
+	if rt.allocation_stats != nil { allocs = rt.allocation_stats^ }
+	if !app.stats_valid {
+		app.prev_stats = stats
+		app.prev_allocs = allocs
+		app.stats_valid = true
+		return
+	}
+	if app.sample_count >= SCRATCHPAD_MAX_SAMPLES {
+		app.prev_stats = stats
+		app.prev_allocs = allocs
+		return
+	}
+	now := time.tick_now()
+	sample := Frame_Sample{}
+	sample.stage_ns[.Description] = u64(time.duration_nanoseconds(time.tick_diff(app.frame_tick, now)))
+	sample.stage_ns[.Reconcile] = stage_timing_delta(stats, app.prev_stats, .Reconcile)
+	sample.stage_ns[.Reconcile_Hash] = stage_timing_delta(stats, app.prev_stats, .Reconcile_Hash)
+	sample.stage_ns[.Reconcile_Copy] = stage_timing_delta(stats, app.prev_stats, .Reconcile_Copy)
+	sample.stage_ns[.Structure_Diff] = stage_timing_delta(stats, app.prev_stats, .Structure_Diff)
+	sample.stage_ns[.Measure] = stage_timing_delta(stats, app.prev_stats, .Measure)
+	sample.stage_ns[.Measure_Text] = stage_timing_delta(stats, app.prev_stats, .Measure_Text)
+	sample.stage_ns[.Layout] = stage_timing_delta(stats, app.prev_stats, .Layout)
+	sample.stage_ns[.Semantic_Sync] = stage_timing_delta(stats, app.prev_stats, .Semantic_Sync)
+	sample.stage_ns[.Paint] = stage_timing_delta(stats, app.prev_stats, .Paint)
+	sample.stage_ns[.Composition] = stage_timing_delta(stats, app.prev_stats, .Composition)
+	sample.stage_ns[.Finalize] = stage_timing_delta(stats, app.prev_stats, .Finalize)
+	sample.descriptions_emitted = counter_delta(stats.descriptions_emitted, app.prev_stats.descriptions_emitted)
+	sample.descriptions_reused = counter_delta(stats.descriptions_reused, app.prev_stats.descriptions_reused)
+	sample.reconcile_nodes_visited = counter_delta(stats.reconcile_nodes_visited, app.prev_stats.reconcile_nodes_visited)
+	sample.measure_requests = counter_delta(stats.measure_requests, app.prev_stats.measure_requests)
+	sample.measure_cache_hits = counter_delta(stats.measure_cache_hits, app.prev_stats.measure_cache_hits)
+	sample.measure_cache_misses = counter_delta(stats.measure_cache_misses, app.prev_stats.measure_cache_misses)
+	sample.layout_nodes_visited = counter_delta(stats.layout_nodes_visited, app.prev_stats.layout_nodes_visited)
+	sample.paint_nodes_visited = counter_delta(stats.paint_nodes_visited, app.prev_stats.paint_nodes_visited)
+	sample.composition_nodes_visited = counter_delta(stats.composition_nodes_visited, app.prev_stats.composition_nodes_visited)
+	sample.text_shape_requests = counter_delta(stats.text_shape_requests, app.prev_stats.text_shape_requests)
+	sample.semantic_entities_resolved = counter_delta(stats.semantic_entities_resolved, app.prev_stats.semantic_entities_resolved)
+	sample.semantic_structure_changes = counter_delta(stats.semantic_structure_changes, app.prev_stats.semantic_structure_changes)
+	sample.semantic_property_changes = counter_delta(stats.semantic_property_changes, app.prev_stats.semantic_property_changes)
+	sample.nodes_created = counter_delta(stats.nodes_created, app.prev_stats.nodes_created)
+	sample.nodes_retired = counter_delta(stats.nodes_retired, app.prev_stats.nodes_retired)
+	sample.display_finalization_full_passes = counter_delta(stats.display_finalization_full_passes, app.prev_stats.display_finalization_full_passes)
+	sample.global_fallbacks = counter_delta(stats.global_fallbacks, app.prev_stats.global_fallbacks)
+	persistent, scratch := allocation_calls_since(allocs, app.prev_allocs)
+	sample.persistent_alloc_calls = persistent
+	sample.scratch_alloc_calls = scratch
+	derive_scratchpad_stage_attribution(&sample)
+	app.samples[app.sample_count] = sample
+	app.sample_count += 1
+	app.prev_stats = stats
+	app.prev_allocs = allocs
+}
+
+// derive_scratchpad_stage_attribution keeps the summary arithmetic in one
+// place. Measure_Text is not subtracted because text shaping can be triggered
+// from both the measure and layout phases; it is a shared sub-bucket.
+derive_scratchpad_stage_attribution :: proc(sample: ^Frame_Sample) {
+	reconcile := sample.stage_ns[.Reconcile]
+	attributed := sample.stage_ns[.Reconcile_Hash] +
+		sample.stage_ns[.Reconcile_Copy] +
+		sample.stage_ns[.Structure_Diff] +
+		sample.stage_ns[.Measure] +
+		sample.stage_ns[.Layout] +
+		sample.stage_ns[.Semantic_Sync] +
+		sample.stage_ns[.Paint] +
+		sample.stage_ns[.Composition] +
+		sample.stage_ns[.Finalize]
+	sample.stage_ns[.Reconcile_Other] = reconcile-attributed if reconcile > attributed else 0
+	description := sample.stage_ns[.Description]
+	sample.stage_ns[.Application_Build] = description-reconcile if description > reconcile else 0
+}
+
+scratchpad_scenario_label :: proc(app: ^App) -> string {
+	if app == nil || app.scene.scenario != .Scratchpad { return "unknown" }
+	return fmt.tprintf("scratchpad-%s", scratchpad.interaction_name(app.scene.scratch.interaction))
+}
+
+percentile_ns :: proc(values: []u64, percent: u64) -> u64 {
+	count := len(values)
+	if count == 0 { return 0 }
+	sorted: [SCRATCHPAD_MAX_SAMPLES]u64
+	copy(sorted[:count], values)
+	// Insertion sort is sufficient for at most SCRATCHPAD_MAX_SAMPLES entries
+	// and keeps the summary allocation-free.
+	for index in 1..<count {
+		value := sorted[index]
+		position := index
+		for position > 0 && sorted[position-1] > value {
+			sorted[position] = sorted[position-1]
+			position -= 1
+		}
+		sorted[position] = value
+	}
+	rank := (percent*u64(count)+99)/100
+	if rank < 1 { rank = 1 }
+	if rank > u64(count) { rank = u64(count) }
+	return sorted[rank-1]
+}
+
+print_scratchpad_summary :: proc(app: ^App, role: string) {
+	if app == nil || app.sample_count == 0 { return }
+	label := scratchpad_scenario_label(app)
+	start := min(SCRATCHPAD_WARMUP_SAMPLES, app.sample_count-1)
+	measured := app.sample_count-start
+	values: [SCRATCHPAD_MAX_SAMPLES]u64
+	fmt.printf(
+		"[alicorn-scratchpad] role=%s scenario=%s samples=%d measured=%d warmup=%d\n",
+		role, label, app.sample_count, measured, start,
+	)
+	for stage in TIMING_STAGES {
+		for index in 0..<measured {
+			values[index] = app.samples[start+index].stage_ns[stage]
+		}
+		p50 := percentile_ns(values[:measured], 50)
+		p95 := percentile_ns(values[:measured], 95)
+		p99 := percentile_ns(values[:measured], 99)
+		maximum := percentile_ns(values[:measured], 100)
+		fmt.printf(
+			"[alicorn-scratchpad-stage] role=%s scenario=%s stage=%s samples=%d p50_ns=%d p95_ns=%d p99_ns=%d max_ns=%d\n",
+			role, label, timing_stage_name(stage), measured, p50, p95, p99, maximum,
+		)
+	}
+	totals := Frame_Sample{}
+	for index in 0..<measured {
+		sample := app.samples[start+index]
+		totals.descriptions_emitted += sample.descriptions_emitted
+		totals.descriptions_reused += sample.descriptions_reused
+		totals.reconcile_nodes_visited += sample.reconcile_nodes_visited
+		totals.measure_requests += sample.measure_requests
+		totals.measure_cache_hits += sample.measure_cache_hits
+		totals.measure_cache_misses += sample.measure_cache_misses
+		totals.layout_nodes_visited += sample.layout_nodes_visited
+		totals.paint_nodes_visited += sample.paint_nodes_visited
+		totals.composition_nodes_visited += sample.composition_nodes_visited
+		totals.text_shape_requests += sample.text_shape_requests
+		totals.semantic_entities_resolved += sample.semantic_entities_resolved
+		totals.semantic_structure_changes += sample.semantic_structure_changes
+		totals.semantic_property_changes += sample.semantic_property_changes
+		totals.nodes_created += sample.nodes_created
+		totals.nodes_retired += sample.nodes_retired
+		totals.display_finalization_full_passes += sample.display_finalization_full_passes
+		totals.global_fallbacks += sample.global_fallbacks
+		totals.persistent_alloc_calls += sample.persistent_alloc_calls
+		totals.scratch_alloc_calls += sample.scratch_alloc_calls
+	}
+	fmt.printf(
+		"[alicorn-scratchpad-counters] role=%s scenario=%s samples=%d descriptions_emitted=%d descriptions_reused=%d reconcile_visits=%d measure_requests=%d measure_hits=%d measure_misses=%d layout_visits=%d paint_visits=%d composition_visits=%d text_shape_requests=%d semantic_entities=%d semantic_structure_changes=%d semantic_property_changes=%d nodes_created=%d nodes_retired=%d display_finalization_full_passes=%d global_fallbacks=%d persistent_alloc_calls=%d scratch_alloc_calls=%d\n",
+		role, label, measured,
+		totals.descriptions_emitted, totals.descriptions_reused,
+		totals.reconcile_nodes_visited, totals.measure_requests,
+		totals.measure_cache_hits, totals.measure_cache_misses,
+		totals.layout_nodes_visited, totals.paint_nodes_visited,
+		totals.composition_nodes_visited, totals.text_shape_requests,
+		totals.semantic_entities_resolved, totals.semantic_structure_changes,
+		totals.semantic_property_changes, totals.nodes_created,
+		totals.nodes_retired, totals.display_finalization_full_passes,
+		totals.global_fallbacks, totals.persistent_alloc_calls,
+		totals.scratch_alloc_calls,
+	)
+}
+
 print_runtime_summary :: proc(role: string, rt: ^alicorn.Runtime, alloc_start: alicorn.Runtime_Allocation_Stats, alloc_valid: bool) {
 	stats := alicorn.frame_stats_snapshot(rt)
 	allocs := alicorn.Runtime_Allocation_Stats{}
@@ -346,12 +650,36 @@ workload_print_summary :: proc(app: ^App, role: string) {
 	if app.last_describe_ns >= app.first_describe_ns {
 		span = app.last_describe_ns-app.first_describe_ns
 	}
+	scenario := scenario_name(app.scene.scenario)
+	if app.scene.scenario == .Scratchpad { scenario = scratchpad_scenario_label(app) }
 	fmt.printf(
 		"[alicorn-workload] role=%s scenario=%s describe_calls=%d wake_deliveries=%d frames_planned=%d description_span_ns=%d\n",
-		role, scenario_name(app.scene.scenario), app.frames_described, app.wake_deliveries,
+		role, scenario, app.frames_described, app.wake_deliveries,
 		app.frame_budget, span,
 	)
 	print_runtime_summary(role, app.rt, app.alloc_start, app.alloc_valid)
+	if app.scene.scenario == .Scratchpad { print_scratchpad_summary(app, role) }
+}
+
+// workload_after_frame runs after end_frame of each bounded description pass.
+// It records the Scratchpad sample used by the stage summary.
+workload_after_frame :: proc(app: ^App, rt: ^alicorn.Runtime) {
+	if app == nil || rt == nil || app.scene.scenario != .Scratchpad { return }
+	capture_scratchpad_sample(app, rt)
+}
+
+// workload_initialize runs before the first description. It registers the
+// scene's gradient roles and seeds the counter baselines used by sampling.
+workload_initialize :: proc(app: ^App, rt: ^alicorn.Runtime) {
+	if app == nil || rt == nil { return }
+	if app.scene.scenario == .Scratchpad {
+		if !scratchpad.register_theme(&app.scene.scratch, rt) {
+			fmt.eprintln("scratchpad workload theme registration failed")
+		}
+	}
+	app.prev_stats = alicorn.frame_stats_snapshot(rt)
+	if rt.allocation_stats != nil { app.prev_allocs = rt.allocation_stats^ }
+	app.stats_valid = true
 }
 
 workload_print_child_summary :: proc(child: ^Child_App) {
@@ -591,7 +919,9 @@ main :: proc() {
 	smoke := false
 	sdl_reference := false
 	items := 1000
-	frames := parse_u64_arg("--frames=", 32)
+	interaction := scratchpad.Interaction.Typing
+	frames_default := u64(32)
+	frames := parse_u64_arg("--frames=", 0)
 	for argument in os.args {
 		if argument == "--smoke" { smoke = true }
 		if argument == "--backend=sdl-gpu" { sdl_reference = true }
@@ -604,18 +934,47 @@ main :: proc() {
 			}
 			scenario = parsed
 		}
+		if strings.has_prefix(argument, "--interaction=") {
+			name := strings.trim_prefix(argument, "--interaction=")
+			parsed, ok := scratchpad.interaction_from_name(name)
+			if !ok {
+				fmt.eprintf("unknown scratchpad interaction %q\n", name)
+				os.exit(2)
+			}
+			interaction = parsed
+		}
 		if strings.has_prefix(argument, "--items=") {
 			value, ok := strconv.parse_int(strings.trim_prefix(argument, "--items="))
 			if ok && value > 0 { items = value }
 		}
 	}
+	if scenario == .Scratchpad {
+		frames_default = SCRATCHPAD_DEFAULT_FRAMES
+		if interaction == .Idle { frames_default = 1 }
+	}
+	if frames == 0 { frames = frames_default }
 	if scenario == .Settled { frames = 1 }
 
 	app := App{
 		scene=Scene_State{scenario=scenario, item_count=items},
 		frame_budget=frames,
+		interaction=interaction,
+	}
+	defer scratchpad.scene_destroy(&app.scene.scratch)
+	if scenario == .Scratchpad {
+		if !scratchpad.scene_init(&app.scene.scratch, interaction, context.allocator) {
+			fmt.eprintln("scratchpad workload scene initialization failed")
+			os.exit(1)
+		}
 	}
 	app.child.scene = Scene_State{scenario=scenario, item_count=items}
+
+	window_width := WORKLOAD_WINDOW_WIDTH
+	window_height := WORKLOAD_WINDOW_HEIGHT
+	if scenario == .Scratchpad {
+		window_width = scratchpad.SCRATCHPAD_WIDTH
+		window_height = scratchpad.SCRATCHPAD_HEIGHT
+	}
 
 	if scenario == .Multiwindow {
 		app.frame_budget = 1
@@ -666,11 +1025,13 @@ main :: proc() {
 			state=&app,
 			render=run_render,
 			title="Alicorn workload matrix",
-			width=WORKLOAD_WINDOW_WIDTH,
-			height=WORKLOAD_WINDOW_HEIGHT,
+			width=window_width,
+			height=window_height,
 			on_start=workload_start,
 			on_wake=workload_wake,
 			on_stop=workload_stop,
+			on_initialize=workload_initialize,
+			on_after_frame=workload_after_frame,
 			smoke=smoke,
 		)
 		return
@@ -679,11 +1040,13 @@ main :: proc() {
 		state=&app,
 		render=run_render,
 		title="Alicorn workload matrix",
-		width=WORKLOAD_WINDOW_WIDTH,
-		height=WORKLOAD_WINDOW_HEIGHT,
+		width=window_width,
+		height=window_height,
 		on_start=workload_start,
 		on_wake=workload_wake,
 		on_stop=workload_stop,
+		on_initialize=workload_initialize,
+		on_after_frame=workload_after_frame,
 		smoke=smoke,
 	)
 }
