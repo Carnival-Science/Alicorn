@@ -19,12 +19,14 @@ App :: struct {
 	diagnostics: host.Application_Diagnostics,
 	validation_mode: bool,
 	lifecycle_validation: bool,
+	shutdown_validation: bool,
+	quit: host.Application_Quit_Request,
 	hidden_checkpoint_pending: bool,
 	motion_theme: alicorn.Style_Theme_ID,
 	validation_phase: Motion_Validation_Phase,
 }
 
-Motion_Validation_Phase :: enum { None, Retarget_A, Retarget_B, Retarget_C, Visibility_Armed, Settled_Check, Idle_Check, Done }
+Motion_Validation_Phase :: enum { None, Retarget_A, Retarget_B, Retarget_C, Shutdown_Request, Visibility_Armed, Settled_Check, Idle_Check, Done }
 
 build_app :: proc(
 	state: rawptr,
@@ -114,7 +116,7 @@ build_app :: proc(
 
 initialize_app :: proc(state: rawptr, rt: ^alicorn.Runtime) {
 	app := cast(^App)state
-	if !app.lifecycle_validation { return }
+	if !app.lifecycle_validation && !app.shutdown_validation { return }
 	long_response_theme := alicorn.DEFAULT_STYLE_THEME
 	long_response_theme.motion_policy = alicorn.DEFAULT_MOTION_THEME_POLICY
 	long_response_theme.motion_policy.translation.omega = 1.5
@@ -125,6 +127,7 @@ services_app :: proc(state: rawptr, services: host.Application_Services) {
 	app := cast(^App)state
 	app.scheduler = services.scheduler
 	app.diagnostics = services.diagnostics
+	app.quit = services.quit
 	if app.validation_mode {
 		app.validation_phase = .Retarget_A
 		_ = host.application_schedule_after(app.scheduler, .Frequent, 100_000_000)
@@ -151,13 +154,30 @@ scheduled_wake_app :: proc(state: rawptr, rt: ^alicorn.Runtime, _class: host.Sch
 		app.selected = 0
 		alicorn.invalidate_root(rt, "motion validation retarget")
 		host.application_diagnostic_event(app.diagnostics, "motion.validation.retarget_c")
-		if app.lifecycle_validation {
+		if app.shutdown_validation {
+			// Request a clean host shutdown while the slow response is still
+			// active. The host must retire the runtime, motion sidecars, and
+			// scheduler state without a crash or a second presentation.
+			app.validation_phase = .Shutdown_Request
+			_ = host.application_schedule_after(app.scheduler, .Frequent, 150_000_000)
+		} else if app.lifecycle_validation {
 			app.validation_phase = .Visibility_Armed
 			_ = host.application_schedule_after(app.scheduler, .Frequent, 120_000_000)
 		} else {
 			app.validation_phase = .Settled_Check
 			_ = host.application_schedule_after(app.scheduler, .Frequent, 1_500_000_000)
 		}
+	case .Shutdown_Request:
+		activity := alicorn.motion_activity(rt)
+		fmt.println("motion_validation", "shutdown_requested", "active_owners", activity.active_owners,
+			"active_properties", activity.active_properties,
+			"unestablished_deadlines", activity.unestablished_deadlines)
+		host.application_diagnostic_event(
+			app.diagnostics, "motion.validation.shutdown_requested",
+			u64(max(activity.active_owners, 0)),
+		)
+		app.validation_phase = .Done
+		host.application_request_quit(app.quit)
 	case .Visibility_Armed:
 		activity := alicorn.motion_activity(rt)
 		fmt.println("motion_validation", "active_for_visibility", "active_owners", activity.active_owners,
@@ -220,6 +240,12 @@ main :: proc() {
 			// smoke exit, so native visibility/lifecycle checks can suspend the
 			// window and restore it after the original settling deadline.
 			app.validation_mode = true
+		} else if argument == "--shutdown-during-motion" {
+			// Start a long retained response, then request a clean host shutdown
+			// while the owner is still active. Exercises runtime teardown rather
+			// than a settlement path; no smoke timeout is installed.
+			app.validation_mode = true
+			app.shutdown_validation = true
 		} else if argument == "--motion-inspector-review" {
 			// Pair with --motion-validation and --inspector-motion to produce a
 			// readable, repeatable native inspector capture of interrupted motion.

@@ -82,6 +82,48 @@ test_scheduled_wake_deadline_saturates_instead_of_wrapping :: proc(t: ^testing.T
 }
 
 @(test)
+test_native_motion_lateness_summary_reports_distribution_not_only_maximum :: proc(t: ^testing.T) {
+	state := Native_Motion_Scheduler_State{}
+	state.stats.lateness_count = 5
+	state.stats.lateness_samples[0] = 0
+	state.stats.lateness_samples[1] = 10
+	state.stats.lateness_samples[2] = 20
+	state.stats.lateness_samples[3] = 30
+	state.stats.lateness_samples[4] = 40
+	testing.expect(t, native_motion_lateness_percentile(&state, 0.50) == 20 &&
+		native_motion_lateness_percentile(&state, 0.95) == 30 &&
+		native_motion_lateness_percentile(&state, 0.99) == 30,
+		"the lateness summary should report nearest-rank p50/p95/p99 over retained samples")
+	testing.expect(t, native_motion_lateness_percentile(nil, 0.95) == 0 &&
+		native_motion_lateness_percentile(&state, -1) == 0 &&
+		native_motion_lateness_percentile(&state, 2) == 40,
+		"the lateness summary should be nil-safe and clamp fractions at summary time")
+
+	// The ring keeps the most recent window and reports percentiles from it.
+	ring := Native_Motion_Scheduler_State{}
+	for index in 0..<NATIVE_MOTION_LATENESS_CAPACITY+3 {
+		ring.stats.lateness_samples[ring.stats.lateness_next] = u64(index)
+		ring.stats.lateness_next = (ring.stats.lateness_next+1) % NATIVE_MOTION_LATENESS_CAPACITY
+		ring.stats.lateness_count += 1
+	}
+	testing.expect(t, ring.stats.lateness_count == NATIVE_MOTION_LATENESS_CAPACITY+3 &&
+		native_motion_lateness_percentile(&ring, 0.50) == 130 &&
+		native_motion_lateness_percentile(&ring, 0.99) == 255,
+		"the bounded lateness ring should summarize the latest window without unbounded storage")
+}
+
+@(test)
+test_native_motion_scheduler_records_sample_lateness :: proc(t: ^testing.T) {
+	state := Native_Motion_Scheduler_State{}
+	deadline := u64(1_000_000_000)
+	_ = native_motion_scheduler_prepare(&state, 1, true, deadline)
+	_ = native_motion_scheduler_prepare(&state, 1, true, deadline+NATIVE_MOTION_SAMPLE_INTERVAL_NS+7_000_000)
+	testing.expect(t, state.stats.lateness_count == 1 && state.stats.maximum_lateness_ns == 7_000_000 &&
+		native_motion_lateness_percentile(&state, 0.50) == 7_000_000,
+		"a due native motion sample should retain its lateness for the percentile summary")
+}
+
+@(test)
 test_native_motion_window_coalesces_active_owners_and_retires_to_idle :: proc(t: ^testing.T) {
 	state := Native_Motion_Scheduler_State{}
 	deadline := u64(1_000_000_000)

@@ -831,9 +831,14 @@ layout_finalize_node_geometry_for_node :: proc(rt: ^Runtime, node: ^Node) {
 		delete_key(&rt.finalized_geometry, node.id)
 		return
 	}
+	next_hit_bounds := layout_finalize_rect(node.hit_bounds, rt.presentation_scale_x, rt.presentation_scale_y)
+	if previous, had_previous := rt.finalized_geometry[node.id]; !had_previous ||
+		!rect_equal(previous.hit_bounds, next_hit_bounds) {
+		rt.stats.hit_geometry_updates += 1
+	}
 	rt.finalized_geometry[node.id] = Finalized_Geometry{
 		bounds=layout_finalize_rect(node.bounds, rt.presentation_scale_x, rt.presentation_scale_y),
-		hit_bounds=layout_finalize_rect(node.hit_bounds, rt.presentation_scale_x, rt.presentation_scale_y),
+		hit_bounds=next_hit_bounds,
 		clip=layout_finalize_rect(node.clip, rt.presentation_scale_x, rt.presentation_scale_y),
 		valid=true,
 	}

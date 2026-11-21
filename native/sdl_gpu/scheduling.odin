@@ -15,6 +15,11 @@ SCHEDULED_WAKE_MAX_U64 :: u64(0xffff_ffff_ffff_ffff)
 NATIVE_MOTION_SAMPLE_INTERVAL_NS :: u64(16_666_667)
 NATIVE_MOTION_UNCERTIFIED_LIMIT_NS :: u64(5_000_000_000)
 NATIVE_RETAINED_EFFECT_RETRY_INTERVAL_NS :: u64(16_666_667)
+// Lateness samples are kept in a fixed inline ring. The summary reports
+// p50/p95/p99 over the most recent window (the whole run when it is at most
+// this capacity) so a validation run can report a distribution, not only the
+// historical maximum.
+NATIVE_MOTION_LATENESS_CAPACITY :: 256
 
 native_retained_effect_retry_deadline_after :: proc(now_ns: u64) -> u64 {
 	return scheduled_wake_deadline_after(now_ns, NATIVE_RETAINED_EFFECT_RETRY_INTERVAL_NS)
@@ -33,6 +38,9 @@ Native_Motion_Scheduler_Stats :: struct {
 	bounded_snaps: u64,
 	missed_intervals: u64,
 	maximum_lateness_ns: u64,
+	lateness_samples: [NATIVE_MOTION_LATENESS_CAPACITY]u64,
+	lateness_next: int,
+	lateness_count: u64,
 	sample_ns_total: u64,
 	sample_ns_max: u64,
 }
@@ -144,9 +152,34 @@ native_motion_scheduler_prepare :: proc(
 	lateness := now_ns-state.next_deadline_ns
 	state.stats.timer_wakes += 1
 	state.stats.maximum_lateness_ns = max(state.stats.maximum_lateness_ns, lateness)
+	state.stats.lateness_samples[state.stats.lateness_next] = lateness
+	state.stats.lateness_next = (state.stats.lateness_next+1) % NATIVE_MOTION_LATENESS_CAPACITY
+	state.stats.lateness_count += 1
 	state.stats.missed_intervals += lateness/NATIVE_MOTION_SAMPLE_INTERVAL_NS
 	state.next_deadline_ns = 0
 	return true
+}
+
+// native_motion_lateness_percentile reports a nearest-rank percentile of the
+// retained lateness window. The caller runs it at summary time, never on the
+// sampling path. `fraction` is clamped to [0, 1].
+native_motion_lateness_percentile :: proc(state: ^Native_Motion_Scheduler_State, fraction: f64) -> u64 {
+	if state == nil || state.stats.lateness_count == 0 { return 0 }
+	count := int(min(state.stats.lateness_count, u64(NATIVE_MOTION_LATENESS_CAPACITY)))
+	samples: [NATIVE_MOTION_LATENESS_CAPACITY]u64
+	copy(samples[:count], state.stats.lateness_samples[:count])
+	// Insertion sort keeps the fixed-size summary path allocation-free.
+	for index in 1..<count {
+		value := samples[index]
+		cursor := index
+		for cursor > 0 && samples[cursor-1] > value {
+			samples[cursor] = samples[cursor-1]
+			cursor -= 1
+		}
+		samples[cursor] = value
+	}
+	normalized := clamp(fraction, 0, 1)
+	return samples[int(normalized*f64(count-1))]
 }
 
 native_motion_scheduler_record_suspension :: proc(

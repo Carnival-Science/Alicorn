@@ -424,6 +424,24 @@ semantic_surface_role_changed :: proc(previous, next: Semantic_Surface_Style) ->
 	return false
 }
 
+// reconcile_set_pointer_hit_shape maintains the sparse per-node custom hit
+// shape map and counts only actual maintenance writes. Motion composition
+// never calls this path: hit geometry is target-static.
+reconcile_set_pointer_hit_shape :: proc(rt: ^Runtime, id: Node_ID, shape: Pointer_Hit_Shape) {
+	if rt == nil || id == 0 { return }
+	if shape == .Bounds {
+		if _, had := rt.pointer_hit_shapes[id]; had {
+			delete_key(&rt.pointer_hit_shapes, id)
+			rt.stats.hit_index_updates += 1
+		}
+		return
+	}
+	if current, had := rt.pointer_hit_shapes[id]; !had || current != shape {
+		rt.pointer_hit_shapes[id] = shape
+		rt.stats.hit_index_updates += 1
+	}
+}
+
 copy_node_description :: proc(
 	rt: ^Runtime,
 	node: ^Node,
@@ -959,8 +977,7 @@ apply_description_reuse_tail :: proc(
 		node.semantic_published = item.semantic.role != .None
 	}
 	if d.region { region_index_add(rt, d.id, d.label) }
-	if item.pointer_hit_shape == .Bounds { delete_key(&rt.pointer_hit_shapes, d.id) }
-	else { rt.pointer_hit_shapes[d.id] = item.pointer_hit_shape }
+	reconcile_set_pointer_hit_shape(rt, d.id, item.pointer_hit_shape)
 	grid_tracks_copy_retained(rt, node, item)
 	if d.kind != .Button && d.kind != .Text_Field && d.kind != .Scroll_Region && !item.semantic_surface_style.defined {
 		delete_key(&rt.computed_styles, node.id)
@@ -1258,8 +1275,7 @@ reconcile :: proc(rt: ^Runtime) {
 			copy_node_description(rt, node, d, item.semantic, item.semantic_surface_style, item.visual_part,
 				next_style_environment, style_changes)
 			if d.region { region_index_add(rt, d.id, d.label) }
-			if item.pointer_hit_shape == .Bounds { delete_key(&rt.pointer_hit_shapes, d.id) }
-			else { rt.pointer_hit_shapes[d.id] = item.pointer_hit_shape }
+			reconcile_set_pointer_hit_shape(rt, d.id, item.pointer_hit_shape)
 			grid_tracks_copy_retained(rt, node, item)
 			perf_add_mark(rt, .Reconcile_Copy, copy_mark)
 			hash_mark = perf_mark_begin()
@@ -1323,8 +1339,7 @@ reconcile :: proc(rt: ^Runtime) {
 				} else if was_region {
 					region_index_remove(rt, d.id, old_label)
 				}
-				if item.pointer_hit_shape == .Bounds { delete_key(&rt.pointer_hit_shapes, d.id) }
-				else { rt.pointer_hit_shapes[d.id] = item.pointer_hit_shape }
+				reconcile_set_pointer_hit_shape(rt, d.id, item.pointer_hit_shape)
 				grid_tracks_copy_retained(rt, node, item)
 				if was_selected != node.selected {
 					visual_part_invalidate_dependents(rt, d.id, "visual part owner selection changed")

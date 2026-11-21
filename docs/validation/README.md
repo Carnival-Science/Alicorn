@@ -7,6 +7,12 @@ the current project status.
 
 ## Current acceptance and platform limits
 
+- [Issue #146 motion release gate: consolidated acceptance matrix (2026-11-21)](issue-146-motion-acceptance-matrix-2026-11-21.md)
+  - all 9 issue matrix rows and 6 core invariant groups mapped to evidence;
+  - local gap closures for Direct manipulation, hit-maintenance classification,
+  high-contrast/DPI presentation, three-level and scrolled composition, tab
+  close under reorder motion, shutdown during an active transition, and native
+  lateness p50/p95/p99; core passes, platform items G6/G9/G10/G11 remain.
 - [Generic roving focus model and list/grid pattern checks (2026-11-21)](issue-225-roving-focus-2026-11-21.md)
   — pure `alicorn:runtime` `Roving_View`/`roving_propose` index model, `testui`
   `Roving_List`/`Roving_Grid` patterns, the `select_parts` and AliKit icon-picker
@@ -124,7 +130,7 @@ the current project status.
   CPU/GPU differential evidence for the supported test-only paint subset.
 - [Issue #144 motion diagnostics and virtual-clock replay](issue-144-motion-diagnostics.md) — completed diagnostic and replay scope; broader native acceptance remains under #146.
 - [Issue #106 incremental-vs-fresh-runtime invalidation oracle](issue-106-invalidation-oracle.md) — initial scope complete: two fixed-seed cases deterministically catch a mis-scoped and an omitted invalidation through public APIs at bounded cost; further corpus ideas are optional follow-ups.
-- [Issue #146 motion diagnostics and Punks dogfood progress (2026-10-30)](issue-146-progress-2026-10-30.md) — closed-inspector headless overhead and application integration evidence; native scheduler acceptance remains open.
+- [Issue #146 motion diagnostics and Punks dogfood progress (2026-10-30)](issue-146-progress-2026-10-30.md) - closed-inspector headless overhead and application integration evidence; superseded for the release gate by the [consolidated acceptance matrix (2026-11-21)](issue-146-motion-acceptance-matrix-2026-11-21.md), which keeps platform items open.
 - [macOS static/shared desktop launch matrix (2026-10-28)](macos-desktop-launch-2026-10-28.md) — current integrated-revision evidence for direct and Launch Services launches.
 - [Final Windows/macOS acceptance matrix](issue-103-final.md) — maintainer
   confirmed physical input, IME, mixed-DPI, appearance, and screen-reader checks,

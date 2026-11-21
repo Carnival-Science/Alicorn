@@ -189,6 +189,7 @@ cancel_pointer_capture :: proc(rt: ^Runtime) -> bool {
 }
 
 hit_test :: proc(rt: ^Runtime, x, y: f32, include_reveal_targets := false) -> Node_ID {
+	rt.stats.hit_test_queries += 1
 	modal_root := modal_overlay_root(rt)
 	// A solid scrollbar owns its reserved strip, including the portion that
 	// overlaps a split divider's deliberately enlarged grab target.
@@ -196,6 +197,7 @@ hit_test :: proc(rt: ^Runtime, x, y: f32, include_reveal_targets := false) -> No
 	// Split dividers get priority over pane descendants because their expanded
 	// grab area intentionally overlaps both adjacent panes.
 	for i := len(rt.order)-1; i >= 0; i -= 1 {
+		rt.stats.hit_test_nodes_examined += 1
 		id := rt.order[i]
 		if node, ok := rt.nodes[id]; ok && node_is_presentation_active(rt, id) && node.kind == .Split_Handle &&
 			node_is_in_modal_overlay(rt, id, modal_root) &&
@@ -205,6 +207,7 @@ hit_test :: proc(rt: ^Runtime, x, y: f32, include_reveal_targets := false) -> No
 		}
 	}
 	for i := len(rt.order)-1; i >= 0; i -= 1 {
+		rt.stats.hit_test_nodes_examined += 1
 		id := rt.order[i]
 		if node, ok := rt.nodes[id]; ok && node_is_presentation_active(rt, id) && !node.disabled &&
 			visual_part_hit_test_visible(rt, id, include_reveal_target=include_reveal_targets) &&
@@ -229,6 +232,7 @@ hit_test :: proc(rt: ^Runtime, x, y: f32, include_reveal_targets := false) -> No
 	// while blank tree/panel space can still represent a meaningful target.
 	if rt.drag.phase == .Dragging {
 		for i := len(rt.order)-1; i >= 0; i -= 1 {
+			rt.stats.hit_test_nodes_examined += 1
 			id := rt.order[i]
 			if node, ok := rt.nodes[id]; ok && node_is_presentation_active(rt, id) && !node.disabled && visual_part_is_visible(rt, id) &&
 				node.drop_target_type == rt.drag.drag_type && semantic_id_is_valid(node.drop_target_id) &&
