@@ -556,6 +556,14 @@ after submitting only one of several targets: it acknowledges every currently
 visible output. Per-target hosts acknowledge each output with its exact
 snapshot revision.
 
+Output IDs do not create per-target layout or device-scale state. A scoped
+display uses the Runtime's shared logical geometry; a target with a different
+drawable size or DPI applies its own encode-time transform, just as it would
+for the whole display. Keep one layout scale for the shared composition and do
+not vary `set_presentation_scale` per output, because it finalizes the shared
+display for every target. A host can render differently sized targets
+independently while their content comes from the same Runtime layout.
+
 `presentation_output_bind_root` accepts a root while it is being described and
 rejects overlapping output subtrees. Retained paint changes and custom-surface
 payload updates are attributed through their owner ancestry. A presentation

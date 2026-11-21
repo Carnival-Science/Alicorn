@@ -65,9 +65,21 @@ were already present on `master`. This pass closes the automated host-contract
 coverage and clarifies output lifecycle and successful-submission semantics in
 [`hosted-runtime.md`](../hosted-runtime.md).
 
-## Remaining integration validation
+## Native integration validation
 
-Use Acetate's shared timeline Runtime for a native session that records which
-wx callback runs for isolated ruler and waveform updates, and confirms output
-revisions settle independently on supported native platforms. Keep the
-existing wx rendering path while doing that validation.
+Acetate's shared timeline Runtime binds ruler, waveform, and waveform-label
+outputs to one Runtime and acknowledges each exact revision after its
+synchronous wx paint. For native window/pixel evidence, Acetate also has a
+standalone fixture (`host-spike/multisurface_validation`) that drives one
+Runtime into two real SDL windows. Each window encodes only its own scoped
+output, submits its own command buffer, waits on its own fence, and
+acknowledges that exact revision. On Windows 10 with Direct3D 12 (RTX 2080
+SUPER) it passed 37/37 checks: independent ruler-only and waveform-only
+updates, shared invalidation and resize, stale-ack rejection, hidden/restored
+targets, removed/recreated outputs, and a settled one-second idle window with
+no submissions. The record is
+[`../validation/issue-205-multisurface-acetate-windows-2026-11-20.md`](../validation/issue-205-multisurface-acetate-windows-2026-11-20.md).
+
+The full Audacity/wx application was not rebuilt for that native run. The wx
+adapter was compile-checked against the v0.2.2 pin (`67b31b8`); an interactive
+wx session remains a later integration step when that tree is available.

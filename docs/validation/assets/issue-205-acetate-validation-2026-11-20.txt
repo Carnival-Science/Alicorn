@@ -1,0 +1,59 @@
+targets: ruler=Presentation_Output_ID{runtime_identity = 1, sequence = 1} waveform=Presentation_Output_ID{runtime_identity = 1, sequence = 2} driver=direct3d12
+build: initial description (viewport 640x220)
+CHECK PASS: initial description publishes work for both native targets
+present ruler: revision=2 encode=2237us submit=903us fence_wait=223us ack=Ok fence_ok=true scale=1.00x1.00
+CHECK PASS: initial ruler submission succeeds
+CHECK PASS: waveform remains pending after the ruler target presents
+present waveform: revision=3 encode=1276us submit=398us fence_wait=254us ack=Ok fence_ok=true scale=1.00x1.00
+CHECK PASS: initial waveform submission succeeds
+CHECK PASS: both initial acknowledgements return the Runtime to idle
+CHECK PASS: a ruler-only update publishes only the ruler output
+present ruler: revision=5 encode=42us submit=426us fence_wait=3us ack=Ok fence_ok=true scale=1.00x1.00
+CHECK PASS: ruler-only revision submits independently
+CHECK PASS: the waveform target is not repainted for a ruler-only update
+CHECK PASS: ruler-only update settles without a waveform acknowledgement
+CHECK PASS: a waveform-only update publishes only the waveform output
+present waveform: revision=7 encode=29us submit=149us fence_wait=3us ack=Ok fence_ok=true scale=1.00x1.00
+CHECK PASS: waveform-only revision submits independently
+CHECK PASS: the ruler target is not repainted for a waveform-only update
+CHECK PASS: waveform-only update settles independently
+CHECK PASS: a shared update reports every affected output
+present ruler: revision=9 encode=16us submit=1210us fence_wait=7197us ack=Ok fence_ok=true scale=1.00x1.00
+present waveform: revision=9 encode=74us submit=313us fence_wait=184us ack=Ok fence_ok=true scale=1.00x1.00
+CHECK PASS: shared update settles after both targets acknowledge
+runtime viewport -> 736x268
+build: shared runtime resize (viewport 736x268)
+CHECK PASS: a shared resize reports both affected outputs
+present ruler: revision=10 encode=791us submit=275us fence_wait=6463us ack=Ok fence_ok=true scale=0.87x0.82
+present waveform: revision=10 encode=1711us submit=255us fence_wait=230us ack=Ok fence_ok=true scale=1.00x1.00
+CHECK PASS: resize settles after both targets acknowledge
+CHECK PASS: a newer ruler update publishes a newer revision
+CHECK PASS: an acknowledgement for an older revision is rejected
+CHECK PASS: the rejected stale acknowledgement leaves the newer ruler work pending
+present ruler: revision=11 encode=33us submit=142us fence_wait=63159us ack=Ok fence_ok=true scale=0.87x0.82
+CHECK PASS: the current ruler revision can still be acknowledged
+CHECK PASS: a hidden target keeps its content without becoming pending
+present ruler: revision=13 encode=76us submit=256us fence_wait=1625us ack=Ok fence_ok=true scale=0.87x0.82
+CHECK PASS: the visible ruler target presents while the waveform is hidden
+CHECK PASS: a hidden target cannot keep the host spinning
+CHECK PASS: a hidden target rejects an acknowledgement as if it had submitted
+CHECK PASS: restoring a target publishes its current retained content
+CHECK PASS: an older revision cannot acknowledge the restored target
+present waveform: revision=15 encode=38us submit=360us fence_wait=4us ack=Ok fence_ok=true scale=1.00x1.00
+CHECK PASS: the restored target settles on its current revision
+CHECK PASS: the restored target returns to idle
+build: remove waveform target (viewport 736x268)
+CHECK PASS: a removed target detaches its retained root and discards pending work
+present ruler: revision=16 encode=625us submit=314us fence_wait=2761us ack=Ok fence_ok=true scale=0.87x0.82
+CHECK PASS: a removed target cannot keep the host spinning
+CHECK PASS: a recreated native target receives a fresh output identity
+build: recreate waveform target (viewport 736x268)
+CHECK PASS: the recreated target binds new work without reviving the removed identity
+present waveform: revision=18 encode=38us submit=185us fence_wait=337us ack=Ok fence_ok=true scale=1.00x1.00
+CHECK PASS: the recreated target settles
+CHECK PASS: a settled multi-surface host performs no GPU submissions
+CHECK PASS: a settled multi-surface host builds no new descriptions
+CHECK PASS: idle reports no pending surface work
+capture settled: ruler -> out/multisurface-acetate/settled-ruler.ppm (revision=16)
+capture settled: waveform -> out/multisurface-acetate/settled-waveform.ppm (revision=18)
+diagnostics: out/multisurface-acetate/settled-multisurface.json
