@@ -24,6 +24,11 @@ import live_resize "alicorn:host/sdl3/live_resize"
 import presentation_host "alicorn:host/presentation"
 import "vendor:sdl3"
 
+// One 60 Hz frame budget. An inter-present interval above this is a frame the
+// desktop compositor had to hold; the scripted harness reports both this and the
+// two-frame class separately.
+LIVE_RESIZE_FRAME_BUDGET_NS :: u64(16_666_667)
+
 SDL3_WebGPU_Live_Resize :: struct {
 	core: live_resize.Core,
 	application: ^SDL3_WebGPU_Application,
@@ -36,12 +41,27 @@ SDL3_WebGPU_Live_Resize :: struct {
 	geometry_adoptions: u64,
 	idle_ticks: u64,
 	step_failures: u64,
+	// geometry_to_present_max_ns is the worst interval between the window
+	// position message that moved the client area and the frame that first
+	// presented at the new size. It is the window in which the desktop
+	// compositor held the old frame.
+	geometry_to_present_max_ns: u64,
 	// peak_* record the largest live geometry a frame presented at, which is what
 	// the scripted drag fixture asserts against the live window size.
 	peak_logical_width: int,
 	peak_pixel_width: int,
 	last_logical_width: int,
 	last_pixel_width: int,
+	// Stage D slice 5 inter-present accounting. last_present_ns is cleared when a
+	// move finishes so the gap between two drags is not reported as a stale
+	// frame. An interval over one 60 Hz budget is a frame the compositor had to
+	// hold; over two is the class the founder's stretched screenshots show.
+	last_present_ns: u64,
+	present_interval_count: u64,
+	present_interval_total_ns: u64,
+	present_interval_max_ns: u64,
+	present_gaps_over_frame: u64,
+	present_gaps_over_two_frames: u64,
 }
 
 // sdl3_webgpu_live_resize_install wires the shared core to a primary application
@@ -69,6 +89,11 @@ sdl3_webgpu_live_resize_install :: proc(
 	live.core.ops = ops
 	sdl3_webgpu_live_resize_sync_windows(live)
 	if !live_resize.live_resize_start(&live.core, ops) { return false }
+	// The hosted presenter can rebuild and present a new drawable size as soon
+	// as SDL has queued the resize, so adopt geometry at the message instead of
+	// waiting for the compositor's next exposure. This is the interval in which
+	// the desktop stretches the previous frame.
+	live_resize.live_resize_set_geometry_dispatch(&live.core, true)
 	return true
 }
 
@@ -102,6 +127,11 @@ sdl3_webgpu_live_resize_sync_windows :: proc(live: ^SDL3_WebGPU_Live_Resize) {
 sdl3_webgpu_live_resize_reconcile :: proc(live: ^SDL3_WebGPU_Live_Resize) {
 	if live == nil { return }
 	live_resize.live_resize_reconcile(&live.core)
+	// A finished drag must not contribute its idle gap to the next drag's
+	// inter-present distribution.
+	if live.core.counters.move_enter_messages == live.core.counters.move_exit_messages {
+		live.last_present_ns = 0
+	}
 }
 
 @(private)
@@ -204,18 +234,28 @@ sdl3_webgpu_live_resize_render :: proc(
 		live.idle_ticks += 1
 		return
 	}
+	frame_start_ns := u64(sdl3.GetTicksNS())
 	// A live frame may be the only wgpu API traffic while the modal loop owns the
 	// thread, so poll explicitly: submission completions retire here instead of
 	// waiting for the next ordinary host turn.
+	poll_start_ns := u64(sdl3.GetTicksNS())
 	presentation_host.hosted_surface_presenter_poll(&application.presenter)
+	poll_ns := u64(sdl3.GetTicksNS()) - poll_start_ns
 	geometry_changed := sdl3_webgpu_live_resize_geometry_changed(live, application)
+	reconfigured := false
+	adopt_ns: u64
 	if geometry_changed {
+		reconfigure_start_ns := u64(sdl3.GetTicksNS())
 		resized := sdl3_webgpu_application_resize(application)
+		adopt_ns = u64(sdl3.GetTicksNS()) - reconfigure_start_ns
 		if resized != .Ok && resized != .Suspended {
 			live.step_failures += 1
 			return
 		}
-		if resized == .Ok { live.geometry_adoptions += 1 }
+		if resized == .Ok {
+			live.geometry_adoptions += 1
+			reconfigured = true
+		}
 	}
 	step := sdl3_webgpu_application_live_step(application, now_ns)
 	if step.status != .Ok {
@@ -226,6 +266,25 @@ sdl3_webgpu_live_resize_render :: proc(
 		if step.presentation == .No_Frame { live.idle_ticks += 1 }
 		return
 	}
+	presented_ns := u64(sdl3.GetTicksNS())
+	geometry_to_present_ns: u64
+	if reconfigured {
+		if geometry_message_ns := live_resize.live_resize_geometry_message_ns(&live.core, slot); geometry_message_ns != 0 && presented_ns >= geometry_message_ns {
+			geometry_to_present_ns = presented_ns - geometry_message_ns
+			live.geometry_to_present_max_ns = max(live.geometry_to_present_max_ns, geometry_to_present_ns)
+		}
+		live_resize.live_resize_clear_geometry_message_ns(&live.core, slot)
+	}
+	interval_ns: u64
+	if live.last_present_ns != 0 && presented_ns >= live.last_present_ns {
+		interval_ns = presented_ns - live.last_present_ns
+		live.present_interval_count += 1
+		live.present_interval_total_ns += interval_ns
+		live.present_interval_max_ns = max(live.present_interval_max_ns, interval_ns)
+		if interval_ns > LIVE_RESIZE_FRAME_BUDGET_NS { live.present_gaps_over_frame += 1 }
+		if interval_ns > 2*LIVE_RESIZE_FRAME_BUDGET_NS { live.present_gaps_over_two_frames += 1 }
+	}
+	live.last_present_ns = presented_ns
 	live.frames += 1
 	live_resize.live_resize_note_presented_frame(&live.core, cause)
 	live.last_logical_width = application.last_logical_width
@@ -233,10 +292,22 @@ sdl3_webgpu_live_resize_render :: proc(
 	live.peak_logical_width = max(live.peak_logical_width, application.last_logical_width)
 	live.peak_pixel_width = max(live.peak_pixel_width, application.last_pixel_width)
 	if live.trace {
+		configures, _ := presentation_host.hosted_surface_presenter_configuration_stats(&application.presenter)
+		renderer_stats, _ := presentation_host.hosted_surface_presenter_renderer_stats(&application.presenter)
+		timing := step.timing
 		fmt.printf(
-			"live_resize_frame slot=%v cause=%v t_ns=%d logical=%dx%d pixels=%dx%d geometry=%v\n",
-			slot, cause, now_ns, application.last_logical_width, application.last_logical_height,
-			application.last_pixel_width, application.last_pixel_height, geometry_changed,
+			"live_resize_frame slot=%v cause=%v t_ns=%d presented_ns=%d interval_ns=%d geometry_to_present_ns=%d logical=%dx%d pixels=%dx%d geometry=%v reconfigured=%v reconfigure_ns=%d adopt_ns=%d configure_total=%d description_ns=%d description_passes=%d reconcile_nodes=%d layout_nodes=%d paint_nodes=%d pre_present_ns=%d runtime_step_ns=%d acquire_ns=%d encode_ns=%d submit_ns=%d present_ns=%d step_to_present_ns=%d post_present_ns=%d poll_ns=%d frame_ns=%d solid_mesh_rebuilds=%d text_mesh_rebuilds=%d surface_mesh_rebuilds=%d\n",
+			slot, cause, now_ns, presented_ns, interval_ns, geometry_to_present_ns,
+			application.last_logical_width, application.last_logical_height,
+			application.last_pixel_width, application.last_pixel_height,
+			geometry_changed, reconfigured, timing.surface_reconfigure_ns, adopt_ns, configures,
+			timing.description_ns, timing.description_passes,
+			timing.reconcile_nodes_visited, timing.layout_nodes_visited, timing.paint_nodes_visited,
+			timing.pre_present_ns, timing.runtime_step_ns, timing.surface_acquire_ns,
+			timing.renderer_encode_ns, timing.queue_submit_ns, timing.surface_present_ns,
+			timing.step_to_present_ns, step.post_present_ns, poll_ns, presented_ns-frame_start_ns,
+			renderer_stats.solid.mesh_rebuilds, renderer_stats.text.mesh_rebuilds,
+			renderer_stats.surfaces.mesh_rebuilds,
 		)
 	}
 }
@@ -247,6 +318,16 @@ sdl3_webgpu_live_resize_render :: proc(
 sdl3_webgpu_live_resize_report :: proc(live: ^SDL3_WebGPU_Live_Resize) {
 	if live == nil { return }
 	counters := live.core.counters
+	configures: u64
+	configure_total_ns: u64
+	configure_last_ns: u64
+	if live.application != nil {
+		if stats, ok := presentation_host.hosted_surface_presenter_configuration_stats(&live.application.presenter); ok {
+			configures = stats.configures
+			configure_total_ns = stats.total_ns
+			configure_last_ns = stats.last_ns
+		}
+	}
 	fmt.println(
 		"webgpu_live_resize",
 		"frames", live.frames,
@@ -255,8 +336,20 @@ sdl3_webgpu_live_resize_report :: proc(live: ^SDL3_WebGPU_Live_Resize) {
 		"step_failures", live.step_failures,
 		"peak_logical_width", live.peak_logical_width,
 		"peak_pixel_width", live.peak_pixel_width,
+		"surface_configures", configures,
+		"surface_configure_total_ns", configure_total_ns,
+		"surface_configure_last_ns", configure_last_ns,
+		"present_intervals", live.present_interval_count,
+		"present_interval_total_ns", live.present_interval_total_ns,
+		"present_interval_max_ns", live.present_interval_max_ns,
+		"present_gaps_over_frame", live.present_gaps_over_frame,
+		"present_gaps_over_two_frames", live.present_gaps_over_two_frames,
+		"geometry_to_present_max_ns", live.geometry_to_present_max_ns,
 		"expose_events", counters.expose_events,
 		"expose_frames", counters.expose_frames,
+		"geometry_events", counters.geometry_events,
+		"geometry_frames", counters.geometry_frames,
+		"deferred_geometry_events", counters.deferred_geometry_events,
 		"move_enter_messages", counters.move_enter_messages,
 		"move_exit_messages", counters.move_exit_messages,
 		"move_timer_wakes", counters.move_timer_wakes,

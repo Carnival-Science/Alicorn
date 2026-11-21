@@ -6,10 +6,22 @@ package alicorn_sdl_gpu
 // host runs. This file only adapts the reference renderer to that core and
 // publishes its telemetry under the historical field names.
 
+import "core:fmt"
+import "core:os"
 import alicorn "../../runtime"
 import sdl3_file_drag "alicorn:host/sdl3/file_drag"
 import live_resize "alicorn:host/sdl3/live_resize"
 import "vendor:sdl3"
+
+// native_live_resize_trace_requested enables the reference host's per-frame
+// live-resize trace. It mirrors the hosted host's --test-live-resize-trace seam
+// so the scripted harness can build one matched table for both renderers.
+native_live_resize_trace_requested :: proc() -> bool {
+	for argument in os.args {
+		if argument == "--test-live-resize-trace" { return true }
+	}
+	return false
+}
 
 // active_live_resize_state lets the secondary-window teardown path retire its
 // slot before the SDL window is destroyed. There is one core per process, so a
@@ -150,6 +162,11 @@ native_live_resize_sync_windows :: proc(state: ^Native_Live_Resize_State) {
 native_live_resize_reconcile :: proc(state: ^Native_Live_Resize_State) {
 	if state == nil { return }
 	live_resize.live_resize_reconcile(&state.core)
+	// A finished drag must not contribute its idle gap to the next drag's
+	// inter-present distribution.
+	if state.core.counters.move_enter_messages == state.core.counters.move_exit_messages {
+		state.last_present_ns = 0
+	}
 }
 
 // native_live_resize_present_if_due is the reference renderer's per-window live
@@ -195,6 +212,31 @@ native_live_resize_present_if_due :: proc(
 	if target == .Primary { native_live_resize_redraw(state) }
 	else if target == .Secondary {
 		native_secondary_window_live_resize_redraw(state.secondary_manager, child, request_presentation=false)
+	}
+	presented_ns := u64(sdl3.GetTicksNS())
+	if target == .Primary && state.last_frame.valid {
+		geometry_to_present_ns: u64
+		if geometry_message_ns := live_resize.live_resize_geometry_message_ns(&state.core, target); geometry_message_ns != 0 && presented_ns >= geometry_message_ns {
+			geometry_to_present_ns = presented_ns-geometry_message_ns
+			live_resize.live_resize_clear_geometry_message_ns(&state.core, target)
+		}
+		interval_ns: u64
+		if state.last_present_ns != 0 && presented_ns >= state.last_present_ns {
+			interval_ns = presented_ns-state.last_present_ns
+		}
+		state.last_present_ns = presented_ns
+		if state.trace {
+			sample := state.last_frame
+			fmt.printf(
+				"reference_live_resize_frame slot=%v cause=%v t_ns=%d presented_ns=%d interval_ns=%d geometry_to_present_ns=%d logical=%dx%d pixels=%dx%d build_ns=%d acquire_ns=%d encode_ns=%d submit_ns=%d frame_ns=%d text_mesh_rebuilds=%d text_mesh_cache_hits=%d\n",
+				target, cause, now_ns, presented_ns, interval_ns, geometry_to_present_ns,
+				state.metrics.logical_width, state.metrics.logical_height,
+				state.metrics.pixel_width, state.metrics.pixel_height,
+				sample.build_ns, sample.acquire_ns, sample.encode_ns,
+				sample.submit_ns, sample.frame_ns,
+				state.text_renderer.mesh_rebuilds, state.text_renderer.mesh_cache_hits,
+			)
+		}
 	}
 	after_samples := scheduler.stats.samples
 	after_submissions := before_submissions

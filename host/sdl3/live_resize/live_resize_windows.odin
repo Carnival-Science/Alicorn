@@ -63,10 +63,23 @@ live_resize_windows_message_hook :: proc "c" (userdata: rawptr, message: ^win.MS
 			}
 		}
 	case win.WM_WINDOWPOSCHANGED:
+		// SDL derives WINDOW_RESIZED / WINDOW_PIXEL_SIZE_CHANGED from this
+		// message, so timestamp it: this is the instant the client geometry
+		// changes and the desktop starts holding the previous frame. Pure moves
+		// also produce WM_WINDOWPOSCHANGED, so only a changed outer size counts.
+		position := cast(^win.WINDOWPOS)(uintptr(message.lParam))
 		for slot in SLOTS {
+			index := slot_index(slot)
 			if live_resize_windows_move_hwnd(core, slot) == rawptr(message.hwnd) &&
-			   core.slots[slot_index(slot)].move_active {
+			   core.slots[index].move_active {
 				core.counters.move_position_changed_messages += 1
+				if position != nil &&
+				   (position.cx != core.slots[index].geometry_message_cx ||
+				    position.cy != core.slots[index].geometry_message_cy) {
+					core.slots[index].geometry_message_cx = position.cx
+					core.slots[index].geometry_message_cy = position.cy
+					core.slots[index].geometry_message_ns = live_resize_now()
+				}
 			}
 		}
 		live_resize_windows_ensure_timer(core)
@@ -83,6 +96,9 @@ live_resize_windows_begin_move :: proc(core: ^Core, slot: Slot, hwnd: win.HWND) 
 	core.counters.move_enter_messages += 1
 	core.slots[index].move_active = true
 	core.slots[index].move_hwnd = rawptr(hwnd)
+	// A programmatic SetWindowPos just before the drag can leave a geometry
+	// timestamp behind; it does not describe this drag's first frame.
+	core.slots[index].geometry_message_ns = 0
 	// Keyboard-driven system-menu moves keep ordinary event semantics. The live
 	// timer exists specifically for a visible pointer drag, where the modal loop
 	// otherwise withholds host turns.
@@ -171,6 +187,13 @@ live_resize_windows_slot_for_hwnd :: proc(core: ^Core, hwnd: win.HWND) -> (Slot,
 	if core == nil || hwnd == nil { return .Primary, false }
 	for slot in SLOTS {
 		if live_resize_windows_move_hwnd(core, slot) == rawptr(hwnd) { return slot, true }
+	}
+	// WM_SIZE can be delivered before WM_ENTERSIZEMOVE records the move HWND on
+	// some resize paths, so fall back to the slot's published window.
+	for slot in SLOTS {
+		if window_hwnd, found := live_resize_windows_slot_for_window(core, slot); found && rawptr(window_hwnd) == rawptr(hwnd) {
+			return slot, true
+		}
 	}
 	return .Primary, false
 }

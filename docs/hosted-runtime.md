@@ -703,10 +703,22 @@ installs:
 - an SDL event watch that services `WINDOW_EXPOSED` (`data1 == 1`) by calling the
   host's render callback directly. SDL documents that this one event may be
   redrawn from a watcher, and it arrives on the main thread;
+- an opt-in dispatch of `WINDOW_RESIZED` / `WINDOW_PIXEL_SIZE_CHANGED` while the
+  same slot's modal move is active (`live_resize_set_geometry_dispatch`). SDL
+  derives these from `WM_WINDOWPOSCHANGED` after caching the new size, so a host
+  that enables it adopts the new drawable at the message instead of waiting for
+  the compositor's next exposure. The hosted WebGPU host enables it; the SDL_GPU
+  reference leaves it off and keeps its exposure-driven policy. Measured on
+  Windows, this is the difference between ~7.3 ms and ~2.6 ms at p50 (16.5 ms to
+  7.3 ms at p95) from size message to the first correctly sized present on the
+  fixture;
 - on Windows, `SDL_SetWindowsMessageHook` tracking `WM_ENTERSIZEMOVE`,
   `WM_EXITSIZEMOVE`, `WM_MOVING`, `WM_WINDOWPOSCHANGED`, `WM_SIZE`, and
   `WM_SHOWWINDOW`, plus one `SetTimer` (17 ms) on the moving HWND while the left
-  button is held;
+  button is held. A `WM_WINDOWPOSCHANGED` that changes the outer size also records
+  the instant the client geometry changed, so a frame that adopts it can report
+  the message-to-present age (the interval in which the desktop still stretches
+  the previous frame);
 - re-entrancy guards for both entry points. An exposure or timer tick that lands
   while a frame is encoding is coalesced into the outer call's bounded second
   pass, and a timer callback nested inside a present is dropped with a counter;

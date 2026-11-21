@@ -155,7 +155,45 @@ test_presented_frame_counting :: proc(t: ^testing.T) {
 	core := plugin_core(&host)
 	live_resize_note_presented_frame(&core, .Expose)
 	live_resize_note_presented_frame(&core, .Timer)
+	live_resize_note_presented_frame(&core, .Geometry)
 	testing.expect_value(t, core.counters.expose_frames, 1)
+	testing.expect_value(t, core.counters.geometry_frames, 1)
+}
+
+// Geometry dispatch is opt-in and only fires inside an active modal move/size
+// loop. A host that has not enabled it must see the pre-slice exposure-only
+// behavior even when SDL queues a resize event.
+@(test)
+test_geometry_dispatch_is_opt_in_and_move_gated :: proc(t: ^testing.T) {
+	host: Plugin_Host
+	core := plugin_core(&host)
+	resize_event := sdl3.Event{type=.WINDOW_RESIZED}
+	resize_event.window = sdl3.WindowEvent{type=.WINDOW_RESIZED, windowID=11, data1=800, data2=600}
+
+	live_resize_event_watch(rawptr(&core), &resize_event)
+	testing.expect_value(t, host.renders, 0)
+
+	live_resize_set_geometry_dispatch(&core, true)
+	live_resize_event_watch(rawptr(&core), &resize_event)
+	testing.expect_value(t, host.renders, 0)
+
+	core.slots[slot_index(.Primary)].move_active = true
+	live_resize_event_watch(rawptr(&core), &resize_event)
+	testing.expect_value(t, host.renders, 1)
+	testing.expect(t, host.last_cause == .Geometry, "the resize event names its dispatch cause")
+	testing.expect_value(t, core.counters.geometry_events, 1)
+
+	// A pixel-size event is the second half of the same WM_SIZE; it is delivered
+	// only while the modal loop is active, exactly like the logical event.
+	pixel_event := sdl3.Event{type=.WINDOW_PIXEL_SIZE_CHANGED}
+	pixel_event.window = sdl3.WindowEvent{type=.WINDOW_PIXEL_SIZE_CHANGED, windowID=11}
+	live_resize_event_watch(rawptr(&core), &pixel_event)
+	testing.expect_value(t, host.renders, 2)
+	testing.expect_value(t, core.counters.geometry_events, 2)
+
+	core.slots[slot_index(.Primary)].move_active = false
+	live_resize_event_watch(rawptr(&core), &resize_event)
+	testing.expect_value(t, host.renders, 2)
 }
 
 @(test)

@@ -5027,3 +5027,140 @@ requires that one-line adapter change. Alicorn's hosted API now matches native
 1:1, and example 16 `--file-drag-demo` is the reference call site. Full evidence,
 raw logs, and the founder checklist are in
 [`validation/issue-211-drag-and-drop-windows-2026-11-20.md`](validation/issue-211-drag-and-drop-windows-2026-11-20.md).
+
+## Stage D slice 5: live-resize presentation latency (Windows, 2026-11-20)
+
+The founder accepted the Stage C live-resize behavior (frames present during the
+drag, no release-only jump) but reported that it "isn't the fastest" and that
+screenshots still showed momentary stretching. This slice measured the identical
+scripted resize gesture on the hosted D3D12, hosted Vulkan, and SDL_GPU reference
+paths before changing anything, then fixed the dominant cost the data indicted.
+
+### Measurement
+
+C1's `tools/validate_native_webgpu_resize.ps1` already drives a real 24-step,
++140 px right-edge drag with `SendInput`. It now records, for every live frame on
+both hosts: inter-present interval, the interval from the `WM_WINDOWPOSCHANGED`
+that changed the outer size to the first frame presented at that size
+(`geometry_to_present_ns` - the window in which the desktop compositor holds and
+stretches the previous frame), `wgpu.SurfaceConfigure` count and CPU cost, the
+whole geometry-adoption cost, application description cost and stabilization
+pass count, reconcile/layout/paint node deltas, chrome pre-present and host
+post-present cost, device poll, encode/submit/present, whole-frame time, and
+retained mesh rebuild counters. Both hosts print the same vocabulary; SDL_GPU
+performs its swapchain resize inside `SDL_AcquireGPUSwapchainTexture`, so
+`acquire_ns` is its comparable surface cost.
+
+The harness writes a per-frame CSV and prints p50/p95/p99/max plus counts of
+intervals over one and two 60 Hz budgets. It records these without a pass/fail
+threshold: the compositor floor is session-dependent and C1's correctness
+assertions (mid-drag frames, drawable tracks client, 0.00 % aspect delta,
+fixture accounting) remain the hard gates.
+
+### Baseline
+
+Fixture resize gesture. The "before" build is this branch with only the geometry
+dispatch disabled, so timestamping, frame policy, and harness are identical.
+
+| metric | hosted D3D12 before | hosted D3D12 after | SDL_GPU |
+| --- | ---: | ---: | ---: |
+| mid-drag frames | 45 | 75 | 58 |
+| geometry-to-present p50 / p95 | 7.34 / 16.46 ms | 2.58 / 7.34 ms | 2.30 / 15.96 ms |
+| inter-present p50 / p95 | 18.22 / 31.04 ms | 8.07 / 25.24 ms | 15.77 / 23.99 ms |
+| surface reconfigure p50 / p95 | 1.56 / 2.23 ms | 1.70 / 1.89 ms | n/a |
+| renderer encode p50 / p95 | 0.24 / 0.33 ms | 0.18 / 0.30 ms | 0.08 / 0.60 ms |
+| whole live frame p50 / p95 | 2.12 / 2.98 ms | 0.49 / 4.44 ms | 0.28 / 2.29 ms |
+
+The hosted path waited 7.3 ms at p50 and 16.5 ms at p95 between the size message
+and the present that adopted it, while that frame cost 2.1-3.0 ms. The wait, not
+the encode or `SurfaceConfigure`, was the stretch window. The reference still
+follows the exposure path: half its size changes happened to paint immediately
+and half waited about a frame.
+
+### Change
+
+`host/sdl3/live_resize` gained an opt-in geometry dispatch. While
+`WM_ENTERSIZEMOVE` marks a slot's modal move active, SDL's queued
+`WINDOW_RESIZED` / `WINDOW_PIXEL_SIZE_CHANGED` events (derived from
+`WM_WINDOWPOSCHANGED` after SDL caches the new size) drive the guarded render
+callback with `Cause.Geometry`. The hosted host enables it in
+`sdl3_webgpu_live_resize_install`; the reference host does not, so its behavior
+is unchanged and remains the control. The Windows hook also timestamps a
+`WM_WINDOWPOSCHANGED` that changes the outer size (pure moves do not), and the
+first frame that adopts it reports the message-to-present age.
+
+Instrumentation was added without new device features: `Hosted_Step_Result`
+carries description cost/passes and reconcile/layout/paint deltas;
+`Hosted_Surface_Timing_Sample` carries reconfigure attribution, description
+metrics, and the chrome hook cost; the hosted presenter exposes its last sample
+and `SurfaceConfigure` statistics; the reference host records a per-frame sample
+of build/acquire/encode/submit. All of it is read-only and off the frame policy.
+
+### After
+
+Same binary and gesture, all three backends:
+
+| metric | hosted D3D12 | hosted Vulkan | SDL_GPU |
+| --- | ---: | ---: | ---: |
+| mid-drag frames | 75 | 74 | 58 |
+| geometry-to-present p50 / p95 | **2.58 / 7.34 ms** | **4.67 / 5.61 ms** | 2.30 / 15.96 ms |
+| surface reconfigure p50 / p95 | 1.70 / 1.89 ms | 4.03 / 4.69 ms | n/a |
+| renderer encode p50 / p95 | 0.18 / 0.30 ms | 0.10 / 0.20 ms | 0.08 / 0.60 ms |
+| whole live frame p50 / p95 | 0.49 / 4.44 ms | 0.27 / 5.45 ms | 0.28 / 2.29 ms |
+| mesh rebuilds during gesture | 46 | 46 | 24 (text) |
+
+D3D12's stretch window dropped 65 % at p50 and 55 % at p95. Vulkan's
+4.7 ms is entirely its swapchain recreation; its stretch window is still below
+the reference's tail. Hosted presents 74-75 frames where the reference presents
+58 because the reference also redraws exposures that change nothing; the hosted
+path skips those and still presents more often than before.
+
+Scratchpad via `-Mode application` shows where the remaining cost sits. The app's
+two-pass, 393-node description is 8.2-9.0 ms on both renderers, so the hosted
+frame is 12.2 ms (D3D12) / 15.3 ms (Vulkan) and the message-driven response is
+immediate. The reference still waits for the exposure before running the same
+12 ms frame: `geometry_to_present` p50 22.8 ms, p95 24.8 ms. Hosted is ~10 ms
+ahead at p50 and ~11 ms at p95, with zero mesh rebuilds during the drag. Its
+caption-band move probe fails on validator `adb28fc` because that revision's
+integrated titlebar classifies the probed point inconsistently between two
+`WM_NCHITTEST` calls; the fixture caption move passes on all three backends, and
+the resize gesture (this slice's subject) passes everywhere.
+
+### Validation
+
+- Runnable fixture assertions: unchanged and passing on D3D12, Vulkan, and
+  SDL_GPU (16 pass, 1 hands-on per backend), with the new metrics recorded.
+- Additive tests: `runtime/hosted_test.odin` asserts the new description
+  cost/pass/node-delta fields on a real description and resize step;
+  `host/sdl3/live_resize` gained the opt-in/move-gated geometry dispatch test and
+  a Windows test proving the geometry timestamp is size-gated, for 11 tests.
+- Suites: runtime 421, host/fonts 5, host/sdl3 8, host/sdl3/live_resize 11,
+  host/sdl3/window_frame 1, input 8, clipboard 3, file_drag 3, dialogs 5,
+  host/menus 9, host/web 14, host/diagnostics 9, host/presentation 7,
+  renderer/webgpu 9, renderer/cpu 23, ui 50, testui 13, theme 37,
+  native/sdl_gpu 169, native/scroll_capture 6, accessibility contract 1,
+  AccessKit binding 8, `odin build tests` + `out/alicorn_tests.exe`, and
+  `test_restoration.ps1` all pass.
+- `tools/check_web_ui_package.ps1` still fails on this Odin installation with
+  `DevicePoll is not declared by wgpu` in `host/presentation` (the same failure
+  recorded for earlier slices at base `b79ef57`; the line moved, the defect did
+  not change).
+- Example 16 passes all seven smokes on D3D12, Vulkan, and SDL_GPU (21/21).
+  `--smoke --timings` still presents exactly one frame
+  (`frames_presented=1`) with no motion frames, so the settled idle contract is
+  unchanged.
+- Scratchpad validator `adb28fc` built against this branch: hosted D3D12,
+  hosted Vulkan, and SDL_GPU smoke legs pass (clean and recovery). Full evidence,
+  per-metric tables, and raw CSVs:
+  [`validation/issue-211-live-resize-performance-windows-2026-11-20.md`](validation/issue-211-live-resize-performance-windows-2026-11-20.md).
+
+### Residual work
+
+- A real application's description build, not the presenter, is the remaining
+  per-step floor. Scratchpad cannot fit a 120 Hz drag (8.3 ms budget) with a
+  12 ms two-pass rebuild on either renderer.
+- Vulkan swapchain recreation (4.0-4.7 ms p50) is the widest remaining
+  backend-specific gap. It is the API's only way to change extent.
+- Window movement (not resizing) still has no message-driven adoption; it does
+  not stretch, and its interval is the drag cadence. The fixture reports 24
+  mid-drag move frames on D3D12 and Vulkan.

@@ -817,7 +817,11 @@ sdl3_webgpu_run :: proc(
 		sdl3_webgpu_live_resize_report(&live_resize)
 		sdl3_webgpu_live_resize_release(&live_resize)
 	}
-	timing_enabled := sdl3_webgpu_run_timing_requested()
+	timing_report := sdl3_webgpu_run_timing_requested()
+	// The live-resize trace seam reads the presenter's per-frame sample, so the
+	// sample ring must be active even when --timings was not requested. The
+	// percentile report at exit stays tied to --timings.
+	timing_enabled := timing_report || sdl3_webgpu_run_live_resize_trace_requested()
 	smoke_hold_ns := sdl3_webgpu_run_smoke_hold_ns()
 	if timing_enabled {
 		if !presentation_host.hosted_surface_presenter_set_timing_enabled(&application.presenter, true) {
@@ -844,7 +848,7 @@ sdl3_webgpu_run :: proc(
 		}
 	}
 	defer {
-		if timing_enabled { sdl3_webgpu_run_report_timing(&application) }
+		if timing_report { sdl3_webgpu_run_report_timing(&application) }
 	}
 	if state.closing { return .Ok }
 	if !sdl3.ShowWindow(window) { return .SDL_Failure }

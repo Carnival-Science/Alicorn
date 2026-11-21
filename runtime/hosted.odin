@@ -3,6 +3,7 @@ package alicorn
 import "core:math"
 import "core:mem"
 import "core:sync"
+import "core:time"
 
 // Hosted_Runtime_Status is returned by the host-driven Runtime API. A hosted
 // Runtime is deliberately single-threaded; only Hosted_Waker may cross threads.
@@ -301,6 +302,17 @@ Hosted_Step_Result :: struct {
 	// Absolute monotonic deadline in nanoseconds, or zero when the host should
 	// wait only for native input or a worker wake.
 	next_wake_ns: u64,
+	// Per-step description cost. description_ns is CPU wall time spent inside
+	// application description passes (reconcile, measure, layout, paint,
+	// compose); description_passes counts the bounded stabilization passes.
+	// The *_nodes_visited fields are the Runtime counter deltas this step
+	// accumulated, so a host can attribute per-frame layout cost without
+	// reaching into Runtime internals. They are zero when nothing was built.
+	description_ns:      u64,
+	description_passes:  u32,
+	reconcile_nodes_visited: u64,
+	layout_nodes_visited:    u64,
+	paint_nodes_visited:     u64,
 }
 
 Hosted_Waker :: struct {
@@ -664,11 +676,11 @@ hosted_description_root :: proc(rt: ^Runtime) -> Node_ID {
 // it in a host-owned root column. Host-owned chrome remains expressed through
 // content_inset_top, which reduces the application viewport, and host chrome /
 // diagnostics paint are appended at the presentation boundary.
-hosted_root_describe :: proc(state: ^Hosted_Runtime_State) -> Node_ID {
+hosted_root_describe :: proc(state: ^Hosted_Runtime_State, passes: ^u32) -> Node_ID {
 	rt := &state.runtime
 	root: Node_ID
-	passes := 0
-	for rt.invalidated && passes < HOSTED_DESCRIPTION_STABILIZATION_LIMIT {
+	count := u32(0)
+	for rt.invalidated && count < HOSTED_DESCRIPTION_STABILIZATION_LIMIT {
 		interaction_sequence := rt.interaction_consumption_sequence
 		ui, should_build := begin_frame(rt)
 		if !should_build { break }
@@ -682,12 +694,13 @@ hosted_root_describe :: proc(state: ^Hosted_Runtime_State) -> Node_ID {
 		// before the host presents it, matching native/sdl_gpu. It runs even when
 		// no further frame is scheduled.
 		if state.on_after_frame != nil { state.on_after_frame(state.app_state, rt) }
-		passes += 1
+		count += 1
 		if state.interaction_update_policy == .Correct_After_Interaction &&
 		   rt.interaction_consumption_sequence != interaction_sequence && !rt.invalidated {
 			invalidate_root(rt, "corrective description after consumed interaction")
 		}
 	}
+	if passes != nil { passes^ = count }
 	return root
 }
 
@@ -838,12 +851,23 @@ hosted_runtime_advance :: proc(
 		hosted_dispatch_tick(state, now_ns)
 		hosted_dispatch_scheduled_wakes(state, now_ns)
 	}
+	reconcile_before := rt.stats.reconcile_nodes_visited
+	layout_before := rt.stats.layout_nodes_visited
+	paint_before := rt.stats.paint_nodes_visited
 	if rt.invalidated {
-		result.root = hosted_root_describe(state)
+		// Description cost is measured here rather than inferred from the
+		// presenter's whole-step sample: live-resize acceptance needs to know
+		// whether layout or presentation dominates a drag frame.
+		describe_start := time.tick_now()
+		result.root = hosted_root_describe(state, &result.description_passes)
+		result.description_ns = u64(max(0, time.duration_nanoseconds(time.tick_diff(describe_start, time.tick_now()))))
 		result.description_built = true
 	} else if ui, ready := begin_presentation_frame(rt); ready {
 		end_presentation_frame(&ui)
 	}
+	result.reconcile_nodes_visited = rt.stats.reconcile_nodes_visited - reconcile_before
+	result.layout_nodes_visited = rt.stats.layout_nodes_visited - layout_before
+	result.paint_nodes_visited = rt.stats.paint_nodes_visited - paint_before
 	result.render_required = state.renderable && frame_needs_submission(rt)
 	result.has_more_work = rt.invalidated
 	result.next_wake_ns = hosted_runtime_next_deadline(state, now_ns)

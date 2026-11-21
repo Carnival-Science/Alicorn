@@ -155,3 +155,14 @@ five-artifact bundles.
 3. Snap Layouts hover, theme/contrast switches, and trackpad inertia remain
    OS-owned interactions; their message-path survival is covered, the feel is
    not.
+
+## Follow-up: presentation latency (Stage D slice 5)
+
+This record answers "does a frame land during the drag"; it does not say how
+quickly one lands after each size change. Stage D slice 5 measured that interval
+and found up to ~16 ms of compositor wait on the hosted path before a new size
+was presented, then added an opt-in message-driven geometry dispatch for the
+hosted host. The per-metric tables, raw CSVs, and the 2.6 ms post-fix result are
+in
+[live-resize presentation latency](issue-211-live-resize-performance-windows-2026-11-20.md).
+The assertions in this document are unchanged and still pass.

@@ -43,6 +43,12 @@ MOVE_TIMER_INTERVAL_MS :: 17
 Cause :: enum {
 	Expose,
 	Timer,
+	// Geometry is an opt-in dispatch from SDL's queued WINDOW_RESIZED /
+	// WINDOW_PIXEL_SIZE_CHANGED event while a modal move/size loop owns the
+	// thread. It exists so a host can adopt a new drawable size at the message
+	// instead of waiting for the compositor's next exposure, which is the
+	// interval during which the desktop still stretches the previous frame.
+	Geometry,
 }
 
 // Ops is the renderer-side contract. All callbacks are optional; a core with no
@@ -79,6 +85,10 @@ Counters :: struct {
 	// Re-entrancy guard observations.
 	deferred_exposes: u64,
 	deferred_timer_ticks: u64,
+	// Opt-in geometry dispatch from SDL's queued resize events.
+	geometry_events: u64,
+	geometry_frames: u64,
+	deferred_geometry_events: u64,
 }
 
 Slot_State :: struct {
@@ -90,6 +100,15 @@ Slot_State :: struct {
 	move_active: bool,
 	move_timer_active: bool,
 	move_hwnd: rawptr,
+	// geometry_message_ns timestamps the last window-position message that
+	// changed the outer size. A live frame that adopts new geometry reports the
+	// interval from that message to its present: it is the window in which the
+	// desktop compositor still holds (and stretches) the previous frame. The
+	// recorded width/height suppress timestamps for pure moves, where the size
+	// does not change.
+	geometry_message_ns: u64,
+	geometry_message_cx: i32,
+	geometry_message_cy: i32,
 }
 
 // Core is a zero-initialized value the host owns for the window lifetime.
@@ -109,6 +128,10 @@ Core :: struct {
 	counters: Counters,
 	windows_hook_installed: bool,
 	event_watch_installed: bool,
+	// geometry_dispatch opts a host into presenting from SDL's queued resize
+	// event inside a modal loop. Off by default: a host whose renderer redraws
+	// on exposure alone keeps its pre-existing policy.
+	geometry_dispatch: bool,
 }
 
 // live_resize_now is the shared monotonic clock for the live-resize paths. It is
@@ -251,6 +274,7 @@ live_resize_service :: proc(core: ^Core, slot: Slot, now_ns: u64, cause: Cause) 
 		core.pending = true
 		core.pending_slot = slot
 		if cause == .Expose { core.counters.deferred_exposes += 1 }
+		else if cause == .Geometry { core.counters.deferred_geometry_events += 1 }
 		else { core.counters.deferred_timer_ticks += 1 }
 		return
 	}
@@ -276,6 +300,19 @@ live_resize_reconcile :: proc(core: ^Core) {
 	}
 }
 
+// live_resize_set_geometry_dispatch opts the host into adopting geometry from
+// SDL's queued resize events during a modal move/size loop. Call it after start
+// and before any window can enter the loop.
+live_resize_set_geometry_dispatch :: proc(core: ^Core, enabled: bool) {
+	if core != nil { core.geometry_dispatch = enabled }
+}
+
+live_resize_slot_move_active :: proc(core: ^Core, slot: Slot) -> bool {
+	if core == nil { return false }
+	index := slot_index(slot)
+	return index >= 0 && core.slots[index].active && core.slots[index].move_active
+}
+
 // live_resize_stop_slot ends one slot's move participation and kills its timer.
 live_resize_stop_slot :: proc(core: ^Core, slot: Slot) {
 	if core == nil { return }
@@ -299,10 +336,17 @@ live_resize_event_watch :: proc "c" (userdata: rawptr, event: ^sdl3.Event) -> bo
 	// and that event is delivered on the main thread.
 	context = runtime.default_context()
 	if event == nil { return true }
-	if event.type != .WINDOW_EXPOSED || event.window.data1 != 1 { return true }
 	core := cast(^Core)userdata
 	if core == nil || !core.active { return true }
-	context = runtime.default_context()
+	if event.type == .WINDOW_RESIZED || event.type == .WINDOW_PIXEL_SIZE_CHANGED {
+		if !core.geometry_dispatch { return true }
+		slot, found := live_resize_slot_for_window_id(core, event.window.windowID)
+		if !found || !live_resize_slot_move_active(core, slot) { return true }
+		core.counters.geometry_events += 1
+		live_resize_service(core, slot, live_resize_now(), .Geometry)
+		return true
+	}
+	if event.type != .WINDOW_EXPOSED || event.window.data1 != 1 { return true }
 	slot, found := live_resize_slot_for_window_id(core, event.window.windowID)
 	if !found { return true }
 	core.counters.expose_events += 1
@@ -317,6 +361,27 @@ live_resize_note_presented_frame :: proc(core: ^Core, cause: Cause) {
 	if core == nil { return }
 	switch cause {
 	case .Expose: core.counters.expose_frames += 1
+	case .Geometry: core.counters.geometry_frames += 1
 	case .Timer:
 	}
+}
+
+// live_resize_geometry_message_ns returns the timestamp of the last window
+// position message that changed a slot's outer size, or zero when the platform
+// does not provide one. Hosts compare it with their present time to report the
+// interval during which the compositor held the previous-size frame.
+live_resize_geometry_message_ns :: proc(core: ^Core, slot: Slot) -> u64 {
+	if core == nil { return 0 }
+	index := slot_index(slot)
+	if index < 0 { return 0 }
+	return core.slots[index].geometry_message_ns
+}
+
+// live_resize_clear_geometry_message_ns retires a consumed geometry timestamp so
+// an unrelated later frame cannot re-report the same message's age.
+live_resize_clear_geometry_message_ns :: proc(core: ^Core, slot: Slot) {
+	if core == nil { return }
+	index := slot_index(slot)
+	if index < 0 { return }
+	core.slots[index].geometry_message_ns = 0
 }

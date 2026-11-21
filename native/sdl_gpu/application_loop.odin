@@ -217,6 +217,7 @@ run_application_loop :: proc(
 		inspector=inspector,
 		debug_bounds=debug_bounds,
 		native_menu=native_menu,
+		trace=native_live_resize_trace_requested(),
 	}
 	if !native_live_resize_install(&live_resize_state) {
 		fail("SDL live-resize dispatch registration failed")

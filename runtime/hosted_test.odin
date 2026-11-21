@@ -423,6 +423,10 @@ test_hosted_runtime_step_resize_and_idle :: proc(t: ^testing.T) {
 	testing.expect(t, first.status == .Ok && first.description_built && first.render_required &&
 		app.descriptions >= 1 && app.descriptions <= HOSTED_DESCRIPTION_STABILIZATION_LIMIT,
 		"an invalidated hosted step runs one bounded description sequence, mirroring the native host")
+	testing.expect(t, first.description_ns > 0 && first.description_passes >= 1,
+		"a description step reports its CPU cost and stabilization pass count")
+	testing.expect(t, first.layout_nodes_visited > 0 && first.reconcile_nodes_visited > 0,
+		"a description step reports the retained-work deltas it accumulated")
 	commands, status := hosted_runtime_display_commands(&host)
 	testing.expect(t, status == .Ok && len(commands) > 0)
 	_ = hosted_runtime_frame_submission_succeeded(&host)
@@ -445,6 +449,8 @@ test_hosted_runtime_step_resize_and_idle :: proc(t: ^testing.T) {
 	resized := hosted_runtime_step(&host, 11)
 	rt, _ := hosted_runtime_borrow(&host)
 	testing.expect(t, resized.description_built && resized.render_required && viewport_bounds(rt) == Rect{0, 0, 300, 200})
+	testing.expect(t, resized.description_ns > 0 && resized.description_passes >= 1,
+		"the resize step's rebuilt description reports its own cost")
 	testing.expect(t, rt.presentation_scale_x == 1.5 && rt.presentation_scale_y == 2)
 	_ = hosted_runtime_frame_submission_succeeded(&host)
 	_ = hosted_runtime_set_renderable(&host, false)

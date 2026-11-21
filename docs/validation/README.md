@@ -7,6 +7,12 @@ the current project status.
 
 ## Current acceptance and platform limits
 
+- [Live-resize presentation latency — Windows (2026-11-20)](issue-211-live-resize-performance-windows-2026-11-20.md)
+  — per-frame inter-present latency, `WM_WINDOWPOSCHANGED`-to-present stretch
+  window, `wgpu.SurfaceConfigure` cost, description/layout cost, and
+  encode/submit on the identical scripted drag for hosted D3D12, hosted Vulkan,
+  and SDL_GPU; the opt-in geometry dispatch that cut D3D12's stretch window from
+  7.3 ms to 2.6 ms p50, and the Scratchpad comparison.
 - [Hosted font parity and the Pinned U+22EF control (2026-11-20)](issue-211-hosted-font-parity-ellipsis-windows-2026-11-20.md)
   – shared desktop font seeding across the SDL_GPU reference and hosted WebGPU,
   the per-run face/glyph diagnostics, the semantic `More_Horizontal` icon

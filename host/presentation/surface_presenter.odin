@@ -22,6 +22,19 @@ Hosted_Surface_Timing_Sample :: struct {
 	surface_present_ns: u64,
 	step_to_present_ns: u64,
 	input_to_submit_ns: u64,
+	// Live-resize attribution (Stage D slice 5). surface_reconfigure_ns is the
+	// accumulated CPU time the host spent in SurfaceConfigure since the previous
+	// presented frame, so a size change's swapchain cost lands on the frame it
+	// delayed. description_ns/passes and the *_nodes_visited deltas come from
+	// the Hosted_Step_Result that produced this frame. pre_present_ns is the
+	// host chrome hook cost inside the same step.
+	surface_reconfigure_ns: u64,
+	description_ns:        u64,
+	description_passes:    u32,
+	reconcile_nodes_visited: u64,
+	layout_nodes_visited:    u64,
+	paint_nodes_visited:     u64,
+	pre_present_ns:          u64,
 }
 
 @(private)
@@ -124,6 +137,17 @@ hosted_surface_presenter_state :: struct {
 	device_lost: bool,
 	timing_enabled: bool,
 	timing: ^hosted_surface_timing_buffer,
+	// last_sample retains the most recent recorded frame for post-step readers
+	// such as the live-resize trace seam. It is a copy, not part of the ring.
+	last_sample: Hosted_Surface_Timing_Sample,
+	has_last_sample: bool,
+	// SurfaceConfigure bookkeeping. A resize/outdated reconfigure is the
+	// swapchain-side cost a live drag pays per pixel-size change; pending_ns is
+	// attributed to the next presented frame.
+	configure_count: u64,
+	configure_total_ns: u64,
+	configure_last_ns: u64,
+	configure_pending_ns: u64,
 	// overlay_redraw requests one host-owned overlay frame (diagnostics HUD or
 	// retained-bounds inspection) without mutating the application Runtime or
 	// acknowledging a new application presentation.
@@ -202,7 +226,10 @@ hosted_surface_presenter_init :: proc(
 		free(state, allocator=state.allocator)
 		return .Invalid_Input
 	}
-	wgpu.SurfaceConfigure(surface, &state.configuration)
+	hosted_surface_configure(state)
+	// The initial configure is not a resize; it must not be attributed to the
+	// first presented frame's swapchain cost.
+	state.configure_pending_ns = 0
 	presenter.state = rawptr(state)
 	if status := alicorn.hosted_runtime_request_presentation(hosted, "WebGPU presenter attached"); status != .Ok {
 		_ = hosted_surface_presenter_destroy(presenter)
@@ -245,7 +272,7 @@ hosted_surface_presenter_resize :: proc(
 	// A resize racing a backend removal must not configure a surface against
 	// the lost parent device; recovery recreates the surface instead.
 	if state.device_lost { return .Ok }
-	wgpu.SurfaceConfigure(state.surface, &state.configuration)
+	hosted_surface_configure(state)
 	if status := alicorn.hosted_runtime_set_renderable(state.hosted, state.visible); status != .Ok {
 		return .Invalid_Input
 	}
@@ -350,8 +377,12 @@ hosted_surface_presenter_step_with_hook :: proc(
 	if state.timing_enabled { timing_start = time.tick_now() }
 	step = alicorn.hosted_runtime_live_step(state.hosted, now_ns) if live else alicorn.hosted_runtime_step(state.hosted, now_ns)
 	if step.status != .Ok { return step, .Invalid_Input }
+	pre_present_ns: u64
 	if hook != nil {
+		hook_start: time.Tick
+		if state.timing_enabled { hook_start = time.tick_now() }
 		hook(hook_data)
+		if state.timing_enabled { pre_present_ns = hosted_surface_timing_elapsed_ns(hook_start) }
 	}
 	app_frame_required := alicorn.frame_needs_submission(state.runtime)
 	step.render_required = state.visible && state.drawable && (app_frame_required || state.overlay_redraw)
@@ -379,9 +410,23 @@ hosted_surface_presenter_step_with_hook :: proc(
 	}
 	presentation = hosted_surface_present_pending(presenter, &timing_sample)
 	if presentation == .Ok || presentation == .No_Frame { state.overlay_redraw = false }
+	if presentation == .Ok {
+		// Attribute the swapchain reconfigure that this frame had to complete.
+		// A configure that produced no frame stays pending for the next present.
+		timing_sample.surface_reconfigure_ns = state.configure_pending_ns
+		state.configure_pending_ns = 0
+	}
 	if state.timing_enabled && timing_sample.submission_serial != 0 {
 		timing_sample.step_to_present_ns = hosted_surface_timing_elapsed_ns(timing_start)
+		timing_sample.pre_present_ns = pre_present_ns
+		timing_sample.description_ns = step.description_ns
+		timing_sample.description_passes = step.description_passes
+		timing_sample.reconcile_nodes_visited = step.reconcile_nodes_visited
+		timing_sample.layout_nodes_visited = step.layout_nodes_visited
+		timing_sample.paint_nodes_visited = step.paint_nodes_visited
 		hosted_surface_timing_record(state.timing, timing_sample)
+		state.last_sample = timing_sample
+		state.has_last_sample = true
 	}
 	return
 }
@@ -459,6 +504,34 @@ hosted_surface_presenter_timing_overwritten :: proc(presenter: ^Hosted_Surface_P
 	return state.timing.overwritten
 }
 
+// hosted_surface_presenter_last_timing copies the most recent presented frame's
+// timing sample without draining the ring. The live-resize trace seam reads it
+// once per modal-loop frame; --timings still owns the ring's consumer role.
+hosted_surface_presenter_last_timing :: proc(
+	presenter: ^Hosted_Surface_Presenter,
+) -> (sample: Hosted_Surface_Timing_Sample, ok: bool) {
+	state := hosted_surface_state(presenter)
+	if state == nil || !state.has_last_sample { return }
+	return state.last_sample, true
+}
+
+// Hosted_Surface_Configuration_Stats reports swapchain reconfiguration work:
+// how many SurfaceConfigure calls this presenter performed, the last one's CPU
+// cost, and the running total. The initial configure is included.
+Hosted_Surface_Configuration_Stats :: struct {
+	configures: u64,
+	last_ns:    u64,
+	total_ns:   u64,
+}
+
+hosted_surface_presenter_configuration_stats :: proc(
+	presenter: ^Hosted_Surface_Presenter,
+) -> (stats: Hosted_Surface_Configuration_Stats, ok: bool) {
+	state := hosted_surface_state(presenter)
+	if state == nil { return }
+	return {configures=state.configure_count, last_ns=state.configure_last_ns, total_ns=state.configure_total_ns}, true
+}
+
 // Hosted_Surface_Renderer_Stats is the shared presenter's retained-work
 // snapshot for the compositor passes. Counters are cumulative and are read
 // between frames, outside the measured encode/submit stages.
@@ -499,6 +572,18 @@ hosted_surface_presenter_poll :: proc(presenter: ^Hosted_Surface_Presenter) {
 }
 
 @(private)
+hosted_surface_configure :: proc(state: ^hosted_surface_presenter_state) {
+	if state == nil || state.surface == nil { return }
+	start := time.tick_now()
+	wgpu.SurfaceConfigure(state.surface, &state.configuration)
+	ns := hosted_surface_timing_elapsed_ns(start)
+	state.configure_count += 1
+	state.configure_last_ns = ns
+	state.configure_total_ns += ns
+	state.configure_pending_ns += ns
+}
+
+@(private)
 hosted_surface_present_pending :: proc(
 	presenter: ^Hosted_Surface_Presenter,
 	timing_sample: ^Hosted_Surface_Timing_Sample,
@@ -535,7 +620,7 @@ hosted_surface_present_pending :: proc(
 		// here would configure a surface against the lost parent device, so let
 		// the host's recovery drain own it instead.
 		if state.device_lost { return .Surface_Acquire_Failure }
-		wgpu.SurfaceConfigure(state.surface, &state.configuration)
+		hosted_surface_configure(state)
 		if state.wake != nil { state.wake(state.wake_data) }
 		return .Reconfigure_Required
 	case .Occluded:

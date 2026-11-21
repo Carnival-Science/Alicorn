@@ -12,6 +12,7 @@ import "core:c"
 import "core:fmt"
 import "core:math"
 import "core:mem"
+import "core:time"
 import "vendor:sdl3"
 import "vendor:wgpu"
 import sdl_accessibility "alicorn:host/sdl3/accessibility"
@@ -41,6 +42,14 @@ SDL3_WebGPU_Application_Step :: struct {
 	presentation: presentation_host.Hosted_Surface_Result,
 	has_more_work: bool,
 	next_wake_ns: u64,
+	// Live-frame instrumentation. timing is the presenter's sample for the
+	// frame this step presented (valid when has_timing). post_present_ns is the
+	// host-owned work this step performed after the presentation call (text
+	// input sync and accessibility projection), which the presenter sample
+	// cannot see. Read-only seams; they never affect frame policy.
+	timing:          presentation_host.Hosted_Surface_Timing_Sample,
+	has_timing:      bool,
+	post_present_ns: u64,
 }
 
 SDL3_WebGPU_Text_Input_State :: struct {
@@ -732,12 +741,14 @@ sdl3_webgpu_application_present :: proc(
 		live=live,
 	)
 	if step.status != .Ok { return {status=step.status, presentation=presentation} }
+	post_present_start := time.tick_now()
 	if !sdl3_webgpu_application_sync_text_input(application) {
 		return {status=.Invalid_Argument, presentation=presentation}
 	}
 	if rt, runtime_status := alicorn.hosted_runtime_borrow(&application.hosted); runtime_status == .Ok {
 		sdl3_webgpu_application_accessibility_sync(application, rt)
 	}
+	post_present_ns := u64(max(0, time.duration_nanoseconds(time.tick_diff(post_present_start, time.tick_now()))))
 	application.next_wake_ns = step.next_wake_ns
 	if presentation == .Retry_Later {
 		retry_ns := now_ns + 16_666_667
@@ -745,12 +756,20 @@ sdl3_webgpu_application_present :: proc(
 			application.next_wake_ns = retry_ns
 		}
 	}
-	return {
+	result := SDL3_WebGPU_Application_Step{
 		status=step.status,
 		presentation=presentation,
 		has_more_work=step.has_more_work,
 		next_wake_ns=application.next_wake_ns,
+		post_present_ns=post_present_ns,
 	}
+	if presentation == .Ok {
+		if sample, ok := presentation_host.hosted_surface_presenter_last_timing(&application.presenter); ok {
+			result.timing = sample
+			result.has_timing = true
+		}
+	}
+	return result
 }
 
 sdl3_webgpu_application_has_in_flight :: proc(application: ^SDL3_WebGPU_Application) -> bool {

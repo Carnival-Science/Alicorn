@@ -124,6 +124,8 @@ native_live_resize_redraw :: proc(state: ^Native_Live_Resize_State) {
 native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	if state == nil || !state.active { return }
 	frame_start := time.now()
+	state.last_frame = {}
+	build_before := state.timing.application_build_ns
 	native_host_scratch_reset(state.host_scratch)
 
 	current_metrics: Window_Metrics
@@ -223,7 +225,10 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	if command == nil { return }
 	swapchain: ^sdl3.GPUTexture
 	swap_w, swap_h: sdl3.Uint32
-	if !sdl3.AcquireGPUSwapchainTexture(command, state.window, &swapchain, &swap_w, &swap_h) {
+	acquire_start := time.now()
+	acquired := sdl3.AcquireGPUSwapchainTexture(command, state.window, &swapchain, &swap_w, &swap_h)
+	acquire_ns := u64(time.duration_nanoseconds(time.since(acquire_start)))
+	if !acquired {
 		_ = sdl3.CancelGPUCommandBuffer(command)
 		return
 	}
@@ -305,8 +310,9 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 		u64(time.duration_nanoseconds(time.since(encode_start))))
 	submit_start := time.now()
 	fence := sdl3.SubmitGPUCommandBufferAndAcquireFence(command)
+	submit_ns := u64(time.duration_nanoseconds(time.since(submit_start)))
 	native_timing_accumulate(&state.timing.gpu_submit_ns, &state.timing.gpu_submit_max_ns,
-		u64(time.duration_nanoseconds(time.since(submit_start))))
+		submit_ns)
 	if fence == nil { fail("SDL live-resize frame submission failed") }
 	flight := Native_In_Flight{fence=fence}
 	flight.serial = state.timing.gpu_submissions+1
@@ -343,7 +349,16 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	if state.max_in_flight != nil && len(state.in_flight^) > state.max_in_flight^ {
 		state.max_in_flight^ = len(state.in_flight^)
 	}
-	native_timing_add_frame(state.timing, u64(time.duration_nanoseconds(time.since(frame_start))))
+	frame_ns := u64(time.duration_nanoseconds(time.since(frame_start)))
+	native_timing_add_frame(state.timing, frame_ns)
+	state.last_frame = Native_Live_Frame_Sample{
+		valid=true,
+		build_ns=state.timing.application_build_ns-build_before,
+		acquire_ns=acquire_ns,
+		encode_ns=encode_elapsed,
+		submit_ns=submit_ns,
+		frame_ns=frame_ns,
+	}
 	if state.devtools_recorder != nil && state.devtools_cursor != nil && state.text_events != nil {
 		native_devtools_record_wake(
 			state.devtools_recorder, state.devtools_cursor, state.rt, state.timing, state.text_events,
@@ -369,6 +384,19 @@ print_window_metrics :: proc(label: string, metrics: Window_Metrics) {
 // SDL's live-resize dispatch runs while the platform's interactive sizing loop
 // has control. The shared core owns when a frame runs; this state keeps the host
 // references and the reference renderer's own live-resize telemetry.
+// Native_Live_Frame_Sample is the reference-side counterpart of the hosted
+// presenter's per-frame timing sample. build_ns is application description
+// work, acquire_ns is SDL's swapchain acquire (including any internal swapchain
+// resize), and encode/submit are the renderer's own command-buffer stages.
+Native_Live_Frame_Sample :: struct {
+	valid:      bool,
+	build_ns:   u64,
+	acquire_ns: u64,
+	encode_ns:  u64,
+	submit_ns:  u64,
+	frame_ns:   u64,
+}
+
 Native_Live_Resize_State :: struct {
 	active: bool,
 	window: ^sdl3.Window,
@@ -400,6 +428,13 @@ Native_Live_Resize_State :: struct {
 	// core owns the event watch, Windows modal-loop hook, per-window timer,
 	// re-entrancy guards, and the shared live-resize counters.
 	core: live_resize.Core,
+	// Stage D slice 5 per-frame trace. The reference host has no explicit
+	// swapchain reconfigure call: SDL performs any swapchain resize inside
+	// SDL_AcquireGPUSwapchainTexture, so acquire_ns is the comparable
+	// surface-reconfiguration cost on this path.
+	trace: bool,
+	last_frame: Native_Live_Frame_Sample,
+	last_present_ns: u64,
 	// Reference-renderer motion/submission accounting stays here.
 	live_resize_motion_samples: u64,
 	live_resize_gpu_submissions: u64,

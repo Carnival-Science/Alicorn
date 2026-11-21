@@ -169,7 +169,9 @@ public static class NativeWebGpuResizeValidation {
             string line;
             while ((line = reader.ReadLine()) != null) {
                 lock (Gate) { AllLines.Add(line); }
-                if (!DragActive || !line.StartsWith("live_resize_frame", StringComparison.Ordinal)) continue;
+                bool live = line.StartsWith("live_resize_frame", StringComparison.Ordinal) ||
+                            line.StartsWith("reference_live_resize_frame", StringComparison.Ordinal);
+                if (!DragActive || !live) continue;
                 var sample = new FrameSample { Line = line };
                 if (Target != IntPtr.Zero) {
                     int[] client = Client(Target);
@@ -242,7 +244,7 @@ $script:log = New-Object System.Collections.Generic.List[string]
 
 function Log([string]$text) {
     $script:log.Add($text)
-    Write-Output $text
+    Write-Host $text
 }
 
 function Record([string]$name, [string]$status, [string]$detail) {
@@ -257,6 +259,118 @@ function Wait-Until([scriptblock]$predicate, [int]$timeoutMs = 5000) {
         Start-Sleep -Milliseconds 40
     } while ([DateTime]::UtcNow -lt $deadline)
     return (& $predicate)
+}
+
+# Get-TraceValue pulls one `key=<integer>` field out of a live-resize trace
+# line. Both hosts print the same vocabulary for the shared metrics; the
+# reference prints `build_ns` where the hosted host prints `description_ns`.
+function Get-TraceValue([string]$line, [string]$key) {
+    if ($line -match "(?:^|\s)$([regex]::Escape($key))=(-?[0-9]+)(?:\s|$)") { return [int64]$Matches[1] }
+    return [int64]0
+}
+
+function Get-Percentile([double[]]$values, [double]$fraction) {
+    if ($null -eq $values -or $values.Count -eq 0) { return [double]0 }
+    $sorted = @($values | Sort-Object)
+    $index = [int][Math]::Floor($fraction * ($sorted.Count - 1))
+    if ($index -lt 0) { $index = 0 }
+    if ($index -ge $sorted.Count) { $index = $sorted.Count - 1 }
+    return [double]$sorted[$index]
+}
+
+function Format-Ms([double]$nanoseconds) {
+    return ('{0:F2}' -f ($nanoseconds / 1000000.0))
+}
+
+function Show-Distribution([string]$label, [double[]]$values, [string]$unit = 'ms') {
+    if ($null -eq $values -or $values.Count -eq 0) {
+        Log ("  {0,-26} n=0" -f $label)
+        return
+    }
+    $p50 = Get-Percentile $values 0.50
+    $p95 = Get-Percentile $values 0.95
+    $p99 = Get-Percentile $values 0.99
+    $max = ($values | Measure-Object -Maximum).Maximum
+    Log ("  {0,-26} n={1,-3} p50={2} {3} p95={4} {3} p99={5} {3} max={6} {3}" -f `
+        $label, $values.Count, (Format-Ms $p50), $unit, (Format-Ms $p95), (Format-Ms $p99), (Format-Ms $max))
+}
+
+# Measure-LiveGesture turns the per-frame trace captured during one scripted
+# drag into the metrics the acceptance asks for. It reports distributions rather
+# than pass/fail thresholds: the latency floor is OS/compositor-dependent and the
+# only hard invariant (aspect delta 0%, drawable tracks client) stays above.
+function Measure-LiveGesture([string]$name, $samples, [string]$backend) {
+    $rows = New-Object System.Collections.Generic.List[object]
+    foreach ($sample in $samples) {
+        $line = $sample.Line
+        $isReference = $line.StartsWith('reference_live_resize_frame')
+        $description = if ($isReference) { Get-TraceValue $line 'build_ns' } else { Get-TraceValue $line 'description_ns' }
+        $rows.Add([pscustomobject]@{
+            Gesture = $name
+            Backend = $backend
+            Host = if ($isReference) { 'sdl-gpu' } else { 'webgpu' }
+            Cause = (($line -split 'cause=', 2)[1] -split '\s', 2)[0]
+            IntervalNs = Get-TraceValue $line 'interval_ns'
+            GeometryToPresentNs = Get-TraceValue $line 'geometry_to_present_ns'
+            FrameNs = Get-TraceValue $line 'frame_ns'
+            ReconfigureNs = Get-TraceValue $line 'reconfigure_ns'
+            AdoptNs = Get-TraceValue $line 'adopt_ns'
+            DescriptionNs = $description
+            DescriptionPasses = Get-TraceValue $line 'description_passes'
+            ReconcileNodes = Get-TraceValue $line 'reconcile_nodes'
+            LayoutNodes = Get-TraceValue $line 'layout_nodes'
+            PaintNodes = Get-TraceValue $line 'paint_nodes'
+            PrePresentNs = Get-TraceValue $line 'pre_present_ns'
+            RuntimeStepNs = Get-TraceValue $line 'runtime_step_ns'
+            AcquireNs = Get-TraceValue $line 'acquire_ns'
+            EncodeNs = Get-TraceValue $line 'encode_ns'
+            SubmitNs = Get-TraceValue $line 'submit_ns'
+            PresentNs = Get-TraceValue $line 'present_ns'
+            PostPresentNs = Get-TraceValue $line 'post_present_ns'
+            PollNs = Get-TraceValue $line 'poll_ns'
+            PixelWidth = ([NativeWebGpuResizeValidation]::TracePixels($line))[0]
+            MeshRebuilds = (Get-TraceValue $line 'solid_mesh_rebuilds') + (Get-TraceValue $line 'text_mesh_rebuilds') + (Get-TraceValue $line 'surface_mesh_rebuilds')
+            Reconfigured = $line -match 'reconfigured=true'
+        })
+    }
+    $intervals = @($rows | Where-Object { $_.IntervalNs -gt 0 } | ForEach-Object { [double]$_.IntervalNs })
+    $geometryAges = @($rows | Where-Object { $_.GeometryToPresentNs -gt 0 } | ForEach-Object { [double]$_.GeometryToPresentNs })
+    $descriptions = @($rows | ForEach-Object { [double]$_.DescriptionNs })
+    $reconfigures = @($rows | Where-Object { $_.ReconfigureNs -gt 0 } | ForEach-Object { [double]$_.ReconfigureNs })
+    $adopts = @($rows | Where-Object { $_.AdoptNs -gt 0 } | ForEach-Object { [double]$_.AdoptNs })
+    $acquires = @($rows | ForEach-Object { [double]$_.AcquireNs })
+    $encodes = @($rows | ForEach-Object { [double]$_.EncodeNs })
+    $submits = @($rows | ForEach-Object { [double]$_.SubmitNs })
+    $frames = @($rows | ForEach-Object { [double]$_.FrameNs })
+    $prePresent = @($rows | ForEach-Object { [double]$_.PrePresentNs })
+    $postPresent = @($rows | ForEach-Object { [double]$_.PostPresentNs })
+    $polls = @($rows | ForEach-Object { [double]$_.PollNs })
+    $overFrame = @($intervals | Where-Object { $_ -gt 16666667 }).Count
+    $overTwo = @($intervals | Where-Object { $_ -gt 33333333 }).Count
+    Log ("live_resize_metrics backend={0} gesture={1} host={2} frames={3}" -f `
+        $backend, $name, ($(if ($rows.Count -gt 0) { $rows[0].Host } else { 'none' })), $rows.Count)
+    Show-Distribution 'inter-present' $intervals
+    Log ("  {0,-26} over_16.7ms={1} over_33.3ms={2}" -f 'stale-frame gaps', $overFrame, $overTwo)
+    if ($name -eq 'resize') { Show-Distribution 'geometry-to-present' $geometryAges }
+    Show-Distribution 'description/layout' $descriptions
+    Show-Distribution 'surface reconfigure' $reconfigures
+    Show-Distribution 'geometry adoption' $adopts
+    Show-Distribution 'surface acquire' $acquires
+    Show-Distribution 'renderer encode' $encodes
+    Show-Distribution 'queue submit' $submits
+    Show-Distribution 'chrome pre-present' $prePresent
+    Show-Distribution 'host post-present' $postPresent
+    Show-Distribution 'device poll' $polls
+    Show-Distribution 'whole live frame' $frames
+    $layoutNodes = @($rows | ForEach-Object { [double]$_.LayoutNodes })
+    if (($layoutNodes | Measure-Object -Maximum).Maximum -gt 0) {
+        Show-Distribution 'layout nodes visited' $layoutNodes 'nodes'
+    }
+    if ($rows.Count -gt 1) {
+        $rebuilds = $rows[$rows.Count - 1].MeshRebuilds - $rows[0].MeshRebuilds
+        Log ("  {0,-26} {1} (first-to-last retained mesh rebuild counter delta)" -f 'mesh rebuilds in gesture', $rebuilds)
+    }
+    return $rows
 }
 
 # Midpoint of the contiguous HTCAPTION run in the integrated titlebar band.
@@ -440,6 +554,24 @@ try {
         }
     }
     Record-LiveFrame 'mid-drag drawable matches live client aspect' $aspectOk $aspectDetail
+
+    # ---- measured latency table (recorded, not enforced) -------------------
+    # The founder acceptance for this slice is a measured comparison, not a new
+    # pass/fail knob: the compositor floor differs by backend and desktop session.
+    # The hard invariants remain the C1 checks above.
+    $metricRows = New-Object System.Collections.Generic.List[object]
+    foreach ($row in (Measure-LiveGesture 'move' $moveFrames $Backend)) { $metricRows.Add($row) }
+    foreach ($row in (Measure-LiveGesture 'resize' $resizeFrames $Backend)) { $metricRows.Add($row) }
+    $csvPath = Join-Path $OutputDir "$Backend-live-resize-metrics-$stamp.csv"
+    $metricRows | Export-Csv -NoTypeInformation -LiteralPath $csvPath
+    $resizeIntervals = @($metricRows | Where-Object { $_.Gesture -eq 'resize' -and $_.IntervalNs -gt 0 } | ForEach-Object { [double]$_.IntervalNs })
+    $moveIntervals = @($metricRows | Where-Object { $_.Gesture -eq 'move' -and $_.IntervalNs -gt 0 } | ForEach-Object { [double]$_.IntervalNs })
+    $resizeGeometryAges = @($metricRows | Where-Object { $_.Gesture -eq 'resize' -and $_.GeometryToPresentNs -gt 0 } | ForEach-Object { [double]$_.GeometryToPresentNs })
+    Record 'live-resize latency recorded (no threshold)' 'PASS' ("resize inter-present p50={0} ms p95={1} ms | resize geometry-to-present p50={2} ms p95={3} ms | move inter-present p50={4} ms p95={5} ms | csv={6}" -f `
+        (Format-Ms (Get-Percentile $resizeIntervals 0.50)), (Format-Ms (Get-Percentile $resizeIntervals 0.95)), `
+        (Format-Ms (Get-Percentile $resizeGeometryAges 0.50)), (Format-Ms (Get-Percentile $resizeGeometryAges 0.95)), `
+        (Format-Ms (Get-Percentile $moveIntervals 0.50)), (Format-Ms (Get-Percentile $moveIntervals 0.95)), $csvPath)
+
 
     # Close through the native close path so the fixture prints its own verdict.
     [void][NativeWebGpuResizeValidation]::PostMessage($script:main, [NativeWebGpuResizeValidation]::WM_CLOSE, [UIntPtr]::Zero, [IntPtr]::Zero)
