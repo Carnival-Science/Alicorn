@@ -272,6 +272,24 @@ headless measurements; the [Mac native hello sample](benchmarks/native-hello-mac
 is a limited single-machine host observation. Neither is a cross-framework
 claim or a guarantee for an application workload.
 
+Update behavior is measured, not asserted. The
+[sparse-updates benchmark](benchmarks/issue190-sparse-updates-windows-2026-11-21.md)
+compares three authoring modes for the same tree — plain root invalidation,
+keyed per-row regions, and a hand-optimized app-owned revision path — across
+100 to 3,000 live controls and a 100k-logical-row virtualized list, with
+per-stage counters, fresh-runtime correctness checks, and true-idle proofs.
+It shows what explicit invalidation buys and what it does not: a changed label
+costs 8.98 ms under root invalidation versus 1.48 ms under keyed regions at
+1,000 controls (with measure, layout, paint, and composition staying O(1)),
+an identical-value write returns to true idle in 0.2 ms under regions, and
+hover is runtime-owned in every mode. It is equally explicit about the
+remaining O(n) stages — application description still scales with tree size
+even in region mode, and layout and display finalization currently rescan the
+full tree for local changes — so developers can judge both the win and the
+cost before adopting region bookkeeping. Raw samples and the fixture source
+are committed; the measurements are machine-specific by design, not
+cross-framework rankings.
+
 Start with [Getting Started](getting-started.md), then follow the currently
 available [example progression](../examples/README.md). The more detailed
 [application guide](guide.md) and [API reference](reference.md) remain the
