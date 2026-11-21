@@ -196,6 +196,15 @@ scenario and backend, 24 description passes per run, warmup excluded. The
 is the gate (the retained sequence array is still maintained in both arms, so
 the A/B cannot attribute its bookkeeping to the gate).
 
+Control check: the before arm reproduces the committed Phase 1 retained-work
+counters exactly for every scenario - typing 3,588 emitted / 3,566 reused / 22
+measure / 22 text shapes / 0 layout / 22 paint / 22 composition / 0 full
+finalize passes / 45 semantic changes / 564 persistent / 2,809 scratch, scroll
+and tabs 3,588 all reused / 189 / 1,863, selection 195 / 1,865, resize 482
+measure / 54 shapes / 420 layout / 180 paint / 232 composition / 2 full
+finalize / 875 / 2,697. The comparison is therefore against the same work the
+Phase 1 record measured, on the same fixture.
+
 ### Description p50/p95/p99, median of five runs (ms)
 
 Raw data:
