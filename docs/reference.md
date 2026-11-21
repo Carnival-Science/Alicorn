@@ -1373,6 +1373,100 @@ List_Box still counts options rather than headers. Up/Down, Home/End, type-ahead
 pointer activation, focus restoration, and scroll reveal cross group boundaries
 in declared order while skipping disabled options and headers.
 
+### Pattern conformance checks (testui)
+
+`alicorn:testui` includes opt-in pattern checks for reusable interaction
+contracts. They are test-only assertions over the semantics an application
+actually publishes. There is no runtime metadata, registry, or control marker:
+a checker resolves named parts from the semantic tree, verifies the static
+contract, then drives the same keyboard, pointer, and semantic paths a host
+uses. The first violated rule stops with `Pattern_Failure` containing the
+pattern, step, expected/actual values, part, `Semantic_ID`, retained key, causal
+ID/kind/action, and the bounded `Turn_Report`.
+
+```odin
+import "core:testing"
+import alicorn "alicorn:runtime"
+import testui  "alicorn:testui"
+
+parts := []testui.Pattern_Part{
+    {id=.Trigger, query=testui.Query{role=.Combo_Box, name="Theme", match_role=true, match_name=true}},
+    {id=.List, query=testui.Query{role=.List_Box, name="Theme", match_role=true, match_name=true}},
+    {id=.Target_Option, query=testui.Query{role=.List_Box_Option, name="Dark", match_role=true, match_name=true}},
+}
+report := testui.pattern_check(&h, testui.Pattern_Config{
+    kind=.Combobox_Listbox,
+    parts=parts,
+    expected_selected_key=2,
+    expect_selected_key=true,
+    expected_option_count=3,
+    expect_option_count=true,
+    expect_virtual_reveal=true,
+    support_semantic_expand=true,
+})
+testing.expect(t, report.ok, testui.pattern_failure_diagnostic(&report.failure))
+```
+
+Offsets are ordinary `Query` filters. Supply an explicit `semantic_id` with
+`semantic_id_valid=true` when the composition owns a deterministic ID, or a
+retained `key` with `key_valid=true` when that is the stable identity. A part
+may be omitted when the consumer does not publish that relationship; optional
+drive phases are then skipped. Two kinds are defined:
+
+| Kind | Required parts | Drive contract |
+| --- | --- | --- |
+| `.Combobox_Listbox` | `Trigger`, `Target_Option`; `List` optional but recommended | keyboard open (Space), Down/Up/Home/End with disabled skipping and wrap, Enter selection with focus restoration, Escape cancel, Tab close, pointer open/click parity, semantic Expand/Select parity, disabled-option rejection and type-ahead skipping, virtual reveal, distinct option identity across two owners (`Peer_Trigger`), selected identity across an option reorder (`Extra_Action`), and modal rejection (`Modal_Action` + `Dialog`) |
+| `.Modal_Dialog` | `Trigger`, `Dialog`, `Background_Action` | focus inside the opened dialog, Tab traversal wrap within its bounds, covered pointer and semantic activation rejection, Escape dismissal with opener focus restoration, pointer/keyboard/semantic primary-action parity (`Primary_Action`), mid-dialog focus recovery after a child is removed (`Transient_Action` + `Extra_Action`), and nested overlay ownership (`Nested_Action` + `Nested_Dialog`) |
+
+The combobox static contract covers the trigger role, `Focus`/`Expand` versus
+`Expanded`/`Collapse`, a realized `List_Box` parented to the trigger, a collection
+whose `logical_count` includes option count rather than headers, option
+`Selected`/`Disabled`/`Select`/`Focus` consistency, labeled-group parents,
+unique option keys and semantic identities, trigger value agreement, and the
+selected_id/selected-state agreement. The modal contract relies on the
+application's composed `Dialog` semantics plus the runtime's modal input and
+focus scope; it does not inspect private runtime modal state.
+
+Every interaction re-queries semantics after the turn. A stale `Element` is a
+failure, never a crash; `Did_Not_Stabilize` is reported with the turn
+diagnostics. Virtual time is explicit only. Some composed controls settle the
+popup on the description after the one that consumed activation; the checker
+uses `pattern_settle_description`, which forces one ordinary follow-up
+description without sleeping or advancing the clock.
+
+For a custom composition the negative recipe is the same API with a deliberately
+broken fixture:
+
+```odin
+report := testui.pattern_check(&negative_handle, config)
+testing.expect(t, !report.ok, "fault variant unexpectedly conformed")
+// Also assert the contract that must break: .Static_Contract, .Containment, or .Reorder_Identity.
+testing.expect(t, report.failure.step == .Static_Contract, testui.pattern_failure_diagnostic(&report.failure))
+```
+
+A control that publishes its own `Combo_Box` but does not adopt the stock Select
+accessibility handler sets `support_semantic_expand=false`. The checker then
+opens through pointer input while still verifying semantic option `Select`
+parity: the stock handler currently owns `Combo_Box` Expand requests, so a custom
+composition cannot receive that particular request. All other keyboard,
+pointer, type-ahead, disabled, identity, and static checks remain active.
+
+`testui.Element` now exposes relationship snapshots copied from the published
+semantic entity: `parent_semantic_id`, `collection_id`, `position_in_set`,
+`size_of_set`, `logical_count`, `tree_order`, `is_collection`,
+`is_virtual_item`, `collection_selected`, `collection_current`, and the owning
+collection's `collection_selected_id`/`collection_current_id`. These are value
+snapshots like every other `Element` field.
+
+The checks consume only published semantics and logical input. They do not
+simulate a platform accessibility bridge, OS IME candidate window, native menu
+or dialog, device driver, or pixels, and they are not a WCAG conformance suite
+or proof of native assistive-technology behavior. Keep those claims with the
+physical checks in `tools/validate_native_webgpu_ui.ps1`. The checks live in
+`odin test testui`, so external packages (for example a downstream AliKit
+consumer) can import `alicorn:testui` and apply the same API to their own
+composition.
+
 ### Icons
 
 Built-in indicators use embedded antialiased Reicon filled coverage masks and
