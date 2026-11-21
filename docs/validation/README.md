@@ -12,6 +12,12 @@ the current project status.
   `Roving_List`/`Roving_Grid` patterns, the `select_parts` and AliKit icon-picker
   adoptions, the justified `tree_view` skip, and positive/negative coverage
   including disabled-focusable, no-tab-stop, and focus-escape faults.
+- [Issue #229 Phase 2 description reuse (2026-11-21)](issue-229-phase2-description-reuse-2026-11-21.md)
+  — exact retained-description and structure-sequence gates in `reconcile`;
+  field-by-field gate audit, `description_hash` coverage extensions, skip list,
+  ten new runtime tests including per-field fresh-runtime equivalence, paired
+  before/after across SDL_GPU/D3D12/Vulkan plus a high-churn scenario, and the
+  scaled expectation for the real 393-node Scratchpad frame.
 - [Issue #229 Phase 1 performance harness and baseline (2026-11-21)](issue-229-phase1-baseline-2026-11-21.md)
   — Scratchpad-shaped workload matrix (dense virtual editor, 1k-node tree, tabs,
   pinned gradient panel, focused field) across SDL_GPU, hosted D3D12, and hosted

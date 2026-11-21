@@ -1516,6 +1516,33 @@ The stage marks use a cycle counter calibrated once per process against
 record. `testui.Turn_Work.stage_timings_ns` exposes the same deltas per
 headless turn.
 
+### Description reuse
+
+`reconcile` keeps the last applied description on the retained node and
+compares the next pending description against it before doing any hashing or
+copying. The comparison is exact: it reads every field `copy_node_description`
+writes and every runtime-owned value that copy derives, so a match cannot be a
+hash collision. On a match the runtime skips the description hash, the field
+copy, dirty marking, measurement observation, layout-ancestor propagation, paint
+queueing, and the retained text-run decision; only the descriptor-dependent tail
+(semantic publication for nodes that own an entity, restore requests, region
+index, pointer-hit shape, and grid tracks) still runs. A description that
+differs in any field never reuses a product; it takes the ordinary copy path
+and refreshes measure, layout, paint, and semantics as before.
+
+The same pass also compares the emitted `(kind, id, parent)` sequence with the
+last reconciled sequence. A match proves every desired child list and the
+top-level root list are unchanged, so retirement, child-list reconciliation,
+and the order rebuild are skipped without hashing.
+
+`Frame_Stats.descriptions_retained_match` and
+`Frame_Stats.structure_sequence_matches` count those two gates; they are also
+exposed per headless turn through `testui.Turn_Work`. Building with
+`-define:ALICORN_DESCRIPTION_REUSE=0` compiles the same source with the
+pre-phase-2 copy-everything path for paired measurement or defect bisection.
+The [issue #229 phase 2 validation record](validation/issue-229-phase2-description-reuse-2026-11-21.md)
+has the field-coverage audit, the test matrix, and the before/after numbers.
+
 ### Pattern conformance checks (testui)
 
 `alicorn:testui` includes opt-in pattern checks for reusable interaction
