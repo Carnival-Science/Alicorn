@@ -673,6 +673,7 @@ rebuild_display :: proc(rt: ^Runtime) {
 	append_drag_preview(rt)
 	append_tooltip_overlay(rt)
 	rt.stats.composite_updates += 1
+	frontier_note_changed(rt, .Composite, 0)
 	rt.composition_rebuild = false
 	layout_finalize_display(rt, .Display_Structure_Rebuild)
 	record_trace(rt, .Composite, 0, "retained display list rebuilt after structure change")
@@ -1130,6 +1131,7 @@ update_paint :: proc(rt: ^Runtime) {
 				}
 			}
 			rt.stats.paint_updates += 1
+			frontier_note_changed(rt, .Paint, id)
 			has_backdrop_effect := paint_commands_have_backdrop_effect(node.paint[:])
 			if has_backdrop_effect != had_backdrop_effect {
 				if has_backdrop_effect { rt.retained_backdrop_effect_nodes += 1 }
@@ -1149,6 +1151,7 @@ update_paint :: proc(rt: ^Runtime) {
 				rt.stats.composition_nodes_visited += 1
 				rt.stats.stage_visits[.Composite] += 1
 				rt.stats.composite_updates += 1
+				frontier_note_changed(rt, .Composite, id)
 				record_trace(rt, .Composite, id, "retained display commands updated and finalized")
 			} else {
 				rt.stats.global_fallbacks += 1

@@ -340,6 +340,148 @@ inspector_text_run_line :: proc(sb: ^strings.Builder, node: ^Node) {
 	if fallback_count > 0 { fmt.sbprintln(sb) }
 }
 
+// frontier_why_touched answers the issue's second question for one node:
+// "why did changing this value touch this panel?" It reads only the bounded
+// capture and never infers application memory.
+frontier_why_touched :: proc(rt: ^Runtime, cause_id: u64, node: Node_ID) -> string {
+	if rt == nil { return "invalid runtime" }
+	if !INVALIDATION_FRONTIER_ENABLED {
+		return "frontier capture unavailable: build a debug runtime with ALICORN_INVALIDATION_FRONTIER=true"
+	}
+	capture, found := frontier_capture(rt, cause_id)
+	if !found { return fmt.tprintf("no frontier captured for cause #%d", cause_id) }
+	if node == 0 { return fmt.tprintf("cause #%d did not reference a retained node", cause_id) }
+	for subscriber, index in capture.subscribers[:capture.subscriber_count] {
+		if subscriber != node { continue }
+		if capture.region_key_length > 0 {
+			return fmt.tprintf("cause #%d invalidated region key %s at revision %d; node #%d is subscribed instance %d",
+				cause_id, frontier_key_text(&capture), capture.region_revision, node, index)
+		}
+		return fmt.tprintf("cause #%d resolved node #%d as subscribed instance %d", cause_id, node, index)
+	}
+	for ancestor, index in capture.ancestors[:capture.ancestor_count] {
+		if ancestor == node {
+			return fmt.tprintf("cause #%d reached node #%d as ancestor %d of subscribed region key %s; the invalidation propagated through it",
+				cause_id, node, index, frontier_key_text(&capture))
+		}
+	}
+	if capture.root_invalidations > 0 {
+		return fmt.tprintf("cause #%d requested a root invalidation; node #%d is inside the whole-tree scope", cause_id, node)
+	}
+	if capture.region_invalidations > 0 {
+		return fmt.tprintf("cause #%d invalidated region key %s but node #%d is neither a subscriber nor an ancestor; it is outside the declared frontier",
+			cause_id, frontier_key_text(&capture), node)
+	}
+	return fmt.tprintf("cause #%d has no captured region or root invalidation edge to node #%d", cause_id, node)
+}
+
+// frontier_inspect renders the novice-facing report for one captured cause.
+// Domain reason strings stay in the local trace ring; the report prints IDs,
+// counts, stage names, fallback reasons, and the copied region key only.
+frontier_inspect :: proc(rt: ^Runtime, cause_id: u64) -> string {
+	sb := strings.builder_make()
+	fmt.sbprintln(&sb, "Alicorn invalidation frontier")
+	if rt == nil {
+		fmt.sbprintln(&sb, "invalid runtime")
+		return strings.to_string(sb)
+	}
+	if !INVALIDATION_FRONTIER_ENABLED {
+		fmt.sbprintln(&sb, "capture unavailable: this is a release build or ALICORN_INVALIDATION_FRONTIER=false")
+		fmt.sbprintln(&sb, "build with -debug (the default gate) to record invalidation frontiers")
+		return strings.to_string(sb)
+	}
+	capture, found := frontier_capture(rt, cause_id)
+	if !found {
+		fmt.sbprintf(&sb, "no frontier captured for cause #%d (older than the bounded capture ring or no declared work)\n", cause_id)
+		return strings.to_string(sb)
+	}
+	summary := frontier_trace_summary(rt, cause_id)
+	cause_kind := fmt.tprintf("%v", capture.cause_kind)
+	if capture.cause_id == 0 { cause_kind = "unassigned" }
+	fmt.sbprintf(&sb, "cause #%d (%s, action=%d)\n", capture.cause_id, cause_kind, u32(capture.action_id))
+	fmt.sbprintf(&sb, "  trace window: #%d..#%d, events=%d, invalidations=%d\n",
+		capture.first_sequence, capture.latest_sequence, summary.events, capture.invalidations)
+	if capture.region_invalidations > 0 {
+		fmt.sbprintf(&sb, "  invalidated region: key=%s revision=%d key-hash=%d requests=%d\n",
+			frontier_key_text(&capture), capture.region_revision, capture.region_key_hash, capture.region_invalidations)
+		fmt.sbprintf(&sb, "  subscribers (%d): ", capture.subscriber_count)
+		frontier_append_nodes(&sb, capture.subscribers[:], capture.subscriber_count)
+		fmt.sbprintf(&sb, "\n  ancestors (%d): ", capture.ancestor_count)
+		frontier_append_nodes(&sb, capture.ancestors[:], capture.ancestor_count)
+		fmt.sbprintln(&sb)
+	} else if capture.root_invalidations > 0 {
+		fmt.sbprintf(&sb, "  invalidated: root (%d request(s)); every retained node is in scope\n", capture.root_invalidations)
+	} else {
+		fmt.sbprintln(&sb, "  invalidated: no region or root request was captured for this cause")
+	}
+	fmt.sbprintf(&sb, "  stage visits: description/reconcile=%d measure=%d layout=%d paint=%d composite=%d\n",
+		summary.visits[.Reconcile], summary.visits[.Measure], summary.visits[.Layout],
+		summary.visits[.Paint], summary.visits[.Composite])
+	fmt.sbprintf(&sb, "  changed outputs: description=%d measure=%d layout=%d paint=%d composite=%d\n",
+		capture.changed[.Description], capture.changed[.Measure], capture.changed[.Layout],
+		capture.changed[.Paint], capture.changed[.Composite])
+	total_changed := frontier_changed_total(&capture)
+	if total_changed == 0 && capture.invalidations > 0 {
+		fmt.sbprintln(&sb, "  description ran without a changed output: this cause visited stages but no retained output changed")
+	}
+	fmt.sbprintf(&sb, "  fallbacks: ")
+	frontier_append_fallbacks(&sb, &capture)
+	fmt.sbprintf(&sb, " (observed work=%d)\n", capture.fallback_work)
+	fmt.sbprintf(&sb, "  sampled nodes: reconcile=")
+	frontier_append_samples(&sb, &summary.samples[.Reconcile])
+	fmt.sbprintf(&sb, " measure=")
+	frontier_append_samples(&sb, &summary.samples[.Measure])
+	fmt.sbprintf(&sb, " layout=")
+	frontier_append_samples(&sb, &summary.samples[.Layout])
+	fmt.sbprintf(&sb, " paint=")
+	frontier_append_samples(&sb, &summary.samples[.Paint])
+	fmt.sbprintf(&sb, " composite=")
+	frontier_append_samples(&sb, &summary.samples[.Composite])
+	fmt.sbprintln(&sb)
+	last_changed := Frontier_Stage.Description
+	have_changed := false
+	for stage in Frontier_Stage {
+		if capture.changed[stage] == 0 { continue }
+		last_changed = stage
+		have_changed = true
+	}
+	if have_changed {
+		fmt.sbprintf(&sb, "  where work stopped: %s (last stage that produced a changed output)\n",
+			frontier_stage_name(last_changed))
+	} else if capture.invalidations > 0 {
+		fmt.sbprintln(&sb, "  where work stopped: before description output (the invalidation scheduled a description but nothing changed)")
+	} else {
+		fmt.sbprintln(&sb, "  where work stopped: no changed stage was captured")
+	}
+	for subscriber in capture.subscribers[:capture.subscriber_count] {
+		fmt.sbprintf(&sb, "  why node #%d was touched: %s\n", subscriber, frontier_why_touched(rt, cause_id, subscriber))
+	}
+	if total_changed > 0 {
+		for stage in Frontier_Stage {
+			count := capture.changed_node_count[stage]
+			if count == 0 { continue }
+			fmt.sbprintf(&sb, "  changed %s nodes: ", frontier_stage_name(stage))
+			frontier_append_nodes(&sb, capture.changed_nodes[stage][:], count)
+			fmt.sbprintln(&sb)
+		}
+	}
+	return strings.to_string(sb)
+}
+
+// inspector_append_frontiers adds the bounded frontier inventory to inspect().
+// Capture bundles that already include inspect() therefore include it too.
+inspector_append_frontiers :: proc(sb: ^strings.Builder, rt: ^Runtime) {
+	fmt.sbprintln(sb, "frontiers:")
+	if rt == nil { fmt.sbprintln(sb, "  invalid runtime"); return }
+	if !INVALIDATION_FRONTIER_ENABLED {
+		fmt.sbprintln(sb, "  capture disabled (release build or ALICORN_INVALIDATION_FRONTIER=false)")
+		return
+	}
+	if !frontier_append_recent(sb, rt, 12) {
+		fmt.sbprintln(sb, "  no causes captured")
+	}
+}
+
 inspect :: proc(rt: ^Runtime) -> string {
 	previous_suppression := false
 	if rt != nil {
@@ -409,6 +551,7 @@ inspect :: proc(rt: ^Runtime) -> string {
 			}
 		}
 	}
+	inspector_append_frontiers(&sb, rt)
 	for id in rt.order {
 		node, ok := rt.nodes[id]
 		if !ok { continue }

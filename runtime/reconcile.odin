@@ -1292,6 +1292,7 @@ reconcile :: proc(rt: ^Runtime) {
 			layout_measure_mark_dirty(rt, node)
 			queue_paint(rt, d.id)
 			mark_layout_ancestors(rt, d.id)
+			frontier_note_changed(rt, .Description, d.id)
 			record_trace(rt, .Reconcile, d.id, "new retained node")
 		} else {
 			hash_mark := perf_mark_begin()
@@ -1353,6 +1354,7 @@ reconcile :: proc(rt: ^Runtime) {
 				perf_add_mark(rt, .Reconcile_Hash, hash_mark)
 				reason := "description reused"
 				if description_changed { reason = "description changed" }
+				if description_changed { frontier_note_changed(rt, .Description, d.id) }
 				mark_dirty(node, reason, description_changed, layout_changed, paint_changed || layout_changed, composite_changed, rt.persistent_allocator)
 				if measurement_changed { layout_measure_mark_dirty(rt, node) }
 				if layout_changed { mark_layout_ancestors(rt, d.id) }
@@ -1540,6 +1542,7 @@ reconcile :: proc(rt: ^Runtime) {
 	record_frame_reconciled_trace(rt)
 	note_submission_cause(rt, rt.frame_cause)
 	if rt.invalidated { note_pending_work_cause(rt, rt.frame_cause) }
+	frontier_note_cause_end(rt, rt.frame_cause)
 	rt.frame_cause = Cause_Context{}
 	perf_add_mark(rt, .Reconcile, reconcile_mark)
 }
@@ -1579,6 +1582,7 @@ end_presentation_frame :: proc(ui: ^UI) {
 	record_trace(rt, .Composite, 0, "retained presentation frame flushed")
 	note_submission_cause(rt, rt.frame_cause)
 	if rt.invalidated { note_pending_work_cause(rt, rt.frame_cause) }
+	frontier_note_cause_end(rt, rt.frame_cause)
 	rt.frame_cause = Cause_Context{}
 	perf_finish_description(rt)
 }

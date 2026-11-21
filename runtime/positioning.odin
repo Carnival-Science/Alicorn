@@ -252,9 +252,11 @@ layout_positioned_children :: proc(rt: ^Runtime, parent: ^Node, inner: Rect, chi
 			dirty_set(&child.dirty, .Composite, true)
 			queue_paint(rt, id)
 			rt.stats.layout_updates += 1
+			frontier_note_changed(rt, .Layout, child.id)
 			record_trace(rt, .Layout, id, "positioned child bounds changed")
 		} else if dirty_has(child.dirty, .Layout) {
 			rt.stats.layout_updates += 1
+			frontier_note_changed(rt, .Layout, child.id)
 			record_trace(rt, .Layout, id, "positioned child layout hash changed")
 		}
 		if bounds_changed || clip_changed || dirty_has(child.dirty, .Layout) {
