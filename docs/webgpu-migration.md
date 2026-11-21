@@ -1,14 +1,17 @@
 # SDL_GPU to WebGPU migration
 
 Status: Phases 0-3 are largely complete on Windows and the shared renderer runs
-on native D3D12/Vulkan and in Chromium-family browsers. Phase 4 (desktop
-acceptance) and Phase 5 (SDL_GPU removal) have not started, and Phase 7
-(release readiness) remains open, so SDL_GPU is still the default, complete
-production renderer and the visual reference. The browser host (Phase 6) is in
-progress: demand-driven scheduling, input/composition, asynchronous clipboard,
-a bounded DOM/ARIA projection, and capability errors exist; physical IME and
-assistive-technology validation, clipboard permission interaction, multi-browser
-coverage, and actual device-loss recovery remain open.
+on native D3D12/Vulkan and in Chromium-family browsers. Phase 4 — In progress.
+Windows Scratchpad interactive parity and performance validated; sustained
+dogfooding, Punks, physical macOS/Linux sessions and WebGPU application
+packaging remain outstanding. Phase 5 (SDL_GPU removal) has not started, and
+Phase 7 (release readiness) remains open, so SDL_GPU is still the default,
+complete production renderer and the visual reference. The browser host
+(Phase 6) is in progress: demand-driven scheduling, input/composition,
+asynchronous clipboard, a bounded DOM/ARIA projection, and capability errors
+exist; physical IME and assistive-technology validation, clipboard permission
+interaction, multi-browser coverage, and actual device-loss recovery remain
+open.
 
 Hosted-runtime parity for issue #211 is complete through the recorded Windows
 slices. Stage A covers native menus, integrated chrome, dialogs, close
@@ -85,16 +88,16 @@ unvalidated; menus and titlebars are now covered by the Stage A slices. `paint_d
 | 3. GPU lifecycle | bounded asynchronous retirement, capture/readback, device loss/recreation and window teardown validated | Largely complete; genuine driver/OS loss remains open: image, custom-geometry, and backdrop resources have bounded asynchronous retirement and completion-driven release tests; async readback is exercised. Same-device compositor teardown/rebuild reproduces every RGBA pixel on Windows D3D12 and Vulkan from retained Runtime products. Browser recovery drains queue callbacks, recreates adapter/device/presenter with one immediate attempt plus three bounded retries, and requests retained repaint without UI re-description. Native SDL3 recovery now drains callbacks, preserves Hosted_Runtime/input state, abandons old device-bound renderer handles, recreates primary and secondary SDL surfaces, reacquires adapter/device, and reattaches both presenters. The synthetic `.Unknown` callback recovery smoke passes for primary and primary-plus-child windows on Windows D3D12 and Vulkan; see `docs/validation/webgpu-native-synthetic-recovery-windows-2026-11-17.md`. This exposed and fixed stale surface texture reuse and a lost-device resource-release panic. Renderer/WebGPU (6), presentation-host (6), and SDL3 host (11) tests pass; a shared reason policy routes `.Destroyed` and `.CallbackCancelled` away from automatic recovery while unexpected reasons use bounded retries. The full Windows `tools/check.ps1` also passes after fixing its SDL3 test invocation to use the pinned AccessKit compiler arguments. The fixture strict child smoke continues to pass on Windows Vulkan and D3D12. This is callback-path evidence only: it does not trigger actual driver/OS loss or validate real callback ordering. Physical keyboard/Unicode input, UIA activation, and auxiliary-window resize/close are now exercised on Windows D3D12 and Vulkan; see `docs/validation/native-webgpu-ui-interactive-windows-2026-11-19.md`. IME composition, clipboard shortcuts, genuine loss recovery, and
 device-loss resource behavior remain open; menus and titlebars moved to the
 Stage A slices. Browser callback-ordering research and the generated Odin JS correction are recorded in `dependencies/webgpu-toolchain.md`. Intentional `DeviceDestroy` callbacks remain separate and do not count as driver-loss evidence. The induced-backend-removal rung is now covered on Windows D3D12: a test-only wgpu-native export calls `ID3D12Device5::RemoveDevice()` on the live device, wgpu's DeviceLost callback fires with `.Unknown`, and the same recovery path recreates adapter/device/surfaces and presents a replacement frame in 122–164 ms; see `docs/validation/webgpu-native-backend-removal-windows-2026-11-19.md`. This is harness-induced, single-backend evidence, still not OS/driver-initiated; Windows TDR and physical macOS/Linux loss remain open |
-| 4. Desktop acceptance | full regression suite, pixel comparisons, performance, Scratchpad/Punks/AliKit dogfood, and packaging/launch evidence from an actual WebGPU application | Not started: the physical-session runbooks are in place — `docs/validation/hardware-validation-macos.md` (physical Apple Silicon, Metal, Retina), `docs/validation/hardware-validation-linux.md` (physical GPU, Wayland and X11, fractional scaling), and `docs/validation/hardware-validation-windows-highdpi.md` (per-monitor DPI and mixed-scale drags). Each requires a maintainer-run dated record; none has been recorded yet. The Windows induced-removal result in `docs/validation/webgpu-native-backend-removal-windows-2026-11-19.md` covers rung 3 of the loss ladder but is not desktop acceptance. The macOS `tools/build_native_release.sh` static-wgpu check packages 01_hello, an SDL_GPU consumer that does not import wgpu; it only proves the existing packaging contract (static SDL3, no leaked rpath) has not regressed. Desktop acceptance must additionally package and launch an actual WebGPU application with static wgpu-native plus AccessKit, and record that evidence |
+| 4. Desktop acceptance | full regression suite, pixel comparisons, performance, Scratchpad/Punks/AliKit dogfood, and packaging/launch evidence from an actual WebGPU application | Phase 4 — In progress. Windows Scratchpad interactive parity and performance validated; sustained dogfooding, Punks, physical macOS/Linux sessions and WebGPU application packaging remain outstanding. The physical-session runbooks are in place — `docs/validation/hardware-validation-macos.md` (physical Apple Silicon, Metal, Retina), `docs/validation/hardware-validation-linux.md` (physical GPU, Wayland and X11, fractional scaling), and `docs/validation/hardware-validation-windows-highdpi.md` (per-monitor DPI and mixed-scale drags). Each requires a maintainer-run dated record; none has been recorded yet. The Windows induced-removal result in `docs/validation/webgpu-native-backend-removal-windows-2026-11-19.md` covers rung 3 of the loss ladder but is not desktop acceptance. The macOS `tools/build_native_release.sh` static-wgpu check packages 01_hello, an SDL_GPU consumer that does not import wgpu; it only proves the existing packaging contract (static SDL3, no leaked rpath) has not regressed. Desktop acceptance must additionally package and launch an actual WebGPU application with static wgpu-native plus AccessKit, and record that evidence |
 | 5. SDL_GPU removal | delete production backend, legacy shader artifacts, switches and obsolete docs | Not started |
 | 6. Browser host | interaction, accessibility, text/IME, lifecycle and demand-driven scheduling complete | In progress: reusable demand-driven scheduling, host-side key mapping, DOM input routing, optional textarea-backed UTF-8/IME input, Hosted_Runtime surface presentation, and the reusable `Browser_Application` coordinator live in `host/web/`. Example 17's `ui.run` consumer builds for `js_wasm32`; its renderer-neutral host services now include an asynchronous Clipboard API adapter with explicit unsupported/permission/error results, an eight-request bound, a 1 MiB transfer bound, and shutdown cancellation. JS tests cover Unicode transfer, permission denial, unsupported APIs, size limits, and late promise settlement. A posted `Hosted_Waker` notification schedules one demand-driven frame and is delivered to `on_wake` on that frame's owner thread; no per-frame wake polling is used. Queued browser accessibility actions invoke `on_wake` on the owner thread, and Example 17 applies textbox `Set_Value` to its app-owned buffer; fresh browser validation confirms the semantic value updates. The clipboard adapter has not yet been exercised in a physical browser. `host/web/webgpu_run.odin` owns async browser adapter/device/surface setup and bounded recovery after unexpected loss; JS tests cover callback-driven retries without polling. Actual device loss/recovery is not physically validated. Headless tests cover the bounded DOM/ARIA model, Unicode selection, focus recovery, and secure-context/WebGPU capability errors. Physical IME and assistive-technology validation, browser clipboard permission interaction, actual device-loss recovery, and broader application dogfooding remain outstanding. A headless Chromium/SwiftShader CI job now executes the fixture's browser readback matrix from the `js_wasm32` artifact; Firefox and Safari remain untested, so multi-browser coverage is still open (see `docs/validation/webgpu-feasibility-ci-crossplatform-2026-11-19.md`) |
 | 7. Release readiness | docs, reproducible setup, CI and substantive shared-renderer web example | Not started |
 
 Phases 0-3 authorize bounded, testable renderer slices and now cover the hosted
 parity work recorded below; they do not authorize a wholesale renderer
-replacement. Desktop acceptance (Phase 4) and deletion of the SDL_GPU path
-(Phase 5) have not started, so SDL_GPU remains the default application renderer
-and the parity reference.
+replacement. Desktop acceptance (Phase 4) is in progress, and deletion of the
+SDL_GPU path (Phase 5) has not started, so SDL_GPU remains the default
+application renderer and the parity reference.
 
 ## Protected renderer invariants
 
@@ -5182,3 +5185,55 @@ the resize gesture (this slice's subject) passes everywhere.
 - Window movement (not resizing) still has no message-driven adoption; it does
   not stretch, and its interval is the drag cadence. The fixture reports 24
   mid-drag move frames on D3D12 and Vulkan.
+
+## Release blocker fix: browser package boundary (Windows, 2026-11-20)
+
+`tools/check_web_ui_package.ps1` failed on the `js_wasm32` fixture with
+`host/presentation/surface_presenter.odin(571): DevicePoll is not declared by
+wgpu`. The failure reproduced at base `b79ef57` and on the Stage A-D branch, so
+it blocked the v0.2.2 release check rather than coming from this slice.
+
+### Root cause
+
+The shared presenter's `hosted_surface_presenter_poll` called
+`wgpu.DevicePoll(device, false)` unconditionally. wgpu-native exposes
+`wgpuDevicePoll` and Odin's native `vendor:wgpu` binding declares it, but Odin's
+JS/WASM binding (`vendor/wgpu/wgpu.js` plus the generated copy that the browser
+build scripts patch with `tools/patch_odin_wgpu_js.js`) does not declare
+`DevicePoll` at all. That is correct: `DevicePoll(mode, timeout)` is a
+wgpu-native concept. Browser WebGPU has no device-poll entry point; the browser
+drives device lifetime through events and the queue, and Odin's JS wrapper
+already reports `InstanceProcessEvents` as unimplemented. The browser host does
+not need polling: the shared presenter registers
+`QueueOnSubmittedWorkDone(..., callback=hosted_surface_presenter_queue_done)`,
+the demand-driven scheduler dispatches it, and the recorded browser validation
+shows `queue work done status=Success`.
+
+Polling is therefore unnecessary on the web target; faking the native
+`DevicePoll(mode, timeout)` contract in the JS binding would invent semantics
+the browser does not have. The fix is a target split, not a binding patch.
+
+### Fix
+
+- `host/presentation/surface_present_native.odin` (`#+build !js`) now owns
+  `hosted_surface_presenter_poll` and keeps the existing
+  `wgpu.DevicePoll(state.device, false)` call byte-identically for the native
+  modal move/resize loop (`host/sdl3/live_resize_host.odin`).
+- `host/presentation/surface_present_web.odin` (`#+build js`) defines the same
+  symbol as a documented no-op, so every consumer still compiles on both
+  targets and the browser path relies on its existing asynchronous completion
+  callback. The shared `surface_presenter.odin` keeps only a pointer to the two
+  platform definitions.
+
+### Validation
+
+- `.\tools\check_web_ui_package.ps1 -Odin C:\odin\odin.exe` now passes and
+  writes `out\web_ui_package.wasm`; before the change it failed at
+  `surface_presenter.odin(571)`.
+- Native suites unchanged and green: runtime 421, host/presentation 7,
+  renderer/webgpu 9, host/web 14, host/sdl3 8, host/sdl3/live_resize 11.
+- Node host tests: `tools/test_webgpu_ui_host.js`,
+  `tools/test_web_scheduler.js`, `tools/test_accessibility_dom.js`, and
+  `tools/test_odin_wgpu_js_patch.js` pass.
+- `examples\17_browser_webgpu_ui\build.ps1 -Odin C:\odin\odin.exe` builds
+  `out\web\app.wasm` and applies the eight-chain callback patch.

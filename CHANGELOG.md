@@ -23,8 +23,10 @@ Compare: [v0.2.1...master](https://github.com/Carnival-Science/Alicorn/compare/v
   the numbered SDL_GPU examples (01-14 and `15_host_owned_sdl_gpu`), and the
   headless checks keep using SDL_GPU and do not require wgpu-native. Windows
   D3D12/Vulkan, macOS Metal CI, Linux lavapipe CI, and headless Chromium
-  SwiftShader exercise the shared fixtures. Desktop acceptance and SDL_GPU
-  removal have not started.
+  SwiftShader exercise the shared fixtures. Phase 4 — In progress. Windows
+  Scratchpad interactive parity and performance validated; sustained
+  dogfooding, Punks, physical macOS/Linux sessions and WebGPU application
+  packaging remain outstanding. SDL_GPU removal has not started.
 - **Retained positioned text.** `ui.positioned_text` places ordinary Text nodes
   at explicit surface-local coordinates, so rulers, meters, and timelines can
   label retained geometry without spacer cells or a parallel label-row layout.
@@ -219,6 +221,15 @@ Compare: [v0.2.1...master](https://github.com/Carnival-Science/Alicorn/compare/v
   error handler for the same request. Also restored `js_wasm32` guards, passed
   the Alicorn collection to point-marker validation, and kept CI SDL rpaths out
   of macOS bundles.
+- Fixed the browser package-boundary build. The shared presenter called
+  wgpu-native's `DevicePoll` even on `js_wasm32`, where Odin's JS bindings
+  deliberately do not declare it (`wgpuDevicePoll(mode, timeout)` is a
+  native-only API), so `tools/check_web_ui_package.ps1` failed with
+  `DevicePoll is not declared by wgpu`. The poll seam now splits by target:
+  native keeps the byte-identical `DevicePoll` retirement path used by modal
+  move/resize loops, and the browser target defines the same symbol as a
+  documented no-op because browser WebGPU delivers queue completion through the
+  event loop and the presenter's `QueueOnSubmittedWorkDone` callback.
 - Fixed magnetic tab dragging to stay inside the strip and to avoid vertical
   autoscroll during the gesture; disabled buttons no longer emit `Press`
   actions; custom segmented-control labels center correctly; stroked path end
@@ -281,9 +292,11 @@ Compare: [v0.2.1...master](https://github.com/Carnival-Science/Alicorn/compare/v
 ### Scope and known limitations
 
 - WebGPU is opt-in and experimental. SDL_GPU remains the default, complete
-  renderer and the parity reference. Phase 4 (desktop acceptance) and Phase 5
-  (SDL_GPU removal) have not started, and this release does not replace the
-  production renderer.
+  renderer and the parity reference. Phase 4 — In progress. Windows Scratchpad
+  interactive parity and performance validated; sustained dogfooding, Punks,
+  physical macOS/Linux sessions and WebGPU application packaging remain
+  outstanding. Phase 5 (SDL_GPU removal) has not started, and this release does
+  not replace the production renderer.
 - Hosted parity evidence is Windows-based. Browser evidence is Chromium-family;
   Firefox and Safari are untested. Browser native menus, dialog/close behavior,
   and drag-out are not implemented, the browser clipboard remains asynchronous,
@@ -292,12 +305,14 @@ Compare: [v0.2.1...master](https://github.com/Carnival-Science/Alicorn/compare/v
 - Physical macOS and Linux WebGPU runs are pending; those platforms have CI
   smoke evidence only. Genuine driver/OS device loss has not been triggered;
   the recorded recovery evidence is callback-path and harness-induced.
-- Two harness caveats are recorded for the current toolchain: Windows
-  PowerShell 5.1 can turn the AccessKit binding check's stderr progress into a
-  terminating error in `tools/test.ps1`, and `tools/check_web_ui_package.ps1`
-  fails to compile the wasm fixture on the `dev-2026-11-nightly:08539cd`
-  installation with `DevicePoll is not declared by wgpu`. Run the individual
-  stages directly, or use PowerShell 7, when reproducing a local run.
+- The hosted sRGB surface-format correction is reference parity through
+  non-sRGB swapchains, not a true sRGB output pipeline. A genuine sRGB
+  output-transfer path is a separate tracked change and is not part of v0.2.2.
+- One harness caveat remains for the current toolchain: Windows PowerShell 5.1
+  can turn the AccessKit binding check's stderr progress into a terminating
+  error in `tools/test.ps1`. Run the individual stages directly, or use
+  PowerShell 7, when reproducing a local run. The browser package-boundary
+  build now compiles on `dev-2026-11-nightly:08539cd`; see the Fixed section.
 - Alicorn remains experimental and API-unstable. This release does not promise
   production readiness or long-term API compatibility.
 

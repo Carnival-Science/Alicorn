@@ -561,15 +561,9 @@ hosted_surface_presenter_has_in_flight :: proc(presenter: ^Hosted_Surface_Presen
 	return state != nil && webgpu_renderer.WebGPU_Presenter_In_Flight(&state.renderer) > 0
 }
 
-// hosted_surface_presenter_poll retires finished submissions without waiting.
-// A host loop that is blocked inside a platform modal move/resize loop calls
-// this from its live frame path so queue completion callbacks still run and the
-// presenter's two-frame budget does not stay saturated.
-hosted_surface_presenter_poll :: proc(presenter: ^Hosted_Surface_Presenter) {
-	state := hosted_surface_state(presenter)
-	if state == nil || state.device == nil { return }
-	_ = wgpu.DevicePoll(state.device, false)
-}
+// hosted_surface_presenter_poll is platform-defined in surface_present_native.odin
+// and surface_present_web.odin: wgpu-native exposes DevicePoll, while browser
+// WebGPU delivers completion through the event loop instead.
 
 @(private)
 hosted_surface_configure :: proc(state: ^hosted_surface_presenter_state) {
