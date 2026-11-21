@@ -371,6 +371,45 @@ Group headers are not focusable; arrow keys, Home/End, and type-ahead move
 directly between options across group boundaries. Empty groups are skipped, and
 `disabled=true` on a group disables all of its options.
 
+### Roving focus for item sets
+
+A list, toolbar, or icon grid usually has one Tab stop even though it has many
+items. Keep the focused index in application state and use the pure
+`alicorn:runtime` roving model for the index math:
+
+```odin
+context := My_Roving_Context{items=app.items[:]}
+view := alicorn.Roving_View{
+	count=len(app.items),
+	columns=6,                    // list: 0 or 1
+	enabled=my_enabled_at,
+	data=rawptr(&context),
+	home_end=.Row,                // grid row; use .All for a list
+}
+if move, mapped := alicorn.roving_move_for_key(key); mapped {
+	if index := alicorn.roving_propose(view, app.focused, move); index >= 0 {
+		app.focused = index
+		app.reveal = true          // call virtual_list_ensure_visible later
+		alicorn.invalidate_root(rt, "focus moved")
+	}
+}
+```
+
+The model only proposes an enabled index; it returns `-1` at a boundary, when
+every remaining item in that direction is disabled, or when the application's
+focused index no longer fits the current item count. You still own selection,
+whether focus selects, reveal, activation, and focus restoration. After items
+are added or removed, re-clamp with `roving_clamp` and repair with
+`roving_nearest_enabled`.
+
+For accessibility, make exactly one representative the Tab stop: either the
+container (its collection `current_id` names the active item) or the active item
+itself. Disabled items stay non-focusable and publish no `Focus`/`Select`
+actions. `select_parts` uses the item shape; the AliKit icon picker uses the
+focusable container plus an active semantic identity. See the
+[reference](reference.md#roving-focus-model) for the full move table, policy
+fields, and the `Roving_List`/`Roving_Grid` testui checks.
+
 ## Describe layout with containers
 
 Calls are nested in the same order as the layout. Choose `.Row` for horizontal

@@ -7,6 +7,11 @@ the current project status.
 
 ## Current acceptance and platform limits
 
+- [Generic roving focus model and list/grid pattern checks (2026-11-21)](issue-225-roving-focus-2026-11-21.md)
+  — pure `alicorn:runtime` `Roving_View`/`roving_propose` index model, `testui`
+  `Roving_List`/`Roving_Grid` patterns, the `select_parts` and AliKit icon-picker
+  adoptions, the justified `tree_view` skip, and positive/negative coverage
+  including disabled-focusable, no-tab-stop, and focus-escape faults.
 - [Reusable accessibility and interaction pattern checks (2026-11-21)](issue-217-pattern-checks-2026-11-21.md)
   — test-only `alicorn:testui` conformance checks for a single-select
   list/combobox and a composed modal dialog; stock Select, custom userland

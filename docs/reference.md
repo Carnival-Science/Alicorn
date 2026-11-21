@@ -1422,6 +1422,83 @@ List_Box still counts options rather than headers. Up/Down, Home/End, type-ahead
 pointer activation, focus restoration, and scroll reveal cross group boundaries
 in declared order while skipping disabled options and headers.
 
+### Roving focus model
+
+`alicorn:runtime` exports a pure index model for non-Tab-stop item sets. It owns
+no runtime state, allocates nothing, and never changes application state: a
+caller supplies a value view of its current items and asks where a navigation
+key proposes focus to go.
+
+```odin
+context: My_Roving_Context
+view := alicorn.Roving_View{
+    count=len(matches),
+    columns=6,                 // 0/1 = linear list; >1 = grid stride
+    enabled=my_enabled_at,     // proc(data: rawptr, index: int) -> bool
+    data=rawptr(&context),
+    page=30,                   // optional Page_Up/Page_Down distance
+    wrap=false,                // stop at the boundary instead of wrapping
+    row_bounded=true,          // Left/Right stop at row edges
+    home_end=.Row,             // or .All
+}
+move, mapped := alicorn.roving_move_for_key(key)
+if mapped {
+    if index := alicorn.roving_propose(view, app.focused_index, move); index >= 0 {
+        app.focused_index = index       // caller applies the proposal
+        app.reveal_pending = true       // caller reveals and invalidates
+    }
+}
+```
+
+The model proposes only indexes. The application still owns the focused index,
+selection policy, whether focus changes selection, reveal through
+`virtual_list_ensure_visible`, activation, focus restoration, and invalidation.
+`roving_propose` returns `-1` when there is no move (a disabled-only direction,
+a boundary without wrap, a page size of zero, or a current index that is outside
+the view). It never returns a disabled index or the current index.
+
+| Move | Linear | Grid (`columns > 1`) |
+| --- | --- | --- |
+| `Left` / `Right` | `-1` / `+1` | `-1` / `+1`; `row_bounded` and `wrap=false` stop at the row edge |
+| `Up` / `Down` | `-1` / `+1` | `-columns` / `+columns` |
+| `Page_Up` / `Page_Down` | `-page` / `+page`; no proposal when `page <= 0` | same |
+| `Home` / `End` | first/last enabled item | row first/last when `home_end=.Row`, otherwise the whole set |
+
+Disabled items are skipped in the direction of travel. With `wrap=true`, a move
+past an edge continues from the opposite edge, and for a grid it may cross row
+edges even when `row_bounded` is set. The defaults reproduce the shipped
+icon-picker behavior: linear order, no wrap, no row bound, and whole-set
+Home/End; grid consumers pass `columns`, `page`, and `home_end=.Row`.
+
+`roving_clamp(view, index)` maps an index into the current count without
+consulting disabled state. `roving_first_enabled`, `roving_last_enabled`,
+`roving_first_enabled_from`, and `roving_nearest_enabled` repair focus after
+items are removed, reordered, or disabled. Callers re-clamp after a count
+change; the model deliberately does not hide dynamic membership behind
+retained state.
+
+`roving_move_for_key` maps `Application_Key` navigation values and
+`roving_move_for_text_key` maps `Application_Text_Navigation_Key` values. They
+do not map Return, Toggle, or editing keys: activation stays an application
+policy.
+
+Roving focus is an accessibility contract, not a new semantic tree. Publish one
+representative tab stop, either a focusable container whose collection
+`current_id` names the active item (the icon-picker and tree shape) or the
+active item itself (the `select_parts` popup shape). Keep disabled items
+non-focusable and without `Focus`/`Select` actions. The model changes index math
+only; it does not alter the published semantic structure.
+
+The copyable `select_parts` example and the AliKit icon picker both consume the
+model. `select_parts` projects its flat option order and wraps in declared order;
+the icon picker projects filtered matches, uses `columns` for the grid stride,
+and keeps its row-scoped Home/End. AliKit's `tree_view` remains on
+`tree_model`: that model owns stable item identities, loaded-window range
+requests, expansion, and parent focus, which a pure fully-known index view
+cannot express. The [issue #225 validation
+record](validation/issue-225-roving-focus-2026-11-21.md) has the adoption
+measurements and the boundary decision.
+
 ### Pattern conformance checks (testui)
 
 `alicorn:testui` includes opt-in pattern checks for reusable interaction
@@ -1466,6 +1543,34 @@ drive phases are then skipped. Two kinds are defined:
 | --- | --- | --- |
 | `.Combobox_Listbox` | `Trigger`, `Target_Option`; `List` optional but recommended | keyboard open (Space), Down/Up/Home/End with disabled skipping and wrap, Enter selection with focus restoration, Escape cancel, Tab close, pointer open/click parity, semantic Expand/Select parity, disabled-option rejection and type-ahead skipping, virtual reveal, distinct option identity across two owners (`Peer_Trigger`), selected identity across an option reorder (`Extra_Action`), and modal rejection (`Modal_Action` + `Dialog`) |
 | `.Modal_Dialog` | `Trigger`, `Dialog`, `Background_Action` | focus inside the opened dialog, Tab traversal wrap within its bounds, covered pointer and semantic activation rejection, Escape dismissal with opener focus restoration, pointer/keyboard/semantic primary-action parity (`Primary_Action`), mid-dialog focus recovery after a child is removed (`Transient_Action` + `Extra_Action`), and nested overlay ownership (`Nested_Action` + `Nested_Dialog`) |
+| `.Roving_List` | `Container`, optional `Trigger` and `Target_Option` | one Current item, one focus representative (container or item), arrow navigation and disabled skipping, wrap or boundary policy, Home/End scope, reveal, keyboard/pointer activation parity, optional popup close and Escape focus restoration |
+| `.Roving_Grid` | `Container`, optional `Trigger` and `Target_Option` | the same contract with `roving.columns` stride, `row_bounded` Left/Right, and row-scoped Home/End |
+
+The roving kinds require every logical item to be realized, because navigation
+between unrealized rows would otherwise look like a missing contract. Supply the
+consumer's own policy in `Pattern_Config.roving`:
+
+```odin
+report := testui.pattern_check(&h, testui.Pattern_Config{
+    kind=.Roving_Grid,
+    parts=parts, // Container, Target_Option, optional Trigger/Disabled_Option
+    roving=testui.Pattern_Roving_Config{
+        focus=.Container,       // or .Item
+        columns=6,
+        row_bounded=true,
+        home_end_row=true,
+        expect_reveal=true,
+        expect_selection=true,
+    },
+})
+```
+
+The checker asserts one Current item and one focused representative after every
+turn. `Focus_Contract` covers a disabled item that is focusable and a set with no
+focusable representative; `Containment` covers focus leaving the roving
+container on an arrow key. A popup composition sets `activation_closes=true`;
+the checker then verifies the container is no longer realized and the Trigger
+regains focus, and `expect_escape_restore=true` adds the Escape path.
 
 The combobox static contract covers the trigger role, `Focus`/`Expand` versus
 `Expanded`/`Collapse`, a realized `List_Box` parented to the trigger, a collection
