@@ -1121,8 +1121,9 @@ same builder. Rectangles, thick segments, 16-triangle circles, and six-vertex
 masked point markers preserve payload ordering, clipping bounds, command
 translation, scale, opacity, and the established cyan waveform treatment. The
 [#200 rectangle-batch](../validation/issue-200-rectangles-windows-2026-11-20.md)
-record carries the native readback, wxWidgets comparison, and repaint-cost
-evidence for the bounded rectangle payload on D3D12 and Vulkan. The
+and [#201 dense-marker](../validation/issue-201-markers-windows-2026-11-20.md)
+records carry the native readback, wxWidgets comparison, and repaint/isolated
+cost evidence for those payloads on D3D12 and Vulkan. The
 WebGPU compositor dispatches those commands at their original paint-list
 indices, alongside solid surfaces, text, icons, and images. No public drawing
 API was added.
