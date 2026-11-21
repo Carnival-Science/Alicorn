@@ -13,6 +13,13 @@ the current project status.
   combobox, app-owned modal, six must-fail negative controls, semantic
   relationship snapshots on `Element`, and explicit published-semantics /
   synthetic-input limits.
+- [Issue #218 composable Select parts pilot (2026-11-21)](issue-218-parts-pilot-2026-11-21.md)
+  — GO for a copyable userland Select package with zero new runtime APIs and
+  NO-GO for shared-behavior/framework extraction in this issue; stock-versus-
+  parts semantic parity, turn-work/allocation/latency comparisons, two
+  appearances with stable identity, an application-owned Recent extension, and
+  the recorded collection-parent, generic popup keyboard, reveal, pointer,
+  roving-focus, type-ahead, focus-timing, and 2D-value core candidates.
 - [Shape primitives — Windows (2026-11-20)](issue-110-shapes-windows-2026-11-20.md)
   — circle/arc/Bezier pixel probes at four DPI scales, clipping and
   translucent overlap, circular pointer pass-through, keyboard activation,

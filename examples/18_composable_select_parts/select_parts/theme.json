@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "contract": "0.2",
+  "extends": "alicorn.base",
+  "tokens": {
+    "vendor.acme.parts.trigger": {
+      "$type": "color",
+      "$value": {"colorSpace": "srgb", "components": [0.115, 0.14, 0.19], "alpha": 1}
+    },
+    "vendor.acme.parts.popup": {
+      "$type": "color",
+      "$value": {"colorSpace": "srgb", "components": [0.075, 0.09, 0.125], "alpha": 1}
+    },
+    "vendor.acme.parts.row_hover": {
+      "$type": "color",
+      "$value": {"colorSpace": "srgb", "components": [0.16, 0.19, 0.25], "alpha": 1}
+    },
+    "vendor.acme.parts.row_selected": {
+      "$type": "color",
+      "$value": {"colorSpace": "srgb", "components": [0.14, 0.29, 0.42], "alpha": 1}
+    },
+    "vendor.acme.parts.accent": {
+      "$type": "color",
+      "$value": {"colorSpace": "srgb", "components": [0.28, 0.78, 0.9], "alpha": 1}
+    },
+    "vendor.acme.parts.focus": {
+      "$type": "color",
+      "$value": {"colorSpace": "srgb", "components": [0.97, 0.72, 0.31], "alpha": 1}
+    },
+    "vendor.acme.parts.badge": {
+      "$type": "color",
+      "$value": {"colorSpace": "srgb", "components": [0.32, 0.23, 0.55], "alpha": 1}
+    },
+    "example.parts.window": {
+      "$type": "color",
+      "$value": {"colorSpace": "srgb", "components": [0.04, 0.05, 0.072], "alpha": 1}
+    }
+  },
+  "roles": {
+    "extensions": {
+      "vendor.acme.parts.trigger": {"$type": "color", "$value": "{vendor.acme.parts.trigger}"},
+      "vendor.acme.parts.popup": {"$type": "color", "$value": "{vendor.acme.parts.popup}"},
+      "vendor.acme.parts.row_hover": {"$type": "color", "$value": "{vendor.acme.parts.row_hover}"},
+      "vendor.acme.parts.row_selected": {"$type": "color", "$value": "{vendor.acme.parts.row_selected}"},
+      "vendor.acme.parts.accent": {"$type": "color", "$value": "{vendor.acme.parts.accent}"},
+      "vendor.acme.parts.focus": {"$type": "color", "$value": "{vendor.acme.parts.focus}"},
+      "vendor.acme.parts.badge": {"$type": "color", "$value": "{vendor.acme.parts.badge}"},
+      "app.example.parts_window": {"$type": "color", "$value": "{example.parts.window}"}
+    }
+  }
+}
