@@ -75,8 +75,9 @@ redescribes at a constant width; `idle` polls a settled tree.
 ```powershell
 . .\tools\common.ps1
 $Odin = Resolve-AlicornOdin
+$AccessKit = Get-AlicornAccessKit
 & $Odin build benchmarks\diagnostics\issue158_percent_width_benchmark.odin `
-    -file -o:speed -collection:alicorn=. `
+    -file -o:speed -collection:alicorn=. @($AccessKit.CompilerArguments) `
     -out:out\issue158_percent_width_benchmark.exe
 1..5 | ForEach-Object { .\out\issue158_percent_width_benchmark.exe }
 ```

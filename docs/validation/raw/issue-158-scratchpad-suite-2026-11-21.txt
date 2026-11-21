@@ -1,0 +1,36 @@
+scratchpad=adb28fc (branch main; pre-existing generated-theme edits preserved)
+alicorn=f8454f0 (candidate override; lock still pins 0beff9d)
+odin=dev-2026-11-nightly:08539cd
+command=go run ./cmd/alicorn-dev test --alicorn-root <alicorn> --allow-alicorn-revision --odin <odin> --out out/alicorn-158-validation
+host=Windows 10 Home 22H2 build 19045; Ryzen 5 7600X; 15.2 GiB RAM
+
+--- go unit packages and Caliber bridge ---
+ok  	scratchpad/application	(cached)
+ok  	scratchpad/cmd/alicorn-dev	(cached)
+?   	scratchpad/cmd/fragmentbench	[no test files]
+?   	scratchpad/cmd/treebench	[no test files]
+ok  	scratchpad/commands	(cached)
+ok  	scratchpad/document	(cached)
+ok  	scratchpad/editor	(cached)
+ok  	scratchpad/language	(cached)
+ok  	scratchpad/language/markdown	(cached)
+ok  	scratchpad/language/treesitter	(cached)
+?   	scratchpad/out/capture/final-sdlgpu/workspace	[no test files]
+?   	scratchpad/out/capture/highlight-sdlgpu/workspace	[no test files]
+?   	scratchpad/out/seed_session	[no test files]
+?   	scratchpad/sourcecontrol	[no test files]
+?   	scratchpad/tmp-dump-table	[no test files]
+?   	scratchpad/tools/check-alicorn-boundary	[no test files]
+ok  	scratchpad/workspace	(cached)
+ok  	scratchpad-caliber-bridge	(cached)
+?   	scratchpad-caliber-bridge/cshared	[no test files]
+
+--- Caliber bridge/lifecycle ---
+Finished 13 tests in 11.7672047s. All tests were successful.
+
+--- frontend suite ---
+UI_DOGFOOD scene= settings-appearance  warm_rebuilds= 32  persistent_live_delta= 14  persistent_alloc_calls= 160  layout_visits= 0  local_p95_ns= 1025100
+UI_DOGFOOD scene= settings-editor  warm_rebuilds= 32  persistent_live_delta= 14  persistent_alloc_calls= 160  layout_visits= 0  local_p95_ns= 1256800
+UI_DOGFOOD scene= document-status  warm_rebuilds= 32  persistent_live_delta= 14  persistent_alloc_calls= 416  layout_visits= 0  local_p95_ns= 46700
+UI_DOGFOOD scene= startup-recent-workspaces  warm_rebuilds= 32  persistent_live_delta= 14  persistent_alloc_calls= 160  layout_visits= 0  local_p95_ns= 133500
+Finished 257 tests in 55.8036255s. All tests were successful.

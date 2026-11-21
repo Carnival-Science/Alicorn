@@ -7,6 +7,11 @@ the current project status.
 
 ## Current acceptance and platform limits
 
+- [Percentage-width production validation — Windows (2026-11-21)](issue-158-percentage-width-windows-2026-11-21.md)
+  — nested, cached-region, row/panel/scroll, positioned-child, theme, text-scale,
+  and zero-percentage coverage; parent-first retained resolution; the
+  consumer-shaped percentage-vs-manual A/B and its explicit native/graphics
+  limits.
 - [Live-resize presentation latency — Windows (2026-11-20)](issue-211-live-resize-performance-windows-2026-11-20.md)
   — per-frame inter-present latency, `WM_WINDOWPOSCHANGED`-to-present stretch
   window, `wgpu.SurfaceConfigure` cost, description/layout cost, and

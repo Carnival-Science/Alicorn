@@ -1,0 +1,66 @@
+revision=f8454f0 (branch codex/issue-158-54-validation)
+odin=dev-2026-11-nightly:08539cd
+host=Windows 10 Home 22H2 build 19045; Ryzen 5 7600X 12 logical processors; 15.2 GiB RAM
+gpu=NVIDIA GeForce RTX 2080 SUPER driver 32.0.15.9597
+build=Windows x64 -o:speed headless consumer-shaped font-picker fixture
+command=issue158_percent_width_benchmark.exe (five fresh processes)
+process=1
+Alicorn #158 consumer-shaped percentage-width validation benchmark
+build=release sample_frames=2000 warmup_frames=100 rows=12 widths=800,1200 cap=900
+parity width=800 panel_w=752.000 percentage_dependencies=1 manual_dependencies=0 PASS
+parity width=1200 panel_w=900.000 percentage_dependencies=1 manual_dependencies=0 PASS
+case=same_width mode=percentage p50_total_ns=12200 p95_total_ns=15300 p50_describe_ns=3700 p95_describe_ns=4700 p50_layout_ns=8500 p95_layout_ns=10700 persistent_alloc_calls=8000 persistent_requested_bytes=1 layout_updates=0 measure_hits=0 measure_misses=0 descriptions_emitted=34000 regions_skipped=0 percentage_dependencies=1
+case=resize_cap_release mode=percentage p50_total_ns=125300 p95_total_ns=154900 p50_describe_ns=3800 p95_describe_ns=4900 p50_layout_ns=121400 p95_layout_ns=149800 persistent_alloc_calls=656000 persistent_requested_bytes=5760001 layout_updates=64000 measure_hits=8000 measure_misses=116000 descriptions_emitted=68000 regions_skipped=0 percentage_dependencies=1
+case=idle mode=percentage p50_total_ns=0 p95_total_ns=100 p50_describe_ns=0 p95_describe_ns=0 p50_layout_ns=0 p95_layout_ns=0 persistent_alloc_calls=0 persistent_requested_bytes=0 layout_updates=0 measure_hits=0 measure_misses=0 descriptions_emitted=0 regions_skipped=0 percentage_dependencies=1
+case=same_width mode=manual p50_total_ns=12000 p95_total_ns=14200 p50_describe_ns=3700 p95_describe_ns=4000 p50_layout_ns=8300 p95_layout_ns=8800 persistent_alloc_calls=8000 persistent_requested_bytes=1 layout_updates=0 measure_hits=0 measure_misses=0 descriptions_emitted=34000 regions_skipped=0 percentage_dependencies=0
+case=resize_cap_release mode=manual p50_total_ns=124400 p95_total_ns=180500 p50_describe_ns=3800 p95_describe_ns=5500 p50_layout_ns=120500 p95_layout_ns=175400 persistent_alloc_calls=656000 persistent_requested_bytes=5760001 layout_updates=64000 measure_hits=8000 measure_misses=116000 descriptions_emitted=68000 regions_skipped=0 percentage_dependencies=0
+case=idle mode=manual p50_total_ns=0 p95_total_ns=100 p50_describe_ns=0 p95_describe_ns=0 p50_layout_ns=0 p95_layout_ns=0 persistent_alloc_calls=0 persistent_requested_bytes=0 layout_updates=0 measure_hits=0 measure_misses=0 descriptions_emitted=0 regions_skipped=0 percentage_dependencies=0
+desc=correctness rows=12 show=direction footer=ellipsis text=ellipsis
+process=2
+Alicorn #158 consumer-shaped percentage-width validation benchmark
+build=release sample_frames=2000 warmup_frames=100 rows=12 widths=800,1200 cap=900
+parity width=800 panel_w=752.000 percentage_dependencies=1 manual_dependencies=0 PASS
+parity width=1200 panel_w=900.000 percentage_dependencies=1 manual_dependencies=0 PASS
+case=same_width mode=percentage p50_total_ns=11900 p95_total_ns=14900 p50_describe_ns=3700 p95_describe_ns=4600 p50_layout_ns=8200 p95_layout_ns=10300 persistent_alloc_calls=8000 persistent_requested_bytes=1 layout_updates=0 measure_hits=0 measure_misses=0 descriptions_emitted=34000 regions_skipped=0 percentage_dependencies=1
+case=resize_cap_release mode=percentage p50_total_ns=125500 p95_total_ns=140700 p50_describe_ns=3800 p95_describe_ns=4700 p50_layout_ns=121700 p95_layout_ns=136000 persistent_alloc_calls=656000 persistent_requested_bytes=5760001 layout_updates=64000 measure_hits=8000 measure_misses=116000 descriptions_emitted=68000 regions_skipped=0 percentage_dependencies=1
+case=idle mode=percentage p50_total_ns=0 p95_total_ns=100 p50_describe_ns=0 p95_describe_ns=0 p50_layout_ns=0 p95_layout_ns=0 persistent_alloc_calls=0 persistent_requested_bytes=0 layout_updates=0 measure_hits=0 measure_misses=0 descriptions_emitted=0 regions_skipped=0 percentage_dependencies=1
+case=same_width mode=manual p50_total_ns=12000 p95_total_ns=15000 p50_describe_ns=3600 p95_describe_ns=4500 p50_layout_ns=8400 p95_layout_ns=10400 persistent_alloc_calls=8000 persistent_requested_bytes=1 layout_updates=0 measure_hits=0 measure_misses=0 descriptions_emitted=34000 regions_skipped=0 percentage_dependencies=0
+case=resize_cap_release mode=manual p50_total_ns=125300 p95_total_ns=160800 p50_describe_ns=3800 p95_describe_ns=5200 p50_layout_ns=121500 p95_layout_ns=156000 persistent_alloc_calls=656000 persistent_requested_bytes=5760001 layout_updates=64000 measure_hits=8000 measure_misses=116000 descriptions_emitted=68000 regions_skipped=0 percentage_dependencies=0
+case=idle mode=manual p50_total_ns=0 p95_total_ns=100 p50_describe_ns=0 p95_describe_ns=0 p50_layout_ns=0 p95_layout_ns=0 persistent_alloc_calls=0 persistent_requested_bytes=0 layout_updates=0 measure_hits=0 measure_misses=0 descriptions_emitted=0 regions_skipped=0 percentage_dependencies=0
+desc=correctness rows=12 show=direction footer=ellipsis text=ellipsis
+process=3
+Alicorn #158 consumer-shaped percentage-width validation benchmark
+build=release sample_frames=2000 warmup_frames=100 rows=12 widths=800,1200 cap=900
+parity width=800 panel_w=752.000 percentage_dependencies=1 manual_dependencies=0 PASS
+parity width=1200 panel_w=900.000 percentage_dependencies=1 manual_dependencies=0 PASS
+case=same_width mode=percentage p50_total_ns=11800 p95_total_ns=14900 p50_describe_ns=3600 p95_describe_ns=4600 p50_layout_ns=8100 p95_layout_ns=10300 persistent_alloc_calls=8000 persistent_requested_bytes=1 layout_updates=0 measure_hits=0 measure_misses=0 descriptions_emitted=34000 regions_skipped=0 percentage_dependencies=1
+case=resize_cap_release mode=percentage p50_total_ns=124400 p95_total_ns=193300 p50_describe_ns=3800 p95_describe_ns=5300 p50_layout_ns=120600 p95_layout_ns=187800 persistent_alloc_calls=656000 persistent_requested_bytes=5760001 layout_updates=64000 measure_hits=8000 measure_misses=116000 descriptions_emitted=68000 regions_skipped=0 percentage_dependencies=1
+case=idle mode=percentage p50_total_ns=0 p95_total_ns=100 p50_describe_ns=0 p95_describe_ns=0 p50_layout_ns=0 p95_layout_ns=0 persistent_alloc_calls=0 persistent_requested_bytes=0 layout_updates=0 measure_hits=0 measure_misses=0 descriptions_emitted=0 regions_skipped=0 percentage_dependencies=1
+case=same_width mode=manual p50_total_ns=11700 p95_total_ns=14100 p50_describe_ns=3600 p95_describe_ns=4300 p50_layout_ns=8100 p95_layout_ns=9300 persistent_alloc_calls=8000 persistent_requested_bytes=1 layout_updates=0 measure_hits=0 measure_misses=0 descriptions_emitted=34000 regions_skipped=0 percentage_dependencies=0
+case=resize_cap_release mode=manual p50_total_ns=123200 p95_total_ns=169900 p50_describe_ns=3700 p95_describe_ns=4700 p50_layout_ns=119500 p95_layout_ns=163500 persistent_alloc_calls=656000 persistent_requested_bytes=5760001 layout_updates=64000 measure_hits=8000 measure_misses=116000 descriptions_emitted=68000 regions_skipped=0 percentage_dependencies=0
+case=idle mode=manual p50_total_ns=0 p95_total_ns=100 p50_describe_ns=0 p95_describe_ns=0 p50_layout_ns=0 p95_layout_ns=0 persistent_alloc_calls=0 persistent_requested_bytes=0 layout_updates=0 measure_hits=0 measure_misses=0 descriptions_emitted=0 regions_skipped=0 percentage_dependencies=0
+desc=correctness rows=12 show=direction footer=ellipsis text=ellipsis
+process=4
+Alicorn #158 consumer-shaped percentage-width validation benchmark
+build=release sample_frames=2000 warmup_frames=100 rows=12 widths=800,1200 cap=900
+parity width=800 panel_w=752.000 percentage_dependencies=1 manual_dependencies=0 PASS
+parity width=1200 panel_w=900.000 percentage_dependencies=1 manual_dependencies=0 PASS
+case=same_width mode=percentage p50_total_ns=11900 p95_total_ns=14900 p50_describe_ns=3600 p95_describe_ns=4500 p50_layout_ns=8300 p95_layout_ns=10400 persistent_alloc_calls=8000 persistent_requested_bytes=1 layout_updates=0 measure_hits=0 measure_misses=0 descriptions_emitted=34000 regions_skipped=0 percentage_dependencies=1
+case=resize_cap_release mode=percentage p50_total_ns=125100 p95_total_ns=162300 p50_describe_ns=3700 p95_describe_ns=4800 p50_layout_ns=121300 p95_layout_ns=158300 persistent_alloc_calls=656000 persistent_requested_bytes=5760001 layout_updates=64000 measure_hits=8000 measure_misses=116000 descriptions_emitted=68000 regions_skipped=0 percentage_dependencies=1
+case=idle mode=percentage p50_total_ns=0 p95_total_ns=100 p50_describe_ns=0 p95_describe_ns=0 p50_layout_ns=0 p95_layout_ns=0 persistent_alloc_calls=0 persistent_requested_bytes=0 layout_updates=0 measure_hits=0 measure_misses=0 descriptions_emitted=0 regions_skipped=0 percentage_dependencies=1
+case=same_width mode=manual p50_total_ns=11600 p95_total_ns=17700 p50_describe_ns=3600 p95_describe_ns=5100 p50_layout_ns=8000 p95_layout_ns=12600 persistent_alloc_calls=8000 persistent_requested_bytes=1 layout_updates=0 measure_hits=0 measure_misses=0 descriptions_emitted=34000 regions_skipped=0 percentage_dependencies=0
+case=resize_cap_release mode=manual p50_total_ns=124400 p95_total_ns=171100 p50_describe_ns=3700 p95_describe_ns=5100 p50_layout_ns=120700 p95_layout_ns=166100 persistent_alloc_calls=656000 persistent_requested_bytes=5760001 layout_updates=64000 measure_hits=8000 measure_misses=116000 descriptions_emitted=68000 regions_skipped=0 percentage_dependencies=0
+case=idle mode=manual p50_total_ns=0 p95_total_ns=100 p50_describe_ns=0 p95_describe_ns=0 p50_layout_ns=0 p95_layout_ns=0 persistent_alloc_calls=0 persistent_requested_bytes=0 layout_updates=0 measure_hits=0 measure_misses=0 descriptions_emitted=0 regions_skipped=0 percentage_dependencies=0
+desc=correctness rows=12 show=direction footer=ellipsis text=ellipsis
+process=5
+Alicorn #158 consumer-shaped percentage-width validation benchmark
+build=release sample_frames=2000 warmup_frames=100 rows=12 widths=800,1200 cap=900
+parity width=800 panel_w=752.000 percentage_dependencies=1 manual_dependencies=0 PASS
+parity width=1200 panel_w=900.000 percentage_dependencies=1 manual_dependencies=0 PASS
+case=same_width mode=percentage p50_total_ns=12000 p95_total_ns=15100 p50_describe_ns=3600 p95_describe_ns=4500 p50_layout_ns=8400 p95_layout_ns=10500 persistent_alloc_calls=8000 persistent_requested_bytes=1 layout_updates=0 measure_hits=0 measure_misses=0 descriptions_emitted=34000 regions_skipped=0 percentage_dependencies=1
+case=resize_cap_release mode=percentage p50_total_ns=126300 p95_total_ns=190900 p50_describe_ns=3800 p95_describe_ns=5200 p50_layout_ns=122400 p95_layout_ns=185800 persistent_alloc_calls=656000 persistent_requested_bytes=5760001 layout_updates=64000 measure_hits=8000 measure_misses=116000 descriptions_emitted=68000 regions_skipped=0 percentage_dependencies=1
+case=idle mode=percentage p50_total_ns=0 p95_total_ns=100 p50_describe_ns=0 p95_describe_ns=0 p50_layout_ns=0 p95_layout_ns=0 persistent_alloc_calls=0 persistent_requested_bytes=0 layout_updates=0 measure_hits=0 measure_misses=0 descriptions_emitted=0 regions_skipped=0 percentage_dependencies=1
+case=same_width mode=manual p50_total_ns=12100 p95_total_ns=14900 p50_describe_ns=3700 p95_describe_ns=4300 p50_layout_ns=8400 p95_layout_ns=9000 persistent_alloc_calls=8000 persistent_requested_bytes=1 layout_updates=0 measure_hits=0 measure_misses=0 descriptions_emitted=34000 regions_skipped=0 percentage_dependencies=0
+case=resize_cap_release mode=manual p50_total_ns=125500 p95_total_ns=173100 p50_describe_ns=3800 p95_describe_ns=5200 p50_layout_ns=121700 p95_layout_ns=168000 persistent_alloc_calls=656000 persistent_requested_bytes=5760001 layout_updates=64000 measure_hits=8000 measure_misses=116000 descriptions_emitted=68000 regions_skipped=0 percentage_dependencies=0
+case=idle mode=manual p50_total_ns=0 p95_total_ns=100 p50_describe_ns=0 p95_describe_ns=0 p50_layout_ns=0 p95_layout_ns=0 persistent_alloc_calls=0 persistent_requested_bytes=0 layout_updates=0 measure_hits=0 measure_misses=0 descriptions_emitted=0 regions_skipped=0 percentage_dependencies=0
+desc=correctness rows=12 show=direction footer=ellipsis text=ellipsis
