@@ -24,6 +24,8 @@ Coherence_App :: struct {
 	status_revision: u64,
 	peer_value: string,
 	actions: int,
+	// Issue #193 corpus extension: a structural branch toggled by app state.
+	show_peer: bool,
 }
 
 coherence_app :: proc() -> Coherence_App {
@@ -33,6 +35,7 @@ coherence_app :: proc() -> Coherence_App {
 		      {"coherence-b", 1, "Bravo", 1, false},
 		      {"coherence-c", 1, "Charlie", 1, false}},
 		order={0, 1, 2}, count=3, status="Ready", status_revision=1, peer_value="Unrelated",
+		show_peer=true,
 	}
 }
 
@@ -74,10 +77,12 @@ coherence_describe :: proc(ui: ^UI, app: ^Coherence_App, material: Material_ID, 
 		}
 		region_end(ui, parent, false, 0)
 	}
-	peer, cached := region_begin(ui, "coherence-peer", 1, style=layout_style(width=240, height=32))
-	if peer != 0 && !cached {
-		text_field(ui, app.peer_value, key=key_string("coherence-peer-text"), style=layout_style(height=28))
-		region_end(ui, peer, false, 0)
+	if app.show_peer {
+		peer, cached := region_begin(ui, "coherence-peer", 1, style=layout_style(width=240, height=32))
+		if peer != 0 && !cached {
+			text_field(ui, app.peer_value, key=key_string("coherence-peer-text"), style=layout_style(height=28))
+			region_end(ui, peer, false, 0)
+		}
 	}
 	container_end(ui)
 }
@@ -626,6 +631,298 @@ test_invalidation_coherence_forgotten_requests_are_advisory :: proc(t: ^testing.
 		testing.expect(t, coherence_matches_fresh(t, &rt, app), "explicit invalidation must recover the stale result")
 		destroy_runtime(&rt)
 	}
+}
+
+Adaptive_Coherence_App :: struct {
+	revision: u64,
+	min_width: f32,
+	wide: string,
+	compact: string,
+}
+
+adaptive_coherence_app :: proc() -> Adaptive_Coherence_App {
+	return Adaptive_Coherence_App{revision=1, min_width=380, wide="Wide branch", compact="Compact branch"}
+}
+
+adaptive_coherence_describe :: proc(ui: ^UI, app: ^Adaptive_Coherence_App) {
+	container_begin(ui, .Root, key=key_string("adaptive-coherence-root"),
+		style=layout_style(.Column, width=400, height=200))
+	owner := adaptive_begin(ui, key_string("adaptive-coherence-owner"),
+		style=layout_style(.Column, width=240, height=80))
+	if owner != 0 {
+		_ = adaptive_alternative_begin(ui, key_string("adaptive-coherence-wide"), "Wide",
+			minimum_width=app.min_width)
+		text(ui, app.wide, key=key_string("adaptive-coherence-wide-text"),
+			style=layout_style(.Row, height=20))
+		adaptive_alternative_end(ui)
+		_ = adaptive_alternative_begin(ui, key_string("adaptive-coherence-compact"), "Compact")
+		text(ui, app.compact, key=key_string("adaptive-coherence-compact-text"),
+			style=layout_style(.Row, height=20))
+		adaptive_alternative_end(ui)
+		adaptive_end(ui)
+	}
+	container_end(ui)
+}
+
+adaptive_coherence_settle :: proc(t: ^testing.T, rt: ^Runtime, app: ^Adaptive_Coherence_App) -> int {
+	for pass in 0..<4 {
+		ui, build := begin_frame(rt)
+		if !build { return pass }
+		adaptive_coherence_describe(&ui, app)
+		end_frame(&ui)
+	}
+	testing.expect(t, false, "the adaptive fixture must not create an unbounded rebuild loop")
+	return 4
+}
+
+adaptive_coherence_selected_text_matches :: proc(a, b: ^Runtime, key: UI_Key) -> bool {
+	left, left_found := node_by_key(a, key, .Text)
+	right, right_found := node_by_key(b, key, .Text)
+	if left_found != right_found { return false }
+	if !left_found { return true }
+	left_info, _ := node_info(a, left)
+	right_info, _ := node_info(b, right)
+	if left_info != right_info { return false }
+	left_lines := text_node_line_count(a, left)
+	if left_lines != text_node_line_count(b, right) { return false }
+	for index in 0..<left_lines {
+		left_line, left_line_found := text_node_line_geometry(a, left, index)
+		right_line, right_line_found := text_node_line_geometry(b, right, index)
+		if left_line_found != right_line_found || (left_line_found && left_line != right_line) { return false }
+	}
+	return true
+}
+
+// adaptive_coherence_matches_fresh compares the declared selection and the
+// visible selected branch against a fresh runtime. Inactive branch geometry is
+// presentation state, so it is deliberately excluded (unlike the main
+// Coherence_App oracle, whose nodes are all presentation-active).
+adaptive_coherence_matches_fresh :: proc(t: ^testing.T, rt: ^Runtime, app: Adaptive_Coherence_App) -> bool {
+	fresh := new_runtime(viewport_bounds(rt))
+	defer destroy_runtime(&fresh)
+	_ = coherence_setup(t, &fresh)
+	copy := app
+	_ = adaptive_coherence_settle(t, &fresh, &copy)
+	left_owner, left_found := node_by_key(rt, key_string("adaptive-coherence-owner"), .Container)
+	right_owner, right_found := node_by_key(&fresh, key_string("adaptive-coherence-owner"), .Container)
+	if left_found != right_found { return false }
+	if !left_found { return true }
+	left := adaptive_selection_state(rt, left_owner)
+	right := adaptive_selection_state(&fresh, right_owner)
+	if left.valid != right.valid { return false }
+	if !left.valid { return true }
+	if left.selected_name != right.selected_name || left.reason != right.reason ||
+	   left.available_width != right.available_width { return false }
+	key := key_string("adaptive-coherence-compact-text")
+	if left.selected_name == "Wide" { key = key_string("adaptive-coherence-wide-text") }
+	return adaptive_coherence_selected_text_matches(rt, &fresh, key)
+}
+
+@(test)
+test_invalidation_coherence_adaptive_branch_change_matches_fresh :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 400, 220}, Runtime_Config{trace_capacity=512})
+	defer destroy_runtime(&rt)
+	_ = coherence_setup(t, &rt)
+	app := adaptive_coherence_app()
+	_ = adaptive_coherence_settle(t, &rt, &app)
+	owner, owner_found := node_by_key(&rt, key_string("adaptive-coherence-owner"), .Container)
+	testing.expect(t, owner_found, "the adaptive owner must be retained")
+	before := adaptive_selection_state(&rt, owner)
+	testing.expect(t, before.valid && strings.contains(before.selected_name, "Compact"),
+		"the narrow owner must select the compact branch")
+	testing.expect(t, adaptive_coherence_matches_fresh(t, &rt, app),
+		"the initial adaptive selection must match a fresh runtime")
+
+	// A dynamic subscription branch change: a declared dependency change
+	// switches the selected alternative. The hidden branch's text is unchanged
+	// by this step; it becomes the active dependency for the next update.
+	app.revision += 1
+	app.min_width = 200
+	invalidate_root(&rt, "adaptive branch subscription changed")
+	testing.expect(t, adaptive_coherence_settle(t, &rt, &app) == 1,
+		"a branch change must settle in one description")
+	after := adaptive_selection_state(&rt, owner)
+	testing.expect(t, after.valid && strings.contains(after.selected_name, "Wide"),
+		"the lowered minimum must select the wide branch")
+	testing.expect(t, adaptive_coherence_matches_fresh(t, &rt, app),
+		"an adaptive branch change must match a fresh runtime's observable output")
+
+	// The selected branch now owns the text dependency. A declared update must
+	// refresh it; an omitted request must stay stale until repaired.
+	app.revision += 1
+	app.wide = "Wide branch revised"
+	invalidate_root(&rt, "adaptive selected branch text changed")
+	_ = adaptive_coherence_settle(t, &rt, &app)
+	testing.expect(t, adaptive_coherence_matches_fresh(t, &rt, app),
+		"the selected adaptive branch must refresh its text output")
+	app.wide = "Wide branch revised again"
+	testing.expect(t, !adaptive_coherence_matches_fresh(t, &rt, app),
+		"an unrequested branch text change must remain observably stale")
+	invalidate_root(&rt, "repair adaptive branch dependency")
+	_ = adaptive_coherence_settle(t, &rt, &app)
+	testing.expect(t, adaptive_coherence_matches_fresh(t, &rt, app),
+		"the repaired adaptive dependency must recover fresh parity")
+}
+
+
+@(test)
+test_invalidation_coherence_keyed_owner_retirement_and_reopen :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 400, 420}, Runtime_Config{trace_capacity=512})
+	defer destroy_runtime(&rt)
+	material := coherence_setup(t, &rt)
+	app := coherence_app()
+	_ = coherence_settle(t, &rt, &app, material)
+	_, present := node_by_key(&rt, key_pair(1, 2), .Text_Field)
+	testing.expect(t, present, "the fixture row must start retained")
+
+	// Retire the keyed owner through ordinary omission, then reopen it with a
+	// new revision. Both steps must match a fresh description.
+	app.order = {0, 2, 0}
+	app.count = 2
+	app.parent_revision += 1
+	invalidate_region(&rt, "coherence-parent", app.parent_revision, "retire keyed owner")
+	_ = coherence_settle(t, &rt, &app, material)
+	_, retired_present := node_by_key(&rt, key_pair(1, 2), .Text_Field)
+	testing.expect(t, !retired_present && coherence_matches_fresh(t, &rt, app),
+		"a retired keyed owner must leave public queries and match fresh output")
+
+	app.order = {0, 1, 2}
+	app.count = 3
+	app.rows[1].revision += 1
+	app.parent_revision += 1
+	invalidate_region(&rt, "coherence-parent", app.parent_revision, "reopen keyed owner")
+	_ = coherence_settle(t, &rt, &app, material)
+	reopened, reopened_present := node_by_key(&rt, key_pair(1, 2), .Text_Field)
+	testing.expect(t, reopened_present && coherence_matches_fresh(t, &rt, app),
+		"a reopened keyed owner must be freshly described and match fresh output")
+	if reopened_present {
+		info, info_found := node_info(&rt, reopened)
+		testing.expect(t, info_found && info.bounds.w > 0 && info.bounds.h > 0,
+			"the reopened owner must publish finalized geometry")
+	}
+}
+
+@(test)
+test_invalidation_coherence_same_value_write_changes_nothing :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 400, 420}, Runtime_Config{trace_capacity=256})
+	defer destroy_runtime(&rt)
+	material := coherence_setup(t, &rt)
+	app := coherence_app()
+	_ = coherence_settle(t, &rt, &app, material)
+	row := &app.rows[0]
+	// Query 1 distinction: a declared invalidation at the same revision must
+	// schedule the description while changing no retained output.
+	invalidate_region(&rt, row.key, row.revision, "same value write")
+	cause_id := rt.cause_sequence
+	testing.expect(t, coherence_settle(t, &rt, &app, material) == 1,
+		"a same-value request must schedule exactly one description pass")
+	testing.expect(t, coherence_matches_fresh(t, &rt, app),
+		"a same-value write must leave retained output equal to a fresh description")
+	when INVALIDATION_FRONTIER_ENABLED {
+		capture, found := frontier_capture(&rt, cause_id)
+		testing.expect(t, found && capture.invalidations == 1 && frontier_changed_total(&capture) == 0,
+			"the frontier must distinguish an unchanged description from missing work")
+	}
+}
+
+@(test)
+test_invalidation_coherence_cross_window_consumers_independent :: proc(t: ^testing.T) {
+	left := new_runtime(Rect{0, 0, 400, 420}, Runtime_Config{trace_capacity=256})
+	defer destroy_runtime(&left)
+	right := new_runtime(Rect{0, 0, 400, 420}, Runtime_Config{trace_capacity=256})
+	defer destroy_runtime(&right)
+	left_material := coherence_setup(t, &left)
+	right_material := coherence_setup(t, &right)
+	app := coherence_app()
+	_ = coherence_settle(t, &left, &app, left_material)
+	_ = coherence_settle(t, &right, &app, right_material)
+	testing.expect(t, coherence_matches_fresh(t, &left, app) && coherence_matches_fresh(t, &right, app),
+		"both window consumers must start at fresh parity")
+
+	row := &app.rows[1]
+	scope := application_mutation_begin(&left, "cross-window row", .Description, row.revision)
+	row.value = "Bravo across windows"
+	row.revision += 1
+	app.parent_revision += 1
+	invalidate_region(&left, row.key, row.revision, "left window dependency")
+	application_mutation_end(&left, &scope, row.revision)
+	_ = coherence_settle(t, &left, &app, left_material)
+	testing.expect(t, coherence_matches_fresh(t, &left, app),
+		"the invalidated window must match fresh output")
+	testing.expect(t, !coherence_matches_fresh(t, &right, app),
+		"the second consumer must remain stale until its own dependency is invalidated")
+
+	invalidate_region(&right, "coherence-parent", app.parent_revision, "right window dependency")
+	_ = coherence_settle(t, &right, &app, right_material)
+	testing.expect(t, coherence_matches_fresh(t, &right, app),
+		"each window/output consumer must reach fresh parity independently")
+}
+
+@(test)
+test_invalidation_coherence_wrong_but_valid_ancestor_and_sibling :: proc(t: ^testing.T) {
+	Fault :: enum { Wrong_Ancestor, Wrong_Sibling }
+	for fault in Fault {
+		rt := new_runtime(Rect{0, 0, 400, 420}, Runtime_Config{trace_capacity=256})
+		material := coherence_setup(t, &rt)
+		app := coherence_app()
+		_ = coherence_settle(t, &rt, &app, material)
+		scope := application_mutation_begin(&rt, "valid wrong target", .Description, 1)
+		app.rows[1].value = "Bravo changed behind a valid target"
+		switch fault {
+		case .Wrong_Ancestor:
+			// The ancestor is a legal target at a current revision, but the
+			// child's stale revision keeps its cached subtree.
+			app.parent_revision += 1
+			invalidate_region(&rt, "coherence-parent", app.parent_revision, "valid ancestor target with stale child")
+		case .Wrong_Sibling:
+			app.rows[1].revision += 1
+			invalidate_region(&rt, app.rows[2].key, app.rows[2].revision, "valid sibling target")
+		}
+		application_mutation_end(&rt, &scope, 2)
+		_ = coherence_settle(t, &rt, &app, material)
+		testing.expect(t, !coherence_matches_fresh(t, &rt, app),
+			fmt.tprintf("%v must expose stale output against fresh app state", fault))
+		app.rows[1].revision += 1
+		app.parent_revision += 1
+		invalidate_region(&rt, "coherence-parent", app.parent_revision, "repair the true dependency")
+		_ = coherence_settle(t, &rt, &app, material)
+		testing.expect(t, coherence_matches_fresh(t, &rt, app),
+			fmt.tprintf("%v must recover after the true dependency is invalidated", fault))
+		destroy_runtime(&rt)
+	}
+}
+
+@(test)
+test_invalidation_coherence_structural_condition_change :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 400, 420}, Runtime_Config{trace_capacity=256})
+	defer destroy_runtime(&rt)
+	material := coherence_setup(t, &rt)
+	app := coherence_app()
+	_ = coherence_settle(t, &rt, &app, material)
+	peer_key := key_string("coherence-peer-text")
+	_, initial := node_by_key(&rt, peer_key, .Text_Field)
+	testing.expect(t, initial, "the conditional peer must start described")
+
+	app.show_peer = false
+	invalidate_root(&rt, "structural branch removed")
+	_ = coherence_settle(t, &rt, &app, material)
+	_, removed := node_by_key(&rt, peer_key, .Text_Field)
+	testing.expect(t, !removed && coherence_matches_fresh(t, &rt, app),
+		"removing a structural branch must retire its nodes and match fresh output")
+
+	app.show_peer = true
+	invalidate_root(&rt, "structural branch restored")
+	_ = coherence_settle(t, &rt, &app, material)
+	restored, restored_found := node_by_key(&rt, peer_key, .Text_Field)
+	testing.expect(t, restored_found && coherence_matches_fresh(t, &rt, app),
+		"restoring a structural branch must recreate nodes that match fresh output")
+	if restored_found {
+		info, info_found := node_info(&rt, restored)
+		testing.expect(t, info_found && info.bounds.h > 0,
+			"the restored branch must publish finalized geometry")
+	}
+	testing.expect(t, coherence_settle(t, &rt, &app, material) == 0,
+		"a settled structural condition must not keep describing")
 }
 
 @(test)
