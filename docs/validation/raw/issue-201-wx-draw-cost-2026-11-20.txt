@@ -1,0 +1,16 @@
+wx_reference_cost shapes=429 kind=ellipse scale=1.00 pixels=1280x40 frames=64 draw_p50_ns=513800 draw_p95_ns=729800
+wx_reference_cost shapes=429 kind=ellipse scale=1.00 pixels=1280x40 frames=64 draw_p50_ns=557300 draw_p95_ns=683800
+wx_reference_cost shapes=429 kind=ellipse scale=1.25 pixels=1600x50 frames=64 draw_p50_ns=566300 draw_p95_ns=605500
+wx_reference_cost shapes=429 kind=ellipse scale=1.25 pixels=1600x50 frames=64 draw_p50_ns=566100 draw_p95_ns=706500
+wx_reference_cost shapes=429 kind=ellipse scale=1.50 pixels=1920x60 frames=64 draw_p50_ns=579400 draw_p95_ns=678700
+wx_reference_cost shapes=429 kind=ellipse scale=1.50 pixels=1920x60 frames=64 draw_p50_ns=586700 draw_p95_ns=613400
+wx_reference_cost shapes=429 kind=ellipse scale=2.00 pixels=2560x80 frames=64 draw_p50_ns=622200 draw_p95_ns=830800
+wx_reference_cost shapes=429 kind=ellipse scale=2.00 pixels=2560x80 frames=64 draw_p50_ns=626100 draw_p95_ns=831800
+wx_reference_cost shapes=642 kind=ellipse scale=1.00 pixels=1920x40 frames=64 draw_p50_ns=763700 draw_p95_ns=957200
+wx_reference_cost shapes=642 kind=ellipse scale=1.00 pixels=1920x40 frames=64 draw_p50_ns=835600 draw_p95_ns=1212300
+wx_reference_cost shapes=642 kind=ellipse scale=1.25 pixels=2400x50 frames=64 draw_p50_ns=847200 draw_p95_ns=965700
+wx_reference_cost shapes=642 kind=ellipse scale=1.25 pixels=2400x50 frames=64 draw_p50_ns=846700 draw_p95_ns=958500
+wx_reference_cost shapes=642 kind=ellipse scale=1.50 pixels=2880x60 frames=64 draw_p50_ns=872100 draw_p95_ns=1120000
+wx_reference_cost shapes=642 kind=ellipse scale=1.50 pixels=2880x60 frames=64 draw_p50_ns=893100 draw_p95_ns=1244400
+wx_reference_cost shapes=642 kind=ellipse scale=2.00 pixels=3840x80 frames=64 draw_p50_ns=933700 draw_p95_ns=1038100
+wx_reference_cost shapes=642 kind=ellipse scale=2.00 pixels=3840x80 frames=64 draw_p50_ns=1019300 draw_p95_ns=1386600

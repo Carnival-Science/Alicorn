@@ -1,6 +1,6 @@
 # Alicorn #201 — Dense retained point markers
 
-**Status:** Dense marker readback and cost validation passed on hosted Metal and D3D12 at `979e64b`. #201 remains open for native wxWidgets bitmap comparisons and isolated GPU execution timings.
+**Status:** Dense marker readback and cost validation passed on hosted Metal and D3D12 at `979e64b`. The wxWidgets 3.2 MSW ellipse comparison and the isolated marker-path timing sweep were added on Windows in [issue-201-markers-windows-2026-11-20.md](../validation/issue-201-markers-windows-2026-11-20.md). #201 remains open for a Metal run of the sweep and a supported GPU execution timing source.
 
 Issue: [#201 — Support dense retained point markers within the geometry budget](https://github.com/samanshaiza004/alicorn/issues/201)
 
@@ -54,9 +54,11 @@ Hosted evidence for `979e64b`:
 
 ## Remaining acceptance
 
-The native readback is compared to an analytic ellipse, not a bitmap captured from the same Audacity wxWidgets build. wx rasterization can vary by platform; Audacity also disables graphics-context antialiasing for waveform drawing on macOS. Exact parity still needs reference captures from the matching native wx build at all four scales.
+The wx reference comparison is now recorded: 16 wxWidgets 3.2.11 (MSW) captures of the exact `WaveformView` marker rects at 1x/1.25x/1.5x/2x compare against the native readback on D3D12 and Vulkan, including the hard-edged-GDI-versus-supersampled-mask difference, overlap at 3px spacing, both clipping edges, and the fractional-DPI rounding residual. These are wxWidgets rasterizations from `tools/wx_reference`, not bitmaps captured from a built Audacity binary, and the capture `.meta` files record the wx version.
 
-The cost report contains CPU update/encode p95 and submit-to-fence wall-time p95, but no isolated GPU execution p95 because the current SDL3 Odin binding does not expose timestamp queries. Keep #201 open until the wx reference comparison and a supported GPU timing measurement are recorded.
+The isolated marker sweep (128/512/1,024/1,365 markers, no connected lines) reports CPU update/encode p95, submit-to-fence wall p95, upload bytes, allocations, and idle state on D3D12 and Vulkan. It confirms the 1,365-marker cap and atomic 1,366/10k/100k rejection.
+
+Still open: the sweep has not run on Metal (no macOS hardware in the recording session), and no isolated GPU execution p95 exists because the current SDL3 Odin binding does not expose timestamp queries. Keep #201 open for those two items.
 
 ## Ownership boundary
 

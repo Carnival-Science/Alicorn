@@ -17,6 +17,16 @@ the current project status.
   edges, source-over and four DPI scales; an independent CPU-reference
   full-frame comparison; replay equality; and separated CPU-stage timings
   against solid fills.
+- [Bounded filled-rectangle batches — Windows (2026-11-20)](issue-200-rectangles-windows-2026-11-20.md)
+  — 1,026-rectangle native readback on D3D12 and Vulkan against an independent
+  CPU compositor and wxWidgets 3.2.11 GDI captures, the batched-versus-retained
+  repaint comparison, per-update allocation and idle checks, and the 1,365-rect
+  vertex-budget cap.
+- [Dense retained point markers — Windows (2026-11-20)](issue-201-markers-windows-2026-11-20.md)
+  — 16 wxWidgets 3.2 MSW ellipse captures compared on D3D12 and Vulkan across
+  size, antialiasing, overlap, clipping, and 1x-2x DPI, plus the isolated
+  128-1,365 marker cost sweep and the atomic overflow cap. Metal and GPU
+  execution timestamps remain outstanding.
 - [Live-resize presentation latency — Windows (2026-11-20)](issue-211-live-resize-performance-windows-2026-11-20.md)
   — per-frame inter-present latency, `WM_WINDOWPOSCHANGED`-to-present stretch
   window, `wgpu.SurfaceConfigure` cost, description/layout cost, and

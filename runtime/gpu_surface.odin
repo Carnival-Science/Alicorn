@@ -71,11 +71,18 @@ gpu_surface_point_markers_resolve :: proc(rt: ^Runtime, id: Node_ID) -> []GPU_Su
 }
 
 gpu_surface_point_markers_replace :: proc(rt: ^Runtime, id: Node_ID, source: []GPU_Surface_Point_Marker) -> bool {
+	// Rect-only updates are the common waveform case. Release the previous
+	// marker payload without allocating a fresh empty container on every
+	// commit, so a settled surface does no per-update allocation work.
+	if len(source) == 0 {
+		gpu_surface_point_markers_destroy(rt, id)
+		return true
+	}
 	owned := make([dynamic]GPU_Surface_Point_Marker, 0, len(source), allocator=rt.persistent_allocator)
-	if owned == nil && len(source) > 0 { return false }
+	if owned == nil { return false }
 	for marker in source { append(&owned, marker) }
 	gpu_surface_point_markers_destroy(rt, id)
-	if len(owned) > 0 { rt.gpu_surface_point_markers[id] = owned }
+	rt.gpu_surface_point_markers[id] = owned
 	return true
 }
 
