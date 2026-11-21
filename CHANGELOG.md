@@ -4,14 +4,14 @@ All notable Alicorn releases are recorded here. The project release notes are
 consolidated in this file; vendored components retain their own upstream
 changelogs.
 
-## [0.2.2] - Unreleased
+## [0.2.2] - 2026-11-20
 
 Alicorn is an experimental native GUI runtime for Odin. This release collects
 the authoring, hosted-runtime, rendering, diagnostics, and validation work after
 v0.2.1. The SDL_GPU renderer remains the default and the visual reference; the
-new WebGPU renderer is opt-in. Release date: pending.
+new WebGPU renderer is opt-in. Release date: 2026-11-20.
 
-Compare: [v0.2.1...master](https://github.com/Carnival-Science/Alicorn/compare/v0.2.1...master)
+Compare: [v0.2.1...v0.2.2](https://github.com/Carnival-Science/Alicorn/compare/v0.2.1...v0.2.2)
 
 ### Highlights
 
