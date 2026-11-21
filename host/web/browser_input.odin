@@ -504,6 +504,18 @@ browser_input_key_down :: proc(event: js.Event) {
 			composition_active = composition_active || interaction.composition_active
 		}
 	}
+	app_key, app_mapped := web_application_key(key_event, input.platform, menus_open=alicorn.context_menu_is_open(rt))
+	// Scoped text preemption runs before the ordinary text-editing route so a
+	// scope can keep its declared keys while its search target has focus. Keys
+	// the scope did not declare continue to the text target unchanged.
+	if text_input_focused && app_mapped {
+		if alicorn.interaction_scope_dispatch_key(rt, app_key, composition_active, text_input_focused=true) {
+			js.event_prevent_default()
+			browser_input_sync_focus_target(input)
+			input.wake(input.wake_data)
+			return
+		}
+	}
 	if text_input_focused && !composition_active {
 		text_key, mapped := web_text_navigation_key(key_event, input.platform)
 		if mapped {
@@ -526,7 +538,7 @@ browser_input_key_down :: proc(event: js.Event) {
 		return
 	}
 
-	key, mapped := web_application_key(key_event, input.platform, menus_open=alicorn.context_menu_is_open(rt))
+	key, mapped := app_key, app_mapped
 	if !mapped || (text_input_focused && !alicorn.application_key_can_preempt_text_field(key, composition_active)) { return }
 	app_handled, key_status := alicorn.hosted_runtime_key(input.host, alicorn.Hosted_Key_Event{
 		key_code=u32(key),
