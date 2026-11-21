@@ -1,0 +1,18 @@
+{
+  "tag": "settled",
+  "gpu_driver": "direct3d12",
+  "runtime_viewport": {"w": 736, "h": 268},
+  "checks": 37, "failures": 0,
+  "frame_needs_submission": false,
+  "stats": {"frames_built": 4, "gpu_submits": 0},
+  "targets": [
+    {"name": "ruler", "submissions": 7, "acks": 7, "last_revision": 16, "last_ack_revision": 16,
+     "visible": true, "root": 14234604794910298651, "pending": false, "revision": 16, "acknowledged_revision": 16,
+     "window_pixels": [640, 220], "window_logical": [640, 220], "scale": [1.0000, 1.0000],
+     "total_encode_ns": 3823800, "total_submit_ns": 3529100, "total_wait_ns": 81434300},
+    {"name": "waveform", "submissions": 6, "acks": 6, "last_revision": 18, "last_ack_revision": 18,
+     "visible": true, "root": 92935114081858155, "pending": false, "revision": 18, "acknowledged_revision": 18,
+     "window_pixels": [736, 268], "window_logical": [736, 268], "scale": [1.0000, 1.0000],
+     "total_encode_ns": 3168200, "total_submit_ns": 1661700, "total_wait_ns": 1014400}
+  ]
+}

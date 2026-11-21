@@ -7,6 +7,13 @@ the current project status.
 
 ## Current acceptance and platform limits
 
+- [Issue #205 multi-surface acknowledgements — Acetate native Windows (2026-11-20)](issue-205-multisurface-acetate-windows-2026-11-20.md)
+  — one retained Runtime across two real SDL_GPU Direct3D 12 windows in
+  Acetate's native fixture: independent ruler/waveform submission and
+  exact-revision acknowledgement, shared invalidation and resize, stale-ack
+  rejection, hidden/restored and removed/recreated targets, and a settled idle
+  window with zero submissions (37/37 checks); includes captures, counters, and
+  the clarified per-target scale rule.
 - [Live-resize presentation latency — Windows (2026-11-20)](issue-211-live-resize-performance-windows-2026-11-20.md)
   — per-frame inter-present latency, `WM_WINDOWPOSCHANGED`-to-present stretch
   window, `wgpu.SurfaceConfigure` cost, description/layout cost, and
