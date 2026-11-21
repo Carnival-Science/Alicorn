@@ -198,6 +198,21 @@ Element :: struct {
 	scroll_content_width, scroll_content_height: f32,
 	scroll_viewport_width, scroll_viewport_height: f32,
 	scroll_geometry_resolved: bool,
+	// Relationship fields are copied from the published semantic entity. They
+	// let pattern checks distinguish collection membership from geometric
+	// proximity without re-publishing runtime internals.
+	parent_semantic_id: alicorn.Semantic_ID,
+	collection_id: alicorn.Semantic_ID,
+	position_in_set: u64,
+	size_of_set: u64,
+	logical_count: u64,
+	tree_order: u64,
+	is_collection: bool,
+	is_virtual_item: bool,
+	collection_selected: bool,
+	collection_current: bool,
+	collection_selected_id: alicorn.Semantic_ID,
+	collection_current_id: alicorn.Semantic_ID,
 	allocator: mem.Allocator,
 }
 
@@ -759,7 +774,7 @@ find :: proc(handle: ^Test_Handle($T), query: Query) -> (result: Find_Result) {
 			key, key_ok := alicorn.node_identity_key(handle.runtime, semantic.visual_node)
 			if !key_ok || !ui_keys_equal(key, query.key) { continue }
 		}
-		element, ok := element_from_semantic(handle, semantic)
+		element, ok := element_from_semantic(handle, semantic, snapshot.nodes[:])
 		if !ok {
 			destroy_element(&result.element)
 			result.status = .Allocation_Failed
@@ -804,7 +819,11 @@ ui_keys_equal :: proc(a, b: alicorn.UI_Key) -> bool {
 	return false
 }
 
-element_from_semantic :: proc(handle: ^Test_Handle($T), semantic: alicorn.Semantic_Node) -> (element: Element, ok: bool) {
+element_from_semantic :: proc(
+	handle: ^Test_Handle($T),
+	semantic: alicorn.Semantic_Node,
+	snapshot_nodes: []alicorn.Semantic_Node = nil,
+) -> (element: Element, ok: bool) {
 	element = Element{
 		handle_generation=handle.generation,
 		description_epoch=handle.description_epoch,
@@ -815,7 +834,25 @@ element_from_semantic :: proc(handle: ^Test_Handle($T), semantic: alicorn.Semant
 		visual_node=semantic.visual_node,
 		bounds=semantic.bounds,
 		has_bounds=semantic.has_bounds,
+		parent_semantic_id=semantic.parent,
+		collection_id=semantic.collection_id,
+		position_in_set=semantic.position_in_set,
+		size_of_set=semantic.size_of_set,
+		logical_count=semantic.logical_count,
+		tree_order=semantic.tree_order,
+		is_collection=semantic.is_collection,
+		is_virtual_item=semantic.is_virtual_item,
+		collection_selected_id=semantic.selected_id if semantic.is_collection else {},
+		collection_current_id=semantic.current_id if semantic.is_collection else {},
 		allocator=handle.allocator,
+	}
+	if alicorn.semantic_id_is_valid(semantic.collection_id) {
+		for candidate in snapshot_nodes {
+			if candidate.id != semantic.collection_id { continue }
+			element.collection_selected = candidate.selected_id == semantic.id
+			element.collection_current = candidate.current_id == semantic.id
+			break
+		}
 	}
 	clone_ok: bool
 	element.name, clone_ok = clone_string(semantic.label, handle.allocator)

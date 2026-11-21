@@ -136,6 +136,33 @@ screenshot alongside platform/runtime diagnostics. Keep pixel baselines
 specific to the backend and display scale. See the
 [native diagnostics guide](../docs/development.md#native-diagnostics).
 
+## Pattern conformance checks
+
+`pattern_checks.odin` adds opt-in, reusable contract checks for two composed
+patterns: a single-select list/combobox and a modal dialog. They are assertions
+over published semantics and normal input, not a runtime registry. Resolve the
+parts by `Query`, an explicit `Semantic_ID`, or a stable key, then call
+`pattern_check`; a failed report carries the failing step, expected/actual
+values, part, semantic/key identity, causal metadata, and the bounded turn.
+
+Combobox checks cover the trigger/list/option contract, keyboard and pointer
+open and selection, navigation including disabled skipping and wrap, Escape and
+Tab dismissal, type-ahead, virtual reveal, two-owner identity, and selected
+identity across reordering. Modal checks cover focus containment and traversal
+wrap, covered pointer/semantic activation rejection, Escape and primary-action
+parity, focus recovery after a child is removed, and nested overlay ownership.
+Optional parts skip phases a composition does not publish. See the
+[reference section](../docs/reference.md#pattern-conformance-checks-testui) for
+the API and the negative-control recipe.
+
+`Element` now also snapshots `parent_semantic_id`, `collection_id`,
+`position_in_set`, `size_of_set`, `logical_count`, `tree_order`,
+`is_collection`, `is_virtual_item`, `collection_selected`,
+`collection_current`, `collection_selected_id`, and `collection_current_id`.
+
+The checks remain subject to the guarantee boundary below: no platform
+accessibility bridge, native IME candidate window, or pixel verification.
+
 ## Guarantee boundary
 
 The harness uses Alicorn's standard runtime, bundled fonts, semantic queries,

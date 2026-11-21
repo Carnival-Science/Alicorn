@@ -7,6 +7,12 @@ the current project status.
 
 ## Current acceptance and platform limits
 
+- [Reusable accessibility and interaction pattern checks (2026-11-21)](issue-217-pattern-checks-2026-11-21.md)
+  — test-only `alicorn:testui` conformance checks for a single-select
+  list/combobox and a composed modal dialog; stock Select, custom userland
+  combobox, app-owned modal, six must-fail negative controls, semantic
+  relationship snapshots on `Element`, and explicit published-semantics /
+  synthetic-input limits.
 - [Shape primitives — Windows (2026-11-20)](issue-110-shapes-windows-2026-11-20.md)
   — circle/arc/Bezier pixel probes at four DPI scales, clipping and
   translucent overlap, circular pointer pass-through, keyboard activation,
