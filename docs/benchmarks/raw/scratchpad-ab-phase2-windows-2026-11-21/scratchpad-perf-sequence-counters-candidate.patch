@@ -1,0 +1,330 @@
+﻿diff --git a/frontends/alicorn/app_layout.odin b/frontends/alicorn/app_layout.odin
+index 1bb333c..5dfe11c 100644
+--- a/frontends/alicorn/app_layout.odin
++++ b/frontends/alicorn/app_layout.odin
+@@ -1,6 +1,7 @@
+ package main
+ 
+ import "core:fmt"
++import "core:time"
+ import alicorn "alicorn:runtime"
+ import gui "alicorn:ui"
+ import host "alicorn:native/sdl_gpu"
+@@ -62,6 +63,10 @@ scratchpad_build_describe :: proc(
+ 	dpi_scale: f32,
+ ) -> alicorn.Node_ID {
+ 	if app == nil || rt == nil || ui_context == nil { return 0 }
++	sequence_measured := app.performance_sequence_enabled
++	sequence_start: time.Tick
++	if sequence_measured { sequence_start = time.tick_now() }
++	defer scratchpad_performance_sequence_credit_build(app, sequence_start, sequence_measured)
+ 	ui := ui_context^
+ 	app.after_frame_previous_ui_description_runtime = app.ui_description_runtime
+ 	app.ui_description_runtime = rt
+diff --git a/frontends/alicorn/main.odin b/frontends/alicorn/main.odin
+index 8930820..013f2e8 100644
+--- a/frontends/alicorn/main.odin
++++ b/frontends/alicorn/main.odin
+@@ -4,6 +4,7 @@ import "core:fmt"
+ import "core:mem"
+ import "core:os"
+ import "core:strings"
++import "core:time"
+ import odin_runtime "base:runtime"
+ import alicorn "alicorn:runtime"
+ import gui "alicorn:ui"
+@@ -504,6 +505,21 @@ App :: struct {
+ 	smoke_session_expected_second: string,
+ 	smoke_session_expected_preview: string,
+ 	smoke_session_passed: bool,
++	// Benchmark-only nine-action sequence (SCRATCHPAD_ALICORN_PERF_SEQUENCE=1).
++	// It drives existing application/backend command paths; it is not input
++	// synthesis and it does not change product behavior when disabled.
++	performance_sequence_enabled:    bool,
++	performance_sequence_steps:      int,
++	performance_sequence_complete:   bool,
++	performance_sequence_failed:     bool,
++	performance_sequence_step_started: bool,
++	performance_sequence_attribution:  int,
++	performance_sequence_action_ns:  [9]u64,
++	performance_sequence_build_ns:   [9]u64,
++	performance_sequence_builds:     [9]u64,
++	// Diagnostic-only counter attribution (not part of the committed A/B hook).
++	performance_sequence_stats_mark:  alicorn.Frame_Stats,
++	performance_sequence_stats_valid: bool,
+ }
+ 
+ editor_window_request_is_rejected :: proc(app: ^App, request: bridge.Visible_Window_Request) -> bool {
+@@ -678,6 +694,7 @@ application_start :: proc(state: rawptr, waker: gui.Application_Waker) {
+ 	app.waker = waker
+ 	app.theme_compiler.waker = waker
+ 	start_backend(app)
++	if app.performance_sequence_enabled { scratchpad_performance_sequence_start(app) }
+ 	if app.selected_theme_id == SCRATCHPAD_THEME_BUILTIN_MOCHA {
+ 		if !scratchpad_theme_compile_mocha_request(app) || !scratchpad_theme_pending_set(app, app.selected_theme_id) {
+ 			scratchpad_theme_compiler_invalidate(&app.theme_compiler)
+@@ -1206,6 +1223,10 @@ application_scheduled_wake :: proc(state: rawptr, rt: ^alicorn.Runtime, class: h
+ 	if class != .Frequent { return }
+ 	app := cast(^App)state
+ 	if app == nil || !app.backend.started { return }
++	if app.performance_sequence_enabled && !app.performance_sequence_complete && !app.performance_sequence_failed {
++		scratchpad_performance_sequence_step(app, rt)
++		return
++	}
+ 	if app.pinned.editing {
+ 		if view_index := editor_view_find(app.editor_views[:], app.pinned.edit_document_id); view_index >= 0 {
+ 			view := &app.editor_views[view_index]
+@@ -1229,6 +1250,219 @@ application_scheduled_wake :: proc(state: rawptr, rt: ^alicorn.Runtime, class: h
+ 	editor_schedule_selection_autoscroll(app, false)
+ }
+ 
++// ---- Benchmark-only nine-action performance sequence -----------------------
++//
++// Gated by SCRATCHPAD_ALICORN_PERF_SEQUENCE=1 and used only by the isolated
++// matched A/B copy of Scratchpad. Each step invokes the same application or
++// backend command path a user action reaches; no native input is synthesized.
++// Per-step action time is the wall time spent inside the command dispatch.
++// Per-step build time credits every application description that happens
++// between this step and the next, which attributes the frame work the action
++// caused even though the host builds that frame after this callback returns.
++
++scratchpad_performance_sequence_schedule :: proc(app: ^App) {
++	if app == nil || !app.performance_sequence_enabled || app.performance_sequence_complete || app.performance_sequence_failed { return }
++	_ = alicorn.application_schedule_after(app.services.scheduler, .Frequent, 30_000_000)
++}
++
++// The first step waits for the startup description and the initial present to
++// settle. A step dispatched into the first 150 ms of startup waits on backend
++// lanes that are still initializing, which turns a command into multi-second
++// lock contention and is not representative of an interaction.
++scratchpad_performance_sequence_start :: proc(app: ^App) {
++	if app == nil || !app.performance_sequence_enabled { return }
++	_ = alicorn.application_schedule_after(app.services.scheduler, .Frequent, 500_000_000)
++}
++
++scratchpad_performance_sequence_fail :: proc(app: ^App, message: string) {
++	if app == nil { return }
++	app.performance_sequence_failed = true
++	fmt.eprintln("alicorn-performance-sequence failed", "step", app.performance_sequence_steps, message)
++}
++
++scratchpad_performance_sequence_record_action :: proc(app: ^App, step: int, start: time.Tick) {
++	if app == nil || step < 0 || step >= len(app.performance_sequence_action_ns) { return }
++	elapsed := time.duration_nanoseconds(time.tick_diff(start, time.tick_now()))
++	if elapsed > 0 { app.performance_sequence_action_ns[step] += u64(elapsed) }
++}
++
++scratchpad_performance_sequence_credit_build :: proc(app: ^App, start: time.Tick, measured: bool) {
++	if app == nil || !measured || !app.performance_sequence_enabled { return }
++	index := app.performance_sequence_attribution
++	if index < 0 || index >= len(app.performance_sequence_build_ns) { return }
++	elapsed := time.duration_nanoseconds(time.tick_diff(start, time.tick_now()))
++	if elapsed <= 0 { return }
++	app.performance_sequence_build_ns[index] += u64(elapsed)
++	app.performance_sequence_builds[index] += 1
++}
++
++scratchpad_performance_sequence_open :: proc(app: ^App, rt: ^alicorn.Runtime, relative_path: string) -> bool {
++	if app == nil || rt == nil || !app.backend.state.has_workspace { return false }
++	path := fmt.tprintf("%s/%s", app.backend.state.workspace_root, relative_path)
++	response := bridge.backend_command(&app.backend, "open_path", path=path)
++	opened := response.ok
++	if opened {
++		handle_command_result(app, rt, &response)
++	} else {
++		fmt.eprintln("alicorn-performance-sequence open failed", relative_path, response.code, response.message)
++	}
++	bridge.backend_command_result_destroy(&response, context.allocator)
++	return opened
++}
++
++scratchpad_performance_sequence_report_counters :: proc(app: ^App, rt: ^alicorn.Runtime, step: int) {
++	if app == nil || rt == nil { return }
++	now := alicorn.frame_stats_snapshot(rt)
++	if app.performance_sequence_stats_valid {
++		before := app.performance_sequence_stats_mark
++		fmt.println(
++			"alicorn-performance-sequence-counters",
++			"step", step,
++			"emitted", now.descriptions_emitted-before.descriptions_emitted,
++			"reused", now.descriptions_reused-before.descriptions_reused,
++			"regions_skipped", now.regions_skipped-before.regions_skipped,
++			"retained_reused", now.retained_subtrees_reused-before.retained_subtrees_reused,
++			"reconcile_nodes", now.reconcile_nodes_visited-before.reconcile_nodes_visited,
++			"layout_nodes", now.layout_nodes_visited-before.layout_nodes_visited,
++			"paint_nodes", now.paint_nodes_visited-before.paint_nodes_visited,
++			"composition_nodes", now.composition_nodes_visited-before.composition_nodes_visited,
++			"measure_hits", now.measure_cache_hits-before.measure_cache_hits,
++			"measure_misses", now.measure_cache_misses-before.measure_cache_misses,
++			"layout_updates", now.layout_updates-before.layout_updates,
++			"display_finalized", now.display_commands_finalized-before.display_commands_finalized,
++			"full_passes", now.display_finalization_full_passes-before.display_finalization_full_passes,
++			"global_fallbacks", now.global_fallbacks-before.global_fallbacks,
++			"text_shapes", now.text_shape_requests-before.text_shape_requests,
++			"nodes_created", now.nodes_created-before.nodes_created,
++			"nodes_retired", now.nodes_retired-before.nodes_retired,
++			// Issue #229 phase 2: exact retained-description matches and exact
++			// structure-sequence matches. These fields do not exist before phase 2.
++			"retained_match", now.descriptions_retained_match-before.descriptions_retained_match,
++			"structure_matches", now.structure_sequence_matches-before.structure_sequence_matches,
++			// Candidate-only attribution (#228/#230/#229) printed by a separate
++			// diagnostic build; the matched hook does not reference these fields.
++			"splice_count", now.display_splice_count-before.display_splice_count,
++			"splice_elapsed_ns", now.display_splice_elapsed_ns-before.display_splice_elapsed_ns,
++			"splice_tail_rejections", now.display_splice_tail_rejections-before.display_splice_tail_rejections,
++			"layout_sparse_passes", now.layout_sparse_passes-before.layout_sparse_passes,
++			"layout_suffix_skips", now.layout_sparse_suffix_skips-before.layout_sparse_suffix_skips,
++			"layout_unchanged_skips", now.layout_sparse_unchanged_skips-before.layout_sparse_unchanged_skips,
++			"stage_description_ns", now.stage_timings_ns[alicorn.Runtime_Timing_Stage.Description]-before.stage_timings_ns[alicorn.Runtime_Timing_Stage.Description],
++			"stage_reconcile_ns", now.stage_timings_ns[alicorn.Runtime_Timing_Stage.Reconcile]-before.stage_timings_ns[alicorn.Runtime_Timing_Stage.Reconcile],
++			"stage_reconcile_hash_ns", now.stage_timings_ns[alicorn.Runtime_Timing_Stage.Reconcile_Hash]-before.stage_timings_ns[alicorn.Runtime_Timing_Stage.Reconcile_Hash],
++			"stage_reconcile_copy_ns", now.stage_timings_ns[alicorn.Runtime_Timing_Stage.Reconcile_Copy]-before.stage_timings_ns[alicorn.Runtime_Timing_Stage.Reconcile_Copy],
++			"stage_structure_diff_ns", now.stage_timings_ns[alicorn.Runtime_Timing_Stage.Structure_Diff]-before.stage_timings_ns[alicorn.Runtime_Timing_Stage.Structure_Diff],
++			"stage_measure_ns", now.stage_timings_ns[alicorn.Runtime_Timing_Stage.Measure]-before.stage_timings_ns[alicorn.Runtime_Timing_Stage.Measure],
++			"stage_layout_ns", now.stage_timings_ns[alicorn.Runtime_Timing_Stage.Layout]-before.stage_timings_ns[alicorn.Runtime_Timing_Stage.Layout],
++			"stage_paint_ns", now.stage_timings_ns[alicorn.Runtime_Timing_Stage.Paint]-before.stage_timings_ns[alicorn.Runtime_Timing_Stage.Paint],
++			"stage_composition_ns", now.stage_timings_ns[alicorn.Runtime_Timing_Stage.Composition]-before.stage_timings_ns[alicorn.Runtime_Timing_Stage.Composition],
++			"stage_finalize_ns", now.stage_timings_ns[alicorn.Runtime_Timing_Stage.Finalize]-before.stage_timings_ns[alicorn.Runtime_Timing_Stage.Finalize],
++		)
++	}
++	app.performance_sequence_stats_mark = now
++	app.performance_sequence_stats_valid = true
++}
++
++scratchpad_performance_sequence_step :: proc(app: ^App, rt: ^alicorn.Runtime) {
++	if app == nil || rt == nil || app.performance_sequence_complete || app.performance_sequence_failed { return }
++	if !app.smoke_rendered || !app.backend.state.has_workspace {
++		if !app.backend.state.has_workspace {
++			fmt.eprintln("alicorn-performance-sequence workspace state", "requested", app.workspace_path, "available", app.backend.state.has_workspace)
++		}
++		scratchpad_performance_sequence_schedule(app)
++		return
++	}
++	step := app.performance_sequence_steps
++	if step >= 9 {
++		// Settle the final step's declaration frame before declaring completion
++		// so the last close is measured like every other step.
++		if app.performance_sequence_builds[8] == 0 {
++			scratchpad_performance_sequence_schedule(app)
++			return
++		}
++		scratchpad_performance_sequence_report_counters(app, rt, 8)
++		app.performance_sequence_attribution = -1
++		app.performance_sequence_complete = true
++		return
++	}
++	// Advance only after the previous step's description was built. This keeps
++	// one command per frame instead of stacking commands ahead of the runtime.
++	if step > 0 && app.performance_sequence_builds[step-1] == 0 {
++		scratchpad_performance_sequence_schedule(app)
++		return
++	}
++	if step == 0 {
++		if !app.performance_sequence_stats_valid {
++			app.performance_sequence_stats_mark = alicorn.frame_stats_snapshot(rt)
++			app.performance_sequence_stats_valid = true
++		}
++	} else {
++		scratchpad_performance_sequence_report_counters(app, rt, step-1)
++	}
++	app.performance_sequence_attribution = step
++	action_start := time.tick_now()
++	advanced := false
++	switch step {
++	case 0:
++		if scratchpad_performance_sequence_open(app, rt, "README.md") { advanced = true }
++	case 1:
++		if scratchpad_performance_sequence_open(app, rt, "application/sample_00.go") { advanced = true }
++	case 2:
++		for document in app.backend.state.documents {
++			if strings.has_suffix(document.path, "README.md") {
++				select_document(app, rt, document.id)
++				active, found := find_document(&app.backend.state, app.backend.state.active)
++				advanced = found && strings.has_suffix(active.path, "README.md")
++				break
++			}
++		}
++	case 3:
++		quick_open_open_surface(app, rt)
++		advanced = app.quick_open_open
++	case 4:
++		if app.quick_open_open && !app.quick_open_ready {
++			scratchpad_performance_sequence_schedule(app)
++			return
++		}
++		if app.quick_open_open { quick_open_close_surface(app, rt, true) }
++		advanced = !app.quick_open_open
++	case 5:
++		dispatch_action(app, rt, ACTION_WORKSPACE_SETTINGS)
++		advanced = app.settings_surface_open
++	case 6:
++		settings_surface_close(app, rt, true)
++		advanced = !app.settings_surface_open
++	case 7, 8:
++		expected_document_count := 1 if step == 8 else 2
++		if len(app.backend.state.documents) >= expected_document_count {
++			if !app.performance_sequence_step_started {
++				app.performance_sequence_step_started = true
++				dispatch_start := time.tick_now()
++				dispatch_action(app, rt, ACTION_DOCUMENT_CLOSE)
++				scratchpad_performance_sequence_record_action(app, step, dispatch_start)
++			}
++			if len(app.backend.state.documents) >= expected_document_count {
++				scratchpad_performance_sequence_schedule(app)
++				return
++			}
++		}
++		advanced = true
++	case:
++		app.performance_sequence_complete = app.performance_sequence_steps == 9
++		return
++	}
++	if !advanced {
++		scratchpad_performance_sequence_fail(app, "action did not reach its expected state")
++		return
++	}
++	if step != 7 && step != 8 {
++		scratchpad_performance_sequence_record_action(app, step, action_start)
++	}
++	app.performance_sequence_step_started = false
++	app.performance_sequence_steps += 1
++	scratchpad_performance_sequence_schedule(app)
++}
++
+ go_to_line_open_surface :: proc(app: ^App, rt: ^alicorn.Runtime) {
+ 	if app == nil || rt == nil || !app.backend.started { return }
+ 	if _, found := find_document(&app.backend.state, app.backend.state.active); !found { return }
+@@ -4460,6 +4694,10 @@ main :: proc() {
+ 		}
+ 	}
+ 	if smoke, found := os.lookup_env("SCRATCHPAD_ALICORN_SMOKE", context.allocator); found { app.smoke = smoke == "1" || smoke == "true" }
++	if sequence, found := os.lookup_env("SCRATCHPAD_ALICORN_PERF_SEQUENCE", context.allocator); found {
++		app.performance_sequence_enabled = sequence == "1" || sequence == "true"
++		if app.performance_sequence_enabled { app.performance_sequence_attribution = -1 }
++	}
+ 	if row_trace_path, found := os.lookup_env("SCRATCHPAD_EDITOR_ROW_TRACE_PATH", context.allocator); found {
+ 		_ = editor_row_trace_init(&app.editor_row_trace, row_trace_path, context.allocator)
+ 		delete(row_trace_path, context.allocator)
+@@ -4503,6 +4741,22 @@ main :: proc() {
+ 		if len(app.smoke_session_mode) > 0 {
+ 			fmt.println("alicorn-smoke-session", app.smoke_session_mode, "passed", app.smoke_session_passed)
+ 		}
++		if app.performance_sequence_enabled {
++			sequence_passed := app.performance_sequence_complete && !app.performance_sequence_failed && app.performance_sequence_steps == 9
++			total_build_ns: u64
++			for step_index in 0..<9 {
++				total_build_ns += app.performance_sequence_build_ns[step_index]
++				fmt.println(
++					"alicorn-performance-sequence-step",
++					"step", step_index,
++					"action_ns", app.performance_sequence_action_ns[step_index],
++					"build_ns", app.performance_sequence_build_ns[step_index],
++					"builds", app.performance_sequence_builds[step_index],
++				)
++			}
++			fmt.println("alicorn-performance-sequence", "steps", app.performance_sequence_steps, "complete", app.performance_sequence_complete, "passed", sequence_passed, "build_ns", total_build_ns)
++			passed = passed && sequence_passed
++		}
+ 		if !passed { os.exit(1) }
+ 	}
+ }

@@ -1,0 +1,1510 @@
+{
+  "schema": 1,
+  "kind": "sequence",
+  "captures": [
+    {
+      "directory": "results-primary",
+      "pairs": 7
+    },
+    {
+      "directory": "results-confirmation",
+      "pairs": 3
+    },
+    {
+      "directory": "results-extra",
+      "pairs": 3
+    }
+  ],
+  "summaries": {
+    "baseline": {
+      "first_application_submit_ns": {
+        "count": 13,
+        "min": 9869500.0,
+        "p50": 10951800.0,
+        "p95": 60679600.0,
+        "max": 102597300.0
+      },
+      "application_build_ns": {
+        "count": 13,
+        "min": 30827400.0,
+        "p50": 33239000.0,
+        "p95": 37941100.0,
+        "max": 39320400.0
+      },
+      "sequence_build_ns": {
+        "count": 13,
+        "min": 17624800.0,
+        "p50": 19222800.0,
+        "p95": 22487500.0,
+        "max": 22637000.0
+      },
+      "host_wall_ns": {
+        "count": 13,
+        "min": 3083435500.0,
+        "p50": 3130970300.0,
+        "p95": 3386249500.0,
+        "max": 3749401200.0
+      },
+      "gpu_submissions": {
+        "count": 13,
+        "min": 17.0,
+        "p50": 17.0,
+        "p95": 18.0,
+        "max": 19.0
+      },
+      "peak_working_set_bytes": {
+        "count": 13,
+        "min": 325079040.0,
+        "p50": 325959680.0,
+        "p95": 328519680.0,
+        "max": 328593408.0
+      },
+      "application_build_max_ns": {
+        "count": 13,
+        "min": 8272400.0,
+        "p50": 8793000.0,
+        "p95": 10363100.0,
+        "max": 10996500.0
+      },
+      "elapsed_ns": {
+        "count": 13,
+        "min": 3781328300.0,
+        "p50": 4464379800.0,
+        "p95": 4809843200.0,
+        "max": 5018000100.0
+      },
+      "cpu_total_ns": {
+        "count": 13,
+        "min": 656250000.0,
+        "p50": 796875000.0,
+        "p95": 984375000.0,
+        "max": 984375000.0
+      }
+    },
+    "candidate": {
+      "first_application_submit_ns": {
+        "count": 13,
+        "min": 9907200.0,
+        "p50": 11222800.0,
+        "p95": 11827600.0,
+        "max": 42247900.0
+      },
+      "application_build_ns": {
+        "count": 13,
+        "min": 30709900.0,
+        "p50": 33651900.0,
+        "p95": 64499400.0,
+        "max": 110845800.0
+      },
+      "sequence_build_ns": {
+        "count": 13,
+        "min": 17631100.0,
+        "p50": 20428900.0,
+        "p95": 50417600.0,
+        "max": 97342300.0
+      },
+      "host_wall_ns": {
+        "count": 13,
+        "min": 3080501400.0,
+        "p50": 3208880100.0,
+        "p95": 3469495200.0,
+        "max": 3625282700.0
+      },
+      "gpu_submissions": {
+        "count": 13,
+        "min": 15.0,
+        "p50": 17.0,
+        "p95": 17.0,
+        "max": 19.0
+      },
+      "peak_working_set_bytes": {
+        "count": 13,
+        "min": 324276224.0,
+        "p50": 325787648.0,
+        "p95": 327634944.0,
+        "max": 330043392.0
+      },
+      "application_build_max_ns": {
+        "count": 13,
+        "min": 8075800.0,
+        "p50": 9118400.0,
+        "p95": 32141100.0,
+        "max": 76469500.0
+      },
+      "elapsed_ns": {
+        "count": 13,
+        "min": 3810248800.0,
+        "p50": 4164460200.0,
+        "p95": 5352330000.0,
+        "max": 5569232200.0
+      },
+      "cpu_total_ns": {
+        "count": 13,
+        "min": 687500000.0,
+        "p50": 765625000.0,
+        "p95": 812500000.0,
+        "max": 828125000.0
+      }
+    }
+  },
+  "paired_comparison": {
+    "first_application_submit_ns": {
+      "median_percent_change": -0.6750982737993505,
+      "changes": [
+        12.447456047529828,
+        -69.2721377934372,
+        3.41110355853829,
+        2.4744790810643,
+        -89.95353678897983,
+        -1.0605788243753371,
+        19.839910836415218,
+        -0.6750982737993505,
+        -4.8832331935154745,
+        -82.5804718554506,
+        -19.636797333901452,
+        1.7170609154119707,
+        12.613433803273375
+      ]
+    },
+    "application_build_ns": {
+      "median_percent_change": 3.2843313015417714,
+      "changes": [
+        -4.33226029663949,
+        -1.8272115330512064,
+        8.738524531749066,
+        192.15230976434526,
+        3.2843313015417714,
+        9.162303664921465,
+        -13.335195084975664,
+        8.298208145703246,
+        90.46316939567984,
+        9.76540479597589,
+        -6.0500401827041435,
+        -7.556546920247319,
+        -2.8593411028706925
+      ]
+    },
+    "sequence_build_ns": {
+      "median_percent_change": 8.306219994277054,
+      "changes": [
+        -3.4824404992635087,
+        1.2347770726798513,
+        14.992104495760637,
+        332.87292940522514,
+        8.306219994277054,
+        15.909967772683945,
+        -17.13654636215046,
+        16.80672268907563,
+        147.48478303553898,
+        16.510908653657935,
+        1.492726893979809,
+        -5.472667873566806,
+        -1.8913805575649658
+      ]
+    },
+    "host_wall_ns": {
+      "median_percent_change": 1.2112220319264722,
+      "changes": [
+        10.759039570064798,
+        3.350777367633675,
+        0.3338372571437889,
+        10.812140249302269,
+        1.2112220319264722,
+        4.880376272426464,
+        -17.3304980005874,
+        0.1443665897495694,
+        1.3404448952867845,
+        -0.2884101599796777,
+        4.19720972084402,
+        -0.09515684696501678,
+        -0.6941617338479632
+      ]
+    },
+    "gpu_submissions": {
+      "median_percent_change": -5.555555555555555,
+      "changes": [
+        -10.526315789473685,
+        0,
+        11.764705882352942,
+        -5.882352941176471,
+        -5.555555555555555,
+        -11.764705882352942,
+        0,
+        -5.555555555555555,
+        -5.882352941176471,
+        0,
+        -5.555555555555555,
+        0,
+        0
+      ]
+    },
+    "peak_working_set_bytes": {
+      "median_percent_change": -0.0691250031420456,
+      "changes": [
+        -0.6731236677760742,
+        -0.23142616373401084,
+        0.4596661768584454,
+        -0.05913958199640129,
+        -0.12565971349585323,
+        -0.41384688922991775,
+        -0.061567843994622236,
+        -0.08664205530023356,
+        -0.0691250031420456,
+        0.315000315000315,
+        0.09016680859590243,
+        1.413396430639112,
+        -1.026120566049498
+      ]
+    },
+    "application_build_max_ns": {
+      "median_percent_change": 7.509318793201201,
+      "changes": [
+        1.8599220890311992,
+        0.3621154586979253,
+        34.05429789052577,
+        595.3985358977857,
+        26.789800778300517,
+        6.333107683380881,
+        8.03569529239082,
+        31.620995066278308,
+        210.14947264814583,
+        2.6297860743970567,
+        -19.6285864989401,
+        7.509318793201201,
+        -2.8238371431820766
+      ]
+    },
+    "elapsed_ns": {
+      "median_percent_change": 2.0585806206738715,
+      "changes": [
+        7.772801839350978,
+        -13.302358232621682,
+        -14.652225601415005,
+        26.388251470680114,
+        18.80383369119154,
+        -5.9501539166158155,
+        -17.939318096067794,
+        2.0585806206738715,
+        7.326192789528347,
+        -5.842974180227877,
+        12.832301752383959,
+        2.8711603803351324,
+        -1.3161877615556001
+      ]
+    },
+    "cpu_total_ns": {
+      "median_percent_change": -5.454545454545454,
+      "changes": [
+        -3.9215686274509802,
+        -5.769230769230769,
+        -10.204081632653061,
+        1.9607843137254901,
+        8.16326530612245,
+        -25.396825396825395,
+        -7.6923076923076925,
+        -2.0833333333333335,
+        2.0408163265306123,
+        -5.882352941176471,
+        -22.22222222222222,
+        -5.454545454545454,
+        16.666666666666668
+      ]
+    }
+  },
+  "step_summaries": {
+    "step_0": {
+      "baseline": {
+        "action_ns": {
+          "count": 13,
+          "min": 1002300.0,
+          "p50": 1148800.0,
+          "p95": 1298500.0,
+          "max": 1358100.0
+        },
+        "build_ns": {
+          "count": 13,
+          "min": 515500.0,
+          "p50": 575300.0,
+          "p95": 721300.0,
+          "max": 921700.0
+        },
+        "builds": {
+          "count": 13,
+          "min": 3.0,
+          "p50": 3.0,
+          "p95": 3.0,
+          "max": 3.0
+        }
+      },
+      "candidate": {
+        "action_ns": {
+          "count": 13,
+          "min": 1017900.0,
+          "p50": 1225000.0,
+          "p95": 1355900.0,
+          "max": 1569700.0
+        },
+        "build_ns": {
+          "count": 13,
+          "min": 533400.0,
+          "p50": 581200.0,
+          "p95": 743900.0,
+          "max": 1059200.0
+        },
+        "builds": {
+          "count": 13,
+          "min": 3.0,
+          "p50": 3.0,
+          "p95": 3.0,
+          "max": 3.0
+        }
+      }
+    },
+    "step_1": {
+      "baseline": {
+        "action_ns": {
+          "count": 13,
+          "min": 1563600.0,
+          "p50": 1837900.0,
+          "p95": 2297800.0,
+          "max": 2359200.0
+        },
+        "build_ns": {
+          "count": 13,
+          "min": 6851300.0,
+          "p50": 7205400.0,
+          "p95": 8991300.0,
+          "max": 9362800.0
+        },
+        "builds": {
+          "count": 13,
+          "min": 5.0,
+          "p50": 5.0,
+          "p95": 5.0,
+          "max": 5.0
+        }
+      },
+      "candidate": {
+        "action_ns": {
+          "count": 13,
+          "min": 1659800.0,
+          "p50": 1911500.0,
+          "p95": 2216200.0,
+          "max": 2227000.0
+        },
+        "build_ns": {
+          "count": 13,
+          "min": 6598200.0,
+          "p50": 7722000.0,
+          "p95": 9564400.0,
+          "max": 9777200.0
+        },
+        "builds": {
+          "count": 13,
+          "min": 5.0,
+          "p50": 5.0,
+          "p95": 5.0,
+          "max": 5.0
+        }
+      }
+    },
+    "step_2": {
+      "baseline": {
+        "action_ns": {
+          "count": 13,
+          "min": 321300.0,
+          "p50": 412700.0,
+          "p95": 464700.0,
+          "max": 613800.0
+        },
+        "build_ns": {
+          "count": 13,
+          "min": 313400.0,
+          "p50": 353900.0,
+          "p95": 416000.0,
+          "max": 431300.0
+        },
+        "builds": {
+          "count": 13,
+          "min": 3.0,
+          "p50": 3.0,
+          "p95": 3.0,
+          "max": 3.0
+        }
+      },
+      "candidate": {
+        "action_ns": {
+          "count": 13,
+          "min": 306700.0,
+          "p50": 392300.0,
+          "p95": 673900.0,
+          "max": 865200.0
+        },
+        "build_ns": {
+          "count": 13,
+          "min": 292700.0,
+          "p50": 357800.0,
+          "p95": 416200.0,
+          "max": 462200.0
+        },
+        "builds": {
+          "count": 13,
+          "min": 3.0,
+          "p50": 3.0,
+          "p95": 3.0,
+          "max": 3.0
+        }
+      }
+    },
+    "step_3": {
+      "baseline": {
+        "action_ns": {
+          "count": 13,
+          "min": 4500.0,
+          "p50": 6100.0,
+          "p95": 6900.0,
+          "max": 41800.0
+        },
+        "build_ns": {
+          "count": 13,
+          "min": 195800.0,
+          "p50": 221000.0,
+          "p95": 240200.0,
+          "max": 278200.0
+        },
+        "builds": {
+          "count": 13,
+          "min": 2.0,
+          "p50": 2.0,
+          "p95": 2.0,
+          "max": 2.0
+        }
+      },
+      "candidate": {
+        "action_ns": {
+          "count": 13,
+          "min": 4300.0,
+          "p50": 5500.0,
+          "p95": 7000.0,
+          "max": 7200.0
+        },
+        "build_ns": {
+          "count": 13,
+          "min": 203100.0,
+          "p50": 219100.0,
+          "p95": 244400.0,
+          "max": 247100.0
+        },
+        "builds": {
+          "count": 13,
+          "min": 2.0,
+          "p50": 2.0,
+          "p95": 2.0,
+          "max": 2.0
+        }
+      }
+    },
+    "step_4": {
+      "baseline": {
+        "action_ns": {
+          "count": 13,
+          "min": 600.0,
+          "p50": 900.0,
+          "p95": 1100.0,
+          "max": 1200.0
+        },
+        "build_ns": {
+          "count": 13,
+          "min": 542900.0,
+          "p50": 614700.0,
+          "p95": 693900.0,
+          "max": 868000.0
+        },
+        "builds": {
+          "count": 13,
+          "min": 4.0,
+          "p50": 4.0,
+          "p95": 5.0,
+          "max": 5.0
+        }
+      },
+      "candidate": {
+        "action_ns": {
+          "count": 13,
+          "min": 600.0,
+          "p50": 800.0,
+          "p95": 1200.0,
+          "max": 1300.0
+        },
+        "build_ns": {
+          "count": 13,
+          "min": 118100.0,
+          "p50": 594100.0,
+          "p95": 31970500.0,
+          "max": 76416000.0
+        },
+        "builds": {
+          "count": 13,
+          "min": 1.0,
+          "p50": 4.0,
+          "p95": 4.0,
+          "max": 4.0
+        }
+      }
+    },
+    "step_5": {
+      "baseline": {
+        "action_ns": {
+          "count": 13,
+          "min": 5700.0,
+          "p50": 9000.0,
+          "p95": 11800.0,
+          "max": 13500.0
+        },
+        "build_ns": {
+          "count": 13,
+          "min": 796100.0,
+          "p50": 948600.0,
+          "p95": 1070400.0,
+          "max": 1113500.0
+        },
+        "builds": {
+          "count": 13,
+          "min": 2.0,
+          "p50": 2.0,
+          "p95": 2.0,
+          "max": 2.0
+        }
+      },
+      "candidate": {
+        "action_ns": {
+          "count": 13,
+          "min": 7500.0,
+          "p50": 8700.0,
+          "p95": 12300.0,
+          "max": 11438800.0
+        },
+        "build_ns": {
+          "count": 13,
+          "min": 786800.0,
+          "p50": 979400.0,
+          "p95": 1527400.0,
+          "max": 2635600.0
+        },
+        "builds": {
+          "count": 13,
+          "min": 2.0,
+          "p50": 2.0,
+          "p95": 2.0,
+          "max": 4.0
+        }
+      }
+    },
+    "step_6": {
+      "baseline": {
+        "action_ns": {
+          "count": 13,
+          "min": 481100.0,
+          "p50": 559000.0,
+          "p95": 640500.0,
+          "max": 773300.0
+        },
+        "build_ns": {
+          "count": 13,
+          "min": 119100.0,
+          "p50": 129500.0,
+          "p95": 259400.0,
+          "max": 300700.0
+        },
+        "builds": {
+          "count": 13,
+          "min": 1.0,
+          "p50": 1.0,
+          "p95": 1.0,
+          "max": 1.0
+        }
+      },
+      "candidate": {
+        "action_ns": {
+          "count": 13,
+          "min": 466200.0,
+          "p50": 541700.0,
+          "p95": 635000.0,
+          "max": 267199000.0
+        },
+        "build_ns": {
+          "count": 13,
+          "min": 100900.0,
+          "p50": 133600.0,
+          "p95": 163300.0,
+          "max": 237800.0
+        },
+        "builds": {
+          "count": 13,
+          "min": 1.0,
+          "p50": 1.0,
+          "p95": 1.0,
+          "max": 2.0
+        }
+      }
+    },
+    "step_7": {
+      "baseline": {
+        "action_ns": {
+          "count": 13,
+          "min": 359400.0,
+          "p50": 431400.0,
+          "p95": 700200.0,
+          "max": 841300.0
+        },
+        "build_ns": {
+          "count": 13,
+          "min": 7343800.0,
+          "p50": 8403900.0,
+          "p95": 9913500.0,
+          "max": 12303500.0
+        },
+        "builds": {
+          "count": 13,
+          "min": 4.0,
+          "p50": 4.0,
+          "p95": 5.0,
+          "max": 6.0
+        }
+      },
+      "candidate": {
+        "action_ns": {
+          "count": 13,
+          "min": 394700.0,
+          "p50": 498200.0,
+          "p95": 717000.0,
+          "max": 88058900.0
+        },
+        "build_ns": {
+          "count": 13,
+          "min": 7485900.0,
+          "p50": 8298300.0,
+          "p95": 10489800.0,
+          "max": 11077900.0
+        },
+        "builds": {
+          "count": 13,
+          "min": 4.0,
+          "p50": 4.0,
+          "p95": 5.0,
+          "max": 5.0
+        }
+      }
+    },
+    "step_8": {
+      "baseline": {
+        "action_ns": {
+          "count": 13,
+          "min": 403500.0,
+          "p50": 503100.0,
+          "p95": 9492500.0,
+          "max": 10516100.0
+        },
+        "build_ns": {
+          "count": 13,
+          "min": 62600.0,
+          "p50": 110000.0,
+          "p95": 172000.0,
+          "max": 208100.0
+        },
+        "builds": {
+          "count": 13,
+          "min": 1.0,
+          "p50": 1.0,
+          "p95": 1.0,
+          "max": 1.0
+        }
+      },
+      "candidate": {
+        "action_ns": {
+          "count": 13,
+          "min": 377600.0,
+          "p50": 458600.0,
+          "p95": 10474900.0,
+          "max": 10800300.0
+        },
+        "build_ns": {
+          "count": 13,
+          "min": 57000.0,
+          "p50": 72400.0,
+          "p95": 206500.0,
+          "max": 212200.0
+        },
+        "builds": {
+          "count": 13,
+          "min": 1.0,
+          "p50": 1.0,
+          "p95": 1.0,
+          "max": 1.0
+        }
+      }
+    }
+  },
+  "step_paired_comparison": {
+    "step_0": {
+      "action_ns": {
+        "median_percent_change": 4.540529892642569,
+        "changes": [
+          3.928056333248494,
+          2.6339419335528285,
+          20.885637273777437,
+          16.9383354894351,
+          29.12621359223301,
+          17.59961127308066,
+          13.309540389972145,
+          4.540529892642569,
+          -2.341320651179806,
+          -1.0354041416165665,
+          -1.5094617480303365,
+          -5.62766549230484,
+          5.378870521104305
+        ]
+      },
+      "build_ns": {
+        "median_percent_change": 10.940834141610088,
+        "changes": [
+          11.141932501155802,
+          1.4647137150466045,
+          7.499041043344841,
+          27.07550392893748,
+          16.612377850162865,
+          13.697318007662835,
+          -13.653699466056445,
+          10.940834141610088,
+          -19.423263551920144,
+          -11.029755413615828,
+          14.91808614516654,
+          0.842548709847288,
+          22.023292195376325
+        ]
+      }
+    },
+    "step_1": {
+      "action_ns": {
+        "median_percent_change": 0.7161777690571961,
+        "changes": [
+          15.890580239285514,
+          -9.626483719917239,
+          -11.74413058455668,
+          27.337183372405512,
+          19.34475573049317,
+          26.84294871794872,
+          -14.951174452362102,
+          3.8576636378475433,
+          0.7161777690571961,
+          -24.01257527453064,
+          -21.939640556120718,
+          7.521105141980046,
+          -16.811732961963617
+        ]
+      },
+      "build_ns": {
+        "median_percent_change": -0.5684414223130057,
+        "changes": [
+          -0.5684414223130057,
+          3.3655314070003053,
+          33.404003068554296,
+          -13.471397445208698,
+          22.01882993505941,
+          -0.6550434107432767,
+          8.316279821207388,
+          36.71728612579355,
+          -14.116979747088852,
+          -6.268364348677767,
+          -21.291975693179282,
+          11.990031116745419,
+          -3.694189423904952
+        ]
+      }
+    },
+    "step_2": {
+      "action_ns": {
+        "median_percent_change": -0.9343434343434344,
+        "changes": [
+          5.923423423423423,
+          4.142692750287687,
+          -29.380612479852637,
+          109.64380906227284,
+          33.247256294383476,
+          -5.830823980290172,
+          109.7416744475568,
+          -22.417725643532094,
+          9.132297803963578,
+          -20.205105825878245,
+          -19.87487969201155,
+          -1.129305477131564,
+          -0.9343434343434344
+        ]
+      },
+      "build_ns": {
+        "median_percent_change": 3.866708582206853,
+        "changes": [
+          10.62912956047113,
+          12.612883804936786,
+          -6.604977664326739,
+          -16.62960217445021,
+          22.762284196547146,
+          3.866708582206853,
+          32.210927573062264,
+          -16.442307692307693,
+          6.866346425543939,
+          -15.719916531416647,
+          -18.984094407388405,
+          11.638065522620904,
+          -12.96579887697805
+        ]
+      }
+    },
+    "step_3": {
+      "action_ns": {
+        "median_percent_change": -5.882352941176471,
+        "changes": [
+          -1.9230769230769231,
+          -5.882352941176471,
+          -26.666666666666668,
+          -86.1244019138756,
+          -12.698412698412698,
+          -37.68115942028985,
+          -3.278688524590164,
+          -1.7543859649122806,
+          -12.698412698412698,
+          7.462686567164179,
+          28.88888888888889,
+          27.272727272727273,
+          -15.625
+        ]
+      },
+      "build_ns": {
+        "median_percent_change": -1.2618296529968454,
+        "changes": [
+          5.650522317188984,
+          -1.8304431599229287,
+          -1.4890646812470916,
+          -18.69158878504673,
+          7.376325088339223,
+          3.555332999499249,
+          23.544433094994893,
+          -3.1221719457013575,
+          -1.2618296529968454,
+          5.2994398965962946,
+          -2.097902097902098,
+          -8.76010781671159,
+          2.872606161532057
+        ]
+      }
+    },
+    "step_4": {
+      "action_ns": {
+        "median_percent_change": -11.11111111111111,
+        "changes": [
+          -20,
+          42.857142857142854,
+          -41.666666666666664,
+          -11.11111111111111,
+          -30,
+          16.666666666666668,
+          -11.11111111111111,
+          50,
+          -10,
+          -36.36363636363637,
+          116.66666666666667,
+          0,
+          -25
+        ]
+      },
+      "build_ns": {
+        "median_percent_change": 0.047423332279481506,
+        "changes": [
+          -8.507916200223892,
+          10.410094637223974,
+          0.047423332279481506,
+          12909.193054136875,
+          2.6191638197494713,
+          -81.88094507517643,
+          -8.28959555418339,
+          -15.275976365470529,
+          5261.479121247694,
+          7.84923928077455,
+          -82.88018433179724,
+          -1.2465846994535519,
+          3.4444649106649474
+        ]
+      }
+    },
+    "step_5": {
+      "action_ns": {
+        "median_percent_change": 7.5,
+        "changes": [
+          -10.465116279069768,
+          -12.631578947368421,
+          7.5,
+          6.666666666666667,
+          -28.8135593220339,
+          33.69565217391305,
+          -37.77777777777778,
+          31.57894736842105,
+          23.655913978494624,
+          27.272727272727273,
+          129886.36363636363,
+          -5.434782608695652,
+          13.414634146341463
+        ]
+      },
+      "build_ns": {
+        "median_percent_change": 9.841961852861035,
+        "changes": [
+          -1.381244158271887,
+          -28.585541086663675,
+          15.545534260303144,
+          -10.111929589591504,
+          9.841961852861035,
+          -10.245571658615138,
+          23.024745634970483,
+          57.73480662983425,
+          75.58340039084952,
+          38.388888888888886,
+          146.22571001494768,
+          -3.8351459645105894,
+          -17.05671515918195
+        ]
+      }
+    },
+    "step_6": {
+      "action_ns": {
+        "median_percent_change": -5.807962529274005,
+        "changes": [
+          -5.807962529274005,
+          -13.3189732543529,
+          48864.449331134325,
+          -13.289496452673474,
+          -1.3465627214741318,
+          -13.32737030411449,
+          5.395232120451694,
+          7.8777800872999375,
+          10.147441457068517,
+          -12.004530011325029,
+          -36.27311522048364,
+          -2.641984184040259,
+          -9.744174678181523
+        ]
+      },
+      "build_ns": {
+        "median_percent_change": -3.3285094066570187,
+        "changes": [
+          5.877413937867338,
+          -46.99306090979183,
+          88.13291139240506,
+          -0.7851534618129907,
+          -56.434985034918526,
+          -22.084942084942085,
+          3.7238169123351437,
+          34.84723369116433,
+          -4.335260115606936,
+          5.9335443037974684,
+          -9.754098360655737,
+          -10.818713450292398,
+          -3.3285094066570187
+        ]
+      }
+    },
+    "step_7": {
+      "action_ns": {
+        "median_percent_change": 0.7587253414264037,
+        "changes": [
+          -6.402655916528338,
+          14.299332697807436,
+          -19.49254933548127,
+          56.432038834951456,
+          0.7587253414264037,
+          13080.496931597067,
+          -11.23964581548129,
+          -36.23294704415432,
+          -7.2786277236903105,
+          38.619922092376186,
+          -14.77475335789849,
+          53.78371926474099,
+          5.651292448048657
+        ]
+      },
+      "build_ns": {
+        "median_percent_change": 0.3963256537521298,
+        "changes": [
+          -7.274098759316385,
+          4.84555814669776,
+          -0.16362083278191508,
+          4.694608362334191,
+          -0.4656456953642384,
+          44.544624217119,
+          -38.434591782826026,
+          0.3963256537521298,
+          -8.67811373290972,
+          42.838857267354776,
+          14.948748288285893,
+          -18.540322317377065,
+          0.4328526584265254
+        ]
+      }
+    },
+    "step_8": {
+      "action_ns": {
+        "median_percent_change": -10.562220653963774,
+        "changes": [
+          -90.24093109261979,
+          -45.93356242840779,
+          2108.496732026144,
+          6.691623771642489,
+          -96.0200158019489,
+          -4.917641441871568,
+          -1.3714967203339297,
+          -9.192259150189313,
+          -12.41632476786871,
+          -31.18339876612451,
+          2576.6542750929366,
+          -10.562220653963774,
+          -95.63906771521762
+        ]
+      },
+      "build_ns": {
+        "median_percent_change": 6.8212824010914055,
+        "changes": [
+          -42.81818181818182,
+          -62.5,
+          106.9364161849711,
+          -64.84420928865373,
+          -57.07831325301205,
+          15.654952076677317,
+          23.652694610778443,
+          6.8212824010914055,
+          182.55659121171772,
+          10.845070422535212,
+          133.13161875945536,
+          -67.65977895242672,
+          -44.86274509803921
+        ]
+      }
+    }
+  },
+  "samples": [
+    {
+      "candidate": "baseline",
+      "run": "run-01",
+      "exit_code": 0,
+      "elapsed_ns": 4013067700,
+      "cpu_total_ns": 796875000,
+      "peak_working_set_bytes": 328593408,
+      "application_build_ns": 33239000,
+      "application_build_max_ns": 8650900,
+      "first_application_submit_ns": 10300900,
+      "host_wall_ns": 3273125800,
+      "gpu_submissions": 19,
+      "sequence_build_ns": 19348500,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-primary\\logs\\baseline-run-01.log",
+      "capture": "results-primary"
+    },
+    {
+      "candidate": "candidate",
+      "run": "run-01",
+      "exit_code": 0,
+      "elapsed_ns": 4324995500,
+      "cpu_total_ns": 765625000,
+      "peak_working_set_bytes": 326381568,
+      "application_build_ns": 31799000,
+      "application_build_max_ns": 8811800,
+      "first_application_submit_ns": 11583100,
+      "host_wall_ns": 3625282700,
+      "gpu_submissions": 17,
+      "sequence_build_ns": 18674700,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-primary\\logs\\candidate-run-01.log",
+      "capture": "results-primary"
+    },
+    {
+      "candidate": "candidate",
+      "run": "run-02",
+      "exit_code": 0,
+      "elapsed_ns": 3940412500,
+      "cpu_total_ns": 765625000,
+      "peak_working_set_bytes": 324907008,
+      "application_build_ns": 33150300,
+      "application_build_max_ns": 9118400,
+      "first_application_submit_ns": 11581700,
+      "host_wall_ns": 3208880100,
+      "gpu_submissions": 17,
+      "sequence_build_ns": 19717700,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-primary\\logs\\candidate-run-02.log",
+      "capture": "results-primary"
+    },
+    {
+      "candidate": "baseline",
+      "run": "run-02",
+      "exit_code": 0,
+      "elapsed_ns": 4545005400,
+      "cpu_total_ns": 812500000,
+      "peak_working_set_bytes": 325660672,
+      "application_build_ns": 33767300,
+      "application_build_max_ns": 9085500,
+      "first_application_submit_ns": 37691200,
+      "host_wall_ns": 3104843700,
+      "gpu_submissions": 17,
+      "sequence_build_ns": 19477200,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-primary\\logs\\baseline-run-02.log",
+      "capture": "results-primary"
+    },
+    {
+      "candidate": "baseline",
+      "run": "run-03",
+      "exit_code": 0,
+      "elapsed_ns": 4464379800,
+      "cpu_total_ns": 765625000,
+      "peak_working_set_bytes": 326135808,
+      "application_build_ns": 30870200,
+      "application_build_max_ns": 8423900,
+      "first_application_submit_ns": 10445300,
+      "host_wall_ns": 3090877300,
+      "gpu_submissions": 17,
+      "sequence_build_ns": 18174900,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-primary\\logs\\baseline-run-03.log",
+      "capture": "results-primary"
+    },
+    {
+      "candidate": "candidate",
+      "run": "run-03",
+      "exit_code": 0,
+      "elapsed_ns": 3810248800,
+      "cpu_total_ns": 687500000,
+      "peak_working_set_bytes": 327634944,
+      "application_build_ns": 33567800,
+      "application_build_max_ns": 11292600,
+      "first_application_submit_ns": 10801600,
+      "host_wall_ns": 3101195800,
+      "gpu_submissions": 19,
+      "sequence_build_ns": 20899700,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-primary\\logs\\candidate-run-03.log",
+      "capture": "results-primary"
+    },
+    {
+      "candidate": "candidate",
+      "run": "run-04",
+      "exit_code": 0,
+      "elapsed_ns": 5569232200,
+      "cpu_total_ns": 812500000,
+      "peak_working_set_bytes": 325328896,
+      "application_build_ns": 110845800,
+      "application_build_max_ns": 76469500,
+      "first_application_submit_ns": 11222800,
+      "host_wall_ns": 3469495200,
+      "gpu_submissions": 16,
+      "sequence_build_ns": 97342300,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-primary\\logs\\candidate-run-04.log",
+      "capture": "results-primary"
+    },
+    {
+      "candidate": "baseline",
+      "run": "run-04",
+      "exit_code": 0,
+      "elapsed_ns": 4406447700,
+      "cpu_total_ns": 796875000,
+      "peak_working_set_bytes": 325521408,
+      "application_build_ns": 37941100,
+      "application_build_max_ns": 10996500,
+      "first_application_submit_ns": 10951800,
+      "host_wall_ns": 3130970300,
+      "gpu_submissions": 17,
+      "sequence_build_ns": 22487500,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-primary\\logs\\baseline-run-04.log",
+      "capture": "results-primary"
+    },
+    {
+      "candidate": "baseline",
+      "run": "run-05",
+      "exit_code": 0,
+      "elapsed_ns": 4505182900,
+      "cpu_total_ns": 765625000,
+      "peak_working_set_bytes": 325959680,
+      "application_build_ns": 33468000,
+      "application_build_max_ns": 8608500,
+      "first_application_submit_ns": 102597300,
+      "host_wall_ns": 3386249500,
+      "gpu_submissions": 18,
+      "sequence_build_ns": 18871400,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-primary\\logs\\baseline-run-05.log",
+      "capture": "results-primary"
+    },
+    {
+      "candidate": "candidate",
+      "run": "run-05",
+      "exit_code": 0,
+      "elapsed_ns": 5352330000,
+      "cpu_total_ns": 828125000,
+      "peak_working_set_bytes": 325550080,
+      "application_build_ns": 34567200,
+      "application_build_max_ns": 10914700,
+      "first_application_submit_ns": 10307400,
+      "host_wall_ns": 3427264500,
+      "gpu_submissions": 17,
+      "sequence_build_ns": 20438900,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-primary\\logs\\candidate-run-05.log",
+      "capture": "results-primary"
+    },
+    {
+      "candidate": "candidate",
+      "run": "run-06",
+      "exit_code": 0,
+      "elapsed_ns": 4479045200,
+      "cpu_total_ns": 734375000,
+      "peak_working_set_bytes": 324276224,
+      "application_build_ns": 33651900,
+      "application_build_max_ns": 8796300,
+      "first_application_submit_ns": 9907200,
+      "host_wall_ns": 3403245500,
+      "gpu_submissions": 15,
+      "sequence_build_ns": 20428900,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-primary\\logs\\candidate-run-06.log",
+      "capture": "results-primary"
+    },
+    {
+      "candidate": "baseline",
+      "run": "run-06",
+      "exit_code": 0,
+      "elapsed_ns": 4762416300,
+      "cpu_total_ns": 984375000,
+      "peak_working_set_bytes": 325623808,
+      "application_build_ns": 30827400,
+      "application_build_max_ns": 8272400,
+      "first_application_submit_ns": 10013400,
+      "host_wall_ns": 3244883000,
+      "gpu_submissions": 17,
+      "sequence_build_ns": 17624800,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-primary\\logs\\baseline-run-06.log",
+      "capture": "results-primary"
+    },
+    {
+      "candidate": "baseline",
+      "run": "run-07",
+      "exit_code": 0,
+      "elapsed_ns": 5018000100,
+      "cpu_total_ns": 812500000,
+      "peak_working_set_bytes": 325988352,
+      "application_build_ns": 37599000,
+      "application_build_max_ns": 9401800,
+      "first_application_submit_ns": 9869500,
+      "host_wall_ns": 3749401200,
+      "gpu_submissions": 17,
+      "sequence_build_ns": 22637000,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-primary\\logs\\baseline-run-07.log",
+      "capture": "results-primary"
+    },
+    {
+      "candidate": "candidate",
+      "run": "run-07",
+      "exit_code": 0,
+      "elapsed_ns": 4117805100,
+      "cpu_total_ns": 750000000,
+      "peak_working_set_bytes": 325787648,
+      "application_build_ns": 32585100,
+      "application_build_max_ns": 10157300,
+      "first_application_submit_ns": 11827600,
+      "host_wall_ns": 3099611300,
+      "gpu_submissions": 17,
+      "sequence_build_ns": 18757800,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-primary\\logs\\candidate-run-07.log",
+      "capture": "results-primary"
+    },
+    {
+      "candidate": "baseline",
+      "run": "run-01",
+      "exit_code": 0,
+      "elapsed_ns": 4809843200,
+      "cpu_total_ns": 750000000,
+      "peak_working_set_bytes": 326197248,
+      "application_build_ns": 31933400,
+      "application_build_max_ns": 8411500,
+      "first_application_submit_ns": 11702000,
+      "host_wall_ns": 3128563200,
+      "gpu_submissions": 18,
+      "sequence_build_ns": 18088000,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-confirmation\\logs\\baseline-run-01.log",
+      "capture": "results-confirmation"
+    },
+    {
+      "candidate": "candidate",
+      "run": "run-01",
+      "exit_code": 0,
+      "elapsed_ns": 4908857700,
+      "cpu_total_ns": 734375000,
+      "peak_working_set_bytes": 325914624,
+      "application_build_ns": 34583300,
+      "application_build_max_ns": 11071300,
+      "first_application_submit_ns": 11623000,
+      "host_wall_ns": 3133079800,
+      "gpu_submissions": 17,
+      "sequence_build_ns": 21128000,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-confirmation\\logs\\candidate-run-01.log",
+      "capture": "results-confirmation"
+    },
+    {
+      "candidate": "candidate",
+      "run": "run-02",
+      "exit_code": 0,
+      "elapsed_ns": 4164460200,
+      "cpu_total_ns": 781250000,
+      "peak_working_set_bytes": 325677056,
+      "application_build_ns": 64499400,
+      "application_build_max_ns": 32141100,
+      "first_application_submit_ns": 10068300,
+      "host_wall_ns": 3141728300,
+      "gpu_submissions": 16,
+      "sequence_build_ns": 50417600,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-confirmation\\logs\\candidate-run-02.log",
+      "capture": "results-confirmation"
+    },
+    {
+      "candidate": "baseline",
+      "run": "run-02",
+      "exit_code": 0,
+      "elapsed_ns": 3880190000,
+      "cpu_total_ns": 765625000,
+      "peak_working_set_bytes": 325902336,
+      "application_build_ns": 33864500,
+      "application_build_max_ns": 10363100,
+      "first_application_submit_ns": 10585200,
+      "host_wall_ns": 3100172200,
+      "gpu_submissions": 17,
+      "sequence_build_ns": 20372000,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-confirmation\\logs\\baseline-run-02.log",
+      "capture": "results-confirmation"
+    },
+    {
+      "candidate": "baseline",
+      "run": "run-03",
+      "exit_code": 0,
+      "elapsed_ns": 4382714900,
+      "cpu_total_ns": 796875000,
+      "peak_working_set_bytes": 325079040,
+      "application_build_ns": 32285400,
+      "application_build_max_ns": 8806800,
+      "first_application_submit_ns": 60679600,
+      "host_wall_ns": 3150825200,
+      "gpu_submissions": 17,
+      "sequence_build_ns": 17880300,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-confirmation\\logs\\baseline-run-03.log",
+      "capture": "results-confirmation"
+    },
+    {
+      "candidate": "candidate",
+      "run": "run-03",
+      "exit_code": 0,
+      "elapsed_ns": 4126634000,
+      "cpu_total_ns": 750000000,
+      "peak_working_set_bytes": 326103040,
+      "application_build_ns": 35438200,
+      "application_build_max_ns": 9038400,
+      "first_application_submit_ns": 10570100,
+      "host_wall_ns": 3141737900,
+      "gpu_submissions": 17,
+      "sequence_build_ns": 20832500,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-confirmation\\logs\\candidate-run-03.log",
+      "capture": "results-confirmation"
+    },
+    {
+      "candidate": "baseline",
+      "run": "run-01",
+      "exit_code": 0,
+      "elapsed_ns": 4566647600,
+      "cpu_total_ns": 984375000,
+      "peak_working_set_bytes": 327073792,
+      "application_build_ns": 39320400,
+      "application_build_max_ns": 10048100,
+      "first_application_submit_ns": 52571200,
+      "host_wall_ns": 3092192400,
+      "gpu_submissions": 18,
+      "sequence_build_ns": 19682100,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-extra\\logs\\baseline-run-01.log",
+      "capture": "results-extra"
+    },
+    {
+      "candidate": "candidate",
+      "run": "run-01",
+      "exit_code": 0,
+      "elapsed_ns": 5152653600,
+      "cpu_total_ns": 765625000,
+      "peak_working_set_bytes": 327368704,
+      "application_build_ns": 36941500,
+      "application_build_max_ns": 8075800,
+      "first_application_submit_ns": 42247900,
+      "host_wall_ns": 3221978200,
+      "gpu_submissions": 17,
+      "sequence_build_ns": 19975900,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-extra\\logs\\candidate-run-01.log",
+      "capture": "results-extra"
+    },
+    {
+      "candidate": "candidate",
+      "run": "run-02",
+      "exit_code": 0,
+      "elapsed_ns": 3889896300,
+      "cpu_total_ns": 812500000,
+      "peak_working_set_bytes": 330043392,
+      "application_build_ns": 30709900,
+      "application_build_max_ns": 8912200,
+      "first_application_submit_ns": 11498300,
+      "host_wall_ns": 3080501400,
+      "gpu_submissions": 17,
+      "sequence_build_ns": 18170800,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-extra\\logs\\candidate-run-02.log",
+      "capture": "results-extra"
+    },
+    {
+      "candidate": "baseline",
+      "run": "run-02",
+      "exit_code": 0,
+      "elapsed_ns": 3781328300,
+      "cpu_total_ns": 859375000,
+      "peak_working_set_bytes": 325443584,
+      "application_build_ns": 33220200,
+      "application_build_max_ns": 8289700,
+      "first_application_submit_ns": 11304200,
+      "host_wall_ns": 3083435500,
+      "gpu_submissions": 17,
+      "sequence_build_ns": 19222800,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-extra\\logs\\baseline-run-02.log",
+      "capture": "results-extra"
+    },
+    {
+      "candidate": "baseline",
+      "run": "run-03",
+      "exit_code": 0,
+      "elapsed_ns": 4085579700,
+      "cpu_total_ns": 656250000,
+      "peak_working_set_bytes": 328519680,
+      "application_build_ns": 31713600,
+      "application_build_max_ns": 8793000,
+      "first_application_submit_ns": 9873600,
+      "host_wall_ns": 3384153700,
+      "gpu_submissions": 17,
+      "sequence_build_ns": 17971000,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-extra\\logs\\baseline-run-03.log",
+      "capture": "results-extra"
+    },
+    {
+      "candidate": "candidate",
+      "run": "run-03",
+      "exit_code": 0,
+      "elapsed_ns": 4031805800,
+      "cpu_total_ns": 765625000,
+      "peak_working_set_bytes": 325148672,
+      "application_build_ns": 30806800,
+      "application_build_max_ns": 8544700,
+      "first_application_submit_ns": 11119000,
+      "host_wall_ns": 3360662200,
+      "gpu_submissions": 17,
+      "sequence_build_ns": 17631100,
+      "log": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-ab2\\results-extra\\logs\\candidate-run-03.log",
+      "capture": "results-extra"
+    }
+  ]
+}
