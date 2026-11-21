@@ -643,3 +643,141 @@ classes above. `runtime/retained_locality_test.odin`'s former multi-command
 slider assertion now asserts the same-count range splice instead of a full
 rebuild. True idle (200 frames) remains free of paint, composition and
 finalization work.
+
+## Addendum: count-changing sparse splices (issue #228 milestone 2)
+
+Milestone 1 spliced only **same-count** ranges: a focus ring, a checkbox
+checkmark or another repaint that added or removed a command still called
+`rebuild_display`. Milestone 2 splices those count changes while the work left
+behind the changed range stays bounded, so the bottleneck does not move from
+composition to memmove plus index fixup.
+
+The fixture, runner, and scenarios are unchanged. The before capture is the
+milestone-2 base commit `acb9555` (milestone 1 already merged); the after
+capture is the same tree with this change applied, committed together with this
+addendum. Raw captures:
+
+- [before](raw/issue-228-sparse-finalization-m2-before-windows-2026-11-21.txt)
+- [after](raw/issue-228-sparse-finalization-m2-after-windows-2026-11-21.txt)
+
+### Tail policy
+
+After a repaint the retained run is `[display_index, display_index + old_count)`
+and `delta = new_count - old_count`. With
+
+```text
+tail_commands = len(display_target) - (display_index + old_count)
+```
+
+the update splices only while
+
+```text
+tail_commands <= max(256, 8 * abs(delta))
+```
+
+The absolute floor keeps small windows on the sparse path; the eight-command
+slope keeps the moved tail proportional to the changed range. A larger tail
+takes milestone 1's bulk shape: one linear full pass that composes every tree
+and finalizes every command, recorded as an incremental fallback. This is the
+same trade the milestone-1 bulk policy makes for broad repaints, applied to the
+tail of one count-changing node.
+
+### Index fixup
+
+`display_index` is by definition the slot of a node's first owned display
+command. The fixup therefore walks the **moved tail commands**, not the retained
+tree: two passes over `[tail_start, len(display_target))` mark every owner whose
+first command sits at that slot, then publish `index + delta`. Its cost is
+O(tail commands), the same bound as the memmove and the policy above, and it
+needs no ordered-tree or order-position sidecar. The two passes prevent a scroll
+region's later scrollbar run from shifting its owner twice.
+
+A DFS from `top_level` would also visit only the tail nodes, but it first has to
+*locate* the splice node: for a late node in a flat list that means scanning the
+preceding siblings, which is O(all live) exactly when the tail is empty and the
+splice is cheapest. Scanning the moved commands is strictly bounded by the
+policy and matches the memmove it already pays for.
+
+The moved commands are copied verbatim and never re-finalized. Snapping is
+per-command (`layout_finalize_paint_command` rounds bounds and clip only), so a
+position shift cannot change their device geometry.
+
+### What splices, what stays bulk
+
+- **Splices**: count changes on a visible node whose inherited presentation is
+  neutral (no ancestor clip/translation/opacity and no motion surface color) and
+  that is not itself a clipping node. Covered examples: focus ring appearing or
+  disappearing, checkbox checkmark added or removed, container background
+  gained or lost.
+- **Zero-count edges**: `N -> 0` removes the run and resets `display_index` to
+  the `-1` zero-command sentinel; `0 -> N` anchors insertion at the first
+  command anywhere in the node's subtree (the node's own commands precede its
+  descendants). A node with no command-bearing descendant has no anchor and
+  takes the full pass.
+- **Still bulk**: transient overlays (drag preview/tooltip are appended after
+  every top-level tree and re-appended by `rebuild_display`, so a splice must
+  not move them), live backdrop boundaries, `Scroll_Region` nodes, clipping
+  nodes with a count change, non-neutral inherited presentation, structure and
+  order changes, and any tail over the policy.
+
+### Measured cost
+
+The #190 fixture has no focus/checkmark scenario, so its deterministic counters
+and wall time are the no-regression check rather than the count-change evidence.
+The scenarios that were sparse stay sparse and the bulk theme leg still takes
+one full pass; counters are identical before and after:
+
+| Scenario (region mode) | Rows | Compose visits | Finalized | Full passes | Wall p50 before → after |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| hover move | 1,000 | 2 | 4 | 0 | 1.066 → 1.089 ms |
+| hover move | 3,000 | 2 | 4 | 0 | 2.985 → 3.408 ms |
+| two-row selection | 1,000 | 6 | 8 | 0 | 2.043 → 1.826 ms |
+| two-row selection | 3,000 | 6 | 8 | 0 | 6.486 → 5.992 ms |
+| broad theme change | 1,000 | 7,003 | 7,003 | 1 | 4.370 → 4.108 ms |
+| broad theme change | 3,000 | 21,003 | 21,003 | 1 | 18.932 → 18.062 ms |
+
+Single-run wall values move with normal machine variance (hover at 3,000 rides
+on the unchanged input-routing cost); the deterministic stage counts are the
+evidence that this change does not disturb the existing sparse classes.
+
+The dedicated micro-benchmark lives in `runtime/sparse_display_test.odin` and
+prints `SPARSE_M2_BENCH` / `SPARSE_M2_BENCH_LATE` counters (`odin test runtime`).
+Counts are deterministic; wall values are one host/compiler run and are
+machine-specific. Each update toggles focus, which is one shrink splice and one
+grow splice; the 400-button leg toggles only the last node, whose tail is empty.
+
+| Case | Splice update p50 | Full-rebuild p50 | Internal splice ns/update | Bytes moved/update | Tail nodes/update | Tail commands/update |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 8 rows, middle button focus toggle | 16.2 µs | 28.8 µs | 8,458 | 13,034 | 38 | 50 |
+| 400 buttons, last button focus toggle | 10.0 µs | 528.0 µs | — | 0 | 0 | 0 |
+
+Internal splice time is the new `display_splice_elapsed_ns` counter (validation
+and paint recomposition excluded). In the 8-row case the two splices move about
+13 KB and shift 38 node runs in 8.5 µs, roughly 29% of the same update's full
+rebuild; the rest of the update is paint and finalization that both paths pay.
+In the 400-button case the changed node is last, so the tail is empty:
+`display_splice_tail_nodes` is exactly zero, the fixup does no work, and the
+update costs 10.0 µs instead of 528.0 µs for the same change. The fixup is
+therefore never the new bottleneck: its work is bounded by the same policy that
+admits the splice, and it disappears when the tail does. (Repeat runs on the
+same host varied by under 10%; the splice/full split was stable.)
+
+The large-tail direction is also pinned: focusing the **first** of 400 buttons
+adds a ring, computes a tail of roughly 1,200 commands, exceeds
+`max(256, 8*4)`, increments `display_splice_tail_rejections`, and takes exactly
+one full display pass instead.
+
+### Correctness
+
+The test oracle is now stronger than milestone 1's. `sparse_display_test.odin`
+snapshots `display`, `display_target` and every node's `display_index`, forces a
+complete `rebuild_display`, compares all three, and restores the incremental
+state. Every randomized operation (now including focus toggles, checkbox
+toggles, and zero-to-one background changes) is therefore checked against a true
+full composition and index rebuild, not just a re-finalization. Focus
+grow/shrink, checkbox grow/shrink, zero-count grow/shrink, late-node splice,
+large-tail fallback, and overlay fallback have dedicated tests.
+
+All suites are green on this tree: `odin test runtime` 465 tests (seven new over
+the 458 pre-change suite on this branch), `odin test ui` 57, `odin test theme`
+37, `odin test renderer/cpu` 23, and the `tests` executable passes.

@@ -860,9 +860,13 @@ layout_finalize_paint_command :: proc(target: Paint_Command, scale_x, scale_y: f
 // layout_finalize_display_range replaces one contiguous run of an owner's
 // retained display commands without touching any other slot. Sparse paint
 // updates use it for multi-command nodes: the caller has already recomposed
-// the run and verified that its length and presentation are unchanged, so the
-// run stays in place and the finalized list remains aligned with
-// display_target.
+// the run and verified that its presentation is unchanged, so the run stays in
+// place and the finalized list remains aligned with display_target.
+//
+// Count-changing splices also use this for the changed run only. Snapping is
+// per-command (bounds and clip are rounded independently of list position), so
+// the commands after the run are moved verbatim and never re-finalized: a shift
+// cannot change their device geometry.
 layout_finalize_display_range :: proc(
 	rt: ^Runtime,
 	owner: Node_ID,
@@ -875,7 +879,10 @@ layout_finalize_display_range :: proc(
 	}
 	for target, offset in targets {
 		slot := index + offset
-		if target.owner != owner || rt.display_target[slot].owner != owner || rt.display[slot].owner != owner {
+		// Validate the unsnapped target and the replacement. The finalized
+		// display mirror is derived, and a count-changing splice publishes slots
+		// the mirror has not held before, so it is overwritten unconditionally.
+		if target.owner != owner || rt.display_target[slot].owner != owner {
 			return false
 		}
 	}

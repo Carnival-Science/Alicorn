@@ -1,6 +1,7 @@
 package alicorn
 
 import runa "../third_party/Runa"
+import "core:time"
 
 Text_Paint_Caret_Key :: struct {
 	line_index: int,
@@ -217,6 +218,16 @@ append_scrollbar_display :: proc(rt: ^Runtime, node: ^Node) {
 // on the sparse path even when every node changes.
 SPARSE_DISPLAY_BULK_QUEUE_THRESHOLD :: 64
 
+// A count-changing splice moves every command after the changed range in both
+// display lists and shifts each following node's display_index. The fixup scans
+// the moved commands themselves, so its cost has the same shape as the memmove.
+// Splice only while that tail work stays proportional to the change: allow up
+// to eight moved commands per changed command, but never less than a 256-command
+// floor. Above that, one linear full pass composes and finalizes the whole list
+// instead of paying a memmove plus a command scan of the same order.
+SPARSE_DISPLAY_TAIL_COMMAND_FLOOR :: 256
+SPARSE_DISPLAY_TAIL_COMMANDS_PER_CHANGE :: 8
+
 // Compose_Inherited_Presentation carries the translation, opacity and clip a
 // node receives from its ancestors, recomputed on demand for sparse range
 // finalization.
@@ -354,13 +365,116 @@ paint_commands_have_backdrop_effect :: proc(commands: []Paint_Command) -> bool {
 	return false
 }
 
+// paint_sparse_inherited_is_neutral reports whether the node receives no
+// translation, opacity, clip or motion surface from its ancestors (and none
+// from its own motion state). A count-changing repaint shifts command roles, so
+// it has no stable slot to validate the inherited presentation against. Splice
+// only while the presentation is neutral, which keeps the recomposed prefix
+// byte-identical to a full composition; motion, ancestor clips and animated
+// surface colors take the full compositor.
+paint_sparse_inherited_is_neutral :: proc(rt: ^Runtime, inherited: Compose_Inherited_Presentation) -> bool {
+	if rt == nil || !inherited.valid { return false }
+	return inherited.presentation.opacity == 1 &&
+		inherited.presentation.translation == [2]f32{} &&
+		!inherited.presentation.has_surface_color &&
+		!inherited.clip_follow &&
+		inherited.stationary_clip == rt.viewport &&
+		inherited.translated_clip == rt.viewport
+}
+
+// paint_sparse_insertion_point finds where a node that previously owned no
+// display commands inserts its first run. The node's own commands precede every
+// descendant command, so the first command anywhere in its subtree is the
+// insertion point. The walk stops at the first child subtree that contributes a
+// command; later siblings are strictly later in display order. Nodes without
+// any command-bearing descendant are not anchored by this rule.
+paint_sparse_insertion_point :: proc(rt: ^Runtime, node: ^Node) -> int {
+	for child_id in node.children {
+		child, ok := rt.nodes[child_id]
+		if !ok || child == nil || !child.active { continue }
+		if child.display_index >= 0 { return child.display_index }
+		if index := paint_sparse_insertion_point(rt, child); index >= 0 { return index }
+	}
+	return -1
+}
+
+// paint_sparse_splice_tail resizes one retained display list and moves the
+// commands after the changed range by delta slots. Both lists are spliced the
+// same way so display stays the finalized mirror of display_target.
+paint_sparse_splice_tail :: proc(
+	commands: ^[dynamic]Paint_Command,
+	start, old_count, new_count: int,
+) -> (moved_commands: int, ok: bool) {
+	if commands == nil { return 0, false }
+	old_len := len(commands^)
+	tail := old_len - (start + old_count)
+	if start < 0 || old_count < 0 || new_count < 0 || tail < 0 { return 0, false }
+	if new_count == old_count { return 0, true }
+	new_len := old_len + new_count - old_count
+	source := start + old_count
+	destination := start + new_count
+	if new_count > old_count {
+		resize(commands, new_len)
+		for offset := tail - 1; offset >= 0; offset -= 1 {
+			commands[destination + offset] = commands[source + offset]
+		}
+	} else {
+		// Move the tail before shrinking so every source slot is still inside
+		// the array's length.
+		for offset := 0; offset < tail; offset += 1 {
+			commands[destination + offset] = commands[source + offset]
+		}
+		resize(commands, new_len)
+	}
+	return tail, true
+}
+
+// paint_sparse_fixup_display_indices shifts display_index for every node whose
+// first command follows the spliced range. It walks the moved tail commands
+// instead of the retained tree: display_index is by definition the slot of a
+// node's first owned command, so a node needs the shift exactly when that slot
+// is the slot being visited. The cost is O(moved commands), the same bound as
+// the memmove itself, and needs no ordered-tree sidecar. The two passes mark
+// then publish first-command slots so a scroll region's later scrollbar run
+// cannot shift its owner twice.
+paint_sparse_fixup_display_indices :: proc(rt: ^Runtime, boundary, length, delta: int) -> int {
+	shifted := 0
+	for index := boundary; index < length; index += 1 {
+		owner := rt.display_target[index].owner
+		if owner == 0 { continue }
+		node, ok := rt.nodes[owner]
+		if !ok || node == nil { continue }
+		if node.display_index == index {
+			node.display_index = -(index + 1)
+			shifted += 1
+		}
+	}
+	for index := boundary; index < length; index += 1 {
+		owner := rt.display_target[index].owner
+		if owner == 0 { continue }
+		node, ok := rt.nodes[owner]
+		if !ok || node == nil { continue }
+		if node.display_index < 0 && -node.display_index - 1 == index {
+			node.display_index = index + delta
+		}
+	}
+	return shifted
+}
+
 // paint_sparse_finalize_range recomposes only the node's own contiguous
-// display commands and finalizes them in place. It requires the command count
-// to be unchanged so every later node keeps its display_index; count changes,
-// changed inherited presentation, overlays and retained effects fall back to
+// display commands and finalizes them in place. Same-count repaints keep every
+// later display_index. Count-changing repaints splice the range: both display
+// lists are resized, the following tail is moved verbatim (finalization is
+// position-independent), and every following node's display_index shifts by the
+// delta. The splice is attempted only while the moved tail stays bounded and
+// the inherited presentation can be validated; everything else falls back to
 // rebuild_display.
 paint_sparse_finalize_range :: proc(rt: ^Runtime, node: ^Node) -> bool {
 	if rt == nil || node == nil { return false }
+	// Transient overlays (drag preview, tooltip) are appended after every
+	// top-level tree and re-appended by rebuild_display. Their commands have no
+	// owner node and are not part of the tree tail, so a splice must not move
+	// them; the full rebuild handles any frame in which they are present.
 	if rt.composition_rebuild || rt.transient_overlay_kind != .None || rt.drag.phase == .Dragging ||
 		rt.tooltip.visible { return false }
 	// A backdrop marker anywhere in the retained display captures a prefix for
@@ -369,39 +483,116 @@ paint_sparse_finalize_range :: proc(rt: ^Runtime, node: ^Node) -> bool {
 	if rt.retained_backdrop_effect_nodes != 0 { return false }
 	if node.kind == .Scroll_Region { return false }
 	if len(rt.display) != len(rt.display_target) { return false }
+	part_visible := visual_part_is_visible(rt, node.id)
 	start := node.display_index
-	if start < 0 || start >= len(rt.display_target) { return false }
 	new_count := len(node.paint)
-	if new_count == 0 { return false }
-	old_count := compose_owned_command_run(rt.display_target[:], start, node.id)
-	display_count := compose_owned_command_run(rt.display[:], start, node.id)
-	if old_count != new_count || display_count != old_count { return false }
-	inherited := compose_inherited_presentation(rt, node.id)
-	if !inherited.valid { return false }
-	// Validate every replacement before mutating the retained display: if any
-	// inherited transform differs from the slot being replaced, an ancestor
-	// presentation or this node's clip changed and the full path must run.
-	// Clipping nodes also validate their own bounds because descendants inherit
-	// that clip geometry.
-	bounds_must_match := node.style.clip
-	for command, offset in node.paint {
-		composed := compose_paint_command_presentation(command, inherited.presentation,
-			inherited.clip_follow, inherited.stationary_clip, inherited.translated_clip)
-		existing := rt.display_target[start+offset]
-		if !compose_presentation_fields_match(composed, existing) ||
-			(bounds_must_match && composed.bounds != existing.bounds) {
+	old_count := 0
+	if start < 0 {
+		// The node owned no commands at the last composition. A repaint that
+		// still emits none (or whose part is hidden) changes nothing here.
+		if new_count == 0 || !part_visible { return false }
+		start = paint_sparse_insertion_point(rt, node)
+		if start < 0 {
+			if len(rt.display_target) == 0 { start = 0 }
+			else { return false }
+		}
+	} else {
+		if start >= len(rt.display_target) { return false }
+		old_count = compose_owned_command_run(rt.display_target[:], start, node.id)
+		display_count := compose_owned_command_run(rt.display[:], start, node.id)
+		if old_count == 0 || display_count != old_count { return false }
+		if !part_visible {
+			// The node's own run disappears, and an untagged hidden part hides
+			// its children too. The full compositor applies both cases.
 			return false
 		}
 	}
-	for command, offset in node.paint {
-		rt.display_target[start+offset] = compose_paint_command_presentation(command,
-			inherited.presentation, inherited.clip_follow, inherited.stationary_clip,
-			inherited.translated_clip)
-	}
-	if !layout_finalize_display_range(rt, node.id, start,
-		rt.display_target[start:start+old_count]) {
+	count_changed := new_count != old_count
+	// A clipping node's bounds are inherited by its descendants. A count change
+	// has no old slots to validate new command bounds against, so let the full
+	// compositor handle that combination.
+	if count_changed && node.style.clip { return false }
+	inherited := compose_inherited_presentation(rt, node.id)
+	if !inherited.valid { return false }
+	// Validate the slots the repaint replaces. A same-count repaint keeps one
+	// command per slot, so every recomposed command must match the inherited
+	// presentation of the slot it replaces. A count-changing repaint shifts
+	// command roles (a checkmark is inserted before a label, a focus outline
+	// before text), so there is no stable slot to compare; require a neutral
+	// inherited presentation instead, which is the static-tree case these
+	// splices target. Motion, ancestor clips and animated surface colors keep
+	// the full compositor.
+	if !count_changed {
+		for offset in 0..<old_count {
+			composed := compose_paint_command_presentation(node.paint[offset], inherited.presentation,
+				inherited.clip_follow, inherited.stationary_clip, inherited.translated_clip)
+			existing := rt.display_target[start+offset]
+			if !compose_presentation_fields_match(composed, existing) ||
+				(node.style.clip && composed.bounds != existing.bounds) {
+				return false
+			}
+		}
+	} else if !paint_sparse_inherited_is_neutral(rt, inherited) {
 		return false
 	}
+	moved_commands := 0
+	tail_commands := 0
+	delta := new_count - old_count
+	if count_changed {
+		tail_commands = len(rt.display_target) - (start + old_count)
+		delta_magnitude := delta if delta >= 0 else -delta
+		tail_limit := SPARSE_DISPLAY_TAIL_COMMAND_FLOOR
+		if scaled := SPARSE_DISPLAY_TAIL_COMMANDS_PER_CHANGE * delta_magnitude; scaled > tail_limit {
+			tail_limit = scaled
+		}
+		if tail_commands < 0 || tail_commands > tail_limit {
+			rt.stats.display_splice_tail_rejections += 1
+			return false
+		}
+	}
+	started := time.now()
+	tail_nodes := 0
+	if count_changed {
+		tail_nodes = paint_sparse_fixup_display_indices(rt, start + old_count,
+			len(rt.display_target), delta)
+		if moved, ok := paint_sparse_splice_tail(&rt.display_target, start, old_count, new_count); ok {
+			moved_commands += moved
+		} else {
+			return false
+		}
+		if moved, ok := paint_sparse_splice_tail(&rt.display, start, old_count, new_count); ok {
+			moved_commands += moved
+		} else {
+			return false
+		}
+	}
+	if part_visible {
+		for command, offset in node.paint {
+			rt.display_target[start+offset] = compose_paint_command_presentation(command,
+				inherited.presentation, inherited.clip_follow, inherited.stationary_clip,
+				inherited.translated_clip)
+		}
+	}
+	if count_changed {
+		if new_count == 0 {
+			node.display_index = -1
+		} else {
+			node.display_index = start
+		}
+	}
+	if new_count > 0 {
+		if !layout_finalize_display_range(rt, node.id, start,
+			rt.display_target[start:start+new_count]) {
+			return false
+		}
+	}
+	rt.stats.display_splice_count += 1
+	rt.stats.display_splice_elapsed_ns +=
+		u64(time.duration_nanoseconds(time.since(started)))
+	rt.stats.display_splice_bytes_moved +=
+		u64(moved_commands) * u64(size_of(Paint_Command))
+	rt.stats.display_splice_tail_commands += u64(tail_commands)
+	rt.stats.display_splice_tail_nodes += u64(tail_nodes)
 	return true
 }
 
@@ -952,7 +1143,8 @@ update_paint :: proc(rt: ^Runtime) {
 			// repaint (for example a non-painting layout container). Its
 			// descendants keep their own ranges, so there is nothing to
 			// finalize and no structure change to rebuild.
-		} else if !rt.composition_rebuild && node.kind != .Scroll_Region && node.display_index >= 0 {
+		} else if !rt.composition_rebuild && node.kind != .Scroll_Region &&
+			(node.display_index >= 0 || paint_count_before == 0) {
 			if paint_sparse_finalize_range(rt, node) {
 				rt.stats.composition_nodes_visited += 1
 				rt.stats.stage_visits[.Composite] += 1

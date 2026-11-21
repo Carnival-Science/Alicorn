@@ -1922,6 +1922,21 @@ Frame_Stats :: struct {
 	measure_nodes_executed: u64,
 	display_commands_finalized: u64,
 	display_finalization_full_passes: u64,
+	// Count-changing display splices resize both retained display lists, move
+	// the following tail, shift every following node's display_index, and
+	// finalize only the changed range. These counters attribute that bounded
+	// tail work: bytes_moved is the memmove distance across display_target and
+	// display, tail_commands is the number of commands scanned for index
+	// fixup, tail_nodes is the number of node runs whose display_index shifted,
+	// and elapsed_ns is the wall time inside the splice (validation excluded).
+	// tail_rejections counts count-changing repaints that exceeded the tail
+	// policy and therefore took the bulk full pass.
+	display_splice_count: u64,
+	display_splice_bytes_moved: u64,
+	display_splice_tail_commands: u64,
+	display_splice_tail_nodes: u64,
+	display_splice_elapsed_ns: u64,
+	display_splice_tail_rejections: u64,
 	semantic_order_nodes_examined: u64,
 	global_fallbacks: u64,
 	global_work_by_reason: [Retained_Global_Work_Reason]u64,
