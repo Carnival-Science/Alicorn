@@ -137,6 +137,9 @@ Turn_Report :: struct {
 // boundary explicit; they remain zero because testui owns no GPU device.
 Turn_Work :: struct {
 	descriptions_emitted, descriptions_reused: u64,
+	// Issue #229 phase 2: exact-match reuses and structure-sequence skips are
+	// reported separately so a headless turn can prove which gate fired.
+	descriptions_retained_match, structure_sequence_matches: u64,
 	reconcile_nodes_visited: u64,
 	measure_nodes_examined, measure_nodes_executed: u64,
 	layout_nodes_visited, paint_nodes_visited, composition_nodes_visited: u64,
@@ -423,6 +426,8 @@ capture_turn_observation :: proc(
 	work := Turn_Work{
 		descriptions_emitted=after.descriptions_emitted-before.descriptions_emitted,
 		descriptions_reused=after.descriptions_reused-before.descriptions_reused,
+		descriptions_retained_match=after.descriptions_retained_match-before.descriptions_retained_match,
+		structure_sequence_matches=after.structure_sequence_matches-before.structure_sequence_matches,
 		reconcile_nodes_visited=after.reconcile_nodes_visited-before.reconcile_nodes_visited,
 		measure_nodes_examined=after.measure_nodes_examined-before.measure_nodes_examined,
 		measure_nodes_executed=after.measure_nodes_executed-before.measure_nodes_executed,

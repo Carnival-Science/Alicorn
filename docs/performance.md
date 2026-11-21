@@ -7,6 +7,12 @@ limitations before using a number.
 
 ## Reports
 
+- [Issue #229 Phase 2 description reuse — Windows
+  (2026-11-21)](validation/issue-229-phase2-description-reuse-2026-11-21.md):
+  exact retained-description and structure-sequence gates, field-coverage
+  audit and hash extensions, paired before/after across SDL_GPU, D3D12, and
+  Vulkan with a high-churn control, and the scaled real-Scratchpad
+  expectation.
 - [Issue #229 Phase 1 performance harness and baseline — Windows
   (2026-11-21)](validation/issue-229-phase1-baseline-2026-11-21.md):
   Scratchpad-shaped workload matrix across SDL_GPU, D3D12, and Vulkan;

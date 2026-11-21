@@ -1231,6 +1231,16 @@ APP_MUTATION_DIAGNOSTICS_ENABLED :: ODIN_DEBUG && #config(ALICORN_APP_MUTATION_D
 // compiled into normal builds and is never run on the invalidation hot path.
 REGION_INDEX_VALIDATION_ENABLED :: ODIN_DEBUG && #config(ALICORN_REGION_INDEX_VALIDATION, false)
 
+// DESCRIPTION_REUSE_ENABLED gates the issue #229 phase 2 exact description
+// reuse fast path (and its exact structure-sequence gate) in reconcile.
+// It is enabled by default. Building with
+// `-define:ALICORN_DESCRIPTION_REUSE=0` reproduces the pre-phase-2
+// copy-everything path from the same source, which is how the validation
+// record takes paired before/after measurements and how a suspected
+// stale-reuse defect can be bisected without reverting code. The define takes
+// 1 (enabled) or 0 (disabled).
+DESCRIPTION_REUSE_ENABLED :: #config(ALICORN_DESCRIPTION_REUSE, 1) == 1
+
 Application_Mutation_Impact :: enum {
 	Background,
 	Description,
@@ -1383,6 +1393,17 @@ Pending_Item :: struct {
 	grid_columns: []Grid_Track,
 	grid_rows: []Grid_Track,
 	grid_gap_x, grid_gap_y: f32,
+}
+
+// Applied_Structure_Entry is the order-sensitive (kind, id, parent) sequence of
+// the last reconciled description pass. Issue #229 phase 2 compares it against
+// the current pass with exact equality; a match proves the desired child lists
+// and top-level roots are byte-for-byte what reconciliation already committed,
+// so the structure diff can be skipped without hashing.
+Applied_Structure_Entry :: struct {
+	kind:   Pending_Kind,
+	id:     Node_ID,
+	parent: Node_ID,
 }
 
 // Percentage width relationships live in an optional sparse Runtime sidecar.
@@ -1551,6 +1572,16 @@ Node :: struct {
 	description_hash: u64,
 	layout_hash: u64,
 	paint_hash: u64,
+	// semantic_published records that the last applied description published a
+	// semantic entity for this node. It guards the issue #229 description-reuse
+	// fast path: a node that may own an entity can never skip the semantic
+	// removal/repair tail, because the semantic descriptor is not part of the
+	// retained visual description.
+	semantic_published: bool,
+	// has_semantic_surface / has_visual_part mirror the optional style sidecar
+	// maps so the reuse gate can skip their lookups for the ordinary node.
+	has_semantic_surface: bool,
+	has_visual_part: bool,
 	text_run:  Text_Run,
 	text_run_valid: bool,
 	text_run_generation: u64,
@@ -1893,6 +1924,14 @@ Frame_Stats :: struct {
 	idle_frames:       u64,
 	descriptions_emitted: u64,
 	descriptions_reused:  u64,
+	// Issue #229 phase 2: exact retained-description matches skip hashing,
+	// copying, dirty marking, and measurement/layout/paint queueing. The
+	// structure_sequence_matches counter counts description passes whose
+	// emitted (id, parent) sequence matched the previous pass, so the
+	// structure diff, retirement scan, and child-list reconciliation were
+	// skipped with exact (non-hashed) evidence.
+	descriptions_retained_match: u64,
+	structure_sequence_matches: u64,
 	regions_skipped:   u64,
 	retained_subtrees_reused: u64,
 	nodes_created:     u64,
@@ -2115,6 +2154,10 @@ Runtime :: struct {
 	order:       [dynamic]Node_ID,
 	top_level:   [dynamic]Node_ID,
 	pending:     [dynamic]Pending_Item,
+	// applied_structure is the last reconciled (kind, id, parent) sequence.
+	// It is exact state, not a fingerprint, and is rebuilt whenever a pass
+	// takes the structure path.
+	applied_structure: [dynamic]Applied_Structure_Entry,
 	// Only Content declarations allocate these sparse scroll presentation maps.
 	// Omitted declarations mean Outline; cached subtree reuse keeps retained state.
 	scroll_focus_visuals: map[Node_ID]Scroll_Focus_Visual,
