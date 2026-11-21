@@ -424,3 +424,100 @@ latency win.
   allocator overhead, or GPU residency.
 - **One machine, one compiler, one run.** The raw capture is the evidence for
   this host and revision, not a performance guarantee.
+
+## Addendum: indexed region lookup (issue #227)
+
+The original measurement above identified key resolution inside
+`invalidate_region` as an O(all retained nodes) floor under an otherwise sparse
+update: 0.55 ms per key scan at 3,000 rows in region mode and 1.42 ms for the
+two scans of the hand-optimized app mode. Issue #227 replaces that scan with a
+maintained key-to-live-region index that reconciliation and node retirement
+maintain alongside the retained tree. Resolution is now O(changed keys and
+their instances).
+Diagnostics, the monotonic revision contract, and multi-instance keys are
+unchanged; the #106 seeded oracle and the fixture's fresh-runtime comparisons
+still pass.
+
+Both captures below are from this host and compiler on `finish-227` at base
+`68d3aff6da14bba44110bcded7631e213d8fd6a0`; the after capture was taken with
+the #227 working-tree patch applied. Only the invalidation path changed.
+
+| Raw capture | File |
+| --- | --- |
+| Before | [`raw/issue-227-region-index-before-windows-2026-11-21.txt`](raw/issue-227-region-index-before-windows-2026-11-21.txt) |
+| After | [`raw/issue-227-region-index-after-windows-2026-11-21.txt`](raw/issue-227-region-index-after-windows-2026-11-21.txt) |
+
+### Lookup improvement
+
+`api_p50_ns` is the fixture's timed invalidation block; it excludes description,
+reconciliation, and frame work. Ratios are before/after.
+
+| Scenario | 1,000 rows before → after | 3,000 rows before → after | Improvement at 3,000 |
+| --- | ---: | ---: | ---: |
+| one label change, region | 130.1 → 2.7 µs | 595.2 → 3.4 µs | 175x |
+| one label change, app (label + shell) | 345.5 → 4.3 µs | 1,471.6 → 5.2 µs | 283x |
+| two-row selection, region | 223.3 → 4.2 µs | 968.9 → 5.6 µs | 173x |
+| two-row selection, app (four keys) | 660.8 → 6.5 µs | 2,782.4 → 7.9 µs | 352x |
+| reorder + insert + remove, region | 226.2 → 7.5 µs | 1,009.5 → 13.8 µs | 73x |
+| reorder + insert + remove, app | 346.4 → 7.6 µs | 1,484.5 → 13.6 µs | 109x |
+
+The reorder rows still show a small growth because the scenario invalidates the
+moved rows one key at a time and also pays for creating/retiring those regions;
+the cost is now per changed region, not per retained node.
+
+End-to-end totals are dominated by the unchanged O(all live) description and
+reconciliation header walk that #227 explicitly does not modify. At 3,000 rows
+the one-label-change total p50 was 5.535 → 5.670 ms (region) and 6.191 → 5.719
+ms (app); the app mode now no longer pays a scan premium for its finer bodies.
+Two-row selection measured 10.450 → 10.328 ms (region) and 12.650 → 10.072 ms
+(app). Single-run wall totals include normal machine variance and are not the
+primary evidence; the invalidation stage is the measured change.
+
+### Index memory overhead
+
+The fixture reports runtime-tracked persistent requested bytes at mount
+(`alloc_live_delta`). The index contributes one map entry and one small node
+list per distinct live region key, plus one persistent copy of the key:
+
+| Mount | Before bytes | After bytes | Index delta | Per live key | Index allocations |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 1,000 rows, region (1,000 keys) | 48,567,470 | 48,819,886 | +252,416 | ~252 B | +2,009 |
+| 1,000 rows, app (3,000 keys) | 48,600,470 | 49,190,110 | +589,640 | ~197 B | +6,010 |
+| 3,000 rows, region (3,000 keys) | 159,823,054 | 160,399,694 | +576,640 | ~192 B | +6,010 |
+| 3,000 rows, app (9,000 keys) | 159,922,054 | 162,051,038 | +2,128,984 | ~237 B | +18,012 |
+
+The cost scales with live region keys, not with total retained nodes: at 3,000
+rows every mode retains 18,004 nodes, while region mode adds ~0.58 MB (0.36% of
+tracked live bytes) and app mode adds ~2.13 MB (1.33%) for its three keys per
+row. The two allocations per key are the owned key string and the node list.
+Entries are released when the last instance under a key retires; the fixture's
+destroy leg still returns tracked live bytes to zero and the retirement test
+asserts the same under a tracking allocator.
+
+### Maintenance cost
+
+Mount pays for creating the entries, and reorder pays for moving only the
+changed regions:
+
+| Scenario | Added index allocations | Live-byte change |
+| --- | ---: | ---: |
+| mount 3,000 lane, region | +6,010 (2 per key) | +0.58 MB |
+| mount 3,000 lane, app | +18,012 (2 per key) | +2.13 MB |
+| reorder + insert + remove 3,000, region | +2 | none |
+| reorder + insert + remove 3,000, app | +10 | none |
+
+Re-describing an existing region under an unchanged key only deduplicates its
+index entry and does not allocate. Mount wall-time samples described the same
+18,004-node retained tree and stayed within run variance (region 135.2 → 124.5
+ms, app 140.8 → 128.1 ms at 3,000 rows).
+Destroying the runtime additionally releases the index entries: the destroy leg
+measured 19.246 → 19.784 ms (region) and 19.493 → 21.306 ms (app) at 3,000 rows
+while still reporting zero tracked live bytes after teardown.
+
+The maintained index is also cross-checked by a bounded consistency helper in
+`runtime/region_index_test.odin`: seeded randomized sequences of describe,
+invalidate, retire, and reorder actions assert that the index is consistent and
+that index resolution returns exactly the node set of the old linear scan at
+every step. An opt-in `ALICORN_REGION_INDEX_VALIDATION` debug define runs the
+same check at the end of reconciliation for local diagnosis; it is compiled out
+by default and is never on the invalidation hot path.

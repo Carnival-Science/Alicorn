@@ -778,6 +778,7 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	if desired[id] { return }
 	node, ok := rt.nodes[id]
 	if !ok { return }
+	if node.region { region_index_remove(rt, id, node.label) }
 	motion_retire_owner(rt, id)
 	if rt.style_transition_owners != nil { delete_key(&rt.style_transition_owners, id) }
 	restore_release_node(rt, id)
@@ -924,6 +925,7 @@ reconcile :: proc(rt: ^Runtime) {
 			style_changes := style_environment_changed_domains_for_node(rt, node, d.style, node.style_environment, next_style_environment)
 			copy_node_description(rt, node, d, item.semantic, item.semantic_surface_style, item.visual_part,
 				next_style_environment, style_changes)
+			if d.region { region_index_add(rt, d.id, d.label) }
 			if item.pointer_hit_shape == .Bounds { delete_key(&rt.pointer_hit_shapes, d.id) }
 			else { rt.pointer_hit_shapes[d.id] = item.pointer_hit_shape }
 			grid_tracks_copy_retained(rt, node, item)
@@ -956,8 +958,21 @@ reconcile :: proc(rt: ^Runtime) {
 			measurement_changed = measurement_changed || Dirty_Stage.Measure in style_stages
 			paint_changed := node.paint_hash != new_paint_hash || Dirty_Stage.Paint in style_stages
 			composite_changed := Dirty_Stage.Composite in style_stages
+			// Region index ownership follows the retained region flag and label.
+			// copy_node_description releases the old label when it changes, so a
+			// soon-to-change label is copied into scratch before that happens.
+			was_region := node.region
+			label_changed := was_region && node.label != d.label
+			old_label := node.label
+			if label_changed { old_label = owned(old_label, rt.scratch_allocator) }
 			copy_node_description(rt, node, d, item.semantic, item.semantic_surface_style, item.visual_part,
 				next_style_environment, style_changes)
+			if d.region {
+				region_index_add(rt, d.id, d.label)
+				if label_changed { region_index_remove(rt, d.id, old_label) }
+			} else if was_region {
+				region_index_remove(rt, d.id, old_label)
+			}
 			if item.pointer_hit_shape == .Bounds { delete_key(&rt.pointer_hit_shapes, d.id) }
 			else { rt.pointer_hit_shapes[d.id] = item.pointer_hit_shape }
 			grid_tracks_copy_retained(rt, node, item)
@@ -1121,6 +1136,11 @@ reconcile :: proc(rt: ^Runtime) {
 	advance_presentation_revision(rt)
 	rt.stats.frame += 1
 	delete(focus_lineage)
+	when REGION_INDEX_VALIDATION_ENABLED {
+		if !region_index_is_consistent(rt) {
+			append_diagnostic(rt, "region index disagreed with retained region nodes after reconciliation.\nSuggestion: report this as an Alicorn runtime defect; region entries are owned by reconciliation and retirement.")
+		}
+	}
 	record_frame_reconciled_trace(rt)
 	note_submission_cause(rt, rt.frame_cause)
 	if rt.invalidated { note_pending_work_cause(rt, rt.frame_cause) }
@@ -1176,6 +1196,11 @@ destroy_runtime :: proc(rt: ^Runtime) {
 		free(node, allocator=rt.persistent_allocator)
 	}
 	delete(rt.nodes)
+	for _, entry in rt.region_nodes {
+		delete(entry.nodes)
+		if len(entry.label) > 0 { delete(entry.label, rt.persistent_allocator) }
+	}
+	delete(rt.region_nodes)
 	host_text_runs_destroy(rt)
 	delete(rt.drag_preview_modes)
 	delete(rt.drag_tracking_options)

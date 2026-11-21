@@ -438,8 +438,12 @@ monotonic: `invalidate_region` accepts an equal or greater revision and forces
 the matching live region instances to rebuild; a lower revision is rejected.
 Invalidating an unknown key is also rejected. The key must match a region that
 has already been described. If the same key is used in several component
-instances, invalidation applies to each matching instance. `region_begin` also
-rejects a revision lower than the retained high-water mark. These checks are
+instances, invalidation applies to each matching instance. Region keys are
+resolved through a maintained index of live regions, so an invalidation visit
+is O(changed keys and their instances), not O(all retained nodes); the
+diagnostics, monotonic revision contract, and multi-instance behavior are
+unchanged. `region_begin` also rejects a revision lower than the retained
+high-water mark. These checks are
 always enabled, including release builds; `inspect(runtime)` exposes the hard
 error and its correction hint.
 

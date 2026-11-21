@@ -484,13 +484,101 @@ presentation_frame_consumed :: proc(rt: ^Runtime) {
 	frame_submission_succeeded(rt)
 }
 
+// Region_Index_Entry is the maintained public-key -> live region-node index.
+// The map key and label are the same persistent-owned string; the entry owns
+// it (and its node list) so retirement can release both when the last instance
+// under that key leaves.
+Region_Index_Entry :: struct {
+	label: string,
+	nodes: [dynamic]Node_ID,
+}
+
+// region_index_add records id under key. It is idempotent and owns a persistent
+// copy of the key so the index never borrows application strings.
+@(private)
+region_index_add :: proc(rt: ^Runtime, id: Node_ID, key: string) {
+	if id == 0 { return }
+	entry, exists := rt.region_nodes[key]
+	if !exists {
+		owned_key := owned(key, rt.persistent_allocator)
+		entry = Region_Index_Entry{
+			label = owned_key,
+			nodes = make([dynamic]Node_ID, 0, allocator=rt.persistent_allocator),
+		}
+		rt.region_nodes[owned_key] = entry
+	}
+	for existing in entry.nodes {
+		if existing == id { return }
+	}
+	append(&entry.nodes, id)
+	rt.region_nodes[key] = entry
+}
+
+// region_index_remove drops id from key's list. The key string and list are
+// released with the last entry so the index tracks live regions, not history.
+@(private)
+region_index_remove :: proc(rt: ^Runtime, id: Node_ID, key: string) {
+	entry, exists := rt.region_nodes[key]
+	if !exists { return }
+	index := -1
+	for existing, i in entry.nodes {
+		if existing == id { index = i; break }
+	}
+	if index < 0 { return }
+	ordered_remove(&entry.nodes, index)
+	if len(entry.nodes) == 0 {
+		label := entry.label
+		delete(entry.nodes)
+		delete_key(&rt.region_nodes, key)
+		if len(label) > 0 { delete(label, rt.persistent_allocator) }
+	} else {
+		rt.region_nodes[key] = entry
+	}
+}
+
+// region_index_is_consistent cross-checks the index against a linear scan of
+// retained region nodes. This is a bounded test/dev helper; it is deliberately
+// not part of the invalidation path.
+@(private)
+region_index_is_consistent :: proc(rt: ^Runtime) -> bool {
+	// Every live region appears exactly once under its label.
+	for id, node in rt.nodes {
+		if node == nil || !node.active || !node.region { continue }
+		entry, found := rt.region_nodes[node.label]
+		if !found { return false }
+		matches := 0
+		for listed in entry.nodes {
+			if listed == id { matches += 1 }
+		}
+		if matches != 1 { return false }
+	}
+	// Every entry points at live matching region nodes, once each.
+	for key, entry in rt.region_nodes {
+		if len(entry.nodes) == 0 || entry.label != key { return false }
+		for id, index in entry.nodes {
+			node, found := rt.nodes[id]
+			if !found || node == nil || !node.active || !node.region || node.label != key { return false }
+			for previous in entry.nodes[:index] {
+				if previous == id { return false }
+			}
+		}
+	}
+	return true
+}
+
 invalidate_region :: proc(rt: ^Runtime, key: string, revision: u64, reason := "explicit region invalidation") {
 	// Region keys are the public invalidation handle. Resolve only live regions
 	// with that label; silently accepting a typo would make the requested cache
-	// invalidation indistinguishable from a successful one.
+	// invalidation indistinguishable from a successful one. The maintained
+	// index makes this O(instances of key), not O(retained nodes); the filters
+	// keep the result identical to a linear scan even if an entry is stale.
+	entry, indexed := rt.region_nodes[key]
 	match_count := 0
-	for _, node in rt.nodes {
-		if node.active && node.region && node.label == key { match_count += 1 }
+	if indexed {
+		for id in entry.nodes {
+			node, found := rt.nodes[id]
+			if found && node != nil && node.active && node.region && node.label == key { match_count += 1 }
+		}
 	}
 	if match_count == 0 {
 		append_diagnostic(rt, fmt.tprintf("invalidate_region could not find a live region named %q at revision %d.\nSuggestion: call it with the same key used by region_begin, after that region has been described at least once.", key, revision))
@@ -499,20 +587,24 @@ invalidate_region :: proc(rt: ^Runtime, key: string, revision: u64, reason := "e
 	// A local region key can intentionally occur under several keyed component
 	// scopes. In that case this API invalidates every matching instance, but the
 	// requested revision must remain monotonic for every one of them.
-	for _, node in rt.nodes {
-		if !node.active || !node.region || node.label != key { continue }
-		if revision < node.region_revision {
-			append_diagnostic(rt, fmt.tprintf("invalidate_region revision regressed for %q.\n  retained region: %s:%d:%d component=%q scope=%q revision=%d\n  requested revision: %d\nSuggestion: keep region revisions monotonic; increment the application's revision when its logical output changes.", key, node.site.file, node.site.line, node.site.column, node.site.component, node.identity_key, node.region_revision, revision))
-			return
+	if indexed {
+		for id in entry.nodes {
+			node, found := rt.nodes[id]
+			if !found || node == nil || !node.active || !node.region || node.label != key { continue }
+			if revision < node.region_revision {
+				append_diagnostic(rt, fmt.tprintf("invalidate_region revision regressed for %q.\n  retained region: %s:%d:%d component=%q scope=%q revision=%d\n  requested revision: %d\nSuggestion: keep region revisions monotonic; increment the application's revision when its logical output changes.", key, node.site.file, node.site.line, node.site.column, node.site.component, node.identity_key, node.region_revision, revision))
+				return
+			}
 		}
-	}
-	for _, node in rt.nodes {
-		if !node.active || !node.region || node.label != key { continue }
-		// Mark the region's high-water revision before the next build and clear
-		// its cache marker. region_begin will therefore reject a stale revision
-		// and rebuild when the application supplies the requested revision.
-		node.region_revision = revision
-		node.region_cached = false
+		for id in entry.nodes {
+			node, found := rt.nodes[id]
+			if !found || node == nil || !node.active || !node.region || node.label != key { continue }
+			// Mark the region's high-water revision before the next build and clear
+			// its cache marker. region_begin will therefore reject a stale revision
+			// and rebuild when the application supplies the requested revision.
+			node.region_revision = revision
+			node.region_cached = false
+		}
 	}
 	rt.invalidated = true
 	when APP_MUTATION_DIAGNOSTICS_ENABLED {

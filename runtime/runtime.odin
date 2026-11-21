@@ -1227,6 +1227,10 @@ Runtime_Config :: struct {
 // explicitly requested.
 APP_MUTATION_DIAGNOSTICS_ENABLED :: ODIN_DEBUG && #config(ALICORN_APP_MUTATION_DIAGNOSTICS, false)
 
+// Region index validation is an opt-in test/dev cross-check. It is never
+// compiled into normal builds and is never run on the invalidation hot path.
+REGION_INDEX_VALIDATION_ENABLED :: ODIN_DEBUG && #config(ALICORN_REGION_INDEX_VALIDATION, false)
+
 Application_Mutation_Impact :: enum {
 	Background,
 	Description,
@@ -2006,6 +2010,10 @@ Runtime :: struct {
 	persistent_allocator_state: ^Runtime_Allocator_State,
 	scratch_allocator_state:    ^Runtime_Allocator_State,
 	nodes:       map[Node_ID]^Node,
+	// Live region nodes keyed by their public region key. Reconciliation and
+	// retirement maintain this index so invalidate_region resolves a key in
+	// O(changed keys) instead of scanning every retained node.
+	region_nodes: map[string]Region_Index_Entry,
 	// Retained motion is an opt-in sparse sidecar. Its generation counter is
 	// runtime-local, while handles also carry a process-unique runtime lifetime
 	// identity to prevent cross-runtime aliasing. Records leave with their owner.
