@@ -1,0 +1,50 @@
+Issue #119 two-stop gradients: Windows SDL_GPU D3D12 readback and CPU-stage capture
+Date: 2026-11-20
+Branch: codex/issue-119-110-acceptance
+Base: 67b31b8 (v0.2.2 release)
+Machine: NVIDIA GeForce RTX 2080 SUPER, driver 595.97, 8192 MiB
+OS: Windows 10 Home 10.0.19045 (22H2)
+Odin: dev-2026-11-nightly:08539cd at C:\odin\odin.exe
+Command:
+  tools\common.ps1 AccessKit bootstrap
+  odin build native\blend_validation_entry -collection:alicorn=. <AccessKit args> -out:out\alicorn_blend_validation.exe
+  out\alicorn_blend_validation.exe
+
+--- backend and existing regression matrix ---
+blend_gpu_backend direct3d12 offscreen true
+blend_gpu_family Surface cases 48 failed 0
+blend_gpu_family Per_Corner_Surface cases 192 failed 0
+blend_gpu_family Geometry cases 24 failed 0
+blend_gpu_family Icon cases 24 failed 0
+blend_gpu_family Image cases 24 failed 0
+blend_gpu_family Text cases 24 failed 0
+blend_gpu_family Mixed cases 12 failed 0
+blend_gpu_validation driver direct3d12 target R8G8B8A8_UNORM scales 1,1.25,1.5,2 destination_alpha 0,0.4,1 per_corner_masks 16 cases 348 expected_cases 348 case_counts_ok true failed 0 rgba_tolerance_bytes 2
+
+--- gradient pixel probes (stops, midpoints, rounded edges, clipping, stroke, source-over) ---
+surface_gradient_gpu_readback scales 1,1.25,1.5,2 horizontal_vertical_stops_midpoints PASS rounded PASS stroke PASS clipping PASS source_over PASS
+
+--- independent CPU reference, full 128x128 frame at scale 1 ---
+surface_gradient_cpu_reference target 128x128 scale 1 commands 4 horizontal_vertical_stops true translated_field true clipped_field true mismatched_pixels 0 max_channel_error_bytes 0 rgba_tolerance_bytes 2 replay_equal true
+
+--- CPU stages and fence wait, 256 surfaces per batch, scale 2 ---
+surface_stage_benchmark workload rectangle-solid surfaces 256 scale 2 vertices_per_batch 1536 draw_calls 256 passes 1 uploaded_bytes_per_batch 55296 samples 31 build_p50_ns 104200 build_p95_ns 130300 upload_p50_ns 8000 upload_p95_ns 29500 encode_p50_ns 14500 encode_p95_ns 18500 submit_p50_ns 28500 submit_p95_ns 45300 wait_p50_ns 80700 wait_p95_ns 666000 measurement cpu_stages_and_fence_wait_not_presented_frame
+surface_stage_benchmark workload rectangle-gradient surfaces 256 scale 2 vertices_per_batch 1536 draw_calls 256 passes 1 uploaded_bytes_per_batch 55296 samples 31 build_p50_ns 150500 build_p95_ns 197000 upload_p50_ns 8000 upload_p95_ns 10500 encode_p50_ns 14400 encode_p95_ns 21600 submit_p50_ns 28800 submit_p95_ns 73900 wait_p50_ns 77100 wait_p95_ns 362300 measurement cpu_stages_and_fence_wait_not_presented_frame
+
+--- offscreen submit-to-fence/readback round trip, 51 alternating samples ---
+surface_gradient_gpu_roundtrip device direct3d12 surfaces 256 solid_draw_calls 256 gradient_draw_calls 256 solid_passes 1 gradient_passes 1 vertices_per_batch 1536 uploaded_bytes_per_batch 55296 samples 51 scale 2 solid_p50_ns 307400 solid_p95_ns 895000 gradient_p50_ns 334800 gradient_p95_ns 490800 measurement offscreen_submit_fence_and_readback_not_presented_frame
+
+--- existing CPU reference scenes remain exact ---
+cpu_gpu_reference_fixed_regression stationary_clip_after_translation PASS
+cpu_gpu_reference_scenes seeds 32 rectangles_per_scene 8 target 128x128 scale 1 target_format R8G8B8A8_UNORM rgba_tolerance_bytes 2 cpu_total_ns 28652700 cpu_mean_ns 895396 gpu_readback_total_ns 6146300 gpu_readback_mean_ns 192071 cpu_reference_allocations_per_scene 0
+
+--- CPU vertex-expansion benchmark (benchmarks/native_material, -o:speed) ---
+native_shape_geometry rectangle fill solid surfaces 256 vertices_per_surface 6 uploaded_bytes 55296 surface_commands 256 draw_slots 256 additional_passes 0 p50_batch_ns 2500 p95_batch_ns 3800 p50_ns_per_surface 9.765625 p95_ns_per_surface 14.84375
+native_shape_geometry rectangle fill gradient surfaces 256 vertices_per_surface 6 uploaded_bytes 55296 surface_commands 256 draw_slots 256 additional_passes 0 p50_batch_ns 5500 p95_batch_ns 7300 p50_ns_per_surface 21.484375 p95_ns_per_surface 28.515625
+
+--- suites ---
+odin test runtime: 421 tests, all successful
+odin test renderer/cpu: 23 tests, all successful
+odin test native/sdl_gpu: 169 tests, all successful
+foundation tests: PASS
+tools/build_examples for 13_surface_gradients: pass

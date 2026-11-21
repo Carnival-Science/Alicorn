@@ -1108,7 +1108,11 @@ relief sign changes the edge tint while leaving the face color unchanged. These
 checks validate representative rectangular materials and semantic gradient
 resolution. Rounded material parity, full theme/accessibility combinations,
 reference pixel comparison against SDL_GPU and retained material mesh
-invalidation remain to be measured before claiming material parity.
+invalidation remain to be measured before claiming material parity. The
+two-stop gradient subset now has independent CPU-reference and native SDL_GPU
+D3D12 evidence in
+[the issue #119 Windows record](validation/issue-119-gradients-windows-2026-11-20.md);
+that does not close the broader material-parity gap above.
 
 ## Phase 2 shared custom-surface rendering (2026-11-15)
 

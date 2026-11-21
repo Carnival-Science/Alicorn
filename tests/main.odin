@@ -8,6 +8,13 @@ import alicorn "../runtime"
 import paint_reference "./paint_reference"
 import runa "../third_party/Runa"
 
+cpu_reference_quantize :: proc(value: f32) -> u8 {
+	bounded := value
+	if bounded < 0 { bounded = 0 }
+	if bounded > 1 { bounded = 1 }
+	return u8(bounded*255+0.5)
+}
+
 test_paint_surface_matches_color :: proc(command: alicorn.Paint_Command, expected: alicorn.Color) -> bool {
 	color, ok := alicorn.paint_surface_color(command)
 	return ok && color == expected
@@ -214,6 +221,67 @@ test_cpu_paint_reference :: proc(state: ^Test_State) {
 		error = paint_reference.paint_reference_render(seeded_b[:count_b], 128, 128, {}, seed_pixels_b[:])
 		expect(state, error.code == .None && seed_pixels_a == seed_pixels_b, "replaying a generated seed must produce identical RGBA8 output")
 	}
+
+	// Gradient oracle: linear-sRGB interpolation at pixel centers, equal stop
+	// alpha, and a field measured from translated bounds rather than the clip.
+	gradient_start := alicorn.Color{0.1, 0.3, 0.7, 0.8}
+	gradient_end := alicorn.Color{0.9, 0.5, 0.2, 0.8}
+	gradient_commands := [2]alicorn.Paint_Command{
+		alicorn.paint_surface_command(21, {0, 0, 8, 8}, {0, 0, 8, 8}, gradient_start),
+		alicorn.paint_surface_command(22, {0, 0, 8, 8}, {0, 0, 8, 8}, gradient_start),
+	}
+	gradient_commands[0].semantic_surface_gradient = true
+	gradient_commands[1].semantic_surface_gradient = true
+	gradient_bindings := [2]paint_reference.Paint_Reference_Gradient{
+		{owner=21, start=gradient_start, end=gradient_end, axis=.Horizontal},
+		{owner=22, start=gradient_start, end=gradient_end, axis=.Vertical},
+	}
+	gradient_pixels: [8*8*4]u8
+	error = paint_reference.paint_reference_render_gradients(gradient_commands[:1], gradient_bindings[:], 8, 8, {}, gradient_pixels[:])
+	expect(state, error.code == .None, "the CPU reference must render a bound two-stop gradient")
+	for sample in ([3]int{0, 3, 7}) {
+		t := (f32(sample)+0.5)/8
+		expected_r := cpu_reference_quantize((gradient_start.r+(gradient_end.r-gradient_start.r)*t)*gradient_start.a)
+		expected_g := cpu_reference_quantize((gradient_start.g+(gradient_end.g-gradient_start.g)*t)*gradient_start.a)
+		expected_b := cpu_reference_quantize((gradient_start.b+(gradient_end.b-gradient_start.b)*t)*gradient_start.a)
+		expected_a := cpu_reference_quantize(gradient_start.a)
+		base := sample*4
+		expect(state, gradient_pixels[base+0] == expected_r && gradient_pixels[base+1] == expected_g &&
+			gradient_pixels[base+2] == expected_b && gradient_pixels[base+3] == expected_a,
+			"horizontal gradient samples must use linear-sRGB channel interpolation and the shared stop alpha")
+	}
+	error = paint_reference.paint_reference_render_gradients(gradient_commands[1:], gradient_bindings[:], 8, 8, {}, gradient_pixels[:])
+	expect(state, error.code == .None, "the CPU reference must render a vertical gradient")
+	vertical_base := 7*8*4
+	expect(state, gradient_pixels[vertical_base+0] == cpu_reference_quantize(
+		(gradient_start.r+(gradient_end.r-gradient_start.r)*((7.5)/8))*gradient_start.a),
+		"vertical gradient samples must advance from top to bottom")
+
+	translated_gradient := gradient_commands[0]
+	translated_gradient.bounds = {0, 0, 8, 8}
+	translated_gradient.translation = {4, 0}
+	translated_gradient.clip = {6, 0, 2, 8}
+	translated_pixels: [8*8*4]u8
+	translated_display := [1]alicorn.Paint_Command{translated_gradient}
+	error = paint_reference.paint_reference_render_gradients(translated_display[:], gradient_bindings[:], 8, 8, {}, translated_pixels[:])
+	expect(state, error.code == .None, "a clipped, translated gradient must be inside the reference contract")
+	clipped_t: f32 = f32(6.5-4)/8
+	clipped_base := 6*4
+	expect(state, translated_pixels[clipped_base+0] == cpu_reference_quantize(
+		(gradient_start.r+(gradient_end.r-gradient_start.r)*clipped_t)*gradient_start.a),
+		"clipping must not restart the gradient field at the visible edge")
+	expect(state, translated_pixels[5*4+3] == 0,
+		"gradient pixels outside the resolved clip must remain clear")
+
+	missing_binding: [1]paint_reference.Paint_Reference_Gradient
+	error = paint_reference.paint_reference_render_gradients(gradient_commands[:1], missing_binding[:], 8, 8, {}, gradient_pixels[:])
+	expect(state, error.code == .Invalid_Gradient && error.owner == alicorn.Node_ID(21),
+		"a gradient command without resolved endpoints must be rejected rather than silently painted solid")
+	unequal := gradient_bindings
+	unequal[0].end.a = 0.4
+	error = paint_reference.paint_reference_render_gradients(gradient_commands[:1], unequal[:], 8, 8, {}, gradient_pixels[:])
+	expect(state, error.code == .Invalid_Gradient,
+		"the reference must reject unequal stop alpha, matching the documented straight-alpha contract")
 }
 
 render_keyed :: proc(rt: ^alicorn.Runtime, keys: []string, values: []int, extra, wrapper: bool) -> map[string]alicorn.Node_ID {
@@ -1930,6 +1998,85 @@ test_invalidation_during_description_survives :: proc(state: ^Test_State) {
 	}
 	expect(state, !rt.invalidated, "consuming the follow-up description should return to idle")
 	alicorn.destroy_runtime(&rt)
+}
+
+// Two buttons share one 100x100 rectangle. The top button opts into circular
+// pointer targeting, so its square corners must fall through to the ordinary
+// rectangular button underneath.
+render_circular_hit_buttons :: proc(rt: ^alicorn.Runtime) -> (
+	circular, rectangular: alicorn.Node_ID,
+	activated: bool,
+) {
+	alicorn.invalidate_root(rt, "circular pointer hit fixture")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return }
+	alicorn.container_begin_ex(&ui, .Root, S_ROOT, label="circular-hit-root")
+	alicorn.container_begin(&ui, .Container, key=alicorn.key_string("circular-hit-stack"),
+		style=alicorn.layout_style(.Column, width=100, height=100))
+	rectangular, _ = alicorn.button_ex(&ui, "rectangular under", S_BUTTON,
+		style=alicorn.layout_style(.Column, width=100, height=100))
+	circular, activated = alicorn.button_begin(&ui, "circular target",
+		key=alicorn.key_string("circular-hit-target"),
+		style=alicorn.layout_style(.Column, width=100, height=100),
+		presentation=.Custom,
+		pointer_hit_shape=.Circle,
+	)
+	alicorn.button_end(&ui)
+	if circular != 0 {
+		_ = alicorn.position_child(&ui, circular, alicorn.positioned(0, 0))
+	}
+	alicorn.container_end(&ui)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return
+}
+
+test_shape_pointer_and_accessibility_contract :: proc(state: ^Test_State) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 240, 160})
+	defer alicorn.destroy_runtime(&rt)
+	circular, rectangular, _ := render_circular_hit_buttons(&rt)
+	expect(state, circular != 0 && rectangular != 0,
+		"the circular-hit fixture must describe both buttons")
+	if circular == 0 || rectangular == 0 { return }
+	node := rt.nodes[circular]
+	center_x := node.bounds.x+node.bounds.w*0.5
+	center_y := node.bounds.y+node.bounds.h*0.5
+	expect(state, alicorn.hit_test(&rt, center_x, center_y) == circular,
+		"the center of a circular pointer target must hit the control")
+	expect(state, alicorn.hit_test(&rt, center_x+node.bounds.w*0.34, center_y) == circular,
+		"an inscribed-circle point away from the center must still hit")
+	corner_x, corner_y := node.bounds.x+2, node.bounds.y+2
+	expect(state, alicorn.hit_test(&rt, corner_x, corner_y) == rectangular,
+		"a square corner outside the circular target must fall through to the ordinary control below")
+
+	pointer_target := alicorn.process_pointer(&rt, alicorn.Pointer_Event{
+		kind=.Down, x=corner_x, y=corner_y, button=1,
+	})
+	expect(state, pointer_target == rectangular && rt.captured_node == rectangular,
+		"pointer capture in a circular control's corner must follow the fall-through target")
+	_ = alicorn.process_pointer(&rt, alicorn.Pointer_Event{
+		kind=.Up, x=corner_x, y=corner_y, button=1,
+	})
+
+	expect(state, alicorn.focus(&rt, circular),
+		"a circular pointer target must remain an ordinary focusable Button")
+	expect(state, alicorn.activate_focused(&rt, .Enter),
+		"keyboard Enter must activate the circular pointer target")
+	_, _, activated := render_circular_hit_buttons(&rt)
+	expect(state, activated,
+		"keyboard activation must reach the same Button API after a circular-hit description")
+
+	snapshot := alicorn.semantic_snapshot(&rt)
+	defer alicorn.semantic_snapshot_destroy(&snapshot)
+	found := false
+	for semantic_node in snapshot.nodes {
+		if semantic_node.visual_node != circular { continue }
+		found = true
+		expect(state, semantic_node.has_bounds &&
+			semantic_node.bounds.w == node.bounds.w && semantic_node.bounds.h == node.bounds.h,
+			"accessibility bounds must stay the resolved rectangle, not the circular pointer target")
+	}
+	expect(state, found, "the circular pointer target must retain one accessible semantic node")
 }
 
 test_interaction_regressions :: proc(state: ^Test_State) {
@@ -4286,6 +4433,7 @@ main :: proc() {
 	test_interaction_paint_invalidation(&state)
 	test_invalidation_during_description_survives(&state)
 	test_interaction_regressions(&state)
+	test_shape_pointer_and_accessibility_contract(&state)
 	test_disabled_button_semantics(&state)
 	test_ergonomic_identity(&state)
 	test_structure_layout_invalidation(&state)

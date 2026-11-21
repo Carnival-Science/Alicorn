@@ -34,12 +34,62 @@ Paint_Reference_Error_Code :: enum {
 	Out_Of_Range_Color,
 	Non_Pixel_Aligned,
 	Invalid_Rectangle,
+	Invalid_Gradient,
 }
 
 Paint_Reference_Error :: struct {
 	code:          Paint_Reference_Error_Code,
 	command_index: int,
 	owner:         alicorn.Node_ID,
+}
+
+// Paint_Reference_Gradient supplies the resolved endpoint colors that the
+// production renderer reads from the runtime's semantic-surface sidecar. The
+// reference never resolves themes; callers pass the already-resolved stops.
+Paint_Reference_Gradient :: struct {
+	owner: alicorn.Node_ID,
+	start: alicorn.Color,
+	end:   alicorn.Color,
+	axis:  alicorn.Surface_Gradient_Axis,
+}
+
+paint_reference_gradient_is_valid :: proc(gradient: Paint_Reference_Gradient) -> bool {
+	if gradient.axis != .Horizontal && gradient.axis != .Vertical { return false }
+	if !paint_reference_color_valid(gradient.start) || !paint_reference_color_valid(gradient.end) { return false }
+	return gradient.start.a == gradient.end.a
+}
+
+paint_reference_gradient_find :: proc(
+	gradients: []Paint_Reference_Gradient,
+	owner: alicorn.Node_ID,
+) -> (gradient: Paint_Reference_Gradient, found: bool) {
+	for candidate in gradients {
+		if candidate.owner == owner { return candidate, true }
+	}
+	return {}, false
+}
+
+// Linear-sRGB interpolation matches the documented surface-gradient contract.
+// Equal stop alpha means straight and premultiplied interpolation coincide.
+paint_reference_gradient_color :: proc(
+	gradient: Paint_Reference_Gradient,
+	command: alicorn.Paint_Command,
+	x, y: int,
+) -> alicorn.Color {
+	t: f32
+	if gradient.axis == .Horizontal {
+		t = (f32(x)+0.5-(command.bounds.x+command.translation[0]))/command.bounds.w
+	} else {
+		t = (f32(y)+0.5-(command.bounds.y+command.translation[1]))/command.bounds.h
+	}
+	if t < 0 { t = 0 }
+	if t > 1 { t = 1 }
+	return alicorn.Color{
+		gradient.start.r+(gradient.end.r-gradient.start.r)*t,
+		gradient.start.g+(gradient.end.g-gradient.start.g)*t,
+		gradient.start.b+(gradient.end.b-gradient.start.b)*t,
+		gradient.start.a,
+	}
 }
 
 paint_reference_error :: proc(code: Paint_Reference_Error_Code, index: int, owner: alicorn.Node_ID) -> Paint_Reference_Error {
@@ -66,7 +116,11 @@ paint_reference_color_finite :: proc(color: alicorn.Color) -> bool {
 		paint_reference_finite(color.b) && paint_reference_finite(color.a)
 }
 
-paint_reference_validate_command :: proc(command: alicorn.Paint_Command, index: int) -> Paint_Reference_Error {
+paint_reference_validate_command :: proc(
+	command: alicorn.Paint_Command,
+	index: int,
+	gradients: []Paint_Reference_Gradient,
+) -> Paint_Reference_Error {
 	if !paint_reference_finite(command.opacity) ||
 		!paint_reference_finite(command.bounds.x) || !paint_reference_finite(command.bounds.y) ||
 		!paint_reference_finite(command.bounds.w) || !paint_reference_finite(command.bounds.h) ||
@@ -125,6 +179,12 @@ paint_reference_validate_command :: proc(command: alicorn.Paint_Command, index: 
 		if !paint_reference_color_valid(surface.fill) {
 			return paint_reference_error(.Out_Of_Range_Color, index, command.owner)
 		}
+		if command.semantic_surface_gradient {
+			gradient, found := paint_reference_gradient_find(gradients, command.owner)
+			if !found || !paint_reference_gradient_is_valid(gradient) {
+				return paint_reference_error(.Invalid_Gradient, index, command.owner)
+			}
+		}
 	case alicorn.Icon_Paint, alicorn.Image_Paint, alicorn.Text_Paint, alicorn.Geometry_Paint,
 		alicorn.Backdrop_Effect_Paint:
 		return paint_reference_error(.Unsupported_Payload, index, command.owner)
@@ -153,6 +213,18 @@ paint_reference_render :: proc(
 	clear: [4]u8,
 	output: []u8,
 ) -> Paint_Reference_Error {
+	return paint_reference_render_gradients(commands, nil, width, height, clear, output)
+}
+
+// paint_reference_render_gradients is the gradient-aware form. Commands that
+// set semantic_surface_gradient must have a matching binding by owner.
+paint_reference_render_gradients :: proc(
+	commands: []alicorn.Paint_Command,
+	gradients: []Paint_Reference_Gradient,
+	width, height: int,
+	clear: [4]u8,
+	output: []u8,
+) -> Paint_Reference_Error {
 	if width <= 0 || height <= 0 || width > PAINT_REFERENCE_MAX_DIMENSION ||
 		height > PAINT_REFERENCE_MAX_DIMENSION || len(output) != width*height*4 {
 		return paint_reference_error(.Invalid_Target, -1, 0)
@@ -161,7 +233,7 @@ paint_reference_render :: proc(
 		return paint_reference_error(.Invalid_Clear_Color, -1, 0)
 	}
 	for command, command_index in commands {
-		if error := paint_reference_validate_command(command, command_index); error.code != .None {
+		if error := paint_reference_validate_command(command, command_index, gradients); error.code != .None {
 			return error
 		}
 	}
@@ -176,6 +248,11 @@ paint_reference_render :: proc(
 
 	for command in commands {
 		surface := command.payload.(alicorn.Surface_Paint)
+		gradient: Paint_Reference_Gradient
+		has_gradient := command.semantic_surface_gradient
+		if has_gradient {
+			gradient, _ = paint_reference_gradient_find(gradients, command.owner)
+		}
 		left := max(command.bounds.x+command.translation[0], command.clip.x)
 		top := max(command.bounds.y+command.translation[1], command.clip.y)
 		right := min(command.bounds.x+command.bounds.w+command.translation[0], command.clip.x+command.clip.w)
@@ -191,18 +268,22 @@ paint_reference_render :: proc(
 		x0, y0, x1, y1 := int(left), int(top), int(right), int(bottom)
 		if x1 <= x0 || y1 <= y0 { continue }
 
-		source_alpha := surface.fill.a*command.opacity
-		inverse_alpha := 1-source_alpha
 		for y in y0..<y1 {
 			for x in x0..<x1 {
+				source := surface.fill
+				if has_gradient {
+					source = paint_reference_gradient_color(gradient, command, x, y)
+				}
+				source_alpha := source.a*command.opacity
+				inverse_alpha := 1-source_alpha
 				base := (y*width+x)*4
 				destination_r := f32(output[base+0])/255
 				destination_g := f32(output[base+1])/255
 				destination_b := f32(output[base+2])/255
 				destination_a := f32(output[base+3])/255
-				output[base+0] = paint_reference_quantize(surface.fill.r*source_alpha + destination_r*inverse_alpha)
-				output[base+1] = paint_reference_quantize(surface.fill.g*source_alpha + destination_g*inverse_alpha)
-				output[base+2] = paint_reference_quantize(surface.fill.b*source_alpha + destination_b*inverse_alpha)
+				output[base+0] = paint_reference_quantize(source.r*source_alpha + destination_r*inverse_alpha)
+				output[base+1] = paint_reference_quantize(source.g*source_alpha + destination_g*inverse_alpha)
+				output[base+2] = paint_reference_quantize(source.b*source_alpha + destination_b*inverse_alpha)
 				output[base+3] = paint_reference_quantize(source_alpha + destination_a*inverse_alpha)
 			}
 		}
