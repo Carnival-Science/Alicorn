@@ -6,6 +6,7 @@ without crowding the project’s user and contributor guides.
 
 ## Reports
 
+- [Matched Scratchpad A/B — Windows (2026-11-21)](scratchpad-ab-windows-2026-11-21.md)
 - [Sparse application updates and authoring cost — Issue #190 (Windows, 2026-11-21)](issue190-sparse-updates-windows-2026-11-21.md)
 - [v0.2.1 candidate performance scorecard — Windows (2026-11-04)](performance-scorecard-v0.2.1-windows-2026-11-04.md)
 - [Matched Scratchpad A/B — Windows (2026-11-04)](scratchpad-ab-windows-2026-11-04.md)

@@ -1,0 +1,587 @@
+{
+    "schema":  1,
+    "recorded_local_date":  "2026-11-21",
+    "scenario":  "Automated nine-action Scratchpad large-document command-path A/B",
+    "alicorn":  {
+                    "baseline":  {
+                                     "label":  "pre-#227/#228/#230 (parent of the #227 commit)",
+                                     "commit":  "68d3aff6da14bba44110bcded7631e213d8fd6a0",
+                                     "commit_subject":  "docs: add measured sparse-update evidence to choosing-alicorn (issue #190)",
+                                     "binary_sha256":  "85C9A63AB7741C44753B6AE73BD02E4A11E70A558390B6C70C95D47BFE3D5281"
+                                 },
+                    "candidate":  {
+                                      "label":  "finish-230 tip (includes #227, #228, #229 phase 1, #230)",
+                                      "commit":  "576f1fd3919f4954e66a07e6943687e3fa985565",
+                                      "commit_subject":  "perf(runtime): sparse column suffix placement for main-axis size changes (issue #230)",
+                                      "binary_sha256":  "D10FE699180EE0D7A12CC2A5BD1A315E843F46108295E423C6E898285A5F5742"
+                                  }
+                },
+    "requested_baseline":  {
+                               "commit":  "0beff9d29f6a1f8b32e0cde895fe4f9ce9f8238c",
+                               "status":  "could not build with the current Scratchpad frontend",
+                               "reason":  "At 0beff9d the Alicorn checkout has no ui/webgpu package and no renderer/cpu package; current Scratchpad imports both. The build stops at odin build with \"Path does not exist: alicorn:ui/webgpu\".",
+                               "log":  "baseline-0beff9d-build-attempt.log",
+                               "replacement":  "68d3aff, the immediate parent of the #227 commit on the same first-parent line, which is the last revision before #227/#228/#230 that carries the hosted WebGPU host."
+                           },
+    "scratchpad":  {
+                       "revision":  "adb28fc220864e6809c9217e4437af5b92dae57b",
+                       "branch":  "codex/issue-211-webgpu-frontend",
+                       "source":  "isolated git clone of the local checkout into the temp benchmark directory; the source checkout was not modified",
+                       "hook":  "Environment-gated SCRATCHPAD_ALICORN_PERF_SEQUENCE nine-action command sequence plus per-step action/build attribution. Same source for both Alicorn arms.",
+                       "hook_patch_file":  "scratchpad-perf-sequence-hook.patch",
+                       "hook_patch_sha256":  "D35C70165E1A3F45275EC12117792CED27DA984AFCE1C0F09B473F09F63317A3",
+                       "placeholder_deps":  ".deps/alicorn was a directory junction to an Alicorn checkout so the uncompiled asset #load paths resolve; --alicorn-root selected the measured revision for both builds."
+                   },
+    "caliber_revision":  "197cd964cc7265bc60df599a6b8562eac7c75f3a",
+    "toolchain":  {
+                      "odin":  "C:\\odin\\odin.exe version dev-2026-11-nightly:08539cd",
+                      "odin_binary_sha256":  "13F14C44C5AC76E0F9296C339E33C5F80A06842CBA87E3A5B61EC8322A82AA07",
+                      "go":  "go version go1.27.1 windows/amd64",
+                      "profile":  "Release: Odin -o:speed and release Caliber/backend. The driver defaults to -debug; --release was passed explicitly.",
+                      "renderer":  "SDL_GPU reference host. The build carries both renderers; no SCRATCHPAD_RENDERER override was set, so the process ran the reference host whose exit summary publishes the measured counters."
+                  },
+    "host":  {
+                 "os":  "Windows 10 Home 22H2, build 19045",
+                 "cpu":  "AMD Ryzen 5 7600X, 12 logical processors",
+                 "memory_gib":  16,
+                 "gpu":  "NVIDIA GeForce RTX 2080 SUPER",
+                 "gpu_driver":  "32.0.15.9597 (595.97)",
+                 "note":  "Single host. Do not compare these numbers across machines."
+             },
+    "display":  {
+                    "scale":  1,
+                    "note":  "Logical window size equals pixel size in this capture. No DPI transition or continuous resize was exercised."
+                },
+    "theme":  "Scratchpad default Warm theme; no appearance fixture, custom theme, or saved preference was set.",
+    "fixture":  {
+                    "directories":  8,
+                    "small_files":  192,
+                    "readme_files":  1,
+                    "total_files":  193,
+                    "large_document":  "application/sample_00.go",
+                    "large_document_lines":  5002,
+                    "sequence":  [
+                                     "open README.md",
+                                     "open application/sample_00.go",
+                                     "switch back to README.md",
+                                     "open Quick Open",
+                                     "close Quick Open after index ready",
+                                     "open Settings",
+                                     "close Settings",
+                                     "close README.md",
+                                     "close the remaining Go document"
+                                 ],
+                    "sequence_driver":  "Benchmark-only scheduled hook invokes Scratchpad application/backend command paths. It does not synthesize native keyboard or pointer input."
+                },
+    "protocol":  {
+                     "warmups_per_revision":  1,
+                     "measured_runs_per_revision":  7,
+                     "confirmation_pairs":  3,
+                     "total_primary_processes":  16,
+                     "total_confirmation_processes":  6,
+                     "order":  "Warmup baseline then candidate; measured pairs alternate order by round. All processes passed smoke and nine-step sequence validation.",
+                     "confirmation_order":  "Three additional fresh pairs after the primary capture because the primary pair spread exceeded 25%; order alternated baseline/candidate for the first pair and candidate/baseline for the second, baseline/candidate for the third.",
+                     "smoke_window":  "Reference host fixed 3 s smoke window. All primary and confirmation processes completed the nine steps inside it.",
+                     "sequence_cadence":  "First step 500 ms after start; later steps advance only after the previous step has produced a description, with a 30 ms floor. The last step waits for its closing description before completion.",
+                     "working_set_poll_interval_ms":  10,
+                     "metrics":  [
+                                     "application_build_ns",
+                                     "application_build_max_ns",
+                                     "first_application_submit_ns",
+                                     "sequence_build_ns",
+                                     "per-step action_ns",
+                                     "per-step build_ns",
+                                     "cpu_total_ns",
+                                     "peak_working_set_bytes",
+                                     "elapsed_ns",
+                                     "host_wall_ns",
+                                     "primary_gpu_submissions"
+                                 ]
+                 },
+    "deviations":  [
+                       "The requested baseline 0beff9d cannot build the current Scratchpad frontend; 68d3aff (the last pre-#227 revision with the hosted WebGPU host) was used instead and is recorded above.",
+                       "The scratchpad-driver build command in the task recipe omitted --release, which selects a debug frontend. The committed A/B is a release build to match the 2026-11-04 profile and the release frame-budget question.",
+                       "The reference host was measured, not the hosted WebGPU renderer: only the reference host publishes application_build_ns, first_application_submit_ns, and primary_gpu_submissions, and this keeps the comparison matched to the 2026-11-04 A/B.",
+                       "The first step waits 500 ms and later steps advance on the previous step description instead of a fixed 150 ms cadence. A first step in the first 150 ms of startup blocked on backend lanes still initializing (2 s command, 4.7 s build) and did not complete inside the smoke window.",
+                       "A per-step build window may include four to six description passes; per-step build totals are therefore noisier than the whole-process application_build_ns. steps.csv includes the pass count for normalization."
+                   ],
+    "instrumentation":  {
+                            "hook_print":  "alicorn-performance-sequence-step step=N action_ns=... build_ns=... builds=N; alicorn-performance-sequence steps=9 complete=true passed=true build_ns=...",
+                            "counters":  "A diagnostic variant of the same hook printed cumulative Frame_Stats deltas under alicorn-performance-sequence-counters. The committed A/B binaries do not print or use these counters.",
+                            "counter_note":  "Integer work counters do not depend on optimization level. The matched release diagnostic capture covers three pairs per arm; the candidate-only release capture adds #228 splice and #230 layout-sparse counters plus #229 stage timings."
+                        },
+    "headline":  {
+                     "primary_7_pairs":  {
+                                             "pairs":  7,
+                                             "elapsed_ns":  {
+                                                                "baseline":  {
+                                                                                 "count":  7,
+                                                                                 "min":  3947485100,
+                                                                                 "p50":  4116840900,
+                                                                                 "p95":  4261022500,
+                                                                                 "max":  4681333800
+                                                                             },
+                                                                "candidate":  {
+                                                                                  "count":  7,
+                                                                                  "min":  3831717000,
+                                                                                  "p50":  4042604500,
+                                                                                  "p95":  4615220700,
+                                                                                  "max":  4833727600
+                                                                              },
+                                                                "paired_median_percent_change":  -1.6239744448775326
+                                                            },
+                                             "cpu_total_ns":  {
+                                                                  "baseline":  {
+                                                                                   "count":  7,
+                                                                                   "min":  734375000,
+                                                                                   "p50":  796875000,
+                                                                                   "p95":  812500000,
+                                                                                   "max":  828125000
+                                                                               },
+                                                                  "candidate":  {
+                                                                                    "count":  7,
+                                                                                    "min":  671875000,
+                                                                                    "p50":  750000000,
+                                                                                    "p95":  812500000,
+                                                                                    "max":  921875000
+                                                                                },
+                                                                  "paired_median_percent_change":  -4.166666666666667
+                                                              },
+                                             "peak_working_set_bytes":  {
+                                                                            "baseline":  {
+                                                                                             "count":  7,
+                                                                                             "min":  326152192,
+                                                                                             "p50":  328642560,
+                                                                                             "p95":  331890688,
+                                                                                             "max":  334340096
+                                                                                         },
+                                                                            "candidate":  {
+                                                                                              "count":  7,
+                                                                                              "min":  323448832,
+                                                                                              "p50":  328531968,
+                                                                                              "p95":  329191424,
+                                                                                              "max":  329879552
+                                                                                          },
+                                                                            "paired_median_percent_change":  -0.56459151243223027
+                                                                        },
+                                             "application_build_ns":  {
+                                                                          "baseline":  {
+                                                                                           "count":  7,
+                                                                                           "min":  30999700,
+                                                                                           "p50":  34222900,
+                                                                                           "p95":  36295200,
+                                                                                           "max":  38149600
+                                                                                       },
+                                                                          "candidate":  {
+                                                                                            "count":  7,
+                                                                                            "min":  31518700,
+                                                                                            "p50":  33446000,
+                                                                                            "p95":  34474600,
+                                                                                            "max":  38261600
+                                                                                        },
+                                                                          "paired_median_percent_change":  -4.4723723321951478
+                                                                      },
+                                             "application_build_max_ns":  {
+                                                                              "baseline":  {
+                                                                                               "count":  7,
+                                                                                               "min":  7972200,
+                                                                                               "p50":  8069700,
+                                                                                               "p95":  9655500,
+                                                                                               "max":  11168000
+                                                                                           },
+                                                                              "candidate":  {
+                                                                                                "count":  7,
+                                                                                                "min":  8192200,
+                                                                                                "p50":  8943600,
+                                                                                                "p95":  9357000,
+                                                                                                "max":  10510300
+                                                                                            },
+                                                                              "paired_median_percent_change":  2.8674644389252655
+                                                                          },
+                                             "first_application_submit_ns":  {
+                                                                                 "baseline":  {
+                                                                                                  "count":  7,
+                                                                                                  "min":  16305300,
+                                                                                                  "p50":  18927500,
+                                                                                                  "p95":  19508900,
+                                                                                                  "max":  71819900
+                                                                                              },
+                                                                                 "candidate":  {
+                                                                                                   "count":  7,
+                                                                                                   "min":  17917100,
+                                                                                                   "p50":  19006000,
+                                                                                                   "p95":  19341800,
+                                                                                                   "max":  19609900
+                                                                                               },
+                                                                                 "paired_median_percent_change":  0.51771242868639444
+                                                                             },
+                                             "host_wall_ns":  {
+                                                                  "baseline":  {
+                                                                                   "count":  7,
+                                                                                   "min":  3143270400,
+                                                                                   "p50":  3193084900,
+                                                                                   "p95":  3232195700,
+                                                                                   "max":  3378359600
+                                                                               },
+                                                                  "candidate":  {
+                                                                                    "count":  7,
+                                                                                    "min":  3078520000,
+                                                                                    "p50":  3107208900,
+                                                                                    "p95":  3170644500,
+                                                                                    "max":  3234090800
+                                                                                },
+                                                                  "paired_median_percent_change":  -2.2642263322308529
+                                                              },
+                                             "gpu_submissions":  {
+                                                                     "baseline":  {
+                                                                                      "count":  7,
+                                                                                      "min":  17,
+                                                                                      "p50":  17,
+                                                                                      "p95":  19,
+                                                                                      "max":  19
+                                                                                  },
+                                                                     "candidate":  {
+                                                                                       "count":  7,
+                                                                                       "min":  17,
+                                                                                       "p50":  17,
+                                                                                       "p95":  19,
+                                                                                       "max":  19
+                                                                                   },
+                                                                     "paired_median_percent_change":  0
+                                                                 },
+                                             "sequence_build_ns":  {
+                                                                       "baseline":  {
+                                                                                        "count":  7,
+                                                                                        "min":  17646200,
+                                                                                        "p50":  19395200,
+                                                                                        "p95":  21239600,
+                                                                                        "max":  23000200
+                                                                                    },
+                                                                       "candidate":  {
+                                                                                         "count":  7,
+                                                                                         "min":  17702900,
+                                                                                         "p50":  18535100,
+                                                                                         "p95":  19553400,
+                                                                                         "max":  23581000
+                                                                                     },
+                                                                       "paired_median_percent_change":  -8.42127589132369
+                                                                   }
+                                         },
+                     "combined_10_pairs":  {
+                                               "pairs":  10,
+                                               "elapsed_ns":  {
+                                                                  "baseline":  {
+                                                                                   "count":  10,
+                                                                                   "min":  3866304600,
+                                                                                   "p50":  4088980600,
+                                                                                   "p95":  4261022500,
+                                                                                   "max":  4681333800
+                                                                               },
+                                                                  "candidate":  {
+                                                                                    "count":  10,
+                                                                                    "min":  3831717000,
+                                                                                    "p50":  4042604500,
+                                                                                    "p95":  4689543400,
+                                                                                    "max":  4833727600
+                                                                                },
+                                                                  "paired_median_percent_change":  2.1642939535814172
+                                                              },
+                                               "cpu_total_ns":  {
+                                                                    "baseline":  {
+                                                                                     "count":  10,
+                                                                                     "min":  734375000,
+                                                                                     "p50":  781250000,
+                                                                                     "p95":  828125000,
+                                                                                     "max":  890625000
+                                                                                 },
+                                                                    "candidate":  {
+                                                                                      "count":  10,
+                                                                                      "min":  671875000,
+                                                                                      "p50":  750000000,
+                                                                                      "p95":  921875000,
+                                                                                      "max":  937500000
+                                                                                  },
+                                                                    "paired_median_percent_change":  -5.882352941176471
+                                                                },
+                                               "peak_working_set_bytes":  {
+                                                                              "baseline":  {
+                                                                                               "count":  10,
+                                                                                               "min":  326152192,
+                                                                                               "p50":  327716864,
+                                                                                               "p95":  331890688,
+                                                                                               "max":  334340096
+                                                                                           },
+                                                                              "candidate":  {
+                                                                                                "count":  10,
+                                                                                                "min":  323448832,
+                                                                                                "p50":  328228864,
+                                                                                                "p95":  329576448,
+                                                                                                "max":  329879552
+                                                                                            },
+                                                                              "paired_median_percent_change":  -0.3271605709076833
+                                                                          },
+                                               "application_build_ns":  {
+                                                                            "baseline":  {
+                                                                                             "count":  10,
+                                                                                             "min":  30999700,
+                                                                                             "p50":  34222900,
+                                                                                             "p95":  37297500,
+                                                                                             "max":  38149600
+                                                                                         },
+                                                                            "candidate":  {
+                                                                                              "count":  10,
+                                                                                              "min":  31518700,
+                                                                                              "p50":  33508500,
+                                                                                              "p95":  38261600,
+                                                                                              "max":  38544500
+                                                                                          },
+                                                                            "paired_median_percent_change":  -2.2701173775454446
+                                                                        },
+                                               "application_build_max_ns":  {
+                                                                                "baseline":  {
+                                                                                                 "count":  10,
+                                                                                                 "min":  7972200,
+                                                                                                 "p50":  8352600,
+                                                                                                 "p95":  11168000,
+                                                                                                 "max":  13289300
+                                                                                             },
+                                                                                "candidate":  {
+                                                                                                  "count":  10,
+                                                                                                  "min":  8073000,
+                                                                                                  "p50":  8943600,
+                                                                                                  "p95":  10405100,
+                                                                                                  "max":  10510300
+                                                                                              },
+                                                                                "paired_median_percent_change":  -4.2451365617070485
+                                                                            },
+                                               "first_application_submit_ns":  {
+                                                                                   "baseline":  {
+                                                                                                    "count":  10,
+                                                                                                    "min":  16305300,
+                                                                                                    "p50":  18908500,
+                                                                                                    "p95":  19556100,
+                                                                                                    "max":  71819900
+                                                                                                },
+                                                                                   "candidate":  {
+                                                                                                     "count":  10,
+                                                                                                     "min":  17917100,
+                                                                                                     "p50":  18859300,
+                                                                                                     "p95":  19555000,
+                                                                                                     "max":  19609900
+                                                                                                 },
+                                                                                   "paired_median_percent_change":  -0.056825632731564456
+                                                                               },
+                                               "host_wall_ns":  {
+                                                                    "baseline":  {
+                                                                                     "count":  10,
+                                                                                     "min":  3108941300,
+                                                                                     "p50":  3152101500,
+                                                                                     "p95":  3232195700,
+                                                                                     "max":  3378359600
+                                                                                 },
+                                                                    "candidate":  {
+                                                                                      "count":  10,
+                                                                                      "min":  3078520000,
+                                                                                      "p50":  3109721100,
+                                                                                      "p95":  3242190900,
+                                                                                      "max":  3392742400
+                                                                                  },
+                                                                    "paired_median_percent_change":  -1.1472605093090305
+                                                                },
+                                               "gpu_submissions":  {
+                                                                       "baseline":  {
+                                                                                        "count":  10,
+                                                                                        "min":  17,
+                                                                                        "p50":  17,
+                                                                                        "p95":  19,
+                                                                                        "max":  19
+                                                                                    },
+                                                                       "candidate":  {
+                                                                                         "count":  10,
+                                                                                         "min":  17,
+                                                                                         "p50":  17,
+                                                                                         "p95":  19,
+                                                                                         "max":  19
+                                                                                     },
+                                                                       "paired_median_percent_change":  0
+                                                                   },
+                                               "sequence_build_ns":  {
+                                                                         "baseline":  {
+                                                                                          "count":  10,
+                                                                                          "min":  17646200,
+                                                                                          "p50":  19395200,
+                                                                                          "p95":  22884300,
+                                                                                          "max":  23000200
+                                                                                      },
+                                                                         "candidate":  {
+                                                                                           "count":  10,
+                                                                                           "min":  17702900,
+                                                                                           "p50":  19322100,
+                                                                                           "p95":  22501400,
+                                                                                           "max":  23581000
+                                                                                       },
+                                                                         "paired_median_percent_change":  -6.2920867144723678
+                                                                     }
+                                           }
+                 },
+    "artifacts":  {
+                      "samples_csv_sha256":  "EFFF5EF309EFA4A0B204905ACD32B8FD6E577617732810ABF7BA5E0120C4398B",
+                      "steps_csv_sha256":  "CA634F82034B4D5789D3E5192DF4AAD65FBA1DFFF4130093A2F72F70E8F8E0F0",
+                      "summary_json_sha256":  "5F589FD20DF53012CD9DA89402DB8F8C8FFB6EEAA80BE9663A54A4A872ECC373",
+                      "runner_sha256":  "30EC6C1850D21E3951C7E5E9BECD2155DE270484137E68D01E8E386F1F3874EB",
+                      "hook_patch_sha256":  "D35C70165E1A3F45275EC12117792CED27DA984AFCE1C0F09B473F09F63317A3",
+                      "logs":  [
+                                   {
+                                       "file":  "baseline-run-01.log",
+                                       "sha256":  "8F156D6FF9DE75DF8CF2302915FCBA3D608A2FBF3D6AA7CC38CB837E26574304"
+                                   },
+                                   {
+                                       "file":  "baseline-run-02.log",
+                                       "sha256":  "C692331B04B55F85110C5FFBAB428140F3C06E9AB8E85F25EAA1388B2063F93F"
+                                   },
+                                   {
+                                       "file":  "baseline-run-03.log",
+                                       "sha256":  "D1B1B2DA8F179B9F3A9B117AAD197A242E51F6340EE7764EE0010965080C8C51"
+                                   },
+                                   {
+                                       "file":  "baseline-run-04.log",
+                                       "sha256":  "9689C6362C72FD00CBE54B6661542C87C714E4E9BCC1DD589CEC8F0CF109201E"
+                                   },
+                                   {
+                                       "file":  "baseline-run-05.log",
+                                       "sha256":  "A773703BD3333C90ADD55D527AC621FDEAC255A387C831F2CBFCFBF66C10CA9C"
+                                   },
+                                   {
+                                       "file":  "baseline-run-06.log",
+                                       "sha256":  "C48CE23E7284ECB6BF003EE8CB62228F86982649E16C82A31765738375960507"
+                                   },
+                                   {
+                                       "file":  "baseline-run-07.log",
+                                       "sha256":  "9D4F86D5C229A7C5216E5C0E838A32B6ACAEC0A64E96536B4F55C724BC76FCFA"
+                                   },
+                                   {
+                                       "file":  "baseline-warmup-01.log",
+                                       "sha256":  "614126BB8FF6B252DCF922FE05FAFD5601FC8903739E2AFEB74C6602551C3667"
+                                   },
+                                   {
+                                       "file":  "candidate-run-01.log",
+                                       "sha256":  "392B0B6C462E85FAA7318E0A06949D0AF9DB6F9861CD1A8835DC38E6811FD195"
+                                   },
+                                   {
+                                       "file":  "candidate-run-02.log",
+                                       "sha256":  "2BA07D8F6DDABA3235F33EA445E2D86A2ACFD557F8B67A8B932B952D3ECEDD44"
+                                   },
+                                   {
+                                       "file":  "candidate-run-03.log",
+                                       "sha256":  "CFDF2CF4F45F60BB9A24C0DB01F74D2198886EC9B24F2484F4A14D72E59F76DB"
+                                   },
+                                   {
+                                       "file":  "candidate-run-04.log",
+                                       "sha256":  "C16FA475728E3EA4CC877BA176242802A8CDFE3D6040585BE33F264DDFF8A0D9"
+                                   },
+                                   {
+                                       "file":  "candidate-run-05.log",
+                                       "sha256":  "983BCE17DB34A1AF0AF7839FA2EE33ED778A038FAA65E4701980850B43019BB7"
+                                   },
+                                   {
+                                       "file":  "candidate-run-06.log",
+                                       "sha256":  "26ABF0B3CB9B5284E55838D5524AAFC12F48A4B9BA8EF764F805C7C719328C49"
+                                   },
+                                   {
+                                       "file":  "candidate-run-07.log",
+                                       "sha256":  "BB51F585A32FDD055510981B7EC7CC94CEA5C71A2392750988E97190282017B5"
+                                   },
+                                   {
+                                       "file":  "candidate-warmup-01.log",
+                                       "sha256":  "4D459057A9BF1A2D640AE098F0F2B6DD318D54F7E6EADF527BBC7ED40082536A"
+                                   }
+                               ],
+                      "confirmation":  {
+                                           "samples_csv_sha256":  "92A002492647407690F47179108A7244676830E13B59158B59461EC776C9379E",
+                                           "steps_csv_sha256":  "54E6F44650E4A041F069C73D409F55E1C5044F4D853501D703975B5BE85BB601",
+                                           "summary_json_sha256":  "7F23DA6804ADB5201355D37667E17A9FAD579454A7E7C28BD9B29906544E94C8",
+                                           "logs":  [
+                                                        {
+                                                            "file":  "baseline-run-01.log",
+                                                            "sha256":  "56F5C8F2175B84A008FF1721C19424C54050238AF1F1D9C3C6C82DF3BF853CD8"
+                                                        },
+                                                        {
+                                                            "file":  "baseline-run-02.log",
+                                                            "sha256":  "7AEA14D1D1E42900C48BCD87A01FD956B4E0BE31C87AC317621D41A38D1AF7FB"
+                                                        },
+                                                        {
+                                                            "file":  "baseline-run-03.log",
+                                                            "sha256":  "DF7B6BCBE38F2AF9416D2DFBF104070A87314EC66C0A7221C3905763326C4A0A"
+                                                        },
+                                                        {
+                                                            "file":  "candidate-run-01.log",
+                                                            "sha256":  "917AEF6D638275376DCC87EF4BBA4ED6DFD79CB4AE73587D107FB41302920543"
+                                                        },
+                                                        {
+                                                            "file":  "candidate-run-02.log",
+                                                            "sha256":  "65B5FCAC146FD46E6F92ED7D7EC833A66D0955D338A8096346116B585107B01C"
+                                                        },
+                                                        {
+                                                            "file":  "candidate-run-03.log",
+                                                            "sha256":  "07FA811A200B6846B5B17782261AFFACC0FDDF02433E36D356ABF1E1C42AEAC7"
+                                                        }
+                                                    ]
+                                       },
+                      "diagnostics":  {
+                                          "counter_deltas_sha256":  "F1D158265972AF68B5E9C926785E7CFC3C2974DF276FC77F7D33D7E65F065112",
+                                          "candidate_sparse_counters_sha256":  "2BC48A835422F96D68C583CEF95D6F7A11BF66EFC34A1FFBCDA20781D168A9E1",
+                                          "common_logs":  [
+                                                              {
+                                                                  "file":  "baseline-run-01.log",
+                                                                  "sha256":  "E0520FD827A82DE3744FDC1C83964A1074A5A8821C2FD7851179A0BC5B3D5815"
+                                                              },
+                                                              {
+                                                                  "file":  "baseline-run-02.log",
+                                                                  "sha256":  "2EC226C303B0670864BBFC709AED285F6257F99F7319567F62A13BBE98503087"
+                                                              },
+                                                              {
+                                                                  "file":  "baseline-run-03.log",
+                                                                  "sha256":  "E0E7E6C0E1A32D16A2E8CAAC699D015E3C28BBFD2B3309F312F2A3B94E998419"
+                                                              },
+                                                              {
+                                                                  "file":  "candidate-run-01.log",
+                                                                  "sha256":  "7B77E916ED8C2C5ED3B38A97961AE3EA9D0928C87EB059CDFA972AD91BF5F5F0"
+                                                              },
+                                                              {
+                                                                  "file":  "candidate-run-02.log",
+                                                                  "sha256":  "004404E647C4DC4891ED37262474710955772DA11F168A6310726AD3C54D384C"
+                                                              },
+                                                              {
+                                                                  "file":  "candidate-run-03.log",
+                                                                  "sha256":  "2CD8EC0AE8DAF17EC9F8CEA50B3458EA1F2C9C595A0AD670E5227B75AD836EA8"
+                                                              }
+                                                          ],
+                                          "candidate_logs":  [
+                                                                 {
+                                                                     "file":  "baseline-run-01.log",
+                                                                     "sha256":  "3F426FCC0BA7512AFB6F5F74AAD792A19C360709FC212340269E8774141A5FD7"
+                                                                 },
+                                                                 {
+                                                                     "file":  "baseline-run-02.log",
+                                                                     "sha256":  "E98EC75C07BC2E2A4FF5F06B7C3351D9DE18D6DFAE18656380F9E647372C972A"
+                                                                 },
+                                                                 {
+                                                                     "file":  "baseline-run-03.log",
+                                                                     "sha256":  "C2A29131B036C57D2021D49F423042B7248ADF97B08EF0E37A2723917C1830D9"
+                                                                 },
+                                                                 {
+                                                                     "file":  "candidate-run-01.log",
+                                                                     "sha256":  "2C1CCA028C85B604EB9D1D5EF08A3B25CA8C933FE8029C6337D9FAF219F6AA77"
+                                                                 },
+                                                                 {
+                                                                     "file":  "candidate-run-02.log",
+                                                                     "sha256":  "3CEBD6AE252E3EC04DFE70A17134D6833A197774940BC1AA622ABEF67716AAB1"
+                                                                 },
+                                                                 {
+                                                                     "file":  "candidate-run-03.log",
+                                                                     "sha256":  "0A34B2CD24F99579C166EAD3CE9021667074B15D0485721F2D40396DF88A39F5"
+                                                                 }
+                                                             ]
+                                      }
+                  }
+}
