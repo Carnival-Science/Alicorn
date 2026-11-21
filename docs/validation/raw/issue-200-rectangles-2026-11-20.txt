@@ -1,0 +1,14 @@
+issue_200_backend driver direct3d12 format B8G8R8A8_UNORM gpu_timestamps not exposed by current SDL3 binding
+issue_200_background gpu 199 209 229 reference 199 209 229 pixel_format BGRA
+issue_200_cpu_readback case 1280x160@1.00x-opaque rectangles 1026 vertices 6156 geometry_commands 1 channel_swap true mismatched_pixels 0 max_delta 0 mean_delta 0.0065625 status PASS
+issue_200_wx_readback case 1280x160@1.00x-opaque mismatched_pixels 5 edge_only_pixels 594 edge_allowance 2048 max_delta 92 mean_delta 0.008291015 status PASS
+issue_200_background gpu 199 209 229 reference 199 209 229 pixel_format BGRA
+issue_200_cpu_readback case 1280x160@1.50x-opaque rectangles 1026 vertices 6156 geometry_commands 1 channel_swap true mismatched_pixels 0 max_delta 0 mean_delta 0.0065625 status PASS
+issue_200_wx_readback case 1280x160@1.50x-opaque mismatched_pixels 6 edge_only_pixels 6785 edge_allowance 13824 max_delta 60 mean_delta 0.0071419273 status PASS
+issue_200_background gpu 199 209 229 reference 199 209 229 pixel_format BGRA
+issue_200_cpu_readback case 1280x160@1.00x-alpha rectangles 1026 vertices 6156 geometry_commands 1 channel_swap true mismatched_pixels 0 max_delta 0 mean_delta 0.0175 status PASS
+issue_200_overflow count_rejected 1366 count_accepted 1365 vertices_accepted 8190 budget 8192 retained_payload preserved status PASS
+issue_200_repaint rectangles 1026 samples 32 batched_update_p95_ns 2300 batched_describe_p95_ns 1900 batched_display_commands 2 retained_full_describe_p95_ns 1332100 retained_partial_describe_p95_ns 717000 retained_display_commands 1027
+issue_200_idle payload_updates 2 layout_visits 0 paint_visits 0 text_shape_requests 0 idle_submission_pending false idle_surface_pending false status PASS
+issue_200_gpu_cost rectangles 1026 samples 64 update_p95_ns 3300 encode_p95_ns 44700 submit_to_fence_p95_ns 431800 vertex_bytes_per_upload 221616 vertex_uploads 64 persistent_alloc_calls_for_updates 1 persistent_alloc_calls_update_and_frames 65 idle_submission_pending false idle_surface_pending false
+issue_200_validation status PASS readback CPU composite native_wx_bitmap_reference compared

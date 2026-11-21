@@ -164,6 +164,44 @@ test_gpu_surface_compact_point_markers_validate_budget_and_lifecycle :: proc(t: 
 }
 
 @(test)
+test_gpu_surface_rectangle_updates_do_not_grow_persistent_allocations :: proc(t: ^testing.T) {
+	allocations := Runtime_Allocation_Stats{}
+	rt := new_runtime(Rect{0, 0, 640, 120}, config=Runtime_Config{allocation_stats=&allocations})
+	defer destroy_runtime(&rt)
+
+	invalidate_root(&rt, "rectangle allocation test")
+	ui, should_build := begin_frame(&rt)
+	if !should_build {
+		testing.expect(t, false, "initial rectangle surface tree should build")
+		return
+	}
+	container_begin(&ui, .Root, key=key_string("rectangle-allocation-root"), style=layout_style(.Column, width=640, height=120))
+	surface := gpu_geometry_surface(&ui, "rectangle-allocation-surface", layout_style(width=640, height=120), 1)
+	container_end(&ui)
+	end_frame(&ui)
+
+	rectangles := make([]GPU_Surface_Filled_Rectangle, 512)
+	defer delete(rectangles)
+	for index in 0..<len(rectangles) {
+		rectangles[index] = GPU_Surface_Filled_Rectangle{
+			bounds={f32(index%640), f32(index%80), 4, 12},
+			color={0.2, 0.4, 0.6, 1},
+		}
+	}
+	testing.expect(t, gpu_surface_update_geometry_with_rectangles(&rt, surface, rectangles, nil, nil),
+		"the initial rectangle payload should be accepted")
+	calls_after_first := allocations.persistent_alloc_calls
+	for _ in 0..<8 {
+		testing.expect(t, gpu_surface_update_geometry_with_rectangles(&rt, surface, rectangles, nil, nil),
+			"repeat rectangle payloads should stay accepted")
+	}
+	testing.expect(t, allocations.persistent_alloc_calls == calls_after_first,
+		"rect-only payload updates must reuse the retained rectangle capacity without allocating")
+	testing.expect(t, len(rt.nodes[surface].surface_rectangles) == len(rectangles),
+		"the retained rectangle payload should keep its full count")
+}
+
+@(test)
 test_retyping_away_from_custom_surface_discards_image_layers :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 100, 80})
 	defer destroy_runtime(&rt)

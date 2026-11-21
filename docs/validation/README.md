@@ -7,6 +7,11 @@ the current project status.
 
 ## Current acceptance and platform limits
 
+- [Bounded filled-rectangle batches — Windows (2026-11-20)](issue-200-rectangles-windows-2026-11-20.md)
+  — 1,026-rectangle native readback on D3D12 and Vulkan against an independent
+  CPU compositor and wxWidgets 3.2.11 GDI captures, the batched-versus-retained
+  repaint comparison, per-update allocation and idle checks, and the 1,365-rect
+  vertex-budget cap.
 - [Live-resize presentation latency — Windows (2026-11-20)](issue-211-live-resize-performance-windows-2026-11-20.md)
   — per-frame inter-present latency, `WM_WINDOWPOSCHANGED`-to-present stretch
   window, `wgpu.SurfaceConfigure` cost, description/layout cost, and

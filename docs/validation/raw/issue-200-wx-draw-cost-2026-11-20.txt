@@ -1,0 +1,2 @@
+wx_reference_cost shapes=1026 kind=rect scale=1.00 pixels=1280x160 frames=64 draw_p50_ns=2349900 draw_p95_ns=2610200
+wx_reference_cost shapes=1026 kind=rect scale=1.50 pixels=1920x240 frames=64 draw_p50_ns=2650600 draw_p95_ns=2892700
