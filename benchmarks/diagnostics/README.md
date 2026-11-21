@@ -87,3 +87,24 @@ Windows capture and its interpretation are in
 [`docs/validation/issue-158-percentage-width-windows-2026-11-21.md`](../../docs/validation/issue-158-percentage-width-windows-2026-11-21.md).
 This is a consumer-shaped fixture, not the Scratchpad executable, and it does
 not measure GPU submission, present latency, or native input.
+
+## Sparse updates and authoring cost
+
+`issue190_sparse_updates.odin` measures one changed label, an identical-value
+write, hover, a two-row selection switch, a one-row width change, structural
+churn, a paint-only theme replacement, mount, destroy, and a 100,000-item
+virtualized scroll across three equivalent authoring modes (`invalidate_root`,
+keyed regions, and a hand-optimized shell/label/action region path) at 100,
+1,000, and 3,000 live controls. It records p50/p95/p99 wall time, deterministic
+stage counters, allocator deltas, true idle, and a fresh-runtime correctness
+oracle. Build with `-o:speed`; the runner writes a capture with machine and
+compiler pins:
+
+```powershell
+.\benchmarks\diagnostics\issue190_sparse_updates.ps1 -Odin C:\odin\odin.exe -Samples 24
+```
+
+The 2026-11-21 Windows capture and its interpretation are in
+[`docs/benchmarks/issue190-sparse-updates-windows-2026-11-21.md`](../../docs/benchmarks/issue190-sparse-updates-windows-2026-11-21.md).
+It is CPU/headless, does not rank external frameworks, and does not measure
+native GPU presentation.
