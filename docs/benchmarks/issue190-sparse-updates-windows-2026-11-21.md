@@ -521,3 +521,125 @@ that index resolution returns exactly the node set of the old linear scan at
 every step. An opt-in `ALICORN_REGION_INDEX_VALIDATION` debug define runs the
 same check at the end of reconciliation for local diagnosis; it is compiled out
 by default and is never on the invalidation hot path.
+
+## Addendum: sparse display finalization milestone (issue #228)
+
+This addendum records the first bounded step of
+[issue #228](https://github.com/Carnival-Science/Alicorn/issues/228): a
+per-subtree **display range splice** for repainted nodes that emit more than one
+paint command. Before this change the sparse path only handled a node with
+exactly one command, so a default button hover (surface, text, optional icon)
+forced the entire display list to finalize.
+
+The fixture, runner, and scenario definitions are unchanged from the #190
+capture above. The before capture is base commit `49541f3`; the after capture is
+the same tree with this change applied, committed together with this addendum.
+Raw captures:
+
+- [before](raw/issue-228-sparse-finalization-before-windows-2026-11-21.txt)
+- [after](raw/issue-228-sparse-finalization-after-windows-2026-11-21.txt)
+
+### Implemented splicing rules
+
+The sparse path now finalizes a contiguous run instead of one slot:
+
+1. `Node.display_index` identifies the first command the node's own paint
+   contributes to `display_target`. A node's own commands are composed
+   contiguously before its descendants and local scrollbar chrome, so the
+   implementation scans that owner run to recover the old range length.
+2. The repaint must produce **exactly the same command count**. Count-changing
+   repaints fall back, which keeps every later node's `display_index` valid and
+   avoids an O(tail) index fixup.
+3. The node's inherited translation, opacity and clip are recomputed from its
+   top-level root (O(depth)) and the node's current paint is composed with the
+   same helper the full compositor uses.
+4. Every recomposed command is validated against the slot it replaces:
+   inherited opacity, translation and clip must match exactly. Bounds are the
+   node's own painted geometry and may legitimately change (a slider fill, for
+   example); a clipping node additionally validates its own bounds because
+   descendants inherit that clip.
+5. Only then are the target slots replaced and finalized in place. If any
+   validation fails, the full path runs and the update is counted as an
+   incremental fallback.
+6. A node that contributed no display commands before or after the repaint (a
+   non-painting layout container during a theme replacement) is skipped instead
+   of forcing a rebuild.
+
+### Results
+
+Deterministic composition visits and display finalization deltas, from the raw
+captures (root / region / app modes; all modes now agree):
+
+| Scenario | Rows | Compose before | Compose after | Finalized before | Finalized after | Full passes before | Full passes after |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| hover move | 1,000 | 7,003 / 7,003 / 7,003 | **2** | 7,003 | **4** | 1 | **0** |
+| hover move | 3,000 | 21,003 | **2** | 21,003 | **4** | 1 | **0** |
+| two-row selection | 1,000 | 7,004 / 7,005 / 7,006 | **4 / 6 / 8** | 7,004 / 7,005 / 7,006 | **6 / 8 / 10** | 1 | **0** |
+| two-row selection | 3,000 | 21,004 / 21,005 / 21,006 | **4 / 6 / 8** | 21,004 / 21,005 / 21,006 | **6 / 8 / 10** | 1 | **0** |
+| one-row width | 1,000 | 2 | 2 | 2 | 2 | 0 | 0 |
+| reorder + insert + remove | 1,000 | 7,003 | 7,003 | 7,003 | 7,003 | 1 | 1 |
+| broad theme | 1,000 | 7,008 / 7,004 / 7,004 | 7,003 | 7,008 / 7,004 / 7,004 | 7,003 | 1 | 1 |
+| broad theme | 3,000 | 21,004 / 21,003 / 21,003 | 21,003 | 21,004 / 21,003 / 21,003 | 21,003 | 1 | 1 |
+
+Hover and selection composition is now independent of live row count: two
+paint visits finalize four and six-to-ten commands respectively at both 1,000
+and 3,000 rows. The label, identical-write, width, virtual-scroll, mount, and
+destroy legs are unchanged.
+
+Wall time (p50 / p95 milliseconds, region mode unless noted):
+
+| Scenario | Rows | Before | After |
+| --- | ---: | ---: | ---: |
+| hover move | 1,000 | 1.73 / 2.04 | **1.03 / 1.13** |
+| hover move | 3,000 | 8.41 / 9.98 | **3.04 / 3.27** |
+| two-row selection | 1,000 | 2.43 / 2.84 | **1.59 / 1.82** |
+| two-row selection | 3,000 | 9.88 / 11.09 | **5.20 / 5.94** |
+| broad theme | 1,000 | 2.91 / 3.51 | 3.07 / 4.35 |
+| broad theme | 3,000 | 14.53 / 15.44 | 14.71 / 16.49 |
+
+The virtual 100,000-row leg remains O(visible) and unchanged
+(148 composition visits, one full pass for the scrolled structure).
+
+### Remaining full-pass conditions
+
+These update classes intentionally still call `rebuild_display` (or the full
+`layout_finalize_display`):
+
+- **Structure and order changes** — node creation/retirement, reorder, and
+  overlay insertion/removal keep the existing `rebuild_order` /
+  `composition_rebuild` path. The #190 reorder leg is unchanged.
+- **Command-count changes** — a repaint whose command count differs from the
+  retained range falls back. Examples: a focus outline appearing, a checkbox
+  gaining its checkmark command, selection paint that adds/removes a product.
+- **Changed ancestor presentation** — a clip, translation or opacity change
+  detected by the per-command validation falls back instead of aliasing stale
+  geometry.
+- **Retained backdrop boundaries** — while any live node carries a
+  `Backdrop_Effect_Paint` marker, the range splice is disabled because the
+  effects compositor captures a prefix of the display list. The counter is
+  released on retirement.
+- **Transient overlays** — drag previews and tooltips present during the
+  update, and any active drag, keep the full path.
+- **Motion-owned nodes** — motion presentation frames set
+  `composition_rebuild` as before; analytic motion is not yet range-spliced.
+- **Scale changes** — `set_presentation_scale` re-finalizes the whole display
+  from unsnapped targets.
+- **Scroll-region nodes themselves** — their composed range includes
+  scrollbar chrome, so the node is not spliced directly; descendants that are
+  not themselves scroll regions still splice when their validated clip and
+  translation are unchanged.
+- **Bulk repaints covering most of the display** — the implementation forces
+  one full pass when at least 64 nodes are queued and `queued * 8` is at least
+  the display length. One linear pass is faster than per-node ancestor
+  validation in that regime, and the work remains proportional to the changed
+  content. Broad theme replacement is the canonical case at 1,000+ rows. Small
+  windows with all nodes repainted still take the sparse path.
+
+Correctness is pinned by `runtime/sparse_display_test.odin`, which compares
+every sparse result byte-for-byte against a forced full
+`layout_finalize_display` for hover, selection, same-length text edits, theme
+replacement, a 120-operation seeded randomized sequence, and the fallback
+classes above. `runtime/retained_locality_test.odin`'s former multi-command
+slider assertion now asserts the same-count range splice instead of a full
+rebuild. True idle (200 frames) remains free of paint, composition and
+finalization work.

@@ -234,7 +234,7 @@ retained_locality_slider_describe :: proc(rt: ^Runtime, value: f32) -> Node_ID {
 }
 
 @(test)
-test_multi_command_paint_update_uses_full_display_rebuild :: proc(t: ^testing.T) {
+test_multi_command_paint_update_uses_sparse_range_finalization :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 320, 120})
 	defer destroy_runtime(&rt)
 	slider := retained_locality_slider_describe(&rt, 0.2)
@@ -243,20 +243,25 @@ test_multi_command_paint_update_uses_full_display_rebuild :: proc(t: ^testing.T)
 		testing.expect(t, false, "slider fixture should retain multiple paint commands")
 		return
 	}
+	command_count := len(node.paint)
 	full_passes_before := rt.stats.display_finalization_full_passes
 	finalized_before := rt.stats.display_commands_finalized
 	_ = retained_locality_slider_describe(&rt, 0.8)
 	updated := rt.nodes[slider]
-	testing.expect(t, len(updated.paint) > 1 && rt.stats.display_finalization_full_passes == full_passes_before+1 &&
-		rt.stats.display_commands_finalized-finalized_before == u64(len(rt.display_target)),
-		"a multi-command paint update should use the full display rebuild and finalize every target command")
+	testing.expect(t, len(updated.paint) == command_count &&
+		rt.stats.display_finalization_full_passes == full_passes_before &&
+		rt.stats.display_commands_finalized-finalized_before == u64(command_count),
+		"a same-count multi-command paint update should finalize only its own range")
 	if len(rt.display) != len(rt.display_target) {
-		testing.expect(t, false, "the rebuilt display should remain aligned with its retained target")
+		testing.expect(t, false, "the sparse range update should keep the display aligned with its target")
 		return
 	}
-	for target, index in rt.display_target {
-		expected := layout_finalize_paint_command(target, rt.presentation_scale_x, rt.presentation_scale_y)
-		testing.expect(t, retained_locality_finalized_commands_match(expected, rt.display[index]),
-			"the multi-command fallback should finalize every command from its unsnapped target")
+	incremental := make([]Paint_Command, len(rt.display), allocator=rt.persistent_allocator)
+	copy(incremental, rt.display[:])
+	layout_finalize_display(&rt, .Display_Structure_Rebuild)
+	for index in 0..<min(len(incremental), len(rt.display)) {
+		testing.expect(t, sparse_display_commands_match(incremental[index], rt.display[index]),
+			"the sparse range should match every command from a full finalization")
 	}
+	delete(incremental, rt.persistent_allocator)
 }

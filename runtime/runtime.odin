@@ -2197,6 +2197,11 @@ Runtime :: struct {
 	submission_cause_mixed: bool,
 	display:     [dynamic]Paint_Command,
 	display_target: [dynamic]Paint_Command,
+	// Number of retained nodes whose paint list contains a backdrop-effect
+	// boundary. Sparse display range finalization is disabled while any live
+	// boundary exists; the effects compositor captures a prefix of the display
+	// list that this milestone does not update incrementally.
+	retained_backdrop_effect_nodes: int,
 	host_text_runs: [dynamic]Host_Text_Run,
 	paint_resource_generation: u64,
 	images: map[u64]Image_Resource,

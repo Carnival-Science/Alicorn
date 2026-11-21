@@ -822,6 +822,9 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	delete_key(&rt.nodes, id)
 	// Paint commands contain only inline values and generation-checked resource
 	// handles. Their referenced runs and span storage are owned by the node.
+	if paint_commands_have_backdrop_effect(node.paint[:]) && rt.retained_backdrop_effect_nodes > 0 {
+		rt.retained_backdrop_effect_nodes -= 1
+	}
 	delete(node.paint)
 	delete(node.children)
 	grid_tracks_destroy(node)

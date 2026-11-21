@@ -212,6 +212,199 @@ append_scrollbar_display :: proc(rt: ^Runtime, node: ^Node) {
 	}
 }
 
+// A bulk repaint that covers most of the display is cheaper as one full pass
+// than as per-node ancestor validation. The absolute floor keeps small windows
+// on the sparse path even when every node changes.
+SPARSE_DISPLAY_BULK_QUEUE_THRESHOLD :: 64
+
+// Compose_Inherited_Presentation carries the translation, opacity and clip a
+// node receives from its ancestors, recomputed on demand for sparse range
+// finalization.
+Compose_Inherited_Presentation :: struct {
+	presentation:    Motion_Composition_Values,
+	stationary_clip: Rect,
+	translated_clip: Rect,
+	clip_follow:     bool,
+	valid:           bool,
+}
+
+// compose_paint_command_presentation applies the presentation inherited from
+// an ancestor chain to one cached paint command. Both the full subtree
+// compositor and the sparse range finalizer use this so their output cannot
+// drift apart.
+compose_paint_command_presentation :: proc(
+	command: Paint_Command,
+	presentation: Motion_Composition_Values,
+	clip_follow: bool,
+	stationary_clip, translated_clip: Rect,
+) -> Paint_Command {
+	result := command
+	if presentation.has_surface_color && result.semantic_surface_fill {
+		if surface, ok := result.payload.(Surface_Paint); ok {
+			surface.fill = presentation.surface_color
+			result.payload = surface
+		}
+	}
+	result.opacity *= presentation.opacity
+	result.translation[0] += presentation.translation[0]
+	result.translation[1] += presentation.translation[1]
+	if clip_follow {
+		result.clip = rect_intersection(stationary_clip, translated_clip)
+		if paint_command_is_text(result) {
+			result.clip = rect_intersection(result.clip,
+				paint_rect_translate(result.bounds, presentation.translation))
+		}
+	}
+	return result
+}
+
+// compose_inherited_presentation recomputes the translation, opacity and clip
+// a node receives from its ancestors. Sparse finalization validates the
+// recomposed run against the commands it replaces, so a changed ancestor
+// presentation falls back instead of aliasing stale geometry.
+compose_inherited_presentation :: proc(rt: ^Runtime, id: Node_ID) -> (result: Compose_Inherited_Presentation) {
+	if rt == nil || id == 0 { return }
+	chain: [256]Node_ID
+	count := 0
+	current := id
+	for {
+		if count >= len(chain) { return }
+		node, found := rt.nodes[current]
+		if !found || node == nil { return }
+		if current != id && (!node.active || !node.present) { return }
+		chain[count] = current
+		count += 1
+		if node.parent == 0 { break }
+		current = node.parent
+	}
+	// Only trees the display compositor actually walks can be spliced.
+	root_found := false
+	for top in rt.top_level {
+		if top == chain[count-1] { root_found = true; break }
+	}
+	if !root_found || !visual_part_is_visible(rt, id) { return }
+
+	translation: [2]f32
+	opacity := f32(1)
+	stationary_clip := rt.viewport
+	translated_clip := rt.viewport
+	clip_follow := false
+	for index := count-1; index >= 0; index -= 1 {
+		node, found := rt.nodes[chain[index]]
+		if !found || node == nil { return }
+		presentation := motion_compose_subtree(rt, node.id, translation, opacity)
+		presentation.opacity *= drag_source_opacity(rt, node.id)
+		next_clip_follow := clip_follow || presentation.clip_policy == .Follow_Visual
+		child_stationary_clip := stationary_clip
+		child_translated_clip := translated_clip
+		if node.kind == .Scroll_Region || node.style.clip {
+			local_clip := node.bounds
+			if node.kind == .Scroll_Region { local_clip = node.scroll_viewport_bounds }
+			if next_clip_follow {
+				child_translated_clip = rect_intersection(child_translated_clip,
+					paint_rect_translate(local_clip, presentation.translation))
+			} else {
+				child_stationary_clip = rect_intersection(child_stationary_clip, local_clip)
+			}
+		}
+		if index == 0 {
+			result = Compose_Inherited_Presentation{
+				presentation=presentation,
+				stationary_clip=stationary_clip,
+				translated_clip=translated_clip,
+				clip_follow=next_clip_follow,
+				valid=true,
+			}
+		} else {
+			translation = presentation.translation
+			opacity = presentation.opacity
+			stationary_clip = child_stationary_clip
+			translated_clip = child_translated_clip
+			clip_follow = next_clip_follow
+		}
+	}
+	return
+}
+
+// compose_presentation_fields_match compares the fields the presentation
+// compositor overrides: inherited opacity, translation and clip. Bounds are the
+// node's own painted geometry and may legitimately change during a same-count
+// repaint, as a slider thumb or fill does.
+compose_presentation_fields_match :: proc(a, b: Paint_Command) -> bool {
+	return a.owner == b.owner && a.clip == b.clip &&
+		a.opacity == b.opacity && a.translation == b.translation
+}
+
+compose_owned_command_run :: proc(commands: []Paint_Command, start: int, owner: Node_ID) -> int {
+	count := 0
+	for index := start; index < len(commands); index += 1 {
+		if commands[index].owner != owner { break }
+		count += 1
+	}
+	return count
+}
+
+// paint_commands_have_backdrop_effect reports whether a retained paint list
+// contains a backdrop boundary. Until the range splice can reason about the
+// compositor's captured prefix, any live boundary disables it.
+paint_commands_have_backdrop_effect :: proc(commands: []Paint_Command) -> bool {
+	for command in commands {
+		if paint_command_is_backdrop_effect(command) { return true }
+	}
+	return false
+}
+
+// paint_sparse_finalize_range recomposes only the node's own contiguous
+// display commands and finalizes them in place. It requires the command count
+// to be unchanged so every later node keeps its display_index; count changes,
+// changed inherited presentation, overlays and retained effects fall back to
+// rebuild_display.
+paint_sparse_finalize_range :: proc(rt: ^Runtime, node: ^Node) -> bool {
+	if rt == nil || node == nil { return false }
+	if rt.composition_rebuild || rt.transient_overlay_kind != .None || rt.drag.phase == .Dragging ||
+		rt.tooltip.visible { return false }
+	// A backdrop marker anywhere in the retained display captures a prefix for
+	// the effects compositor. Keep the full rebuild until range edits can
+	// update that prefix.
+	if rt.retained_backdrop_effect_nodes != 0 { return false }
+	if node.kind == .Scroll_Region { return false }
+	if len(rt.display) != len(rt.display_target) { return false }
+	start := node.display_index
+	if start < 0 || start >= len(rt.display_target) { return false }
+	new_count := len(node.paint)
+	if new_count == 0 { return false }
+	old_count := compose_owned_command_run(rt.display_target[:], start, node.id)
+	display_count := compose_owned_command_run(rt.display[:], start, node.id)
+	if old_count != new_count || display_count != old_count { return false }
+	inherited := compose_inherited_presentation(rt, node.id)
+	if !inherited.valid { return false }
+	// Validate every replacement before mutating the retained display: if any
+	// inherited transform differs from the slot being replaced, an ancestor
+	// presentation or this node's clip changed and the full path must run.
+	// Clipping nodes also validate their own bounds because descendants inherit
+	// that clip geometry.
+	bounds_must_match := node.style.clip
+	for command, offset in node.paint {
+		composed := compose_paint_command_presentation(command, inherited.presentation,
+			inherited.clip_follow, inherited.stationary_clip, inherited.translated_clip)
+		existing := rt.display_target[start+offset]
+		if !compose_presentation_fields_match(composed, existing) ||
+			(bounds_must_match && composed.bounds != existing.bounds) {
+			return false
+		}
+	}
+	for command, offset in node.paint {
+		rt.display_target[start+offset] = compose_paint_command_presentation(command,
+			inherited.presentation, inherited.clip_follow, inherited.stationary_clip,
+			inherited.translated_clip)
+	}
+	if !layout_finalize_display_range(rt, node.id, start,
+		rt.display_target[start:start+old_count]) {
+		return false
+	}
+	return true
+}
+
 compose_subtree :: proc(
 	rt: ^Runtime,
 	id: Node_ID,
@@ -237,23 +430,8 @@ compose_subtree :: proc(
 	node.display_index = -1
 	if part_visible {
 		for cached_command in node.paint {
-			command := cached_command
-			if presentation.has_surface_color && command.semantic_surface_fill {
-				if surface, ok := command.payload.(Surface_Paint); ok {
-					surface.fill = presentation.surface_color
-					command.payload = surface
-				}
-			}
-			command.opacity *= presentation.opacity
-			command.translation[0] += presentation.translation[0]
-			command.translation[1] += presentation.translation[1]
-			if clip_follow {
-				command.clip = rect_intersection(stationary_clip, translated_clip)
-				if paint_command_is_text(command) {
-					command.clip = rect_intersection(command.clip,
-						paint_rect_translate(command.bounds, presentation.translation))
-				}
-			}
+			command := compose_paint_command_presentation(cached_command, presentation,
+				clip_follow, stationary_clip, translated_clip)
 			if node.display_index < 0 { node.display_index = len(rt.display_target) }
 			append(&rt.display_target, command)
 			rt.stats.composition_nodes_visited += 1
@@ -324,6 +502,20 @@ append_visual_row_background :: proc(rt: ^Runtime, row: ^Node) {
 
 update_paint :: proc(rt: ^Runtime) {
 	semantic_surface_refresh_top_edge_gaps(rt)
+	// A sparse range splice walks the changed node's ancestor chain and
+	// validates its recomposition against the retained slots. When most of the
+	// display is changing (a broad theme replacement, for example), one full
+	// pass is cheaper and is still proportional to the changed content.
+	if !rt.composition_rebuild && len(rt.display_target) > 0 {
+		queued := 0
+		for id in rt.paint_queue {
+			node, ok := rt.nodes[id]
+			if ok && node != nil && node.active && node.present { queued += 1 }
+		}
+		if queued >= SPARSE_DISPLAY_BULK_QUEUE_THRESHOLD && queued*8 >= len(rt.display_target) {
+			rt.composition_rebuild = true
+		}
+	}
 	// Only nodes queued by description or layout changes are visited. An
 	// unchanged retained display command is left in place.
 	for id in rt.paint_queue {
@@ -333,7 +525,9 @@ update_paint :: proc(rt: ^Runtime) {
 		if !node.active || !node.present { continue }
 		rt.stats.paint_nodes_visited += 1
 		rt.stats.stage_visits[.Paint] += 1
+		paint_count_before := len(node.paint)
 		if dirty_has(node.dirty, .Paint) || len(node.paint) == 0 {
+			had_backdrop_effect := paint_commands_have_backdrop_effect(node.paint[:])
 			field_style := Text_Field_Resolved_Style{}
 			checkbox_style := Checkbox_Resolved_Style{}
 			slider_style := Slider_Resolved_Style{}
@@ -744,20 +938,30 @@ update_paint :: proc(rt: ^Runtime) {
 				}
 			}
 			rt.stats.paint_updates += 1
+			has_backdrop_effect := paint_commands_have_backdrop_effect(node.paint[:])
+			if has_backdrop_effect != had_backdrop_effect {
+				if has_backdrop_effect { rt.retained_backdrop_effect_nodes += 1 }
+				else if rt.retained_backdrop_effect_nodes > 0 { rt.retained_backdrop_effect_nodes -= 1 }
+			}
 			dirty_set(&node.dirty, .Composite, true)
 			record_trace(rt, .Paint, id, node.last_reason)
 		}
-		if !rt.composition_rebuild && node.kind != .Scroll_Region && node.display_index >= 0 && len(node.paint) == 1 {
-			if layout_finalize_display_slot(rt, id, node.display_index, node.paint[0]) {
+		if node.kind != .Scroll_Region && node.display_index < 0 && paint_count_before == 0 && len(node.paint) == 0 {
+			// The node contributed no display commands before or after this
+			// repaint (for example a non-painting layout container). Its
+			// descendants keep their own ranges, so there is nothing to
+			// finalize and no structure change to rebuild.
+		} else if !rt.composition_rebuild && node.kind != .Scroll_Region && node.display_index >= 0 {
+			if paint_sparse_finalize_range(rt, node) {
 				rt.stats.composition_nodes_visited += 1
 				rt.stats.stage_visits[.Composite] += 1
 				rt.stats.composite_updates += 1
-				record_trace(rt, .Composite, id, "retained display command updated and finalized")
+				record_trace(rt, .Composite, id, "retained display commands updated and finalized")
 			} else {
 				rt.stats.global_fallbacks += 1
 				rt.stats.global_work_by_reason[.Display_Incremental_Fallback] += 1
 				rt.composition_rebuild = true
-				record_trace(rt, .Composite, id, "retained display slot changed; full rebuild required")
+				record_trace(rt, .Composite, id, "retained display range changed; full rebuild required")
 			}
 		} else {
 			rt.composition_rebuild = true

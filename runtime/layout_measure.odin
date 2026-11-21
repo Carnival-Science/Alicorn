@@ -855,18 +855,42 @@ layout_finalize_paint_command :: proc(target: Paint_Command, scale_x, scale_y: f
 	return command
 }
 
-layout_finalize_display_slot :: proc(rt: ^Runtime, owner: Node_ID, index: int, target: Paint_Command) -> bool {
-	if rt == nil || index < 0 || index >= len(rt.display_target) || index >= len(rt.display) ||
-		len(rt.display_target) != len(rt.display) || target.owner != owner ||
-		rt.display_target[index].owner != owner || rt.display[index].owner != owner {
+// layout_finalize_display_range replaces one contiguous run of an owner's
+// retained display commands without touching any other slot. Sparse paint
+// updates use it for multi-command nodes: the caller has already recomposed
+// the run and verified that its length and presentation are unchanged, so the
+// run stays in place and the finalized list remains aligned with
+// display_target.
+layout_finalize_display_range :: proc(
+	rt: ^Runtime,
+	owner: Node_ID,
+	index: int,
+	targets: []Paint_Command,
+) -> bool {
+	if rt == nil || owner == 0 || index < 0 || len(targets) == 0 ||
+		len(rt.display_target) != len(rt.display) || index+len(targets) > len(rt.display_target) {
 		return false
 	}
-	// Finalize from the retained unsnapped target. Never feed rounded
+	for target, offset in targets {
+		slot := index + offset
+		if target.owner != owner || rt.display_target[slot].owner != owner || rt.display[slot].owner != owner {
+			return false
+		}
+	}
+	// Finalize from the retained unsnapped targets. Never feed rounded
 	// presentation geometry into a later scale transition.
-	rt.display_target[index] = target
-	rt.display[index] = layout_finalize_paint_command(target, rt.presentation_scale_x, rt.presentation_scale_y)
-	rt.stats.display_commands_finalized += 1
+	for target, offset in targets {
+		slot := index + offset
+		rt.display_target[slot] = target
+		rt.display[slot] = layout_finalize_paint_command(target, rt.presentation_scale_x, rt.presentation_scale_y)
+	}
+	rt.stats.display_commands_finalized += u64(len(targets))
 	return true
+}
+
+layout_finalize_display_slot :: proc(rt: ^Runtime, owner: Node_ID, index: int, target: Paint_Command) -> bool {
+	single := [1]Paint_Command{target}
+	return layout_finalize_display_range(rt, owner, index, single[:])
 }
 
 layout_finalize_display :: proc(rt: ^Runtime, reason: Retained_Global_Work_Reason) {
