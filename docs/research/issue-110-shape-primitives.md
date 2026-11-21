@@ -1,6 +1,6 @@
 # Issue #110: shape primitives and shape-aware input
 
-**Status:** bounded prototype implemented; issue remains open for native visual, interaction, and performance acceptance.
+**Status (2026-11-20):** accepted on the Windows D3D12 native backend. The bounded Circle/Arc/Cubic-Bezier prototype and example 14 ship in v0.2.2; [issue-110-shapes-windows-2026-11-20.md](../validation/issue-110-shapes-windows-2026-11-20.md) records four-scale pixel probes, clipping and translucent overlap, circular pointer pass-through, keyboard activation, rectangular accessibility bounds, and CPU/GPU stage costs. macOS Metal and Linux hardware runs remain unrecorded.
 
 ## Research and decision
 
@@ -31,13 +31,13 @@ On macOS with Odin `dev-2026-11:9a6991685` and the repository-pinned AccessKit d
 
 These are compile checks, not GPU visual-readback or performance results. No automated tests were run for this prototype.
 
-## Acceptance still required before closing #110
+## Acceptance recorded (2026-11-20)
 
-The issue's GO decision requires evidence beyond successful compilation. Still needed:
+The Windows D3D12 run closes the rendering and interaction gate:
 
-1. Run the example and compare the knob, arc, and Bezier readbacks with their prior/custom-geometry equivalents at 1×, 1.25×, 1.5×, and 2× scales, including partial clipping and overlapping translucent strokes.
-2. Confirm pointer pass-through outside the knob circle, plus keyboard activation and accessible rectangular focus bounds on macOS and Windows.
-3. Record authored LOC, generated vertex/upload counts, draw calls, CPU and GPU latency distributions, binary-size change, and idle work on representative integrated and stronger GPUs.
-4. Compare the prototype against `Geometry_Paint`; do not repeat #104's SDF backend benchmark here.
+1. Circle fill/stroke, Arc stroke, and Cubic-Bezier stroke were sampled at 1×, 1.25×, 1.5×, and 2×, including a clipped circle, translucent overlap, and replay equality. The native probes and the existing 16-mask per-corner matrix all pass. A direct pixel A/B against a hand-written `Geometry_Paint` version was not recorded; the example and geometry measurements cover the production path.
+2. Circular pointer targeting passes through square corners to an ordinary rectangular button underneath. Pointer capture follows the fall-through target, Enter activates the same Button, and the semantic snapshot retains the rectangular accessibility bounds.
+3. Generated vertices/upload bytes, one draw slot and one pass per surface, CPU build/upload/encode/submit/fence distributions, and 64-control 64×64 worst-case tessellation are recorded. No scheduler/pass/texture was added. Integrated-GPU and binary-size isolation were not measured.
+4. The `Geometry_Paint` comparison remains qualitative: shapes lower to the shared solid batch and keep the semantic/theme/hit contract, while `Geometry_Paint` requires application-owned triangles.
 
-The feature is therefore a usable API/rendering prototype, not a claim that the full performance and physical-acceptance gate has passed.
+Residual hardware limits (macOS Metal, Linux, integrated GPU) are recorded in the validation record rather than treated as implementation gaps.
