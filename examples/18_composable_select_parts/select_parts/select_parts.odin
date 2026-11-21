@@ -1141,23 +1141,6 @@ select_parts_foreign_modal_pending :: proc(ctx: ^ui.UI, state: ^Select_Parts_Sta
 	return false
 }
 
-// select_parts_set_collection_parent is the pilot's one direct pending-record
-// patch. The public semantic collection API can attach items to a collection,
-// but it cannot name the collection's own semantic parent. Stock Select patches
-// the same pending record internally. This helper is deliberately isolated and
-// recorded as a core requirement candidate in the pilot validation.
-@(private)
-select_parts_set_collection_parent :: proc(ctx: ^ui.UI, collection_id, parent_id: alicorn.Semantic_ID) {
-	if ctx == nil || ctx.runtime == nil || !alicorn.semantic_id_is_valid(collection_id) || !alicorn.semantic_id_is_valid(parent_id) { return }
-	for index := len(ctx.runtime.pending)-1; index >= 0; index -= 1 {
-		item := &ctx.runtime.pending[index]
-		if item.kind == .Description && item.description.semantic_id == collection_id {
-			item.semantic.parent = parent_id
-			return
-		}
-	}
-}
-
 @(private)
 select_parts_overlay_panel :: proc(
 	ctx: ^ui.UI,
@@ -1198,8 +1181,8 @@ select_parts_overlay_panel :: proc(
 		realized_first=0,
 		realized_last=u64(option_count),
 		actions=alicorn.semantic_actions_add({}, .Focus),
+		parent=state.trigger_semantic_id,
 	)
-	select_parts_set_collection_parent(ctx, state.list_semantic_id, state.trigger_semantic_id)
 	list_height := max(placement.h-2*POPUP_PADDING, row_height)
 	list := alicorn.virtual_list_begin(
 		ctx,

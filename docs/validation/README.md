@@ -13,6 +13,11 @@ the current project status.
   combobox, app-owned modal, six must-fail negative controls, semantic
   relationship snapshots on `Element`, and explicit published-semantics /
   synthetic-input limits.
+- [Collection parent parameter (2026-11-21)](issue-223-collection-parent-2026-11-21.md)
+  — optional `parent` on `semantic_collection_begin`; stock Select, the #218
+  pilot package, and the testui custom-combobox fixture now publish their popup
+  list parent directly, with pending/unrealized-record, grouped-option,
+  stock-versus-parts parity, and zero-default regression coverage.
 - [Issue #218 composable Select parts pilot (2026-11-21)](issue-218-parts-pilot-2026-11-21.md)
   — GO for a copyable userland Select package with zero new runtime APIs and
   NO-GO for shared-behavior/framework extraction in this issue; stock-versus-

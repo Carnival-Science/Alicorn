@@ -1224,10 +1224,15 @@ logical semantic focus; Alicorn does not currently define a separate
 screen-reader review-focus state.
 
 For a large collection, `semantic_collection_begin` describes the collection
-and its logical count, realized range, selected ID, and current ID.
-`semantic_collection_item` attaches semantics to a presented row, while
+and its logical count, realized range, selected ID, current ID, and optional
+semantic parent. Passing `parent` names the collection's place directly, which
+is how a popup `List_Box` belongs to its `Combo_Box` trigger when the visual
+ancestry does not express that relationship; leaving it zero keeps the default
+nearest described semantic ancestor. `semantic_collection_item` attaches
+semantics to a presented row, while
 `semantic_collection_virtual_item` records a logical item without creating a
-visual node. `semantic_collection_begin` can also advertise collection actions
+visual node. An item's own `parent` names a subgroup such as a labeled Select
+group, so collection-level and item-level parenting compose. `semantic_collection_begin` can also advertise collection actions
 such as forward/backward scrolling; applications handle those through the same
 semantic request queue. `semantic_collection_selection_set` updates the collection's
 selected/current identities during description. Virtual items include their

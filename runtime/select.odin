@@ -790,10 +790,8 @@ select_overlay_describe :: proc(ui: ^UI) {
 		realized_first=0,
 		realized_last=u64(state.option_count),
 		actions=semantic_actions_add({}, .Focus),
+		parent=state.trigger_semantic_id,
 	)
-	if len(rt.pending) > 0 && rt.pending[len(rt.pending)-1].kind == .Description {
-		rt.pending[len(rt.pending)-1].semantic.parent = state.trigger_semantic_id
-	}
 
 	item_height := rt.context_menu.item_height
 	content_height := f32(state.row_count)*item_height
@@ -837,11 +835,18 @@ select_overlay_describe :: proc(ui: ^UI) {
 				color=style_color(ui, .Muted_Text),
 				text_style=Text_Style{font_size=11, font_weight=FONT_WEIGHT_SEMIBOLD},
 			)
-			if header != 0 && semantic_describe_as(ui, group_id, .Group, label, value=label) {
-				last := &rt.pending[len(rt.pending)-1]
-				last.semantic.parent = state.list_semantic_id
-				last.semantic.collection_id = state.list_semantic_id
-				rt.semantic_collection_touched[state.list_semantic_id] = collection.generation
+			if header != 0 {
+				// Group headers are collection items and the semantic parent named
+				// by their options. Position zero preserves their published set
+				// position: headers are not options and do not consume count.
+				_ = semantic_collection_item(ui, collection, 0, Semantic_Node_Description{
+					id=group_id,
+					role=.Group,
+					label=label,
+					value=label,
+					parent=state.list_semantic_id,
+					visual_node=header,
+				})
 			}
 			continue
 		}
