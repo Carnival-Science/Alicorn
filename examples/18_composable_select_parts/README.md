@@ -60,7 +60,7 @@ Every behavior uses public facilities only:
 | Popup ownership and outside-click dismissal | `modal_overlay_begin` / `modal_overlay_end`, a full-viewport blocker, and a modal `ui.interaction_scope` |
 | Popup placement | `context_menu_placement` |
 | Option rows and rich parts | ordinary nested `Button` owners with custom presentation, plus icons, text, badge surfaces, hover cues, and selected indicators |
-| Groups and rows | `semantic_collection_begin(.List_Box)`, `semantic_collection_item(.List_Box_Option)`, `.Group` headers, and semantic `parent` links |
+| Groups and rows | `semantic_collection_begin(.List_Box, parent=trigger)`, `semantic_collection_item(.List_Box_Option)`, `.Group` headers, and semantic `parent` links |
 | Virtual reveal | `virtual_list_begin`, `virtual_list_end`, and `virtual_list_ensure_visible` |
 | Keyboard navigation | modal `interaction_scope` for Up/Down/Home/End/Return/Space/Escape; normalized text keys for Home/End/Tab on the focused row |
 | Type-ahead | the focused row is a generic `text_input_target`; committed text reaches `select_parts_text`, which owns its own bounded prefix buffer |
