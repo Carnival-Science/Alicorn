@@ -150,9 +150,11 @@ difference.
 
 ## Suites and smokes
 
-All Alicorn suites were run individually because `tools/test.ps1` on this host
-stops in the pinned AccessKit dependency check before the Alicorn stages, as in
-previous slices.
+`tools/test.ps1` ran through the AccessKit dependency check and every suite up
+to `ui`, then stopped at `tools/check_web_ui_package.ps1` with the pre-existing
+`DevicePoll` JS-binding failure described below. The suites after that point
+(and the new `host/sdl3/file_drag` suite) were run individually with the same
+compiler arguments.
 
 | Suite | Result |
 | --- | --- |
