@@ -126,6 +126,11 @@ Select_Parts_State :: struct {
 
 	recent_keys: [RECENT_CAPACITY]u64,
 	recent_count: int,
+
+	// roving is a borrowed projection for the pure runtime roving model. It
+	// holds only the current groups slice for the enabled callback; all
+	// navigation state remains active_key/active_index above.
+	roving: Select_Parts_Roving,
 }
 
 recipe_default :: proc(appearance := Select_Parts_Appearance.Compact) -> Select_Parts_Recipe {
@@ -282,25 +287,46 @@ select_parts_option_enabled :: proc(groups: []Select_Parts_Group, flat_index: in
 	return found && !option.disabled && !groups[gi].disabled
 }
 
+// select_parts_roving projects the flat option order onto the pure runtime
+// roving model. The package still owns its selected key, active key, reveal,
+// and focus; the model only proposes the next enabled index.
 @(private)
-select_parts_first_enabled :: proc(groups: []Select_Parts_Group) -> int {
-	total := select_parts_groups_option_count(groups)
-	for index in 0..<total { if select_parts_option_enabled(groups, index) { return index } }
-	return -1
+Select_Parts_Roving :: struct {
+	groups: []Select_Parts_Group,
 }
 
 @(private)
-select_parts_next_enabled :: proc(groups: []Select_Parts_Group, start, delta: int) -> int {
-	total := select_parts_groups_option_count(groups)
-	if total <= 0 { return -1 }
-	index := start
-	if index < 0 || index >= total { index = 0 if delta > 0 else total-1 }
-	for _ in 0..<total {
-		index = (index+delta)%total
-		if index < 0 { index += total }
-		if select_parts_option_enabled(groups, index) { return index }
+select_parts_roving_enabled :: proc(data: rawptr, index: int) -> bool {
+	ctx := cast(^Select_Parts_Roving)data
+	return select_parts_option_enabled(ctx.groups, index)
+}
+
+@(private)
+select_parts_roving_view :: proc(
+	state: ^Select_Parts_State,
+	groups: []Select_Parts_Group,
+) -> alicorn.Roving_View {
+	state.roving.groups = groups
+	return alicorn.Roving_View{
+		count=select_parts_groups_option_count(groups),
+		enabled=select_parts_roving_enabled, data=rawptr(&state.roving),
+		// The popup cycles through its options in declared order.
+		wrap=true,
 	}
-	return -1
+}
+
+@(private)
+select_parts_move_active :: proc(
+	rt: ^alicorn.Runtime,
+	state: ^Select_Parts_State,
+	groups: []Select_Parts_Group,
+	move: alicorn.Roving_Move,
+) -> bool {
+	view := select_parts_roving_view(state, groups)
+	current := select_parts_active_index(state, groups)
+	index := alicorn.roving_propose(view, current, move)
+	if index < 0 { return false }
+	return select_parts_set_active(rt, state, groups, index)
 }
 
 @(private)
@@ -480,7 +506,8 @@ select_parts_active_index :: proc(state: ^Select_Parts_State, groups: []Select_P
 	if index := select_parts_find_key_value(groups, state.selected_key); index >= 0 && select_parts_option_enabled(groups, index) {
 		return index
 	}
-	return select_parts_first_enabled(groups)
+	if index := alicorn.roving_nearest_enabled(select_parts_roving_view(state, groups), 0); index >= 0 { return index }
+	return -1
 }
 
 @(private)
@@ -564,19 +591,14 @@ select_parts_process_input :: proc(
 			}
 		}
 		#partial switch event.key {
-		case .Up:
-			if index := select_parts_next_enabled(groups, state.active_index, -1); index >= 0 { _ = select_parts_set_active(rt, state, groups, index) }
-		case .Down:
-			if index := select_parts_next_enabled(groups, state.active_index, 1); index >= 0 { _ = select_parts_set_active(rt, state, groups, index) }
-		case .Home:
-			if index := select_parts_first_enabled(groups); index >= 0 { _ = select_parts_set_active(rt, state, groups, index) }
-		case .End:
-			if index := select_parts_next_enabled(groups, 0, -1); index >= 0 { _ = select_parts_set_active(rt, state, groups, index) }
 		case .Escape:
 			select_parts_close(ctx, state, .Trigger)
 		case .Return, .Toggle:
 			_ = select_parts_activate_active(rt, state, groups, ctx)
 		case:
+			if move, mapped := alicorn.roving_move_for_key(event.key); mapped {
+				_ = select_parts_move_active(rt, state, groups, move)
+			}
 		}
 	}
 }
@@ -635,15 +657,10 @@ select_parts_text_key :: proc(
 	case .Tab:
 		select_parts_close(&ctx, state, .Next if !event.shift else .Previous)
 		return true
-	case .Home:
-		if index := select_parts_first_enabled(groups); index >= 0 { _ = select_parts_set_active(rt, state, groups, index); return true }
-	case .End:
-		if index := select_parts_next_enabled(groups, 0, -1); index >= 0 { _ = select_parts_set_active(rt, state, groups, index); return true }
-	case .Up:
-		if index := select_parts_next_enabled(groups, state.active_index, -1); index >= 0 { _ = select_parts_set_active(rt, state, groups, index); return true }
-	case .Down:
-		if index := select_parts_next_enabled(groups, state.active_index, 1); index >= 0 { _ = select_parts_set_active(rt, state, groups, index); return true }
 	case:
+		if move, mapped := alicorn.roving_move_for_text_key(event.key); mapped {
+			return select_parts_move_active(rt, state, groups, move)
+		}
 	}
 	return false
 }
@@ -938,7 +955,7 @@ select_parts :: proc(
 	option_count := select_parts_groups_option_count(groups)
 	selected_index, _, _, selected_found := select_parts_find_key(groups, state.selected_key)
 	if option_count > 0 && !selected_found { valid = false }
-	disabled := !valid || option_count == 0 || !select_parts_groups_has_enabled(groups)
+	disabled := !valid || option_count == 0 || alicorn.roving_nearest_enabled(select_parts_roving_view(state, groups), 0) < 0
 	display_label := label
 	if selected_found {
 		if selected_label, found := select_parts_option_label(groups, state.selected_key); found { display_label = selected_label }
@@ -1027,14 +1044,6 @@ select_parts :: proc(
 		select_parts_close(ctx, state, .Trigger)
 	}
 	return changed
-}
-
-@(private)
-select_parts_groups_has_enabled :: proc(groups: []Select_Parts_Group) -> bool {
-	for group in groups {
-		for option in group.options { if !option.disabled && !group.disabled { return true } }
-	}
-	return false
 }
 
 // select_parts_overlay must be called from the host's render_overlays hook
