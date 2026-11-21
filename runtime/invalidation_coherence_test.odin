@@ -248,6 +248,9 @@ Coherence_Oracle_Result :: struct {
 }
 
 COHERENCE_ORACLE_SEED :: u64(0x106A11CE)
+// The omission case reuses the fixed bounds with a different recorded seed so
+// the two fault classes exercise different rows and mutation domains.
+COHERENCE_ORACLE_OMITTED_SEED :: u64(0x106A11CF)
 COHERENCE_ORACLE_ACTION_COUNT :: 8
 
 coherence_oracle_next_random :: proc(state: ^u64) -> u64 {
@@ -259,7 +262,13 @@ coherence_oracle_next_random :: proc(state: ^u64) -> u64 {
 	return value
 }
 
-coherence_oracle_actions :: proc(seed: u64) -> ([COHERENCE_ORACLE_ACTION_COUNT]Coherence_Oracle_Action, int) {
+// The first three declarations are correct for any single-row mutation, so the
+// generated corpus always covers root, parent, and child requests before the
+// seed-derived step replaces one with the requested fault.
+coherence_oracle_actions :: proc(
+	seed: u64,
+	fault: Coherence_Oracle_Invalidation,
+) -> ([COHERENCE_ORACLE_ACTION_COUNT]Coherence_Oracle_Action, int) {
 	result: [COHERENCE_ORACLE_ACTION_COUNT]Coherence_Oracle_Action
 	random_state := seed if seed != 0 else u64(1)
 	for index in 0..<COHERENCE_ORACLE_ACTION_COUNT {
@@ -269,13 +278,13 @@ coherence_oracle_actions :: proc(seed: u64) -> ([COHERENCE_ORACLE_ACTION_COUNT]C
 		result[index] = Coherence_Oracle_Action{
 			row=int(random_row % 3),
 			mutation=Coherence_Oracle_Mutation(random_kind % 4),
-			invalidation=.Child if random_scope%2 == 0 else .Parent,
+			invalidation=Coherence_Oracle_Invalidation(random_scope % 3),
 		}
 	}
 	// Keep at least two correct updates before injecting one incorrect but
 	// otherwise valid request. The chosen step is derived from the seed.
 	fault_step := 2 + int(seed % 4)
-	result[fault_step].invalidation = .Wrong_Region
+	result[fault_step].invalidation = fault
 	return result, fault_step
 }
 
@@ -377,6 +386,12 @@ coherence_oracle_without_action :: proc(
 	return result
 }
 
+// Generated actions emit only correct declarations apart from the one injected
+// fault, which the minimizer must preserve.
+coherence_oracle_is_injected_fault :: proc(invalidation: Coherence_Oracle_Invalidation) -> bool {
+	return invalidation == .Wrong_Region || invalidation == .Omitted
+}
+
 coherence_oracle_minimize_actions :: proc(
 	t: ^testing.T,
 	seed: u64,
@@ -386,9 +401,9 @@ coherence_oracle_minimize_actions :: proc(
 	minimal, minimal_count = actions, count
 	index := 0
 	for index < minimal_count {
-		// Keep the designated faulty request; shrink unrelated setup and
+		// Keep the designated faulty action; shrink unrelated setup and
 		// correctly invalidated mutations around it.
-		if minimal[index].invalidation == .Wrong_Region {
+		if coherence_oracle_is_injected_fault(minimal[index].invalidation) {
 			index += 1
 			continue
 		}
@@ -430,8 +445,8 @@ coherence_oracle_failure_report :: proc(
 @(test)
 test_seeded_invalidation_oracle_replays_and_shrinks_wrong_region_failure :: proc(t: ^testing.T) {
 	seed := COHERENCE_ORACLE_SEED
-	actions, fault_step := coherence_oracle_actions(seed)
-	repeated_actions, repeated_fault_step := coherence_oracle_actions(seed)
+	actions, fault_step := coherence_oracle_actions(seed, .Wrong_Region)
+	repeated_actions, repeated_fault_step := coherence_oracle_actions(seed, .Wrong_Region)
 	full := coherence_oracle_replay(t, seed, actions, len(actions))
 	prefix_count, prefix_failure := coherence_oracle_first_failing_prefix(t, seed, actions)
 	minimal_actions, minimal_count, minimal := coherence_oracle_minimize_actions(t, seed, actions, prefix_count)
@@ -459,6 +474,44 @@ test_seeded_invalidation_oracle_replays_and_shrinks_wrong_region_failure :: proc
 	clean := coherence_oracle_replay(t, seed, corrected, len(corrected))
 	testing.expect(t, !clean.diverged,
 		"replaying the same seeded mutations with the correct region revision must match a fresh Runtime at every step")
+}
+
+// A second fixed seed exercises the other misuse class the corpus review
+// identified: the app records a changed revision but requests no invalidation,
+// so only the fresh-runtime comparison can show that the output is stale.
+@(test)
+test_seeded_invalidation_oracle_catches_omitted_invalidation :: proc(t: ^testing.T) {
+	seed := COHERENCE_ORACLE_OMITTED_SEED
+	actions, fault_step := coherence_oracle_actions(seed, .Omitted)
+	repeated_actions, repeated_fault_step := coherence_oracle_actions(seed, .Omitted)
+	full := coherence_oracle_replay(t, seed, actions, len(actions))
+	prefix_count, prefix_failure := coherence_oracle_first_failing_prefix(t, seed, actions)
+	minimal_actions, minimal_count, minimal := coherence_oracle_minimize_actions(t, seed, actions, prefix_count)
+	report := coherence_oracle_failure_report(seed, minimal_count, minimal, minimal_actions)
+	defer delete(report)
+	expected_advisory := 1 if APP_MUTATION_DIAGNOSTICS_ENABLED else 0
+	testing.expect(t, actions == repeated_actions && fault_step == repeated_fault_step,
+		"the recorded omission seed must reproduce the same app-model actions and fault location")
+	testing.expect(t, full.diverged && full.step == fault_step && full.row == actions[fault_step].row &&
+		full.advisory_failure_count == expected_advisory,
+		"a changed revision with no invalidation request must produce stale output against a fresh Runtime")
+	testing.expect(t, prefix_count == fault_step+1 && prefix_failure.diverged && prefix_failure.step == fault_step,
+		"the seeded run must stop at the first omitted action instead of hiding it behind later updates")
+	testing.expect(t, minimal_count == 1 && minimal_actions[0].invalidation == .Omitted &&
+		minimal.diverged && minimal.step == 0 &&
+		minimal.row == full.row && minimal.domain == full.domain && minimal.advisory_failure_count == expected_advisory,
+		"action deletion must shrink the report to the smallest reproducing omitted invalidation")
+	testing.expect(t,
+		strings.contains(report, fmt.tprintf("seed=%d", seed)) && strings.contains(report, "minimized_actions=1") &&
+		strings.contains(report, "key=coherence-") && strings.contains(report, "path=coherence-root/coherence-parent/") &&
+		strings.contains(report, "domain=") && strings.contains(report, "scope=Omitted"),
+		fmt.tprintf("a divergence report must include seed, minimized sequence, keyed path, domain, and action log: %s", report))
+
+	repaired := actions
+	repaired[fault_step].invalidation = .Root
+	clean := coherence_oracle_replay(t, seed, repaired, len(repaired))
+	testing.expect(t, !clean.diverged,
+		"replaying the same seeded mutations with a root invalidation must match a fresh Runtime at every step")
 }
 
 @(test)
