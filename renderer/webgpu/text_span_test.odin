@@ -129,3 +129,94 @@ test_webgpu_text_span_mesh_fingerprint_tracks_span_colors :: proc(t: ^testing.T)
 	testing.expect(t, fingerprint_first != fingerprint_second,
 		"span-only color changes must invalidate the retained WebGPU text mesh")
 }
+
+// Edit-sequence cache check: the WebGPU glyph mesh is one list-wide product, so
+// it must rebuild when any row's value or spans change and must remain reusable
+// when the identical description is presented again. Scratchpad's rebased-span
+// frame is exactly the first case: the value grew and the tokens after the
+// insertion shifted.
+webgpu_text_span_edit_row :: proc(
+	rt: ^alicorn.Runtime,
+	value: string,
+	spans: []alicorn.Text_Paint_Span,
+) -> (paint: alicorn.Text_Paint, run_value: string, found: bool) {
+	alicorn.invalidate_root(rt, "webgpu text edit-sequence description")
+	ui, build := alicorn.begin_frame(rt)
+	if !build { return }
+	alicorn.container_begin(&ui, .Root, key="webgpu-text-edit-root", style=alicorn.layout_style(.Column, grow=1))
+	id := alicorn.text_ex(
+		&ui, value, key="webgpu-text-edit-row",
+		font=.Monospace, style=alicorn.layout_style(.Row, height=20),
+	)
+	_ = alicorn.text_paint_spans(&ui, id, spans)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	for command in rt.display {
+		if command.owner != id { continue }
+		text, is_text := command.payload.(alicorn.Text_Paint)
+		if !is_text { continue }
+		paint, found = text, true
+		if run, ok := alicorn.paint_text_run_resolve(rt, text.run); ok && run != nil {
+			run_value = run.value
+		}
+		return
+	}
+	return
+}
+
+@(test)
+test_webgpu_text_span_edit_sequence_reuses_only_identical_meshes :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 120})
+	defer alicorn.destroy_runtime(&rt)
+	if !alicorn.text_engine_load_font(&rt.text_engine, WEBGPU_TEXT_SPAN_TEST_FONT) {
+		testing.expect(t, false, "the edit-sequence fixture should load a shaped font")
+		return
+	}
+	renderer: Text_Renderer
+	settled := []alicorn.Text_Paint_Span{
+		{start=0, end=4, color=alicorn.Color{0.40, 0.20, 0.60, 1}, color_set=true},
+		{start=5, end=9, color=alicorn.Color{0.10, 0.30, 0.70, 1}, color_set=true},
+	}
+	rebased := []alicorn.Text_Paint_Span{
+		{start=0, end=5, color=alicorn.Color{0.40, 0.20, 0.60, 1}, color_set=true},
+		{start=6, end=10, color=alicorn.Color{0.10, 0.30, 0.70, 1}, color_set=true},
+	}
+	settled_value := "func main() { return 1 }"
+	edited_value := "xfunc main() { return 1 }"
+
+	paint, value, found := webgpu_text_span_edit_row(&rt, settled_value, settled)
+	if !found || len(paint.spans) != 2 || value != settled_value {
+		testing.expect(t, false, "the settled edit-sequence row should carry its spans and value")
+		return
+	}
+	settled_fingerprint := text_mesh_fingerprint(&renderer, &rt, rt.display[:], 320, 120, 1, 1)
+	_, repeat_value, repeat_found := webgpu_text_span_edit_row(&rt, settled_value, settled)
+	if !repeat_found || repeat_value != settled_value {
+		testing.expect(t, false, "an identical re-description should keep the row paintable")
+		return
+	}
+	repeat_fingerprint := text_mesh_fingerprint(&renderer, &rt, rt.display[:], 320, 120, 1, 1)
+	testing.expect(t, repeat_fingerprint == settled_fingerprint,
+		"an identical description must reuse the retained WebGPU text mesh")
+
+	paint, value, found = webgpu_text_span_edit_row(&rt, edited_value, rebased)
+	if !found || value != edited_value {
+		testing.expect(t, false, "the edited row should resolve its new value")
+		return
+	}
+	testing.expect(t, len(paint.spans) == 2 &&
+		paint.spans[0].start == 0 && paint.spans[0].end == 5 &&
+		paint.spans[1].start == 6 && paint.spans[1].end == 10,
+		"the edited row's rebased spans must reach the WebGPU command")
+	edited_fingerprint := text_mesh_fingerprint(&renderer, &rt, rt.display[:], 320, 120, 1, 1)
+	testing.expect(t, edited_fingerprint != repeat_fingerprint,
+		"a value-and-span edit must invalidate the retained WebGPU text mesh")
+	_, final_value, final_found := webgpu_text_span_edit_row(&rt, edited_value, rebased)
+	if !final_found || final_value != edited_value {
+		testing.expect(t, false, "the settled edited row should stay paintable")
+		return
+	}
+	final_fingerprint := text_mesh_fingerprint(&renderer, &rt, rt.display[:], 320, 120, 1, 1)
+	testing.expect(t, final_fingerprint == edited_fingerprint,
+		"the settled edited description must reuse its mesh instead of rebuilding every frame")
+}

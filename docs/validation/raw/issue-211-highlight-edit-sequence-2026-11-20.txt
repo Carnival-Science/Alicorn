@@ -1,0 +1,80 @@
+Issue #211 Stage D slice 2 - syntax highlighting across edits: raw evidence
+Windows x64, RTX 2080 SUPER, 2026-11-20/21
+
+Fixture
+  Workspace: %TEMP%\opencode\issue211-highlight\workspace\sample.go (42 lines of Go)
+  Scene: restored Scratchpad session, Warm theme, 1216x799, editor focused.
+  Input: F12 baseline; SendInput Unicode "QWERTY" at 45-60 ms intervals with F12
+  after the first character, after the burst, then +2.5 s and +7.5 s.
+  Row trace: SCRATCHPAD_EDITOR_ROW_TRACE_PATH.
+
+Alicorn candidate (hosted pieces): codex/issue-211-scratchpad-webgpu @ 1564110
+Scratchpad validator (read-only): codex/issue-211-webgpu-frontend @ b458d6e
+
+1. Pre-fix captures: number of text-run lines with paint-spans > 0 in inspector.txt
+   leg                    baseline  +100ms  +0.8s  +3.3s  +8.3s
+   hosted WebGPU/D3D12       24        0       0      0      0
+   SDL_GPU reference         24        0       0      0      0
+
+   So the whole editor loses every span, not only the edited line, and the
+   highlight does not return after parser publication. Both hosts reproduce.
+
+2. Diagnostics copy (temporary, not the validator checkout) instrumentation
+   [spandbg] after the burst and after publication:
+     docReady true docPR 2 docRev 2 winMatch true winReady true winStale true
+     winPR 0 winRev 2 spans 102 optReady true pend 0 refresh true vis true
+     srcReady true srcPR 2 srcSpans 102
+   [spanline] paint false covers false rowVis true winReady true winStale true
+     winPR 0 winRev 2 wstart 0 lstart 0 lend 17 recs 102 out 0
+
+   Interpretation:
+     - The exact published window exists (srcReady=true, srcPR=2, 102 spans).
+     - The optimistic window still wins presentation (stale=true, old PR=0).
+     - Because its presentation revision can never match the document,
+       metadata_refresh_needed stays true (refresh true).
+     - app_editor_view.odin:753 then forces window_covers_view=false, which
+       makes paint_current false (915) and skips text_paint_spans (933-935).
+     - The retained description therefore carries empty span lists; alicorn
+       faithfully prints paint-spans=0 for every row.
+
+3. Same instrumentation with the scratch-side candidate fix applied in the
+   temporary copy only (drop the stale optimistic window when an exact
+   presentation-ready source window is installed with no pending edits):
+   leg                    baseline  +100ms  +0.8s  +3.3s  +8.3s
+   hosted WebGPU/D3D12       24       24      24     24     24
+   SDL_GPU reference         24       24      24     24     24
+
+   Screenshots (cropped editor):
+     docs/validation/assets/issue-211-highlight-baseline.png
+     docs/validation/assets/issue-211-highlight-hosted-before-fix.png
+     docs/validation/assets/issue-211-highlight-reference-before-fix.png
+     docs/validation/assets/issue-211-highlight-hosted-after-fix.png
+
+4. Alicorn-side fixtures (this slice)
+   runtime/hosted_parity_test.odin
+     test_hosted_presentation_preserves_spans_across_an_edit_sequence
+       Two highlighted rows. Optimistic edit changes one value and rebases its
+       spans; asserts the presentation list carries the rebased ranges, the
+       edited row gets a new text product, the untouched row keeps the same
+       spans and the same text product. A later parser publication replaces
+       the rebased spans; the untouched row is still unchanged.
+   renderer/webgpu/text_span_test.odin
+     test_webgpu_text_span_edit_sequence_reuses_only_identical_meshes
+       Identical re-description reuses the mesh fingerprint; a value+span edit
+       changes it; the settled edited description reuses that new fingerprint.
+   Results: runtime 420 tests pass, renderer/webgpu 9 tests pass.
+
+5. Scratchpad validator checkout was not modified. The diagnostic prints and
+   the candidate fix lived only in %TEMP%\opencode\scratchpad-diag.
+
+6. Scratchpad smoke against the candidate branch (validator b458d6e)
+   renderer=webgpu backend=d3d12   exit 0: publication_rendered true
+     wake_observed true ordered_shutdown true session_restore true (clean+recovery)
+   renderer=webgpu backend=vulkan  exit 0: same four flags (clean+recovery)
+   renderer=sdl-gpu               exit 0: same four flags (clean+recovery)
+     The first sdl-gpu attempt timed out after 20 s while three leftover
+     capture-probe windows from this investigation were still open; it passed
+     after those processes were closed.
+   git status in the validator checkout before and after: the same three
+   pre-existing entries (two generated theme files, assets/branding/Scratchpad.res);
+   this slice added no Scratchpad change.

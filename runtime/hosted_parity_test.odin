@@ -476,3 +476,192 @@ test_hosted_tab_drag_preview_matches_the_reference_route :: proc(t: ^testing.T) 
 		kind=.Up, x=tx, y=sy, button=POINTER_BUTTON_PRIMARY,
 	})
 }
+
+// Scratchpad's editor publishes rebased syntax spans on the optimistic edit and
+// exact spans when the parser catches up. The hosted runtime must carry both
+// presentations and must not rebuild the text product of untouched rows. This
+// fixture models that sequence directly: two highlighted rows, a value edit
+// with locally rebased spans, then a later exact publication.
+Hosted_Parity_Edit_App :: struct {
+	root:         Node_ID,
+	scroll:       Node_ID,
+	edited:       Node_ID,
+	stable:       Node_ID,
+	edited_value: string,
+	edited_spans: []Text_Paint_Span,
+	stable_value: string,
+	stable_spans: []Text_Paint_Span,
+}
+
+hosted_parity_edit_render :: proc(data: rawptr, ui: ^UI, _width, _height: int, _dpi: f32) {
+	app := cast(^Hosted_Parity_Edit_App)data
+	app.root = container_begin(
+		ui, .Root, label="edit-root", key="edit-root",
+		style=layout_style(.Column, grow=1, padding=4, gap=4),
+	)
+	if app.root == 0 { return }
+	scroll := scroll_region_begin(
+		ui,
+		key=key_string("edit-scroll"),
+		content_height=120,
+		line_height=20,
+		style=layout_style(.Column, grow=1, clip=true),
+		label="edit-scroll",
+		axes=.Vertical,
+		focusable=true,
+	)
+	app.scroll = scroll.id
+	app.edited = text_ex(
+		ui, app.edited_value, key="edit-edited-row", font=.Monospace,
+		style=layout_style(.Row, height=20),
+	)
+	_ = text_paint_spans(ui, app.edited, app.edited_spans)
+	app.stable = text_ex(
+		ui, app.stable_value, key="edit-stable-row", font=.Monospace,
+		style=layout_style(.Row, height=20),
+	)
+	_ = text_paint_spans(ui, app.stable, app.stable_spans)
+	scroll_region_end(ui)
+	container_end(ui)
+}
+
+hosted_parity_edit_post :: proc(_data: rawptr) -> bool { return true }
+
+hosted_parity_edit_open :: proc(host: ^Hosted_Runtime, app: ^Hosted_Parity_Edit_App) -> Hosted_Runtime_Status {
+	return hosted_runtime_init(host, Hosted_Runtime_Config{
+		state=rawptr(app),
+		logical_width=360,
+		logical_height=160,
+		pixel_width=360,
+		pixel_height=160,
+		dpi_scale=1,
+		post_wake_data=rawptr(app),
+		post_wake=hosted_parity_edit_post,
+		render=hosted_parity_edit_render,
+	})
+}
+
+hosted_parity_text_command :: proc(view: ^Paint_Display_List_View, owner: Node_ID) -> (paint: Text_Paint, found: bool) {
+	for command in view.commands {
+		if command.owner != owner { continue }
+		if text, is_text := command.payload.(Text_Paint); is_text { return text, true }
+	}
+	return {}, false
+}
+
+@(test)
+test_hosted_presentation_preserves_spans_across_an_edit_sequence :: proc(t: ^testing.T) {
+	host: Hosted_Runtime
+	app := Hosted_Parity_Edit_App{
+		edited_value="func DetectPath(path string) ID {",
+		edited_spans=[]Text_Paint_Span{
+			hosted_parity_span(0, 4, Color{0.376, 0.290, 0.533, 1}),
+			hosted_parity_span(5, 15, Color{0.184, 0.333, 0.486, 1}),
+			hosted_parity_span(16, 20, Color{0.141, 0.361, 0.412, 1}),
+		},
+		stable_value="return nil",
+		stable_spans=[]Text_Paint_Span{
+			hosted_parity_span(0, 6, Color{0.55, 0.18, 0.44, 1}),
+		},
+	}
+	if hosted_parity_edit_open(&host, &app) != .Ok {
+		testing.expect(t, false, "the edit-sequence fixture should initialize")
+		return
+	}
+	defer hosted_runtime_destroy(&host)
+	rt, borrow_status := hosted_runtime_borrow(&host)
+	if borrow_status != .Ok {
+		testing.expect(t, false, "the edit-sequence fixture should borrow its runtime")
+		return
+	}
+	testing.expect(t, text_engine_load_font(&rt.text_engine, HOSTED_PARITY_TEST_FONT),
+		"the edit-sequence fixture should load a shaped font")
+
+	_ = hosted_runtime_step(&host, 1)
+	view, view_status := hosted_runtime_presentation_list(&host)
+	if view_status != .Ok {
+		testing.expect(t, false, "the edit-sequence presentation list should be available")
+		return
+	}
+	edited_before, edited_found := hosted_parity_text_command(&view, app.edited)
+	stable_before, stable_found := hosted_parity_text_command(&view, app.stable)
+	if !edited_found || !stable_found {
+		testing.expect(t, false, "both highlighted rows must reach the presentation list")
+		return
+	}
+	testing.expect(t, len(edited_before.spans) == 3 && len(stable_before.spans) == 1,
+		"the settled rows should carry their syntax spans")
+	edited_run_before := edited_before.run
+	stable_run_before := stable_before.run
+
+	// Optimistic edit: the value grows by one byte and the application rebases
+	// every span that does not touch the insertion point. Nothing else changes.
+	app.edited_value = "xfunc DetectPath(path string) ID {"
+	app.edited_spans = []Text_Paint_Span{
+		hosted_parity_span(0, 5, Color{0.376, 0.290, 0.533, 1}),
+		hosted_parity_span(6, 16, Color{0.184, 0.333, 0.486, 1}),
+		hosted_parity_span(17, 21, Color{0.141, 0.361, 0.412, 1}),
+	}
+	invalidate_root(rt, "fixture optimistic edit with rebased spans")
+	_ = hosted_runtime_step(&host, 2)
+	view, view_status = hosted_runtime_presentation_list(&host)
+	if view_status != .Ok {
+		testing.expect(t, false, "the optimistic edit presentation list should be available")
+		return
+	}
+	edited_edit, edited_edit_found := hosted_parity_text_command(&view, app.edited)
+	stable_edit, stable_edit_found := hosted_parity_text_command(&view, app.stable)
+	if !edited_edit_found || !stable_edit_found {
+		testing.expect(t, false, "both rows must remain paintable after the optimistic edit")
+		return
+	}
+	testing.expect(t, len(edited_edit.spans) == 3 &&
+		edited_edit.spans[0].start == 0 && edited_edit.spans[0].end == 5 &&
+		edited_edit.spans[1].start == 6 && edited_edit.spans[1].end == 16 &&
+		edited_edit.spans[2].start == 17 && edited_edit.spans[2].end == 21,
+		"rebased span ranges must reach the hosted presentation for the edited value")
+	if edited_run, edited_run_ok := paint_text_run_resolve(rt, edited_edit.run); edited_run_ok {
+		testing.expect(t, edited_run.value == app.edited_value,
+			"the edited row's text command must resolve the new value")
+	}
+	testing.expectf(t, edited_edit.run != edited_run_before,
+		"the edited row must build a new text product (before=%v after=%v)",
+		edited_run_before, edited_edit.run)
+	testing.expect(t, len(stable_edit.spans) == 1 &&
+		stable_edit.spans[0].start == 0 && stable_edit.spans[0].end == 6,
+		"the untouched row must retain its highlight throughout the edit")
+	testing.expectf(t, stable_edit.run == stable_run_before,
+		"the untouched row must reuse its text product (before=%v after=%v)",
+		stable_run_before, stable_edit.run)
+
+	// Exact publication: the parser answers for the accepted revision with its
+	// own ranges and colors. The earlier rebased ranges must be replaced, not
+	// merged, and the untouched row must still be unchanged.
+	app.edited_spans = []Text_Paint_Span{
+		hosted_parity_span(1, 5, Color{0.11, 0.55, 0.22, 1}),
+		hosted_parity_span(6, 16, Color{0.70, 0.28, 0.10, 1}),
+		hosted_parity_span(17, 21, Color{0.20, 0.40, 0.70, 1}),
+	}
+	invalidate_root(rt, "fixture parser publication")
+	_ = hosted_runtime_step(&host, 3)
+	view, view_status = hosted_runtime_presentation_list(&host)
+	if view_status != .Ok {
+		testing.expect(t, false, "the publication presentation list should be available")
+		return
+	}
+	edited_after, edited_after_found := hosted_parity_text_command(&view, app.edited)
+	stable_after, stable_after_found := hosted_parity_text_command(&view, app.stable)
+	if !edited_after_found || !stable_after_found {
+		testing.expect(t, false, "both rows must remain paintable after publication")
+		return
+	}
+	testing.expect(t, len(edited_after.spans) == 3 &&
+		edited_after.spans[0].start == 1 && edited_after.spans[0].end == 5 &&
+		edited_after.spans[0].color == Color{0.11, 0.55, 0.22, 1} &&
+		edited_after.spans[1].color == Color{0.70, 0.28, 0.10, 1},
+		"the exact parser publication must replace the rebased spans")
+	testing.expect(t, len(stable_after.spans) == 1 &&
+		stable_after.spans[0].color == Color{0.55, 0.18, 0.44, 1} &&
+		stable_after.run == stable_run_before,
+		"the untouched row must keep the same spans and text product after publication")
+}

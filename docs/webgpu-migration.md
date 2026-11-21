@@ -4843,3 +4843,117 @@ floating window still needs a physical pass:
    work, and a DPI change while dragging must still re-lay out the chrome.
 5. Repeat once with the window partially off-screen and once on a second
    monitor at a different scale.
+
+## Stage D slice 2: syntax highlighting across edits (Windows, 2026-11-20)
+
+Real Scratchpad use on the hosted WebGPU build reported a P1 application gap:
+syntax highlighting vanished as soon as the founder typed, including on lines
+that were not edited. The SDL_GPU reference was assumed to keep highlighting.
+This slice traced the whole publication chain, reproduced the failure on both
+hosts, and found it in the shared frontend's stale-window handling rather than
+in the hosted renderer, wake transport, or text mesh. Alicorn's side of the
+chain is now covered by edit-sequence fixtures.
+
+### What the chain showed
+
+The chain is: optimistic edit and rebased spans, edit acknowledgement,
+asynchronous parser publication, host wake, description, retain/present, and
+text mesh invalidation. The failure is between the acknowledgement and the
+description.
+
+- `editor_window_replace_bytes` (`frontends/alicorn/editor_model.odin:906`)
+  rebases unaffected syntax records and marks the optimistic window
+  `presentation_stale=true` while keeping `presentation_ready`. The first frame
+  after a keystroke is therefore still highlighted.
+- `editor_handle_edit_result` (`frontends/alicorn/main.odin:3191`) advances only
+  the optimistic window's `editor_revision` (`:3311-3313`). Its
+  `presentation_revision` stays pre-edit until exact metadata arrives.
+- The post-ack visible-window reply has `presentation_ready=false` and no spans;
+  the view-scoped installer stores it as `source_window` (`:750`, `:807`) but
+  keeps the optimistic window.
+- When the language worker publishes, the exact window arrives with
+  `presentation_ready=true`, the accepted revision, and the real spans (the
+  temporary instrumentation read `srcReady=true srcPR=2 srcSpans=102`).
+- `editor_view_window` (`editor_model.odin:830`) still returns the optimistic
+  window because its `editor_revision` matches. The exact `source_window` is
+  never selected for painting.
+- `presentation_window_matches` (`frontends/alicorn/app_editor_view.odin:513`)
+  requires `!presentation_stale` and a matching `presentation_revision`, which
+  the stale optimistic window can never satisfy. `metadata_refresh_needed` stays
+  true (`:526`), and `:753` forces `window_covers_view=false` while a refresh is
+  pending. That makes `paint_current=false` (`:915`), so
+  `text_paint_spans` is not called for any row (`:933-935`). The retained
+  description carries empty span lists.
+
+Scratchpad's Go document does maintain a paint-only rebased `DisplayCode` cache
+(`document/document.go:31-33`, `:766-799`), but it is not part of the frontend
+presentation protocol; no bridge or frontend call reads it. The frontend's own
+rebase is what gets defeated by the refresh gate.
+
+### Host parity and evidence
+
+The same fixture and input produced identical results on the hosted D3D12 build
+and the SDL_GPU reference: 24 syntax-bearing text runs at rest, then 0 runs
+after the first keystroke, and 0 still at +8.3 s. Text kept updating (run byte
+counts grew with the typed characters), so the spans, not the text, were
+missing. Host wake, description cadence, retained presentation, and the WebGPU
+span/mesh path therefore behaved correctly; they were handed span-less
+descriptions. Settled-frame parity from Stage B slice 5 still holds.
+
+A temporary copy of the Scratchpad checkout (not the validator worktree) was
+instrumented to print the window state at description time. After publication it
+read `winStale=true winPR=0 winRev=2 spans=102`, `srcReady=true srcPR=2
+srcSpans=102`, `refresh=true`, `paint=false`. Dropping the stale optimistic
+window when an exact `presentation_ready` source window is installed, with no
+pending edits, restored 24 span-bearing runs in every capture phase on both
+hosts and kept the edited row's tokens visible. That is a Scratchpad-side fix
+proposal; no Scratchpad source or lock file was changed in this slice.
+
+Raw capture tables, the instrumentation lines, cropped screenshots, and the
+candidate-fix comparison are in
+[`validation/issue-211-highlight-persistence-windows-2026-11-20.md`](validation/issue-211-highlight-persistence-windows-2026-11-20.md).
+
+### Alicorn fixtures
+
+- `runtime/hosted_parity_test.odin`:
+  `test_hosted_presentation_preserves_spans_across_an_edit_sequence` describes
+  two highlighted rows, edits one value with rebased spans, then publishes exact
+  ranges/colors. It asserts the rebased presentation reaches the hosted list,
+  the edited row builds a new text product, the untouched row retains its spans
+  and reuses its text product, and publication replaces rather than merges the
+  rebased spans.
+- `renderer/webgpu/text_span_test.odin`:
+  `test_webgpu_text_span_edit_sequence_reuses_only_identical_meshes` proves an
+  identical description reuses the retained glyph mesh, a value-and-span edit
+  changes the fingerprint, and the settled edited description reuses the new
+  mesh instead of rebuilding per frame.
+
+### Validation (Windows x64, RTX 2080 SUPER)
+
+- `odin test runtime`: 420 tests pass, including the new edit-sequence fixture.
+- `odin test renderer/webgpu`: 9 tests pass, including the new mesh fixture.
+- Supporting suites: `host/presentation` 7, `renderer/cpu` 23, `theme` 37,
+  `host/web` 14, `host/diagnostics` 9, `ui` 50, `testui` 13,
+  `native/sdl_gpu` 168, `host/sdl3` 8, `odin build tests` and
+  `out/alicorn_tests.exe` pass. Example 16 `--smoke` and `--workbench-smoke`
+  pass on D3D12, Vulkan, and SDL_GPU (6/6).
+- Scratchpad validator `b458d6e` built against this branch and ran the same
+  typed sequence on hosted D3D12 and SDL_GPU; both reproduced the pre-fix
+  failure and both recovered with the temporary candidate fix. The validator
+  checkout and lock files were not modified.
+- Scratchpad validator `b458d6e` smoke legs against this branch: hosted
+  WebGPU/D3D12 and WebGPU/Vulkan pass, and SDL_GPU passes (clean and recovery
+  launches, all four smoke flags true). The first SDL_GPU attempt hit the
+  20 s timeout while three leftover capture-probe windows were still alive;
+  it passed immediately after they were closed. No Scratchpad source or lock
+  file changed.
+
+### Scratchpad follow-up
+
+The minimal fix is to retire (or refresh from) `view.optimistic_window` when the
+exact published window is installed with `optimistic_pending_edits == 0`
+(`main.odin:805-810`). A defensive second change is to keep painting safe stale
+spans while `metadata_refresh_needed` is true instead of clearing
+`window_covers_view` at `app_editor_view.odin:753`. Either path should be
+covered by a frontend regression that types into a highlighted document and
+asserts span-bearing rows through the post-publication frame.
