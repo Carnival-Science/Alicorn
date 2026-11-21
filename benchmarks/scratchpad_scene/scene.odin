@@ -38,6 +38,10 @@ Interaction :: enum {
 	Selection,
 	Resize,
 	Tabs,
+	// Churn changes the content of every realized row each step while the
+	// retained string keeps its address and length. It is the adversarial
+	// high-churn control for description reuse: no node may be reused.
+	Churn,
 	Idle,
 }
 
@@ -48,6 +52,7 @@ interaction_from_name :: proc(name: string) -> (Interaction, bool) {
 	case "selection": return .Selection, true
 	case "resize": return .Resize, true
 	case "tabs": return .Tabs, true
+	case "churn": return .Churn, true
 	case "idle": return .Idle, true
 	}
 	return .Idle, false
@@ -60,6 +65,7 @@ interaction_name :: proc(interaction: Interaction) -> string {
 	case .Selection: return "selection"
 	case .Resize: return "resize"
 	case .Tabs: return "tabs"
+	case .Churn: return "churn"
 	case .Idle: return "idle"
 	}
 	return "idle"
@@ -94,6 +100,15 @@ Scene :: struct {
 
 	editor_scroll: f32,
 	tree_scroll: f32,
+	// churn_epoch advances once per churn step. The minimap bars and the
+	// command field read it so most described nodes change every frame.
+	churn_epoch: u64,
+	// Realized virtualization ranges recorded by the last description. Churn
+	// mutates exactly the rows the runtime realized.
+	editor_first: int,
+	editor_last: int,
+	tree_first: int,
+	tree_last: int,
 
 	field_buffer: alicorn.Text_Field_Buffer,
 	field_text: [512]u8,
@@ -266,6 +281,8 @@ scene_editor_list :: proc(scene: ^Scene, ctx: ^ui.UI) {
 		focusable=true,
 	); ok {
 		scene.editor_list_id = list.scroll.id
+		scene.editor_first = list.first
+		scene.editor_last = list.last
 		for index in list.first..<list.last {
 			text := scene_editor_line_text(scene, index)
 			// Scratchpad shapes a temporary run for each realized editor row to
@@ -344,6 +361,8 @@ scene_tree_list :: proc(scene: ^Scene, ctx: ^ui.UI) {
 		focusable=true,
 	); ok {
 		scene.tree_list_id = list.scroll.id
+		scene.tree_first = list.first
+		scene.tree_last = list.last
 		for position in list.first..<list.last {
 			node := scene.tree_visible[position]
 			expanded := scene.tree_expanded[node]
@@ -507,6 +526,12 @@ scene_minimap :: proc(scene: ^Scene, ctx: ^ui.UI) {
 	) {
 		for index in 0..<56 {
 			height := f32(3 + (index*7)%5)
+			// The churn arm changes every minimap bar each frame so the
+			// workload reports genuinely high description churn instead of one
+			// edited text node.
+			if scene.interaction == .Churn {
+				height = f32(3 + int((scene.churn_epoch+u64(index))%5))
+			}
 			_ = ui.box(
 				ctx,
 				key=ui.key_u64(600_000+u64(index)),
@@ -635,10 +660,54 @@ scene_apply_step :: proc(scene: ^Scene, rt: ^alicorn.Runtime, step: u64) -> bool
 		scene.active_tab = next
 		alicorn.invalidate_root(rt, "scratchpad tab switch")
 		return true
+	case .Churn:
+		// Every realized row reports new text bytes each step while its
+		// retained allocation and length stay put. A pointer-identity shortcut
+		// would miss this; only content comparison can see it. The minimap bars
+		// and the command field also change, so most described nodes differ on
+		// every pass: no description may be reused.
+		scene.churn_epoch += 1
+		for index in scene.editor_first..<scene.editor_last {
+			if index == scene.edit_line_index { continue }
+			scene_rotate_digit(scene_editor_line_text(scene, index), scene.churn_epoch)
+		}
+		for position in scene.tree_first..<scene.tree_last {
+			node := scene.tree_visible[position]
+			scene_rotate_digit(scene.tree_labels_collapsed[node], scene.churn_epoch)
+			scene_rotate_digit(scene.tree_labels_expanded[node], scene.churn_epoch)
+		}
+		if scene.field_node != 0 {
+			scene.edit_line_len = (scene.edit_line_len+1) % len(scene.edit_line)
+			if scene.edit_line_len == 0 { scene.edit_line_len = 1 }
+			alphabet := "abcdefghijklmnopqrstuvwxyz0123456789"
+			scene.edit_line[scene.edit_line_len-1] = alphabet[int(scene.churn_epoch)%len(alphabet)]
+			_ = alicorn.text_field_buffer_set(&scene.field_buffer, field_text_for_typing(scene))
+		}
+		next := int(scene.churn_epoch % TAB_COUNT)
+		if !scene.tab_open[next] { next = 0 }
+		scene.active_tab = next
+		alicorn.invalidate_root(rt, "scratchpad churn mutation")
+		return true
 	case .Idle:
 		return false
 	}
 	return false
+}
+
+// scene_rotate_digit rewrites one ASCII digit in place. The slice address and
+// length are unchanged, so only a content comparison can observe the change.
+scene_rotate_digit :: proc(text: string, step: u64) {
+	if len(text) == 0 { return }
+	bytes := transmute([]u8)text
+	offset := int(step % u64(len(bytes)))
+	for probe in 0..<len(bytes) {
+		index := (offset+probe) % len(bytes)
+		if bytes[index] >= '0' && bytes[index] <= '9' {
+			bytes[index] = u8('0' + (int(bytes[index]-'0')+1) % 10)
+			return
+		}
+	}
+	bytes[offset] = 'z' if bytes[offset] != 'z' else 'y'
 }
 
 field_text_for_typing :: proc(scene: ^Scene) -> string {

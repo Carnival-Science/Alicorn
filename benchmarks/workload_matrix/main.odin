@@ -102,6 +102,8 @@ Frame_Sample :: struct {
 	stage_ns: [Timing_Stage]u64,
 	descriptions_emitted: u64,
 	descriptions_reused: u64,
+	descriptions_retained_match: u64,
+	structure_sequence_matches: u64,
 	reconcile_nodes_visited: u64,
 	measure_requests: u64,
 	measure_cache_hits: u64,
@@ -488,6 +490,8 @@ capture_scratchpad_sample :: proc(app: ^App, rt: ^alicorn.Runtime) {
 	sample.stage_ns[.Finalize] = stage_timing_delta(stats, app.prev_stats, .Finalize)
 	sample.descriptions_emitted = counter_delta(stats.descriptions_emitted, app.prev_stats.descriptions_emitted)
 	sample.descriptions_reused = counter_delta(stats.descriptions_reused, app.prev_stats.descriptions_reused)
+	sample.descriptions_retained_match = counter_delta(stats.descriptions_retained_match, app.prev_stats.descriptions_retained_match)
+	sample.structure_sequence_matches = counter_delta(stats.structure_sequence_matches, app.prev_stats.structure_sequence_matches)
 	sample.reconcile_nodes_visited = counter_delta(stats.reconcile_nodes_visited, app.prev_stats.reconcile_nodes_visited)
 	sample.measure_requests = counter_delta(stats.measure_requests, app.prev_stats.measure_requests)
 	sample.measure_cache_hits = counter_delta(stats.measure_cache_hits, app.prev_stats.measure_cache_hits)
@@ -587,6 +591,8 @@ print_scratchpad_summary :: proc(app: ^App, role: string) {
 		sample := app.samples[start+index]
 		totals.descriptions_emitted += sample.descriptions_emitted
 		totals.descriptions_reused += sample.descriptions_reused
+		totals.descriptions_retained_match += sample.descriptions_retained_match
+		totals.structure_sequence_matches += sample.structure_sequence_matches
 		totals.reconcile_nodes_visited += sample.reconcile_nodes_visited
 		totals.measure_requests += sample.measure_requests
 		totals.measure_cache_hits += sample.measure_cache_hits
@@ -606,9 +612,10 @@ print_scratchpad_summary :: proc(app: ^App, role: string) {
 		totals.scratch_alloc_calls += sample.scratch_alloc_calls
 	}
 	fmt.printf(
-		"[alicorn-scratchpad-counters] role=%s scenario=%s samples=%d descriptions_emitted=%d descriptions_reused=%d reconcile_visits=%d measure_requests=%d measure_hits=%d measure_misses=%d layout_visits=%d paint_visits=%d composition_visits=%d text_shape_requests=%d semantic_entities=%d semantic_structure_changes=%d semantic_property_changes=%d nodes_created=%d nodes_retired=%d display_finalization_full_passes=%d global_fallbacks=%d persistent_alloc_calls=%d scratch_alloc_calls=%d\n",
+		"[alicorn-scratchpad-counters] role=%s scenario=%s samples=%d descriptions_emitted=%d descriptions_reused=%d descriptions_retained_match=%d structure_sequence_matches=%d reconcile_visits=%d measure_requests=%d measure_hits=%d measure_misses=%d layout_visits=%d paint_visits=%d composition_visits=%d text_shape_requests=%d semantic_entities=%d semantic_structure_changes=%d semantic_property_changes=%d nodes_created=%d nodes_retired=%d display_finalization_full_passes=%d global_fallbacks=%d persistent_alloc_calls=%d scratch_alloc_calls=%d\n",
 		role, label, measured,
 		totals.descriptions_emitted, totals.descriptions_reused,
+		totals.descriptions_retained_match, totals.structure_sequence_matches,
 		totals.reconcile_nodes_visited, totals.measure_requests,
 		totals.measure_cache_hits, totals.measure_cache_misses,
 		totals.layout_nodes_visited, totals.paint_nodes_visited,

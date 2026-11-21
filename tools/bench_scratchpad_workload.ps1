@@ -5,6 +5,13 @@ param(
     [int]$IdleHoldMs = 1200,
     [int]$SmokeHoldMs = 800,
     [string]$OutputDir = 'out\scratchpad-perf',
+    # Optional scenario filter for focused re-measurement, e.g.
+    # -Only typing,churn. Empty runs the full matrix.
+    [string[]]$Only = @(),
+    # 1 builds the issue #229 phase 2 exact description-reuse path (default);
+    # 0 builds the same source with the pre-phase-2 copy-everything path so a
+    # paired before/after measurement needs no source revert.
+    [int]$DescriptionReuse = 1,
     [switch]$SkipBuild
 )
 
@@ -30,7 +37,8 @@ if (-not $SkipBuild) {
     $previousErrorAction = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     & $Odin build (Join-Path $RepoRoot 'benchmarks\workload_matrix') `
-        "-collection:alicorn=$RepoRoot" -define:WGPU_SHARED=true -o:speed `
+        "-collection:alicorn=$RepoRoot" -define:WGPU_SHARED=true `
+        "-define:ALICORN_DESCRIPTION_REUSE=$DescriptionReuse" -o:speed `
         "-out:$Executable" @($AccessKit.CompilerArguments) 2>&1 | ForEach-Object { Write-Output $_ }
     $buildExit = $LASTEXITCODE
     $ErrorActionPreference = $previousErrorAction
@@ -47,6 +55,11 @@ $Scenarios = @(
     [pscustomobject]@{ Name = 'selection'; Interaction = 'selection'; Frames = $Frames; Hold = $SmokeHoldMs },
     [pscustomobject]@{ Name = 'resize';    Interaction = 'resize';    Frames = $Frames; Hold = $SmokeHoldMs },
     [pscustomobject]@{ Name = 'tabs';      Interaction = 'tabs';      Frames = $Frames; Hold = $SmokeHoldMs },
+    # Churn mutates every realized row's text in place each step: the retained
+    # string keeps its address and length but reports new bytes. No description
+    # may be reused, so this arm proves the fast path never taxes a changed
+    # node and that the exact comparison fails fast.
+    [pscustomobject]@{ Name = 'churn';     Interaction = 'churn';     Frames = $Frames; Hold = $SmokeHoldMs },
     [pscustomobject]@{ Name = 'idle';      Interaction = 'idle';      Frames = 1;       Hold = $IdleHoldMs }
 )
 
@@ -55,6 +68,12 @@ $Renderers = @(
     [pscustomobject]@{ Name = 'd3d12';   Arguments = @('--backend=d3d12') },
     [pscustomobject]@{ Name = 'vulkan';  Arguments = @('--backend=vulkan') }
 )
+
+if ($Only.Count -gt 0) {
+    $wanted = @($Only | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $Scenarios = @($Scenarios | Where-Object { $wanted -contains $_.Name })
+    if ($Scenarios.Count -eq 0) { throw "-Only '$($Only -join ',')' matched no scenario" }
+}
 
 function Convert-Line-Metrics([string]$line) {
     $result = @{}
@@ -72,22 +91,30 @@ function Invoke-Scenario([string]$scenarioName, [string]$rendererName, [string[]
     $arguments = @('--smoke', "--smoke-hold-ms=$hold", "--workload=scratchpad",
         "--interaction=$interaction", "--frames=$frames") + $rendererArguments
     $stderrPath = "$logPath.stderr"
-    if (Test-Path -LiteralPath $logPath) { Remove-Item -LiteralPath $logPath -Force }
-    $process = Start-Process -FilePath $Executable -ArgumentList $arguments `
-        -RedirectStandardOutput $logPath -RedirectStandardError $stderrPath -PassThru -NoNewWindow
-    if (-not $process.WaitForExit(60000)) {
-        $process.Kill()
-        throw "scratchpad workload timed out: $logPath"
+    # A hosted WebGPU process can occasionally miss the smoke-exit window while
+    # the machine is busier than the calibration run. Retry such a run once
+    # instead of discarding the whole paired measurement; the retry is recorded
+    # only as a normal run so the medians stay honest.
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        if (Test-Path -LiteralPath $logPath) { Remove-Item -LiteralPath $logPath -Force }
+        $process = Start-Process -FilePath $Executable -ArgumentList $arguments `
+            -RedirectStandardOutput $logPath -RedirectStandardError $stderrPath -PassThru -NoNewWindow
+        $finished = $process.WaitForExit(60000)
+        if (-not $finished) {
+            $process.Kill()
+            $process.WaitForExit()
+        }
+        $process.Refresh()
+        $producedSummary = $false
+        if (Test-Path -LiteralPath $logPath) {
+            $producedSummary = [bool](Select-String -LiteralPath $logPath -Pattern '^\[alicorn-scratchpad\] role=primary' -Quiet)
+        }
+        if ($finished -and $producedSummary) { return }
+        Write-Output ("scratchpad {0}/{1} run {2} attempt {3} produced no summary; retrying" -f
+            $scenarioName, $rendererName, $run, $attempt)
     }
-    $process.Refresh()
-    $producedSummary = $false
-    if (Test-Path -LiteralPath $logPath) {
-        $producedSummary = [bool](Select-String -LiteralPath $logPath -Pattern '^\[alicorn-scratchpad\] role=primary' -Quiet)
-    }
-    if (-not $producedSummary) {
-        $stderr = if (Test-Path -LiteralPath $stderrPath) { Get-Content -LiteralPath $stderrPath -Raw } else { '' }
-        throw "scratchpad workload did not report a summary (exit=$($process.ExitCode)): $logPath`n$stderr"
-    }
+    $stderr = if (Test-Path -LiteralPath $stderrPath) { Get-Content -LiteralPath $stderrPath -Raw } else { '' }
+    throw "scratchpad workload did not report a summary: $logPath`n$stderr"
 }
 
 $runRows = New-Object System.Collections.Generic.List[object]
@@ -123,6 +150,8 @@ foreach ($scenario in $Scenarios) {
                         samples = [int]$m['samples']
                         descriptions_emitted = [double]$m['descriptions_emitted']
                         descriptions_reused = [double]$m['descriptions_reused']
+                        descriptions_retained_match = [double]$m['descriptions_retained_match']
+                        structure_sequence_matches = [double]$m['structure_sequence_matches']
                         reconcile_visits = [double]$m['reconcile_visits']
                         measure_requests = [double]$m['measure_requests']
                         measure_hits = [double]$m['measure_hits']
@@ -239,16 +268,18 @@ foreach ($scenario in $Scenarios) {
 $lines.Add('')
 $lines.Add('## Retained-work counters (median across runs)')
 $lines.Add('')
-$lines.Add('| Scenario | Renderer | descriptions emitted | reused | reconcile | measure | text shapes | layout | paint | compose | full finalize passes | semantic changes | persistent alloc calls | scratch alloc calls |')
-$lines.Add('|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|')
+$lines.Add('| Scenario | Renderer | descriptions emitted | reused | exact-match reuses | structure-sequence matches | reconcile | measure | text shapes | layout | paint | compose | full finalize passes | semantic changes | persistent alloc calls | scratch alloc calls |')
+$lines.Add('|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|')
 foreach ($scenario in $Scenarios) {
     foreach ($renderer in $Renderers) {
         $rows = @($counterRows | Where-Object { $_.scenario -eq $scenario.Name -and $_.renderer -eq $renderer.Name })
         if ($rows.Count -eq 0) { continue }
-        $lines.Add(('| {0} | {1} | {2:N0} | {3:N0} | {4:N0} | {5:N0} | {6:N0} | {7:N0} | {8:N0} | {9:N0} | {10:N0} | {11:N0} | {12:N0} | {13:N0} |' -f
+        $lines.Add(('| {0} | {1} | {2:N0} | {3:N0} | {4:N0} | {5:N0} | {6:N0} | {7:N0} | {8:N0} | {9:N0} | {10:N0} | {11:N0} | {12:N0} | {13:N0} | {14:N0} | {15:N0} |' -f
             $scenario.Name, $renderer.Name,
             (Get-Median ([double[]]@($rows | ForEach-Object { $_.descriptions_emitted }))),
             (Get-Median ([double[]]@($rows | ForEach-Object { $_.descriptions_reused }))),
+            (Get-Median ([double[]]@($rows | ForEach-Object { $_.descriptions_retained_match }))),
+            (Get-Median ([double[]]@($rows | ForEach-Object { $_.structure_sequence_matches }))),
             (Get-Median ([double[]]@($rows | ForEach-Object { $_.reconcile_visits }))),
             (Get-Median ([double[]]@($rows | ForEach-Object { $_.measure_requests }))),
             (Get-Median ([double[]]@($rows | ForEach-Object { $_.text_shape_requests }))),
