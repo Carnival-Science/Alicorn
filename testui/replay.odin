@@ -285,6 +285,14 @@ replay_turn_equal :: proc(expected, actual: Turn_Report, compare_work: bool) -> 
 	   expected.action_id != actual.action_id {
 		return false
 	}
-	if compare_work && expected.work != actual.work { return false }
+	if compare_work && expected.work != actual.work {
+		// Wall-clock attribution is intentionally excluded from replay equality:
+		// it is a diagnostic, not deterministic input/state.
+		expected_work := expected.work
+		actual_work := actual.work
+		expected_work.stage_timings_ns = {}
+		actual_work.stage_timings_ns = {}
+		if expected_work != actual_work { return false }
+	}
 	return true
 }

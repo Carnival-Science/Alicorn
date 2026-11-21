@@ -1,0 +1,32 @@
+[alicorn-webgpu] device request begin
+[alicorn-webgpu] device callback status=Success device_present=true message=
+[alicorn-webgpu] device request returned future=0
+[alicorn-webgpu] adapter backend=D3D12 type=DiscreteGPU vendor=32.0.15.9597 architecture= device=NVIDIA GeForce RTX 2080 SUPER description=
+[alicorn-webgpu-timing] samples=21 overwritten=0 metric=CPU_wall_time_not_GPU_execution_or_scanout
+[alicorn-webgpu-timing] runtime_step_ns_p50=365600 runtime_step_ns_p95=1206000 runtime_step_ns_p99=1206000 surface_acquire_ns_p50=12700 surface_acquire_ns_p95=21200 surface_acquire_ns_p99=21200 renderer_encode_ns_p50=179600 renderer_encode_ns_p95=927500 renderer_encode_ns_p99=927500
+[alicorn-webgpu-timing] queue_submit_ns_p50=71200 queue_submit_ns_p95=127100 queue_submit_ns_p99=127100 surface_present_call_ns_p50=106500 surface_present_call_ns_p95=323700 surface_present_call_ns_p99=323700 step_to_present_ns_p50=762600 step_to_present_ns_p95=2553700 step_to_present_ns_p99=2553700 input_samples=0 input_to_submit_ns_p50=0 input_to_submit_ns_p95=0 input_to_submit_ns_p99=0
+[alicorn-webgpu-workload] frames_presented=21 wake_events=42 steps=60 no_frame_steps=39 zero_timeout_iterations=0 idle_after_last_present_ns=800440000
+[alicorn-webgpu-workload] prepared_commands=119 solid_mesh_rebuilds=2 solid_vertex_uploads=2 solid_vertex_upload_bytes=1404864 solid_transform_uploads=2 solid_transform_upload_bytes=1120 solid_viewport_uploads=1
+[alicorn-webgpu-workload] text_mesh_rebuilds=2 text_vertex_uploads=2 text_vertex_upload_bytes=180048 text_transform_uploads=2 text_viewport_uploads=1 text_atlas_uploads=61 text_atlas_upload_bytes=2422280
+[alicorn-webgpu-workload] icon_mesh_rebuilds=2 icon_mesh_cache_hits=19 icon_vertex_uploads=2 icon_vertex_upload_bytes=3024 icon_atlas_uploads=1 icon_atlas_upload_bytes=786432 image_mesh_rebuilds=2 image_vertex_uploads=0 image_texture_uploads=0 image_texture_upload_bytes=0
+[alicorn-webgpu-workload] surface_mesh_rebuilds=0 surface_mesh_cache_hits=0 surface_vertex_uploads=0 surface_vertex_upload_bytes=0 surface_instance_uploads=0 surface_instance_cache_hits=0 surface_viewport_uploads=1
+webgpu_live_resize frames 0 geometry_adoptions 0 idle_ticks 0 step_failures 0 peak_logical_width 0 peak_pixel_width 0 surface_configures 2 surface_configure_total_ns 2882500 surface_configure_last_ns 1463400 present_intervals 0 present_interval_total_ns 0 present_interval_max_ns 0 present_gaps_over_frame 0 present_gaps_over_two_frames 0 geometry_to_present_max_ns 0 expose_events 0 expose_frames 0 geometry_events 0 geometry_frames 0 deferred_geometry_events 0 move_enter_messages 0 move_exit_messages 0 move_timer_wakes 0 move_position_messages 0 move_position_changed_messages 0 move_redraws 0 move_primary_redraws 0 move_secondary_redraws 0 move_skipped_ticks 0 deferred_exposes 0 deferred_timer_ticks 0
+[alicorn-workload] role=primary scenario=scratchpad-resize describe_calls=25 wake_deliveries=20 frames_planned=24 description_span_ns=518731400
+[alicorn-workload-runtime] role=primary frames_built=25 idle_frames=0 descriptions_emitted=3947 descriptions_reused=3727 regions_skipped=0 retained_subtrees_reused=0 nodes_created=195 nodes_retired=38 layout_nodes_visited=948 paint_nodes_visited=430 display_commands_finalized=493 text_shape_requests=193 paint_updates=430 composite_updates=4
+[alicorn-workload-alloc] role=primary persistent_alloc_calls=4068 scratch_alloc_calls=22021 persistent_bytes_live=71804402
+[alicorn-scratchpad] role=primary scenario=scratchpad-resize samples=25 measured=23 warmup=2
+[alicorn-scratchpad-stage] role=primary scenario=scratchpad-resize stage=description samples=23 p50_ns=355200 p95_ns=486300 p99_ns=530900 max_ns=530900
+[alicorn-scratchpad-stage] role=primary scenario=scratchpad-resize stage=reconcile samples=23 p50_ns=203691 p95_ns=350472 p99_ns=440574 max_ns=440574
+[alicorn-scratchpad-stage] role=primary scenario=scratchpad-resize stage=reconcile_hash samples=23 p50_ns=27722 p95_ns=34571 p99_ns=36480 max_ns=36480
+[alicorn-scratchpad-stage] role=primary scenario=scratchpad-resize stage=reconcile_copy samples=23 p50_ns=89389 p95_ns=109613 p99_ns=109788 max_ns=109788
+[alicorn-scratchpad-stage] role=primary scenario=scratchpad-resize stage=structure_diff samples=23 p50_ns=13354 p95_ns=19426 p99_ns=19776 max_ns=19776
+[alicorn-scratchpad-stage] role=primary scenario=scratchpad-resize stage=measure samples=23 p50_ns=110 p95_ns=349 p99_ns=18366 max_ns=18366
+[alicorn-scratchpad-stage] role=primary scenario=scratchpad-resize stage=measure_text samples=23 p50_ns=0 p95_ns=10483 p99_ns=178382 max_ns=178382
+[alicorn-scratchpad-stage] role=primary scenario=scratchpad-resize stage=layout samples=23 p50_ns=910 p95_ns=128695 p99_ns=256889 max_ns=256889
+[alicorn-scratchpad-stage] role=primary scenario=scratchpad-resize stage=semantic_sync samples=23 p50_ns=12144 p95_ns=19136 p99_ns=19276 max_ns=19276
+[alicorn-scratchpad-stage] role=primary scenario=scratchpad-resize stage=paint samples=23 p50_ns=190 p95_ns=16715 p99_ns=42254 max_ns=42254
+[alicorn-scratchpad-stage] role=primary scenario=scratchpad-resize stage=composition samples=23 p50_ns=0 p95_ns=15025 p99_ns=15735 max_ns=15735
+[alicorn-scratchpad-stage] role=primary scenario=scratchpad-resize stage=finalize samples=23 p50_ns=210 p95_ns=480 p99_ns=520 max_ns=520
+[alicorn-scratchpad-stage] role=primary scenario=scratchpad-resize stage=application_build samples=23 p50_ns=136477 p95_ns=187195 p99_ns=196904 max_ns=196904
+[alicorn-scratchpad-stage] role=primary scenario=scratchpad-resize stage=reconcile_other samples=23 p50_ns=48167 p95_ns=61791 p99_ns=62471 max_ns=62471
+[alicorn-scratchpad-counters] role=primary scenario=scratchpad-resize samples=23 descriptions_emitted=3603 descriptions_reused=3588 reconcile_visits=3603 measure_requests=467 measure_hits=422 measure_misses=45 layout_visits=412 paint_visits=177 composition_visits=226 text_shape_requests=54 semantic_entities=95 semantic_structure_changes=27 semantic_property_changes=23 nodes_created=4 nodes_retired=0 display_finalization_full_passes=2 global_fallbacks=0 persistent_alloc_calls=950 scratch_alloc_calls=2642

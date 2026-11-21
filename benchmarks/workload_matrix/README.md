@@ -17,10 +17,30 @@ and `matrix-summary.md`.
 ```
 
 Scenarios: `identical`, `transform`, `color`, `layout`, `scroll` (with
-`--items`), `multiwindow`, and `settled`. Every scenario accepts
-`--workload=<name>`, `--frames=<n>`, `--items=<n>`, `--smoke`, and
-`--smoke-hold-ms=<n>`. The WebGPU paths additionally accept `--timings`; the
-harness always passes it.
+`--items`), `multiwindow`, `settled`, and `scratchpad`.
+
+`--workload=scratchpad` selects the issue #229 Scratchpad-shaped scene
+(`benchmarks/scratchpad_scene`): a 10,000-line virtualized editor, a 1,000-node
+expandable workspace tree, closable document tabs, a pinned rounded panel with a
+gradient accent, a focused command field with selection, a minimap, and a
+status strip. It accepts `--interaction=typing|scroll|selection|resize|tabs|idle`
+and runs on the same SDL_GPU and hosted WebGPU paths as the other scenarios.
+The scene is also exercised headlessly by `testui/scratchpad_scene_test.odin`.
+
+Dedicated baseline runner:
+
+```powershell
+.\tools\bench_scratchpad_workload.ps1 -Odin C:\odin\odin.exe `
+  -Runs 5 -Frames 24 -OutputDir out\scratchpad-perf
+```
+
+It writes per-run stage and counter CSVs plus a Markdown summary with
+p50/p95/p99 stage attribution. Every scenario accepts `--workload=<name>`,
+`--frames=<n>`, `--items=<n>`, `--smoke`, and `--smoke-hold-ms=<n>`. The WebGPU
+paths additionally accept `--timings`; the harness always passes it.
+
+Baseline record:
+[`docs/validation/issue-229-phase1-baseline-2026-11-21.md`](../../docs/validation/issue-229-phase1-baseline-2026-11-21.md).
 
 Description scenarios use one worker wake per planned frame. The driver waits
 for the previous description to finish, pauses 25 ms so the host can submit it,

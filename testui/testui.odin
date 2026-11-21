@@ -146,6 +146,9 @@ Turn_Work :: struct {
 	semantic_projection_nodes_added, semantic_projection_nodes_updated: u64,
 	semantic_projection_nodes_removed: u64,
 	gpu_submits: u64,
+	// stage_timings_ns mirrors the runtime's per-stage attribution for this
+	// turn. Timers are always on; idle turns report zero.
+	stage_timings_ns: [alicorn.Runtime_Timing_Stage]u64,
 }
 
 Test_Handle :: struct($T: typeid) {
@@ -434,6 +437,10 @@ capture_turn_observation :: proc(
 		semantic_projection_nodes_updated=after.semantic_projection_nodes_updated-before.semantic_projection_nodes_updated,
 		semantic_projection_nodes_removed=after.semantic_projection_nodes_removed-before.semantic_projection_nodes_removed,
 		gpu_submits=after.gpu_submits-before.gpu_submits,
+	}
+	for index in 0..<alicorn.RUNTIME_TIMING_STAGE_COUNT {
+		stage := alicorn.Runtime_Timing_Stage(index)
+		work.stage_timings_ns[stage] = after.stage_timings_ns[stage]-before.stage_timings_ns[stage]
 	}
 	handle.last_turn.semantic_revision = alicorn.semantic_revision(rt)
 	handle.last_turn.semantic_revision_before = semantic_revision_before

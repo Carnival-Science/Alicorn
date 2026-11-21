@@ -862,6 +862,7 @@ rebuild_order :: proc(rt: ^Runtime) {
 }
 
 reconcile :: proc(rt: ^Runtime) {
+	reconcile_mark := perf_mark_begin()
 	previous_focus := rt.focused
 	previous_semantic_realized := rt.semantic_focus.realized_node
 	previous_semantic_owner := rt.semantic_focus.owner
@@ -924,14 +925,19 @@ reconcile :: proc(rt: ^Runtime) {
 			node.surface_rectangles = make([dynamic]GPU_Surface_Filled_Rectangle, 0, allocator=rt.persistent_allocator)
 			rt.nodes[d.id] = node
 			rt.stats.nodes_created += 1
+			hash_mark := perf_mark_begin()
 			next_style_environment := style_environment_with_accessibility(d.style_environment, item.accessibility)
 			style_changes := style_environment_changed_domains_for_node(rt, node, d.style, node.style_environment, next_style_environment)
+			perf_add_mark(rt, .Reconcile_Hash, hash_mark)
+			copy_mark := perf_mark_begin()
 			copy_node_description(rt, node, d, item.semantic, item.semantic_surface_style, item.visual_part,
 				next_style_environment, style_changes)
 			if d.region { region_index_add(rt, d.id, d.label) }
 			if item.pointer_hit_shape == .Bounds { delete_key(&rt.pointer_hit_shapes, d.id) }
 			else { rt.pointer_hit_shapes[d.id] = item.pointer_hit_shape }
 			grid_tracks_copy_retained(rt, node, item)
+			perf_add_mark(rt, .Reconcile_Copy, copy_mark)
+			hash_mark = perf_mark_begin()
 			node.description_hash = description_hash(d, item.semantic_surface_style, item.visual_part, item.accessibility)
 			node.layout_hash = layout_percent_width_pending_hash(rt, d, item)
 			rt.measure_states[d.id] = Measure_State{
@@ -940,12 +946,14 @@ reconcile :: proc(rt: ^Runtime) {
 				parent_layout_dependencies={.Width, .Height},
 			}
 			node.paint_hash = paint_hash(d, node.description_hash, focus_visual)
+			perf_add_mark(rt, .Reconcile_Hash, hash_mark)
 			mark_dirty(node, "new retained node", true, true, true, true, rt.persistent_allocator)
 			layout_measure_mark_dirty(rt, node)
 			queue_paint(rt, d.id)
 			mark_layout_ancestors(rt, d.id)
 			record_trace(rt, .Reconcile, d.id, "new retained node")
 		} else {
+			hash_mark := perf_mark_begin()
 			new_desc_hash := description_hash(d, item.semantic_surface_style, item.visual_part, item.accessibility)
 			new_layout_hash := layout_percent_width_pending_hash(rt, d, item)
 			new_measure_input_hash := measure_input_hash(d)
@@ -961,9 +969,11 @@ reconcile :: proc(rt: ^Runtime) {
 			measurement_changed = measurement_changed || Dirty_Stage.Measure in style_stages
 			paint_changed := node.paint_hash != new_paint_hash || Dirty_Stage.Paint in style_stages
 			composite_changed := Dirty_Stage.Composite in style_stages
+			perf_add_mark(rt, .Reconcile_Hash, hash_mark)
 			// Region index ownership follows the retained region flag and label.
 			// copy_node_description releases the old label when it changes, so a
 			// soon-to-change label is copied into scratch before that happens.
+			copy_mark := perf_mark_begin()
 			was_region := node.region
 			label_changed := was_region && node.label != d.label
 			old_label := node.label
@@ -982,10 +992,13 @@ reconcile :: proc(rt: ^Runtime) {
 			if was_selected != node.selected {
 				visual_part_invalidate_dependents(rt, d.id, "visual part owner selection changed")
 			}
+			perf_add_mark(rt, .Reconcile_Copy, copy_mark)
+			hash_mark = perf_mark_begin()
 			node.description_hash = new_desc_hash
 			node.layout_hash = new_layout_hash
 			_ = measure_input_observe(rt, d.id, new_measure_input_hash)
 			node.paint_hash = new_paint_hash
+			perf_add_mark(rt, .Reconcile_Hash, hash_mark)
 			reason := "description reused"
 			if description_changed { reason = "description changed" }
 			mark_dirty(node, reason, description_changed, layout_changed, paint_changed || layout_changed, composite_changed, rt.persistent_allocator)
@@ -1012,6 +1025,7 @@ reconcile :: proc(rt: ^Runtime) {
 	layout_percent_width_update_retained(rt)
 	layout_percent_width_pending_clear(rt)
 	clear(&rt.pending_scroll_focus_visuals)
+	structure_mark := perf_mark_begin()
 
 	structure_changed := false
 	desired_roots: []Node_ID
@@ -1063,6 +1077,7 @@ reconcile :: proc(rt: ^Runtime) {
 	if structure_changed || len(rt.order) == 0 {
 		rebuild_order(rt)
 	}
+	perf_add_mark(rt, .Structure_Diff, structure_mark)
 
 	if previous_focus != 0 {
 		if focus_candidate_is_valid(rt, previous_focus) {
@@ -1109,17 +1124,25 @@ reconcile :: proc(rt: ^Runtime) {
 			rt.semantic_focus.owner = 0
 		}
 	}
+	semantic_mark := perf_mark_begin()
 	refresh_semantic_focus_realization(rt)
 	semantic_keyboard_focus_refresh(rt)
+	perf_add_mark(rt, .Semantic_Sync, semantic_mark)
 
+	measure_mark := perf_mark_begin()
 	layout_measure_retained_dirty_nodes(rt)
+	perf_add_mark(rt, .Measure, measure_mark)
+	layout_mark := perf_mark_begin()
 	layout_tree(rt)
 	restore_resolve_after_layout(rt)
+	perf_add_mark(rt, .Layout, layout_mark)
+	semantic_mark = perf_mark_begin()
 	adaptive_semantics_sync_descriptions(rt)
 	refresh_semantic_focus_realization(rt)
 	semantic_keyboard_focus_refresh(rt)
 	semantic_prune_touched_collections(rt)
 	semantic_commit(rt)
+	perf_add_mark(rt, .Semantic_Sync, semantic_mark)
 	// Declarative motion is applied only after the complete current subtree has
 	// been reconciled, so Reveal can enforce its decorative-only contract and
 	// initial presentation is included in this frame's paint output.
@@ -1135,8 +1158,10 @@ reconcile :: proc(rt: ^Runtime) {
 	// This description already observed the final geometry-surface bounds.
 	rt.geometry_surface_bounds_changed = false
 	rt.presentation_pending = false
+	finalize_mark := perf_mark_begin()
 	presentation_outputs_prune_retired_roots(rt)
 	advance_presentation_revision(rt)
+	perf_add_mark(rt, .Finalize, finalize_mark)
 	rt.stats.frame += 1
 	delete(focus_lineage)
 	when REGION_INDEX_VALIDATION_ENABLED {
@@ -1148,6 +1173,7 @@ reconcile :: proc(rt: ^Runtime) {
 	note_submission_cause(rt, rt.frame_cause)
 	if rt.invalidated { note_pending_work_cause(rt, rt.frame_cause) }
 	rt.frame_cause = Cause_Context{}
+	perf_add_mark(rt, .Reconcile, reconcile_mark)
 }
 
 end_presentation_frame :: proc(ui: ^UI) {
@@ -1158,12 +1184,18 @@ end_presentation_frame :: proc(ui: ^UI) {
 	// Interaction-only frames do not have descriptions to reconcile. Existing
 	// child adjacency remains authoritative; pending retained layout and paint
 	// work are flushed without rerunning application code.
-	if rt.layout_pending { layout_tree(rt) }
+	if rt.layout_pending {
+		layout_mark := perf_mark_begin()
+		layout_tree(rt)
+		perf_add_mark(rt, .Layout, layout_mark)
+	}
 	// Retained layout can change the selected adaptive branch. Publish those
 	// semantic rebindings and bounds in the same frame as its new presentation.
+	semantic_mark := perf_mark_begin()
 	refresh_semantic_focus_realization(rt)
 	semantic_keyboard_focus_refresh(rt)
 	semantic_commit(rt)
+	perf_add_mark(rt, .Semantic_Sync, semantic_mark)
 	update_paint(rt)
 	rt.frame_open = false
 	rt.invalidated = rt.virtual_viewport_changed || rt.geometry_surface_bounds_changed
@@ -1171,13 +1203,16 @@ end_presentation_frame :: proc(ui: ^UI) {
 	rt.scroll_geometry_changed = false
 	rt.geometry_surface_bounds_changed = false
 	rt.presentation_pending = false
+	finalize_mark := perf_mark_begin()
 	presentation_outputs_prune_retired_roots(rt)
 	advance_presentation_revision(rt)
+	perf_add_mark(rt, .Finalize, finalize_mark)
 	rt.stats.frame += 1
 	record_trace(rt, .Composite, 0, "retained presentation frame flushed")
 	note_submission_cause(rt, rt.frame_cause)
 	if rt.invalidated { note_pending_work_cause(rt, rt.frame_cause) }
 	rt.frame_cause = Cause_Context{}
+	perf_finish_description(rt)
 }
 
 destroy_runtime :: proc(rt: ^Runtime) {
@@ -1411,4 +1446,5 @@ end_frame :: proc(ui: ^UI) {
 	}
 	interaction_scopes_publish(ui.runtime)
 	interaction_after_frame_dispatch(ui.runtime)
+	perf_finish_description(ui.runtime)
 }

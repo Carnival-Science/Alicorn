@@ -1498,6 +1498,23 @@ requests, expansion, and parent focus, which a pure fully-known index view
 cannot express. The [issue #225 validation
 record](validation/issue-225-roving-focus-2026-11-21.md) has the adoption
 measurements and the boundary decision.
+### Performance attribution
+
+`alicorn.frame_stats_snapshot` includes cumulative
+`stage_timings_ns: [Runtime_Timing_Stage]u64`. The timers are always enabled
+and allocation-free. `Runtime_Timing_Stage` names description, whole reconcile,
+per-node reconcile hash and copy, structure diff, measure, text shaping,
+layout, semantic sync, paint, composition, and finalize. `Description` brackets
+the whole application pass; `Reconcile` contains measure/layout/semantic/paint/
+composition/finalize, while hash/copy/structure are reconcile sub-stages. Text
+shaping (`Measure_Text`) can be reached from both measure and layout and is a
+shared bucket rather than a strict subset.
+
+The stage marks use a cycle counter calibrated once per process against
+`core:time`; a platform without a usable cycle counter falls back to
+`time.tick_now`. Instrumentation cost is measured in the issue #229 baseline
+record. `testui.Turn_Work.stage_timings_ns` exposes the same deltas per
+headless turn.
 
 ### Pattern conformance checks (testui)
 

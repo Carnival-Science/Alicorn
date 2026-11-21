@@ -673,6 +673,8 @@ begin_frame :: proc(rt: ^Runtime) -> (ui: UI, should_build: bool) {
 	// Interaction invalidation may have queued a retained node before the
 	// next frame begins. update_paint clears the queue after consuming it;
 	// clearing it here would discard focus/caret/selection repaint requests.
+	rt.description_mark = perf_mark_begin()
+	rt.description_timing = true
 	rt.stats.frames_built += 1
 	return ui, true
 }
@@ -696,6 +698,8 @@ begin_presentation_frame :: proc(rt: ^Runtime) -> (ui: UI, ready: bool) {
 	rt.pending_work_mixed = false
 	runtime_scratch_reset(rt)
 	rt.frame_open = true
+	rt.description_mark = perf_mark_begin()
+	rt.description_timing = true
 	return ui, true
 }
 
