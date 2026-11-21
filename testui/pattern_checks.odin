@@ -19,6 +19,8 @@ PATTERN_MAX_FOCUS_CYCLE :: 32
 Pattern_Kind :: enum {
 	Combobox_Listbox,
 	Modal_Dialog,
+	Roving_List,
+	Roving_Grid,
 }
 
 // Pattern_Part_ID names a role in a composed control. A configuration supplies
@@ -41,6 +43,8 @@ Pattern_Part_ID :: enum {
 	Nested_Action,
 	Nested_Secondary_Action,
 	Modal_Action,
+	Container,
+	Item,
 }
 
 Pattern_Step :: enum {
@@ -66,6 +70,7 @@ Pattern_Step :: enum {
 	Nested_Overlay,
 	Dismissal,
 	Activation_Parity,
+	Focus_Contract,
 }
 
 Pattern_Part :: struct {
@@ -104,6 +109,44 @@ Pattern_Config :: struct {
 	support_semantic_expand: bool,
 	// Bounds the modal focus-cycle probe. Zero selects the default.
 	max_focus_cycle: int,
+	// Roving focus policy for .Roving_List and .Roving_Grid. The checker never
+	// guesses the consumer's policy: supply the same stride, wrap, row-bound,
+	// and Home/End scope the composition publishes.
+	roving: Pattern_Roving_Config,
+}
+
+// Pattern_Roving_Focus selects the published roving representative. Container
+// means one focusable collection (items virtual or non-focusable) with its
+// Current identity naming the active item. Item means the active item itself
+// owns retained focus.
+Pattern_Roving_Focus :: enum {
+	Container,
+	Item,
+}
+
+Pattern_Roving_Config :: struct {
+	// focus is required: Container or Item.
+	focus:      Pattern_Roving_Focus,
+	// columns is the grid stride. Values <= 1 describe a linear list.
+	columns:    int,
+	// wrap continues a move at the opposite end of the item set.
+	wrap:       bool,
+	// row_bounded stops Left/Right at row edges when wrap is false.
+	row_bounded: bool,
+	// home_end_row targets the active row rather than the whole set.
+	home_end_row: bool,
+	// expect_reveal requires the current item to intersect the container
+	// after keyboard navigation.
+	expect_reveal: bool,
+	// activation_closes means Return removes the container (a popup) instead of
+	// keeping the composed set mounted.
+	activation_closes: bool,
+	// expect_selection requires activation to publish Selected on the target
+	// and the same identity in the collection's selected_id.
+	expect_selection: bool,
+	// expect_escape_restore reopens a closing composition, presses Escape, and
+	// requires the container to close and the Trigger to regain focus.
+	expect_escape_restore: bool,
 }
 
 Pattern_Failure :: struct {
@@ -155,6 +198,8 @@ pattern_check :: proc(handle: ^Test_Handle($T), config: Pattern_Config) -> Patte
 		_ = pattern_check_combobox_impl(handle, config, &report)
 	case .Modal_Dialog:
 		_ = pattern_check_modal_dialog_impl(handle, config, &report)
+	case .Roving_List, .Roving_Grid:
+		_ = pattern_check_roving_impl(handle, config, &report)
 	}
 	return report
 }
@@ -1992,4 +2037,696 @@ pattern_modal_activation :: proc(
 	destroy_element(&opener)
 	destroy_element(&trigger)
 	return true
+}
+
+// ---------------------------------------------------------------------------
+// Roving list and grid patterns
+// ---------------------------------------------------------------------------
+
+// Pattern_Roving_View is a borrowed snapshot of one published roving set. The
+// check requires every logical item to be realized because navigation between
+// unrealized rows would otherwise be indistinguishable from a missing
+// contract.
+@(private)
+Pattern_Roving_View :: struct {
+	container: Element,
+	items:     [dynamic]Element,
+	current:   int,
+}
+
+@(private)
+pattern_roving_view_destroy :: proc(view: ^Pattern_Roving_View) {
+	if view == nil { return }
+	destroy_element(&view.container)
+	for index in 0..<len(view.items) { destroy_element(&view.items[index]) }
+	delete(view.items)
+	view^ = {}
+}
+
+@(private)
+pattern_roving_item_enabled :: proc(view: ^Pattern_Roving_View, index: int) -> bool {
+	if view == nil || index < 0 || index >= len(view.items) { return false }
+	return !alicorn.semantic_states_has(view.items[index].states, .Disabled)
+}
+
+@(private)
+pattern_roving_scan :: proc(view: ^Pattern_Roving_View, start, direction, lower, upper: int) -> int {
+	for index := start; index >= lower && index < upper; index += direction {
+		if pattern_roving_item_enabled(view, index) { return index }
+	}
+	return -1
+}
+
+// pattern_roving_expected is an independent implementation of the published
+// roving policy. It deliberately does not call the runtime model: the point of
+// the check is to compare a consumer's behavior with the configuration, not to
+// compare the model with itself.
+@(private)
+pattern_roving_expected :: proc(
+	view: ^Pattern_Roving_View,
+	current: int,
+	move: alicorn.Roving_Move,
+	config: Pattern_Roving_Config,
+) -> int {
+	count := len(view.items)
+	if current < 0 || current >= count { return -1 }
+	grid := config.columns > 1
+	stride := config.columns if grid else 1
+	delta := 0
+	horizontal := false
+	switch move {
+	case .Left:
+		delta = -1
+		horizontal = grid
+	case .Right:
+		delta = 1
+		horizontal = grid
+	case .Up:
+		delta = -stride
+	case .Down:
+		delta = stride
+	case .Home:
+		if grid && config.home_end_row {
+			first := (current/config.columns)*config.columns
+			if index := pattern_roving_scan(view, first, 1, 0, count); index >= 0 { return index if index != current else -1 }
+			index := pattern_roving_scan(view, first, -1, 0, count)
+			return index if index != current else -1
+		}
+		index := pattern_roving_scan(view, 0, 1, 0, count)
+		return index if index != current else -1
+	case .End:
+		if grid && config.home_end_row {
+			first := (current/config.columns)*config.columns
+			last := min(first+config.columns, count)-1
+			if index := pattern_roving_scan(view, last, -1, 0, count); index >= 0 { return index if index != current else -1 }
+			index := pattern_roving_scan(view, last+1, 1, 0, count)
+			return index if index != current else -1
+		}
+		index := pattern_roving_scan(view, count-1, -1, 0, count)
+		return index if index != current else -1
+	case .Page_Up, .Page_Down:
+		return -1
+	}
+	if delta == 0 { return -1 }
+	direction := 1 if delta > 0 else -1
+	row_locked := horizontal && config.row_bounded && !config.wrap
+	target := current+delta
+	if row_locked {
+		first := (current/config.columns)*config.columns
+		last := min(first+config.columns, count)
+		if target < first || target >= last { return -1 }
+		return pattern_roving_scan(view, target, direction, first, last)
+	}
+	if target < 0 || target >= count {
+		if !config.wrap { return -1 }
+		target = ((target%count)+count)%count
+	}
+	if config.wrap {
+		index := target
+		for _ in 0..<count {
+			if index < 0 { index += count }
+			if index >= count { index -= count }
+			if pattern_roving_item_enabled(view, index) { return index if index != current else -1 }
+			index += direction
+		}
+		return -1
+	}
+	return pattern_roving_scan(view, target, direction, 0, count)
+}
+
+@(private)
+pattern_collect_roving :: proc(
+	handle: ^Test_Handle($T),
+	config: Pattern_Config,
+	step: Pattern_Step,
+	report: ^Pattern_Report,
+) -> (view: Pattern_Roving_View, ok: bool) {
+	view.container, ok = pattern_require_part(handle, config, .Container, step, report)
+	if !ok { return view, false }
+	container := &view.container
+	if container.role != .List_Box {
+		pattern_fail(handle, report, step, .Container, container, "Semantic_Role.List_Box", fmt.tprintf("%v", container.role))
+		pattern_roving_view_destroy(&view)
+		return view, false
+	}
+	if !container.is_collection || container.visual_node == 0 || !container.has_bounds || container.logical_count == 0 {
+		pattern_fail(handle, report, step, .Container, container,
+			"a realized List_Box collection with at least one logical item",
+			fmt.tprintf("collection=%v visual=%d bounds=%v logical=%d", container.is_collection, container.visual_node, container.has_bounds, container.logical_count))
+		pattern_roving_view_destroy(&view)
+		return view, false
+	}
+	if container.logical_count > PATTERN_MAX_OPTIONS {
+		pattern_fail(handle, report, step, .Container, container,
+			fmt.tprintf("at most %d roving items", PATTERN_MAX_OPTIONS), fmt.tprintf("%d logical items", container.logical_count))
+		pattern_roving_view_destroy(&view)
+		return view, false
+	}
+	view.items = make([dynamic]Element, 0, int(container.logical_count), handle.allocator)
+	snapshot := alicorn.semantic_snapshot(handle.runtime, handle.allocator)
+	defer alicorn.semantic_snapshot_destroy(&snapshot)
+	for semantic in snapshot.nodes {
+		if semantic.collection_id != container.semantic_id { continue }
+		if semantic.role != .List_Box_Option { continue }
+		element, element_ok := element_from_semantic(handle, semantic, snapshot.nodes[:])
+		if !element_ok { continue }
+		append(&view.items, element)
+	}
+	for index in 1..<len(view.items) {
+		current := view.items[index]
+		cursor := index
+		for cursor > 0 && view.items[cursor-1].position_in_set > current.position_in_set {
+			view.items[cursor] = view.items[cursor-1]
+			cursor -= 1
+		}
+		view.items[cursor] = current
+	}
+	if u64(len(view.items)) != container.logical_count {
+		pattern_fail(handle, report, step, .Container, container,
+			"every logical roving item realized for deterministic navigation",
+			fmt.tprintf("%d realized of %d logical items", len(view.items), container.logical_count))
+		pattern_roving_view_destroy(&view)
+		return view, false
+	}
+
+	current_count := 0
+	view.current = -1
+	for &item, index in view.items {
+		if item.position_in_set >= container.logical_count {
+			pattern_fail(handle, report, step, .Item, &item, "item position inside the logical collection",
+				fmt.tprintf("position %d", item.position_in_set))
+			pattern_roving_view_destroy(&view)
+			return view, false
+		}
+		for previous in 0..<index {
+			if view.items[previous].position_in_set == item.position_in_set {
+				pattern_fail(handle, report, step, .Item, &item, "unique item positions", "duplicate position_in_set")
+				pattern_roving_view_destroy(&view)
+				return view, false
+			}
+		}
+		disabled := alicorn.semantic_states_has(item.states, .Disabled)
+		focusable := false
+		if info, info_ok := alicorn.node_info(handle.runtime, item.visual_node); info_ok { focusable = info.focusable }
+		if disabled {
+			if focusable {
+				pattern_fail(handle, report, .Focus_Contract, .Disabled_Option, &item,
+					"a disabled item is not focusable", "disabled item visual node is focusable")
+				pattern_roving_view_destroy(&view)
+				return view, false
+			}
+			if alicorn.semantic_actions_has(item.actions, .Focus) || alicorn.semantic_actions_has(item.actions, .Select) {
+				pattern_fail(handle, report, step, .Disabled_Option, &item,
+					"a disabled item without Focus or Select actions", "disabled item advertises a focusable/selectable action")
+				pattern_roving_view_destroy(&view)
+				return view, false
+			}
+		} else if !alicorn.semantic_actions_has(item.actions, .Focus) {
+			pattern_fail(handle, report, step, .Item, &item, "Focus action on an enabled roving item", "missing Focus action")
+			pattern_roving_view_destroy(&view)
+			return view, false
+		}
+		if item.collection_current {
+			current_count += 1
+			view.current = index
+		}
+	}
+	if current_count != 1 {
+		pattern_fail(handle, report, step, .Container, container,
+			"exactly one Current roving item", fmt.tprintf("%d Current items", current_count))
+		pattern_roving_view_destroy(&view)
+		return view, false
+	}
+	if alicorn.semantic_id_is_valid(container.collection_current_id) &&
+	   container.collection_current_id != view.items[view.current].semantic_id {
+		pattern_fail(handle, report, step, .Container, container,
+			"the collection current_id names the Current item", "current_id and Current state disagree")
+		pattern_roving_view_destroy(&view)
+		return view, false
+	}
+
+	// One tab-stop representative must exist. A container with no focusable
+	// container and no focusable item cannot be reached or driven by keyboard.
+	container_focusable := false
+	if info, info_ok := alicorn.node_info(handle.runtime, container.visual_node); info_ok {
+		container_focusable = info.focusable
+	}
+	current_focusable := false
+	if info, info_ok := alicorn.node_info(handle.runtime, view.items[view.current].visual_node); info_ok {
+		current_focusable = info.focusable
+	}
+	if config.roving.focus == .Container {
+		if !container_focusable {
+			pattern_fail(handle, report, .Focus_Contract, .Container, container,
+				"a focusable roving container (one tab stop)", "container visual node is not focusable")
+			pattern_roving_view_destroy(&view)
+			return view, false
+		}
+	} else if !current_focusable {
+		pattern_fail(handle, report, .Focus_Contract, .Item, &view.items[view.current],
+			"a focusable current roving item (one tab stop)", "current item visual node is not focusable")
+		pattern_roving_view_destroy(&view)
+		return view, false
+	}
+	if !pattern_roving_verify_focus(handle, &view, config, .Containment, report) {
+		pattern_roving_view_destroy(&view)
+		return view, false
+	}
+	return view, true
+}
+
+// pattern_roving_verify_focus asserts that exactly one representative owns
+// keyboard focus and that it names the Current item.
+@(private)
+pattern_roving_verify_focus :: proc(
+	handle: ^Test_Handle($T),
+	view: ^Pattern_Roving_View,
+	config: Pattern_Config,
+	step: Pattern_Step,
+	report: ^Pattern_Report,
+) -> bool {
+	if config.roving.focus == .Container {
+		if !view.container.focused {
+			pattern_fail(handle, report, step, .Container, &view.container,
+				"retained focus on the roving container", "focus is elsewhere")
+			return false
+		}
+		return true
+	}
+	focused_index := -1
+	for &item, index in view.items {
+		if !item.focused { continue }
+		if focused_index >= 0 {
+			pattern_fail(handle, report, step, .Item, &item,
+				"exactly one focused roving item", "more than one item reports focus")
+			return false
+		}
+		focused_index = index
+	}
+	if focused_index < 0 {
+		pattern_fail(handle, report, step, .Item, &view.items[view.current],
+			"one focused roving item", "no item reports focus")
+		return false
+	}
+	if focused_index != view.current {
+		pattern_fail(handle, report, step, .Item, &view.items[focused_index],
+			"focus stays on the Current item", "focused item is not the Current item")
+		return false
+	}
+	return true
+}
+
+@(private)
+pattern_roving_press :: proc(
+	handle: ^Test_Handle($T),
+	move: alicorn.Roving_Move,
+	step: Pattern_Step,
+	report: ^Pattern_Report,
+) -> bool {
+	key: Key
+	switch move {
+	case .Left: key = .Left
+	case .Right: key = .Right
+	case .Up: key = .Up
+	case .Down: key = .Down
+	case .Page_Up: key = .Page_Up
+	case .Page_Down: key = .Page_Down
+	case .Home: key = .Home
+	case .End: key = .End
+	}
+	return pattern_press_key(handle, key, step, .Container, report)
+}
+
+@(private)
+pattern_roving_refresh :: proc(
+	handle: ^Test_Handle($T),
+	view: ^Pattern_Roving_View,
+	config: Pattern_Config,
+	step: Pattern_Step,
+	report: ^Pattern_Report,
+) -> bool {
+	pattern_roving_view_destroy(view)
+	refreshed, ok := pattern_collect_roving(handle, config, step, report)
+	view^ = refreshed
+	return ok
+}
+
+@(private)
+pattern_roving_step_and_verify :: proc(
+	handle: ^Test_Handle($T),
+	view: ^Pattern_Roving_View,
+	move: alicorn.Roving_Move,
+	config: Pattern_Config,
+	step: Pattern_Step,
+	report: ^Pattern_Report,
+) -> bool {
+	previous_id := view.items[view.current].semantic_id
+	expected := pattern_roving_expected(view, view.current, move, config.roving)
+	expected_id := alicorn.Semantic_ID{}
+	if expected >= 0 { expected_id = view.items[expected].semantic_id }
+	if !pattern_roving_press(handle, move, step, report) { return false }
+	if !pattern_roving_refresh(handle, view, config, step, report) { return false }
+	if expected < 0 {
+		if view.items[view.current].semantic_id != previous_id {
+			pattern_fail(handle, report, step, .Container, &view.container,
+				fmt.tprintf("%v leaves the Current item in place", move),
+				"the Current item moved")
+			return false
+		}
+		return true
+	}
+	if view.items[view.current].semantic_id != expected_id {
+		pattern_fail(handle, report, step, .Container, &view.container,
+			fmt.tprintf("%v moves to the expected enabled item", move),
+			"the Current item is somewhere else")
+		return false
+	}
+	return true
+}
+
+@(private)
+pattern_roving_closed :: proc(
+	handle: ^Test_Handle($T),
+	config: Pattern_Config,
+	step: Pattern_Step,
+	report: ^Pattern_Report,
+) -> bool {
+	// A closing composition retires its overlay subtree and restores focus over
+	// the next ordinary description; give the retained tree two passes before
+	// asserting the published semantics.
+	if pattern_settle_description(handle) != .Ok { return false }
+	result := pattern_find_part_optional(handle, config, .Container)
+	if result.match == .None && result.status == .Ok { return true }
+	if result.match == .Unique && result.status == .Ok && result.element.visual_node == 0 {
+		// A stable collection identity can outlive its visual realization; the
+		// roving contract only requires that the popup no longer realizes a
+		// container.
+		destroy_find_result(&result)
+		return true
+	}
+	pattern_fail(handle, report, step, .Container, &result.element,
+		"the roving container is gone", "the container is still published")
+	destroy_find_result(&result)
+	return false
+}
+
+@(private)
+pattern_roving_trigger_after_close :: proc(
+	handle: ^Test_Handle($T),
+	config: Pattern_Config,
+	target_name: string,
+	step: Pattern_Step,
+	report: ^Pattern_Report,
+) -> bool {
+	trigger, ok := pattern_require_part(handle, config, .Trigger, step, report)
+	if !ok { return false }
+	defer destroy_element(&trigger)
+	if config.roving.expect_selection && trigger.value != target_name {
+		pattern_fail(handle, report, step, .Trigger, &trigger,
+			fmt.tprintf("trigger value %q", target_name), fmt.tprintf("trigger value %q", trigger.value))
+		return false
+	}
+	if !trigger.focused {
+		pattern_fail(handle, report, step, .Trigger, &trigger,
+			"focus restored to the roving trigger", "focus is elsewhere")
+		return false
+	}
+	return true
+}
+
+@(private)
+pattern_roving_open_trigger :: proc(
+	handle: ^Test_Handle($T),
+	config: Pattern_Config,
+	step: Pattern_Step,
+	report: ^Pattern_Report,
+) -> bool {
+	trigger, ok := pattern_require_part(handle, config, .Trigger, step, report)
+	if !ok { return false }
+	click_ok := pattern_click_element(handle, &trigger, step, .Trigger, report)
+	destroy_element(&trigger)
+	if !click_ok { return false }
+	if pattern_settle_description(handle) != .Ok {
+		pattern_fail(handle, report, step, .Container, nil, "settled follow-up description", last_turn_diagnostic(handle))
+		return false
+	}
+	return true
+}
+
+@(private)
+pattern_roving_find_item :: proc(view: ^Pattern_Roving_View, id: alicorn.Semantic_ID) -> (Element, bool) {
+	for item in view.items {
+		if item.semantic_id == id { return item, true }
+	}
+	return {}, false
+}
+
+@(private)
+pattern_roving_navigate_to :: proc(
+	handle: ^Test_Handle($T),
+	view: ^Pattern_Roving_View,
+	target: alicorn.Semantic_ID,
+	config: Pattern_Config,
+	step: Pattern_Step,
+	report: ^Pattern_Report,
+) -> bool {
+	for _ in 0..<PATTERN_MAX_OPTIONS {
+		if view.items[view.current].semantic_id == target { return true }
+		target_index := -1
+		for item, index in view.items {
+			if item.semantic_id == target { target_index = index; break }
+		}
+		if target_index < 0 {
+			pattern_fail(handle, report, step, .Target_Option, nil, "the target item is realized", "target item is absent")
+			return false
+		}
+		move := alicorn.Roving_Move.Down
+		if config.kind == .Roving_Grid {
+			current_row := view.current/config.roving.columns
+			target_row := target_index/config.roving.columns
+			if target_row > current_row {
+				move = .Down
+			} else if target_row < current_row {
+				move = .Up
+			} else if target_index > view.current {
+				move = .Right
+			} else {
+				move = .Left
+			}
+		} else if target_index < view.current {
+			move = .Up
+		}
+		if !pattern_roving_step_and_verify(handle, view, move, config, step, report) { return false }
+	}
+	pattern_fail(handle, report, step, .Target_Option, nil, "target item reachable by roving navigation",
+		"the navigation bound was exhausted")
+	return false
+}
+
+@(private)
+pattern_roving_activation_open :: proc(
+	handle: ^Test_Handle($T),
+	view: ^Pattern_Roving_View,
+	target: Element,
+	config: Pattern_Config,
+	report: ^Pattern_Report,
+) -> bool {
+	target_local := target
+	if config.roving.expect_selection {
+		found, found_ok := pattern_roving_find_item(view, target_local.semantic_id)
+		if !found_ok {
+			return pattern_fail(handle, report, .Activation_Parity, .Target_Option, &target_local,
+				"the target item remains realized", "target item is absent")
+		}
+		if !alicorn.semantic_states_has(found.states, .Selected) || !found.collection_selected {
+			return pattern_fail(handle, report, .Activation_Parity, .Target_Option, &found,
+				"keyboard activation publishes Selected on the target", "target is not Selected")
+		}
+		if view.container.collection_selected_id != target_local.semantic_id {
+			return pattern_fail(handle, report, .Activation_Parity, .Container, &view.container,
+				"the collection selected_id names the activated target", "selected_id and Selected disagree")
+		}
+	}
+	// Pointer parity: the same realized target accepts a coordinate activation
+	// and leaves the same published selection.
+	pointer, pointer_ok := pattern_roving_find_item(view, target_local.semantic_id)
+	if !pointer_ok {
+		return pattern_fail(handle, report, .Activation_Parity, .Target_Option, &target_local,
+			"the target item remains realized for pointer parity", "target item is absent")
+	}
+	if !pattern_click_element(handle, &pointer, .Activation_Parity, .Target_Option, report) { return false }
+	if pattern_settle_description(handle) != .Ok {
+		return pattern_fail(handle, report, .Activation_Parity, .Target_Option, nil,
+			"settled follow-up description", last_turn_diagnostic(handle))
+	}
+	if !pattern_roving_refresh(handle, view, config, .Activation_Parity, report) { return false }
+	if config.roving.expect_selection && view.container.collection_selected_id != target_local.semantic_id {
+		return pattern_fail(handle, report, .Activation_Parity, .Container, &view.container,
+			"pointer activation keeps the same selected identity", "selected_id changed")
+	}
+	return true
+}
+
+@(private)
+pattern_check_roving_impl :: proc(
+	handle: ^Test_Handle($T),
+	config: Pattern_Config,
+	report: ^Pattern_Report,
+) -> bool {
+	// A popup composition is opened through its trigger; a mounted toolbar or
+	// grid has no Trigger part.
+	if pattern_has_part(config, .Trigger) {
+		if !pattern_roving_open_trigger(handle, config, .Resolve_Parts, report) { return false }
+	}
+	if config.kind == .Roving_Grid && config.roving.columns <= 1 {
+		return pattern_fail(handle, report, .Static_Contract, .Container, nil,
+			"a grid configuration with columns > 1", "Roving_Grid requires roving.columns")
+	}
+	view, ok := pattern_collect_roving(handle, config, .Static_Contract, report)
+	if !ok { return false }
+	defer pattern_roving_view_destroy(&view)
+
+	// 1. Arrow navigation across the configured strides, including disabled
+	// skipping and one focused representative after every turn.
+	moves := [5]alicorn.Roving_Move{.Home, .Down, .Right, .Up, .Left}
+	move_count := 5
+	if config.kind == .Roving_List {
+		moves = [5]alicorn.Roving_Move{.Home, .Down, .Up, .End, .Home}
+	}
+	for index in 0..<move_count {
+		if !pattern_roving_step_and_verify(handle, &view, moves[index], config, .Navigation, report) { return false }
+		if !pattern_roving_verify_focus(handle, &view, config, .Containment, report) { return false }
+	}
+
+	// 2. Boundary and wrap policy. With wrap, a move past the end wraps to the
+	// opposite edge; without wrap, focus stays put.
+	if config.roving.wrap {
+		if !pattern_roving_step_and_verify(handle, &view, .End, config, .Navigation, report) { return false }
+		if !pattern_roving_step_and_verify(handle, &view, .Down, config, .Navigation, report) { return false }
+	} else {
+		if !pattern_roving_step_and_verify(handle, &view, .Home, config, .Navigation, report) { return false }
+		boundary := alicorn.Roving_Move.Up
+		if config.kind == .Roving_Grid { boundary = .Left }
+		if !pattern_roving_step_and_verify(handle, &view, boundary, config, .Navigation, report) { return false }
+	}
+
+	// 3. Home/End scope. A grid that targets the row must move to the active
+	// row's first/last enabled item, not the set's.
+	if !pattern_roving_step_and_verify(handle, &view, .Home, config, .Navigation, report) { return false }
+	if config.kind == .Roving_Grid && config.roving.home_end_row {
+		if !pattern_roving_step_and_verify(handle, &view, .Down, config, .Navigation, report) { return false }
+	}
+	if !pattern_roving_step_and_verify(handle, &view, .End, config, .Navigation, report) { return false }
+
+	// 4. Reveal: the current item must be realized within the container.
+	if config.roving.expect_reveal {
+		if pattern_settle_description(handle) != .Ok { return false }
+		if !pattern_roving_refresh(handle, &view, config, .Virtual_Reveal, report) { return false }
+		current := &view.items[view.current]
+		if !current.has_bounds || !pattern_rect_intersects(current.bounds, view.container.bounds) {
+			return pattern_fail(handle, report, .Virtual_Reveal, .Container, current,
+				"the Current item is realized inside the container",
+				fmt.tprintf("bounds %v inside %v", current.bounds, view.container.bounds))
+		}
+	}
+
+	_, has_target := pattern_part(config, .Target_Option)
+	if !has_target { return true }
+
+	// 5. Navigate to the configured target and activate it through Return.
+	target, target_ok := pattern_require_part(handle, config, .Target_Option, .Activation_Parity, report)
+	if !target_ok { return false }
+	if !pattern_roving_navigate_to(handle, &view, target.semantic_id, config, .Activation_Parity, report) {
+		destroy_element(&target)
+		return false
+	}
+	if !pattern_press_key(handle, .Return, .Activation_Parity, .Target_Option, report) { destroy_element(&target); return false }
+	if pattern_settle_description(handle) != .Ok {
+		pattern_fail(handle, report, .Activation_Parity, .Target_Option, nil,
+			"settled follow-up description", last_turn_diagnostic(handle))
+		destroy_element(&target)
+		return false
+	}
+	if config.roving.activation_closes {
+		if !pattern_roving_closed(handle, config, .Activation_Parity, report) { destroy_element(&target); return false }
+		if !pattern_roving_trigger_after_close(handle, config, target.name, .Activation_Parity, report) {
+			destroy_element(&target)
+			return false
+		}
+		// Pointer parity: reopening and clicking the same target must close
+		// with the same controlled value.
+		if !pattern_roving_open_trigger(handle, config, .Activation_Parity, report) { destroy_element(&target); return false }
+		reopened, reopened_ok := pattern_collect_roving(handle, config, .Activation_Parity, report)
+		if !reopened_ok { destroy_element(&target); return false }
+		pointer, pointer_ok := pattern_roving_find_item(&reopened, target.semantic_id)
+		pattern_roving_view_destroy(&reopened)
+		if !pointer_ok {
+			pattern_fail(handle, report, .Activation_Parity, .Target_Option, &target,
+				"the target item is realized after reopening", "target item is absent")
+			destroy_element(&target)
+			return false
+		}
+		if !pattern_click_element(handle, &pointer, .Activation_Parity, .Target_Option, report) {
+			destroy_element(&target)
+			return false
+		}
+		if pattern_settle_description(handle) != .Ok {
+			pattern_fail(handle, report, .Activation_Parity, .Target_Option, nil,
+				"settled follow-up description", last_turn_diagnostic(handle))
+			destroy_element(&target)
+			return false
+		}
+		if !pattern_roving_closed(handle, config, .Activation_Parity, report) { destroy_element(&target); return false }
+		if !pattern_roving_trigger_after_close(handle, config, target.name, .Activation_Parity, report) {
+			destroy_element(&target)
+			return false
+		}
+		if config.roving.expect_escape_restore {
+			if !pattern_roving_open_trigger(handle, config, .Escape_Cancel, report) { destroy_element(&target); return false }
+			if !pattern_press_key(handle, .Escape, .Escape_Cancel, .Container, report) { destroy_element(&target); return false }
+			if pattern_settle_description(handle) != .Ok {
+				pattern_fail(handle, report, .Escape_Cancel, .Container, nil,
+					"settled follow-up description", last_turn_diagnostic(handle))
+				destroy_element(&target)
+				return false
+			}
+			if !pattern_roving_closed(handle, config, .Escape_Cancel, report) { destroy_element(&target); return false }
+			if !pattern_roving_trigger_after_close(handle, config, target.name, .Escape_Cancel, report) {
+				destroy_element(&target)
+				return false
+			}
+		}
+		destroy_element(&target)
+		return true
+	}
+
+	// The composed set stays mounted: Return and a pointer click must publish
+	// the same Selected identity.
+	if !pattern_roving_refresh(handle, &view, config, .Activation_Parity, report) { destroy_element(&target); return false }
+	open_ok := pattern_roving_activation_open(handle, &view, target, config, report)
+	destroy_element(&target)
+	if !open_ok { return false }
+	return pattern_roving_verify_focus(handle, &view, config, .Activation_Parity, report)
+}
+
+pattern_check_roving_list :: proc(handle: ^Test_Handle($T), config: Pattern_Config) -> Pattern_Report {
+	report := Pattern_Report{ok=true}
+	report.failure.pattern = .Roving_List
+	if handle == nil || handle.runtime == nil {
+		pattern_fail_message(&report, .Resolve_Parts, "valid test handle", "nil handle")
+		return report
+	}
+	_ = pattern_check_roving_impl(handle, config, &report)
+	return report
+}
+
+pattern_check_roving_grid :: proc(handle: ^Test_Handle($T), config: Pattern_Config) -> Pattern_Report {
+	report := Pattern_Report{ok=true}
+	report.failure.pattern = .Roving_Grid
+	if handle == nil || handle.runtime == nil {
+		pattern_fail_message(&report, .Resolve_Parts, "valid test handle", "nil handle")
+		return report
+	}
+	_ = pattern_check_roving_impl(handle, config, &report)
+	return report
 }
