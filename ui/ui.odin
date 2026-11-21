@@ -712,9 +712,10 @@ icon_button :: proc(
 	style: alicorn.Layout_Style = alicorn.DEFAULT_STYLE,
 	variant: alicorn.Button_Variant = .Quiet,
 	disabled: bool = false,
+	selected: bool = false,
 	loc := #caller_location,
 ) -> bool {
-	_, clicked := alicorn.icon_button(ui, accessible_label, id, key=key, style=style, variant=variant, disabled=disabled, loc=loc)
+	_, clicked := alicorn.icon_button(ui, accessible_label, id, key=key, style=style, variant=variant, disabled=disabled, selected=selected, loc=loc)
 	return clicked
 }
 

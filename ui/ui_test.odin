@@ -649,6 +649,41 @@ test_ui_motion_intent_is_deferred_until_reconciliation :: proc(t: ^testing.T) {
 }
 
 @(test)
+test_icon_button_selected_wrapper_forwards_controlled_state_and_semantics :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 200, 100})
+	defer alicorn.destroy_runtime(&rt)
+	build := proc(rt: ^alicorn.Runtime, selected: bool) -> alicorn.Node_ID {
+		if !rt.invalidated { alicorn.invalidate_root(rt, "icon button selected wrapper fixture") }
+		ctx, ready := alicorn.begin_frame(rt)
+		if !ready { return 0 }
+		alicorn.container_begin(&ctx, .Root, key="ui-icon-selected-root", style=alicorn.layout_style(.Row, width=160, height=80))
+		_ = icon_button(&ctx, "Selection tool", .Settings, key="ui-icon-selected", selected=selected)
+		alicorn.container_end(&ctx)
+		alicorn.end_frame(&ctx)
+		id, _ := alicorn.node_by_key(rt, "ui-icon-selected", .Button)
+		return id
+	}
+	id := build(&rt, false)
+	if id == 0 { testing.expect(t, false, "the wrapper icon button should be retained"); return }
+	semantic, found := rt.semantic_entities[alicorn.semantic_visual_id(id)]
+	testing.expect(t, !rt.nodes[id].selected && found && !alicorn.semantic_states_has(semantic.node.states, .Selected),
+		"the default wrapper should preserve the existing unselected icon button behavior")
+
+	selected_id := build(&rt, true)
+	selected_semantic, selected_found := rt.semantic_entities[alicorn.semantic_visual_id(selected_id)]
+	testing.expect(t, selected_id == id && rt.nodes[id].selected && selected_found &&
+		selected_semantic.node.role == .Button && selected_semantic.node.label == "Selection tool" &&
+		alicorn.semantic_states_has(selected_semantic.node.states, .Selected),
+		"the wrapper should carry selected through to the retained button and its accessible state without replacing identity")
+
+	restored_id := build(&rt, false)
+	restored_semantic, restored_found := rt.semantic_entities[alicorn.semantic_visual_id(restored_id)]
+	testing.expect(t, restored_id == id && !rt.nodes[id].selected && restored_found &&
+		!alicorn.semantic_states_has(restored_semantic.node.states, .Selected),
+		"clearing selected should return the wrapper to its original visual and semantic state")
+}
+
+@(test)
 test_ui_motion_reveal_checks_new_interactive_descendants_after_reconciliation :: proc(t: ^testing.T) {
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 180})
 	defer alicorn.destroy_runtime(&rt)

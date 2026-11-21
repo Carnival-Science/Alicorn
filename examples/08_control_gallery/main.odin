@@ -17,6 +17,7 @@ CONTROL_GALLERY_THEME_PATH :: "examples/08_control_gallery/theme.json"
 
 App :: struct {
 	searches: int,
+	settings_selected: bool,
 	allocator: mem.Allocator,
 	waker: ui.Application_Waker,
 	worker: ^thread.Thread,
@@ -181,6 +182,11 @@ render :: proc(app: ^App, ctx: ^ui.UI) {
 		if ui.row(ctx, gap=8) {
 			if ui.icon_button(ctx, "Search", .Search) { app.searches += 1 }
 			ui.text(ctx, fmt.tprintf("Search activations: %d", app.searches))
+			if ui.icon_button(ctx, "Settings", .Settings,
+				key=alicorn.key_string("gallery-settings-toggle"), selected=app.settings_selected) {
+				app.settings_selected = !app.settings_selected
+			}
+			ui.text(ctx, "Settings toggle")
 		}
 		ui.text(ctx, "Opt-in Button hover fill · CSS Ease")
 		if ui.row(ctx, gap=8) {

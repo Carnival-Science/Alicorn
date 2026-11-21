@@ -717,7 +717,9 @@ button :: proc(ui: ^UI, label: string, key: UI_Key = UI_Unkeyed{}, style := DEFA
 }
 
 // icon_button is a square, font-independent button. Its accessible name is
-// supplied separately from the decorative vector icon.
+// supplied separately from the decorative vector icon. selected is controlled
+// application state: it changes appearance and semantic state but not identity,
+// and activation remains a one-shot press reported through clicked.
 icon_button :: proc(
 	ui: ^UI,
 	accessible_label: string,
@@ -726,6 +728,7 @@ icon_button :: proc(
 	style := DEFAULT_STYLE,
 	variant := Button_Variant.Quiet,
 	disabled := false,
+	selected := false,
 	loc := #caller_location,
 ) -> (node: Node_ID, clicked: bool) {
 	if ui == nil || ui.runtime == nil || !ui.runtime.frame_open { return }
@@ -740,6 +743,9 @@ icon_button :: proc(
 	button_layout.align = .Center
 	if button_layout.width < 0 { button_layout.width = 32 }
 	if button_layout.height < 0 { button_layout.height = 32 }
+	state_bits: u64 = 0
+	if selected { state_bits |= 1 }
+	if disabled { state_bits |= 2 }
 	node = emit_key(
 		ui,
 		.Button,
@@ -747,6 +753,8 @@ icon_button :: proc(
 		label="",
 		key=key,
 		style=button_layout,
+		state_bits=state_bits,
+		selected=selected,
 		disabled=disabled,
 		focusable=!disabled,
 		button_content=button_content_style(.Center, .Center, padding_x=6, padding_y=3),
@@ -764,6 +772,7 @@ icon_button :: proc(
 	states := Semantic_States{}
 	if !disabled { actions = semantic_actions_add(actions, .Press) }
 	if disabled { states = semantic_states_add(states, .Disabled) }
+	if selected { states = semantic_states_add(states, .Selected) }
 	_ = semantic_description(ui, .Button, accessible_label, states=states, actions=actions)
 	clicked = consume_activation(rt, node)
 	return

@@ -1338,7 +1338,21 @@ Built-in indicators use embedded antialiased Reicon filled coverage masks and
 do not depend on text-font glyph coverage. `icon(ui, icon_id, key, size, color_role)` adds a decorative icon to
 ordinary layout; the surrounding control or adjacent text remains responsible
 for its accessible name. `icon_button(ui, accessible_label, icon_id, key,
-style)` creates an icon-only button with an explicit semantic name. Available
+style, variant, disabled, selected)` creates an icon-only button with an
+explicit semantic name. `selected` is controlled application state: it changes
+the retained button paint through the same recipe and state transforms as a
+regular button and adds the semantic `Selected` state, while activation stays a
+one-shot press and identity does not change. Keep the flag in application state
+and pass it on the next description:
+
+```odin
+if ui.icon_button(ctx, "Selection tool", .Settings,
+	key="selection-tool", selected=app.selection_tool) {
+	app.selection_tool = !app.selection_tool
+}
+```
+
+Available
 IDs include check, chevrons, close, minus, radio, warning, info, folder-open and
 folder-closed, file, search, settings, terminal, and more-horizontal.
 `More_Horizontal` is the font-independent three-dot "more actions" affordance:
