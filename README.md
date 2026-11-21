@@ -1,4 +1,4 @@
-# Alicorn now lives [here!](https://github.com/Carnival-Science/Alicorn/tree/master)
+# Alicorn
 
 Alicorn is an experimental native GUI runtime for [Odin](https://odin-lang.org/).
 Describe a UI with ordinary Odin code; Alicorn retains identity, interaction,
@@ -34,11 +34,32 @@ Application state stays in your code. `ui` lowers into the same retained
 Runtime as the lower-level API; it adds no application state store or second
 widget tree. The API is still evolving, and Alicorn is not production-ready.
 
+## What it provides
+
+- **Direct to write, retained to run.** Procedural `alicorn:ui` authoring over a
+  dirty-driven retained Runtime: identity, layout, shaping, paint, interaction,
+  and semantics survive descriptions instead of being rebuilt.
+- **Two renderer paths.** SDL_GPU is the default, complete production renderer
+  and the visual reference. An opt-in WebGPU renderer serves native SDL3 hosts
+  and Chromium-family browsers through the same retained paint stream; it is
+  experimental and does not replace SDL_GPU yet.
+- **Native host services.** Menus and accelerators, integrated titlebar chrome,
+  file dialogs, deferred close, a per-surface scheduler, synchronous clipboard,
+  native file drag-out and drop-in, secondary windows, and renderer-neutral
+  diagnostics (F10 HUD, F11 bounds, F12 capture).
+- **Retained UI products.** Surface-local positioned text for rulers and
+  timelines, per-corner surfaces, two-stop gradients, bounded shape primitives,
+  icons and images, virtualized collections, retained motion, typed themes, and
+  an AccessKit bridge for Windows UI Automation and macOS accessibility.
+- **Shared hosted API.** `alicorn:runtime`'s `Hosted_Runtime` and
+  `alicorn:ui/webgpu` expose the same application callbacks as the reference
+  host for applications that own their window and event loop.
+
 **New to Alicorn?** Follow [Getting Started](docs/getting-started.md) to install
 the prerequisites, build the project, and run an editable native example.
 For the current release's scope and limitations, see the
-[changelog](CHANGELOG.md), which consolidates the v0.1.0, v0.2.0, and v0.2.1
-release notes.
+[changelog](CHANGELOG.md), which consolidates the v0.1.0, v0.2.0, v0.2.1, and
+v0.2.2 release notes.
 
 For the reusable native distribution path, see
 [Native application packaging](docs/packaging.md).
@@ -49,6 +70,8 @@ Then explore the [progressive application guide](docs/guide.md),
 [Choosing Alicorn](docs/choosing-alicorn.md), [examples](examples/README.md),
 [typed themes](docs/themes.md),
 [performance evidence](docs/performance.md), [architecture](docs/architecture.md),
+the [hosted UI loop contract](docs/hosted-runtime.md), the
+[WebGPU migration plan](docs/webgpu-migration.md),
 or [contributor guide](docs/development.md). The current Linux evidence is
 recorded in the [NixOS/Mango validation report](docs/validation/linux-nixos-mangowc-2026-10-23.md).
 
@@ -66,6 +89,21 @@ It is separate from Alicorn's semantic projection and SDL window integration.
 For live debugging, the native host includes an opt-in
 [visual inspector](docs/development.md#native-diagnostics): retained tree,
 focus, work counters, and recent causes, rendered using Alicorn itself.
+
+## Platforms
+
+- **Windows** — the native SDL3 host is validated on D3D12 and Vulkan,
+  including UI Automation, hosted chrome, and the opt-in WebGPU path.
+- **macOS** — the native SDL3/Metal host is validated. WebGPU has CI smoke and
+  compile-checked chrome, but physical macOS runs are pending. Development
+  packages are ad-hoc signed; distribution signing and notarization remain
+  application responsibilities.
+- **Linux (Wayland)** — conditional native evidence from one NixOS/Mango
+  machine, not broad support; there is no AccessKit adapter. WebGPU has
+  lavapipe CI smoke only.
+- **Browser** — the same `alicorn:ui` sources run on `js_wasm32` with WebGPU in
+  Chromium-family browsers over HTTPS or localhost. Firefox/Safari, native
+  menus, dialogs, close policy, and synchronous clipboard are not covered.
 
 ## Acknowledgements
 
@@ -87,8 +125,10 @@ work from other GUI projects:
   Odin and as the project where the work that became Runa began.
 
 The runtime is built with [Odin](https://odin-lang.org/) and its native host
-uses [SDL3](https://www.libsdl.org/) / SDL_GPU. Text shaping and rasterization
-are provided by [Runa](https://github.com/BuLEEto/Runa), vendored in
+uses [SDL3](https://www.libsdl.org/) with SDL_GPU by default or an opt-in WebGPU
+renderer. A browser target (`js_wasm32`) runs the same UI and retained Runtime
+on WebGPU in Chromium-family browsers. Text shaping and rasterization are
+provided by [Runa](https://github.com/BuLEEto/Runa), vendored in
 [`third_party/Runa`](third_party/Runa). These acknowledgements distinguish
 design influences from technical foundations; they are not a complete
 dependency or licensing inventory. See the relevant component directories
