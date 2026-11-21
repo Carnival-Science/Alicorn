@@ -790,6 +790,7 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	delete_key(&rt.computed_styles, id)
 	delete_key(&rt.scroll_focus_visuals, id)
 	if rt.percent_width_sidecar_initialized { delete_key(&rt.percent_width_dependencies, id) }
+	if rt.layout_sparse_sidecar_initialized { layout_sparse_forget(rt, id) }
 	gpu_surface_image_layers_destroy(rt, id)
 	delete_key(&rt.semantic_surfaces, id)
 	delete_key(&rt.pointer_hit_shapes, id)
@@ -1258,6 +1259,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.restore_controls)
 	delete(rt.measure_states)
 	layout_percent_width_destroy(rt)
+	layout_sparse_destroy(rt)
 	delete(rt.measure_queue)
 	delete(rt.finalized_geometry)
 	delete(rt.computed_styles)

@@ -1911,6 +1911,14 @@ Frame_Stats :: struct {
 	style_cache_hits: u64,
 	stage_visits:      [Runtime_Stage]u64,
 	layout_updates:    u64,
+	// Sparse column placement (issue #230, milestone 1) attributes work
+	// avoided by dependency-bounded layout. passes counts placement passes
+	// with a matching retained snapshot; suffix_skips counts leading siblings
+	// skipped entirely after a main-axis size change; unchanged_skips counts
+	// clean children whose placement was left untouched inside the suffix.
+	layout_sparse_passes:          u64,
+	layout_sparse_suffix_skips:    u64,
+	layout_sparse_unchanged_skips: u64,
 	measure_requests:  u64,
 	measure_cache_hits: u64,
 	measure_cache_misses: u64,
@@ -2061,6 +2069,14 @@ Runtime :: struct {
 	interaction_after_frame: [dynamic]Retained_After_Frame_Callback,
 	dispatching_after_frame: [dynamic]Retained_After_Frame_Callback,
 	measure_states: map[Node_ID]Measure_State,
+	// Sparse column placement retains per-child resolved main sizes, offsets,
+	// bounds, and clips outside Node. It is created on the first eligible flow
+	// pass and released on retirement or runtime destruction.
+	layout_sparse_placements: map[Node_ID]Layout_Sparse_Placement,
+	layout_sparse_sidecar_initialized: bool,
+	// Test/dev switch: force the full reference placement path. The sparse
+	// oracle runs both paths and compares them geometrically.
+	force_full_layout: bool,
 	percent_width_dependencies: map[Node_ID]Percent_Width_Dependency,
 	pending_percent_widths: map[Node_ID]Percent_Width_Declaration,
 	percent_width_sidecar_initialized: bool,

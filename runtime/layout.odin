@@ -883,22 +883,27 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 		has_positioned = len(positioned_children) > 0
 	}
 	if count == 0 {
+		layout_sparse_forget(rt, parent.id)
 		if has_positioned { layout_positioned_children(rt, parent, inner, positioned_children) }
 		return
 	}
 	if parent.kind == .Context_Menu_Overlay {
+		layout_sparse_forget(rt, parent.id)
 		context_menu_layout_children(rt, parent, children[:])
 		return
 	}
 	if parent.kind == .Grid {
+		layout_sparse_forget(rt, parent.id)
 		layout_grid_children(rt, parent, inner, children[:])
 		return
 	}
 	if parent.kind == .Split && len(children) == 3 {
+		layout_sparse_forget(rt, parent.id)
 		layout_split_children(rt, parent, inner, children[:])
 		return
 	}
 	if parent.adaptive_owner {
+		layout_sparse_forget(rt, parent.id)
 		layout_adaptive_children(rt, parent, inner, children[:])
 		return
 	}
@@ -919,11 +924,28 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 	available_units: Layout_Unit = 0
 	if gap_total_units < u128(main_units) { available_units = Layout_Unit(main_units-i64(gap_total_units)) }
 	available := layout_unit_to_f32(available_units)
+	distribution := layout_options_distribution(parent.style.options)
+	// Sparse placement is opt-in per pass: it only engages when this
+	// container's own placement inputs match the retained snapshot and every
+	// child has a rigid main size. Anything unexpected takes the full walk.
+	sparse_plan := layout_sparse_prepare(rt, parent, children[:], inner, gap_units, distribution, has_positioned)
+	if sparse_plan.eligible && sparse_plan.entries == nil {
+		sparse_plan.entries = make([]Layout_Sparse_Child, count, allocator=rt.scratch_allocator)
+		sparse_plan.entries_scratch = true
+	}
+	if sparse_plan.active { rt.stats.layout_sparse_passes += 1 }
+	defer {
+		if sparse_plan.entries_scratch { delete(sparse_plan.entries, rt.scratch_allocator) }
+	}
 	// Leaf measurement is retained against the actual constraints this parent
 	// supplies. Containers keep their existing external sizing policies; this
 	// pass does not recursively derive preferred container sizes.
-	for id in children {
+	for id, index in children {
 		child := rt.nodes[id]
+		// A clean child under an unchanged container keeps the measurement its
+		// retained constraints produced. Skipping the call also keeps the visit
+		// counter proportional to the affected dependency closure.
+		if layout_sparse_measure_unchanged(rt, sparse_plan, parent, child, index) { continue }
 		layout_note_node_visit(rt, child)
 		if parent.style.direction == .Column && layout_node_has_content_height(child) {
 			parent_constraints := Layout_Constraints{
@@ -970,7 +992,6 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 	}
 	free_units := i64(available_units)-used_units
 	if free_units < 0 { free_units = 0 }
-	distribution := layout_options_distribution(parent.style.options)
 	main_leading := layout_distribution_leading(Layout_Unit(free_units), count, distribution)
 	main_offset_units := main_leading
 	// A fixed-height virtual list realizes only the visible rows. Its first
@@ -988,6 +1009,18 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 		}
 	}
 	main_offset_units += layout_unit_position(main_scroll_offset)
+	// The suffix begins at the first child whose main size, live bounds/clip,
+	// or dirty state differs from the retained snapshot. Leading siblings are
+	// then skippable: a .Start column places them before the first changed
+	// child, so their offsets and bounds cannot move.
+	leading_skip := 0
+	if sparse_plan.active {
+		leading_skip = layout_sparse_first_change(rt, sparse_plan, parent, children, main_sizes)
+		if leading_skip > 0 && leading_skip < count {
+			main_offset_units = sparse_plan.entries[leading_skip].main_offset
+		}
+		rt.stats.layout_sparse_suffix_skips += u64(leading_skip)
+	}
 	row_rtl := parent.style.direction == .Row && layout_effective_writing_direction(rt, parent) == .Right_To_Left
 	baseline_target := f32(0)
 	if parent.style.direction == .Row && parent.style.align == .Baseline {
@@ -999,14 +1032,19 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 		}
 	}
 	for id, index in children {
+		// Leading siblings precede the first changed child in a .Start column.
+		// Their offsets and bounds cannot move, so a sparse pass never writes or
+		// recurses into them.
+		if index < leading_skip { continue }
 		child := rt.nodes[id]
-		layout_note_node_visit(rt, child)
 		old_bounds := child.bounds
 		main := main_sizes[index]
 		main_units := layout_unit_extent(main)
 		main_offset := layout_unit_to_f32(main_offset_units)
+		cross: f32
+		next_bounds: Rect
 		if parent.style.direction == .Row {
-			cross := layout_child_cross_size(rt, parent, child, cross_size)
+			cross = layout_child_cross_size(rt, parent, child, cross_size)
 			cross_pos := inner.y + cross_offset
 			if parent.style.align == .Center { cross_pos += (cross_size-cross)/2 }
 			if parent.style.align == .End { cross_pos += cross_size-cross }
@@ -1015,23 +1053,42 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 			}
 			main_pos := inner.x+main_offset
 			if row_rtl { main_pos = inner.x+inner.w-main_offset-main }
-			child.bounds = Rect{main_pos, cross_pos, clampf(main, child.style.min_width, child.style.max_width), cross}
+			next_bounds = Rect{main_pos, cross_pos, clampf(main, child.style.min_width, child.style.max_width), cross}
 		} else {
-			cross := layout_child_cross_size(rt, parent, child, cross_size)
+			cross = layout_child_cross_size(rt, parent, child, cross_size)
 			cross_pos := inner.x + cross_offset
 			cross_is_reversed := layout_effective_writing_direction(rt, parent) == .Right_To_Left
 			if parent.style.align == .Center { cross_pos += (cross_size-cross)/2 }
 			if parent.style.align == .End && !cross_is_reversed || parent.style.align == .Start && cross_is_reversed { cross_pos += cross_size-cross }
-			child.bounds = Rect{cross_pos, inner.y+main_offset, cross, clampf(main, layout_node_min_height(rt, child), child.style.max_height)}
+			next_bounds = Rect{cross_pos, inner.y+main_offset, cross, clampf(main, layout_node_min_height(rt, child), child.style.max_height)}
 		}
 		old_clip := child.clip
+		next_clip: Rect
 		if parent.kind == .Scroll_Region {
-			child.clip = rect_intersection(parent.clip, parent.scroll_viewport_bounds)
-		} else if parent.style.clip { child.clip = rect_intersection(parent.clip, parent.bounds) } else { child.clip = parent.clip }
+			next_clip = rect_intersection(parent.clip, parent.scroll_viewport_bounds)
+		} else if parent.style.clip { next_clip = rect_intersection(parent.clip, parent.bounds) } else { next_clip = parent.clip }
+		bounds_changed := !rect_equal(old_bounds, next_bounds)
+		clip_changed := !rect_equal(old_clip, next_clip)
+		// Unchanged-input fast path: inside a sparse pass, a clean child whose
+		// live and retained placement both match the just-computed values needs
+		// no geometry write, finalization, semantic sync, or subtree walk.
+		if sparse_plan.active && !bounds_changed && !clip_changed && child.present &&
+			!dirty_has(child.dirty, .Layout) && !layout_sparse_measure_pending(rt, parent, child) &&
+			rect_equal(sparse_plan.entries[index].bounds, next_bounds) &&
+			rect_equal(sparse_plan.entries[index].clip, next_clip) {
+			if _, finalized_ok := rt.finalized_geometry[id]; finalized_ok {
+				rt.stats.layout_sparse_unchanged_skips += 1
+				layout_sparse_record(&sparse_plan, index, id, main, cross, main_offset_units, next_bounds, next_clip)
+				main_offset_units += main_units + gap_units + layout_distribution_gap(Layout_Unit(free_units), count, index, distribution)
+				continue
+			}
+		}
+		layout_note_node_visit(rt, child)
+		child.bounds = next_bounds
+		child.clip = next_clip
+		layout_sparse_record(&sparse_plan, index, id, main, cross, main_offset_units, next_bounds, next_clip)
 		layout_finalize_node_geometry_for_node(rt, child)
 		semantic_sync_bounds(rt, child)
-		bounds_changed := !rect_equal(old_bounds, child.bounds)
-		clip_changed := !rect_equal(old_clip, child.clip)
 		if bounds_changed && child.kind == .Custom_Surface && child.surface_kind == .Geometry &&
 			(old_bounds.w != child.bounds.w || old_bounds.h != child.bounds.h) {
 			// Geometry is authored in this surface's logical coordinate space.
@@ -1062,6 +1119,7 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 		dirty_set(&child.dirty, .Layout, false)
 		main_offset_units += main_units + gap_units + layout_distribution_gap(Layout_Unit(free_units), count, index, distribution)
 	}
+	layout_sparse_commit(rt, parent, &sparse_plan)
 	delete(main_sizes, rt.scratch_allocator)
 	if has_positioned {
 		layout_positioned_children(rt, parent, inner, positioned_children)

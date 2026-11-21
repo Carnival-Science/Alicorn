@@ -101,6 +101,29 @@ outer extent depends on its children. Layout traces identify changed axes,
 each ancestor visited, and whether a boundary stopped or passed the
 invalidation onward. A full boundary is a caller promise that both
 parent-assigned outer dimensions stay stable while descendants relayout.
+
+Layout propagation is dependency-bounded rather than universal. The supported
+direction is:
+
+| Layout change | Expected propagation |
+| --- | --- |
+| Fixed-size child changes width | Affected ancestors and siblings |
+| Intrinsic-size child changes | Dependent ancestors |
+| Parent resizes | Dependent descendants |
+| Independent subtree | None |
+| Root viewport changes | Potentially global (full reference path) |
+
+Inside a single Column with rigid child main sizes, milestone 1 of issue #230
+retains resolved child main sizes, offsets, bounds, and clips in a sparse
+`Runtime` sidecar. A single child's main-size change then skips the unchanged
+leading siblings entirely and processes the suffix; unchanged children inside
+the suffix are left untouched. The snapshot must match the container's bounds,
+padding, gap, alignment, writing direction, layout hash, and exact child list,
+and free-space distribution and grow/compress sharing still take the full
+placement path. The full path remains the reference oracle
+(`Runtime.force_full_layout` / `ALICORN_FULL_LAYOUT`) and the randomized
+geometry comparison is the acceptance rule.
+
 The [v0.2 acceptance audit](archive/validation/layout-v0.2-acceptance.md) records the
 supported per-axis matrix, cross-axis reflow/replay and locality evidence,
 diagnostic chain, and measured benchmark comparison. FIT_CONTENT width and

@@ -781,3 +781,131 @@ large-tail fallback, and overlay fallback have dedicated tests.
 All suites are green on this tree: `odin test runtime` 465 tests (seven new over
 the 458 pre-change suite on this branch), `odin test ui` 57, `odin test theme`
 37, `odin test renderer/cpu` 23, and the `tests` executable passes.
+
+## Addendum: sparse layout propagation milestone 1 (issue #230)
+
+This milestone removes the unconditional O(all children) placement walk for a
+single-child Column change. It is deliberately bounded: the full placement path
+remains the reference implementation, and every class it does not yet model
+falls back to it.
+
+### Implemented skipping rules
+
+A retained `Runtime` sidecar (`runtime/layout_sparse.odin`,
+`layout_sparse_placements`) stores, per Column parent, the container placement
+snapshot and one record per child: resolved main size, resolved cross size,
+main-axis offset, bounds, and clip. Nodes and Descriptions carry no new fields.
+
+A pass is **sparse-eligible** only when all of the following hold:
+
+- the parent is a non-scrolling `Root`/`Container` Column with
+  `justify=.Start`;
+- the parent's bounds, inner rect, clip, padding, gap, layout hash, alignment,
+  and effective writing direction match the retained snapshot;
+- the child identity list and count match the retained snapshot exactly;
+- no child uses `grow` or `compress_weight`, and no child is explicitly
+  positioned.
+
+Inside an eligible pass:
+
+1. **Measure skip.** A child that does not need this parent's measurement work
+   (a rigid fixed-size container) is skipped outright. A measured child (text,
+   or a `FIT_CONTENT` Column child) is skipped only when it is not Layout dirty,
+   not Measure pending, and already has a valid retained measurement.
+2. **Suffix placement.** `layout_sparse_first_change` finds the first child
+   whose resolved main size, live bounds/clip, Layout/Measure state, or
+   presentation differs from the snapshot. Children before it are skipped
+   without a visit, bounds write, finalization, semantic sync, or recursion;
+   their offsets cannot move in a `.Start` column. The suffix starts at that
+   child's retained main offset.
+3. **Unchanged-input fast path.** Within the suffix, a clean child whose
+   computed bounds and clip equal both its live geometry and its retained record
+   is skipped after the position calculation. This is what makes a single
+   cross-axis width change cheap: every other row is untouched.
+
+The reference path runs unchanged whenever an input or child-set check fails,
+including root viewport resizes, alignment/gap/padding changes, grid/split/
+adaptive containers, scroll/virtual parents, positioned children, grow/compress
+sharing, and free-space distribution. Typography and theme-metric changes still
+dirty measurement broadly; a child whose measured output changes placement
+marks Layout through the existing dependency records and stops the skip, while
+a fixed-size sibling whose measured output does not change geometry may still
+be skipped correctly. `Runtime.force_full_layout` (and the `ALICORN_FULL_LAYOUT`
+define) forces the reference path for the randomized oracle.
+
+### Issue #190 one-row width change
+
+The width-change leg changes one row's explicit width; on a Column that is a
+cross-axis change, so it exercises the measure skip plus the unchanged-input
+fast path rather than suffix relocation. Layout visits are now independent of
+row count in every authoring mode:
+
+| Rows | Before | After | Mode |
+| ---: | ---: | ---: | --- |
+| 100 | 213 | 11 | root / region / app |
+| 1,000 | 2,013 | 11 | root / region / app |
+| 3,000 | 6,013 | 11 | root / region / app |
+
+The eleven remaining visits are the root column, the changed row, and its two
+descendants across the loops that still observe them. Wall p50 for this leg is
+dominated by description and reconciliation, not layout, and the two captures
+sit inside normal machine drift: the final capture was ~4-7% slower even on
+legs with byte-identical work (one-label change, region mode:
+6.589 -> 6.821 ms at 3,000 rows with `layout=0` in both captures; width change,
+region mode: 7.470 -> 7.741 ms; app mode: 7.480 -> 7.748 ms; root mode:
+36.882 -> 39.521 ms). The controlled layout-stage measurement below is the
+evidence for the layout change; the wall values are retained as the raw
+no-regression record.
+
+Raw captures:
+
+- `raw/issue-230-sparse-layout-m1-before-windows-2026-11-21.txt`
+- `raw/issue-230-sparse-layout-m1-after-windows-2026-11-21.txt`
+
+Mount, reorder/insert/remove, selection, theme, hover, and the 100,000-row
+virtual leg were also replayed. Mount visits are identical (36,007 at 3,000
+rows); the virtual leg stays at 257 visits for 21 realized rows; selection,
+theme, hover, and idle counters are unchanged. Reorder dropped from 35,977 to
+35,973 visits at 3,000 rows because one unchanged placement is now skipped.
+No existing visit-count assertion was weakened or rebaselined: the 465
+pre-existing runtime tests pass unchanged, plus six new sparse-layout tests.
+
+### Layout-stage time
+
+`runtime/layout_sparse_test.odin` prints `SPARSE_M1_BENCH` from the runtime
+suite. It interleaves a sparse runtime and a forced-full runtime over the same
+toggling change, so machine load affects both. Visits are deterministic; stage
+time is one headless run and machine-specific.
+
+| Rows | Change | Sparse visits | Full visits | Layout p50 sparse -> full | Frame p50 sparse -> full |
+| ---: | --- | ---: | ---: | ---: | ---: |
+| 1,000 | middle row height | 5 | 2,003 | 0.74 -> 1.08 ms | 6.73 -> 6.96 ms |
+| 1,000 | one row width | 5 | 2,003 | 0.73 -> 1.41 ms | 6.92 -> 7.26 ms |
+| 3,000 | middle row height | 5 | 6,003 | 2.42 -> 4.19 ms | 22.3 -> 24.3 ms |
+| 3,000 | one row width | 5 | 6,003 | 2.45 -> 3.28 ms | 20.0 -> 20.9 ms |
+
+The layout stage is reduced by roughly one third to one half while visits are
+constant. Frame p50 is dominated by description, reconciliation, and
+measurement and stayed within run variance. Layout is not yet O(changed):
+`resolve_main_sizes` still builds its elastic-item and allocated arrays for
+every child, and the change scan still reads each direct child. That
+allocator-side sparsity is milestone-2 work; this milestone's guarantee is
+about visits and per-child placement/finalization recursion, both of which are
+now proportional to the changed suffix.
+
+### Correctness
+
+The randomized sequence test drives text-height edits, selection, reorder,
+insert/remove, text-scale (typography-wide) changes, hover, and identical
+descriptions against a second runtime with `force_full_layout=true`. After
+every operation it compares order, identity, bounds, finalized geometry, clips,
+measured results, and exact measurement constraints via
+`layout_allocation_test_geometry_matches`, and checks that the sidecar agrees
+with the live tree. Dedicated tests cover leading-sibling probes, independent
+subtrees (an unchanged fixed sibling is not visited at all), viewport changes
+taking the full path, retirement/key changes releasing entries, and 200 true
+idle frames. The full path is never bypassed for an input it does not model.
+
+All suites on this tree: `odin test runtime` 471 tests (465 pre-existing + 6
+new), `odin test ui` 57, `odin test theme` 37, `odin test renderer/cpu` 23, and
+the `tests` executable passes.
