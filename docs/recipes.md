@@ -6,6 +6,11 @@ runnable source of truth: each recipe names the file and section that implements
 it end to end. Use the [API reference](reference.md) for every parameter and
 contract.
 
+A recipe is an excerpt, not a complete component contract. When a recipe grows
+into a reusable component, follow the [component authoring
+standard](component-authoring.md): complete copyable source, composable parts,
+styling and motion, keyboard/accessibility contracts, and `testui` conformance.
+
 Start any recipe from the ordinary application shape:
 
 ```odin
@@ -392,6 +397,8 @@ and the [retained motion example](../examples/09_retained_motion/main.odin).
 
 - [Control Gallery](../examples/08_control_gallery/README.md) — the complete,
   runnable inventory behind these recipes.
+- [Component authoring](component-authoring.md) — the standard for complete
+  reusable components, parts, contracts, and conformance tests.
 - [Progressive application guide](guide.md) — the longer form of each concept.
 - [API reference](reference.md) — public Odin signatures and behavior limits.
 - [Typed themes](themes.md) — authoring, validation, materials, and live reload.

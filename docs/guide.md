@@ -23,9 +23,10 @@ uses the same Runtime as the detailed API below.
    workers publish results and use the borrowed native waker to wake the window.
 7. **GPU and custom surfaces:** update retained geometry or versioned image
    surfaces for specialized visualizations.
-8. **Reusable components:** package an adaptive control with namespaced theme
-   roles, a checked theme contract, and semantic augmentation; see the
-   [third-party Mode Rail](../examples/11_third_party_component/README.md).
+8. **Reusable components:** follow the [component authoring
+   standard](component-authoring.md), then package an adaptive control with
+   namespaced theme roles, a checked theme contract, and semantic augmentation;
+   see the [third-party Mode Rail](../examples/11_third_party_component/README.md).
 9. **Runtime, allocator, and diagnostics:** use explicit invalidation,
    allocation configuration, tracing, and inspection when the application
    needs those controls.
@@ -35,7 +36,10 @@ The fastest complete tour is the native
 capability in this guide through one default SDL_GPU example. Its
 [component recipes](recipes.md) are short, copyable excerpts for forms,
 virtualized lists, tabs, drag reorder, split/Grid layout, positioned text,
-modals, tooltips, context menus, notices, themes, and motion.
+modals, tooltips, context menus, notices, themes, and motion. When an excerpt
+becomes a reusable component, use the [component authoring
+standard](component-authoring.md) to make its parts, contracts, and tests
+inspectable.
 
 The simple package does not own application state or retain a second widget
 tree. `ui.run` covers the routine single-window frame lifecycle and typed

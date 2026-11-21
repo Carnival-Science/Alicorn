@@ -1475,7 +1475,10 @@ or proof of native assistive-technology behavior. Keep those claims with the
 physical checks in `tools/validate_native_webgpu_ui.ps1`. The checks live in
 `odin test testui`, so external packages (for example a downstream AliKit
 consumer) can import `alicorn:testui` and apply the same API to their own
-composition.
+composition. The [component authoring
+standard](component-authoring.md#the-verification-story-for-ai-assisted-development)
+places these checks in the full copy, restyle, parity, and idle-settle loop for
+reusable components.
 
 ### Icons
 

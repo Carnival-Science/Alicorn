@@ -14,6 +14,9 @@ The same changelog contains the v0.1.0, v0.2.0, and v0.2.1 history.
   [Control Gallery](../examples/08_control_gallery/README.md): forms,
   virtualization, tabs, drag reorder, split/Grid layout, positioned text,
   modals, menus, notices, themes, and motion.
+- [Component authoring](component-authoring.md) — the five-point standard,
+  document template, exemplars, extraction rule, and verification loop for
+  reusable components.
 - [API reference](reference.md) — public Odin API and runtime contracts.
 - [Choosing Alicorn](choosing-alicorn.md) — workload fit and architectural
   tradeoffs.

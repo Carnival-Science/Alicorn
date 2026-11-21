@@ -5,6 +5,14 @@ Alicorn is a native GUI runtime for Odin. Start with
 test entry points, and change boundaries. Author UI against
 [docs/guide.md](docs/guide.md) and [docs/reference.md](docs/reference.md).
 
+## Component authoring
+
+Reusable components follow the five-point standard in
+[docs/component-authoring.md](docs/component-authoring.md): a complete copyable
+implementation, composable parts, styling and motion, keyboard/accessibility
+contracts, and `testui` conformance. Apply the two-consumer rule before
+extracting shared behavior, and do not add a component framework.
+
 ## Layout scopes
 
 `ui.row`, `ui.column`, `ui.panel`, and other deferred-scope helpers must be
