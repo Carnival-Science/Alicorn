@@ -1,0 +1,49 @@
+Issue #110 shape primitives: Windows SDL_GPU D3D12 readback, hit testing, and CPU-stage capture
+Date: 2026-11-20
+Branch: codex/issue-119-110-acceptance
+Base: 67b31b8 (v0.2.2 release)
+Machine: NVIDIA GeForce RTX 2080 SUPER, driver 595.97, 8192 MiB
+OS: Windows 10 Home 10.0.19045 (22H2)
+Odin: dev-2026-11-nightly:08539cd at C:\odin\odin.exe
+Command:
+  tools\common.ps1 AccessKit bootstrap
+  odin build native\blend_validation_entry -collection:alicorn=. <AccessKit args> -out:out\alicorn_blend_validation.exe
+  out\alicorn_blend_validation.exe
+
+--- backend and existing per-corner matrix ---
+blend_gpu_backend direct3d12 offscreen true
+blend_gpu_family Per_Corner_Surface cases 192 failed 0
+blend_gpu_validation driver direct3d12 target R8G8B8A8_UNORM scales 1,1.25,1.5,2 destination_alpha 0,0.4,1 per_corner_masks 16 cases 348 expected_cases 348 case_counts_ok true failed 0 rgba_tolerance_bytes 2
+
+--- circle/arc/Bezier pixel probes at 1, 1.25, 1.5, 2 DPI ---
+shape_gpu_readback scales 1,1.25,1.5,2 circle_fill_stroke PASS arc_stroke PASS bezier_stroke PASS clipping PASS translucent_overlap PASS replay_equal true
+
+--- CPU stages and fence wait, 256 4x4 surfaces per batch, scale 2 ---
+surface_stage_benchmark workload rectangle-reference surfaces 256 scale 2 vertices_per_batch 1536 draw_calls 256 passes 1 uploaded_bytes_per_batch 55296 samples 31 build_p50_ns 104500 build_p95_ns 181100 upload_p50_ns 8000 upload_p95_ns 10100 encode_p50_ns 14400 encode_p95_ns 41100 submit_p50_ns 28500 submit_p95_ns 36200 wait_p50_ns 83000 wait_p95_ns 524200 measurement cpu_stages_and_fence_wait_not_presented_frame
+surface_stage_benchmark workload circle-fill-stroke surfaces 256 scale 2 vertices_per_batch 221184 draw_calls 256 passes 1 uploaded_bytes_per_batch 7962624 samples 31 build_p50_ns 3605000 build_p95_ns 4179800 upload_p50_ns 487800 upload_p95_ns 541100 encode_p50_ns 21700 encode_p95_ns 28600 submit_p50_ns 39900 submit_p95_ns 56000 wait_p50_ns 842500 wait_p95_ns 1190800 measurement cpu_stages_and_fence_wait_not_presented_frame
+surface_stage_benchmark workload arc-stroke surfaces 256 scale 2 vertices_per_batch 95232 draw_calls 256 passes 1 uploaded_bytes_per_batch 3428352 samples 31 build_p50_ns 1496100 build_p95_ns 1957300 upload_p50_ns 206700 upload_p95_ns 407700 encode_p50_ns 17900 encode_p95_ns 23600 submit_p50_ns 31200 submit_p95_ns 37000 wait_p50_ns 376400 wait_p95_ns 805400 measurement cpu_stages_and_fence_wait_not_presented_frame
+surface_stage_benchmark workload bezier-stroke surfaces 256 scale 2 vertices_per_batch 136704 draw_calls 256 passes 1 uploaded_bytes_per_batch 4921344 samples 31 build_p50_ns 1985300 build_p95_ns 2594600 upload_p50_ns 309100 upload_p95_ns 503100 encode_p50_ns 18100 encode_p95_ns 23500 submit_p50_ns 33300 submit_p95_ns 47200 wait_p50_ns 587600 wait_p95_ns 874700 measurement cpu_stages_and_fence_wait_not_presented_frame
+
+--- CPU vertex expansion, 256 small controls, scale 2 (benchmarks/native_material, -o:speed) ---
+native_shape_geometry rectangle fill solid surfaces 256 vertices_per_surface 6 uploaded_bytes 55296 surface_commands 256 draw_slots 256 additional_passes 0 p50_batch_ns 9400 p95_batch_ns 9400 p50_ns_per_surface 36.71875 p95_ns_per_surface 36.71875
+native_shape_geometry circle-fill-stroke fill solid surfaces 256 vertices_per_surface 864 uploaded_bytes 7962624 surface_commands 256 draw_slots 256 additional_passes 0 p50_batch_ns 996500 p95_batch_ns 1579900 p50_ns_per_surface 3892.578125 p95_ns_per_surface 6171.484375
+native_shape_geometry arc-stroke fill solid surfaces 256 vertices_per_surface 372 uploaded_bytes 3428352 surface_commands 256 draw_slots 256 additional_passes 0 p50_batch_ns 320500 p95_batch_ns 463500 p50_ns_per_surface 1251.953125 p95_ns_per_surface 1810.546875
+native_shape_geometry bezier-stroke fill solid surfaces 256 vertices_per_surface 534 uploaded_bytes 4921344 surface_commands 256 draw_slots 256 additional_passes 0 p50_batch_ns 502800 p95_batch_ns 610300 p50_ns_per_surface 1964.0625 p95_ns_per_surface 2383.984375
+
+--- CPU vertex expansion, 64 realistic 64x64 controls, scale 2 ---
+native_shape_geometry_large rectangle fill solid surfaces 64 surface_size 64 scale 2 vertices_per_surface 6 uploaded_bytes 13824 surface_commands 64 draw_slots 64 additional_passes 0 p50_batch_ns 3000 p95_batch_ns 3000 p50_ns_per_surface 46.875 p95_ns_per_surface 46.875
+native_shape_geometry_large circle-fill-stroke fill solid surfaces 64 surface_size 64 scale 2 vertices_per_surface 2592 uploaded_bytes 5971968 surface_commands 64 draw_slots 64 additional_passes 0 p50_batch_ns 702000 p95_batch_ns 936800 p50_ns_per_surface 10968.75 p95_ns_per_surface 14637.5
+native_shape_geometry_large arc-stroke fill solid surfaces 64 surface_size 64 scale 2 vertices_per_surface 1452 uploaded_bytes 3345408 surface_commands 64 draw_slots 64 additional_passes 0 p50_batch_ns 286900 p95_batch_ns 404800 p50_ns_per_surface 4482.8125 p95_ns_per_surface 6325
+native_shape_geometry_large bezier-stroke fill solid surfaces 64 surface_size 64 scale 2 vertices_per_surface 1740 uploaded_bytes 4008960 surface_commands 64 draw_slots 64 additional_passes 0 p50_batch_ns 310700 p95_batch_ns 389200 p50_ns_per_surface 4854.6875 p95_ns_per_surface 6081.25
+
+--- hit testing and accessibility (foundation tests) ---
+Alicorn foundation tests: PASS
+covered: circular center hit, inscribed point hit, square-corner fall-through to the rectangular control below,
+pointer capture follows fall-through, Enter activation reaches button_begin, semantic bounds stay rectangular.
+
+--- suites ---
+odin test runtime: 421 tests, all successful
+odin test renderer/cpu: 23 tests, all successful
+odin test native/sdl_gpu: 169 tests, all successful
+foundation tests: PASS
+tools/build_examples for 14_shape_primitives: pass

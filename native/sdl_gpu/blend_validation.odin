@@ -1003,6 +1003,478 @@ blend_validation_gradient_readbacks :: proc(
 	return true
 }
 
+BLEND_STAGE_BENCHMARK_SURFACES :: 256
+BLEND_STAGE_BENCHMARK_SAMPLES  :: 31
+
+Blend_Stage_Samples :: struct {
+	build, upload, encode, submit, wait: [BLEND_STAGE_BENCHMARK_SAMPLES]i64,
+}
+
+blend_validation_stage_sort :: proc(samples: []i64) {
+	for i in 1..<len(samples) {
+		value := samples[i]
+		j := i
+		for j > 0 && samples[j-1] > value {
+			samples[j] = samples[j-1]
+			j -= 1
+		}
+		samples[j] = value
+	}
+}
+
+// Measure the surface pipeline's CPU stages separately. The real draw path
+// uses the same native_solid_build, vertex upload, command encoding, submit,
+// and fence wait; only text/geometry renderers are omitted because the
+// benchmark displays contain surfaces only.
+blend_validation_stage_readback :: proc(
+	renderers: ^Blend_Validation_Renderers,
+	target: ^sdl3.GPUTexture,
+	download: ^sdl3.GPUTransferBuffer,
+	display: []alicorn.Paint_Command,
+	scale: f32,
+	background: sdl3.FColor,
+	pixels: []u8,
+	sample: int,
+	samples: ^Blend_Stage_Samples,
+) -> bool {
+	device := renderers.solid.device
+	command := sdl3.AcquireGPUCommandBuffer(device)
+	if command == nil { fmt.println("stage_benchmark_acquire_failed", "SDL_error", sdl3.GetError()); return false }
+	submitted := false
+	defer if !submitted { _ = sdl3.CancelGPUCommandBuffer(command) }
+	clear_target := sdl3.GPUColorTargetInfo{texture=target, clear_color=background, load_op=.CLEAR, store_op=.STORE}
+	pass := sdl3.BeginGPURenderPass(command, &clear_target, 1, nil)
+	if pass == nil { fmt.println("stage_benchmark_clear_failed", "SDL_error", sdl3.GetError()); return false }
+	sdl3.EndGPURenderPass(pass)
+
+	started := time.now()
+	if !native_solid_build(&renderers.solid, display, scale, scale,
+		sdl3.Uint32(BLEND_VALIDATION_SIZE), sdl3.Uint32(BLEND_VALIDATION_SIZE)) {
+		fmt.println("stage_benchmark_build_failed"); return false
+	}
+	if sample >= 0 { samples.build[sample] = time.duration_nanoseconds(time.since(started)) }
+
+	started = time.now()
+	if !native_white_texture_initialize(device, renderers.solid.white_texture,
+		&renderers.solid.white_initialized, command) { return false }
+	if !native_vertex_buffer_upload(device, renderers.solid.vertex_buffer, renderers.solid.vertex_transfer,
+		renderers.solid.vertices[:], renderers.solid.vertex_capacity, renderers.solid.upload_pending,
+		&renderers.solid.vertices_uploaded, command) { return false }
+	if sample >= 0 { samples.upload[sample] = time.duration_nanoseconds(time.since(started)) }
+
+	started = time.now()
+	if !native_solid_render_batch(&renderers.solid, command, target,
+		sdl3.Uint32(BLEND_VALIDATION_SIZE), sdl3.Uint32(BLEND_VALIDATION_SIZE), renderers.solid.draws[:]) { return false }
+	copy_pass := sdl3.BeginGPUCopyPass(command)
+	if copy_pass == nil { return false }
+	source := sdl3.GPUTextureRegion{texture=target, w=BLEND_VALIDATION_SIZE, h=BLEND_VALIDATION_SIZE, d=1}
+	destination := sdl3.GPUTextureTransferInfo{transfer_buffer=download, pixels_per_row=BLEND_VALIDATION_SIZE,
+		rows_per_layer=BLEND_VALIDATION_SIZE}
+	sdl3.DownloadFromGPUTexture(copy_pass, source, destination)
+	sdl3.EndGPUCopyPass(copy_pass)
+	if sample >= 0 { samples.encode[sample] = time.duration_nanoseconds(time.since(started)) }
+
+	started = time.now()
+	fence := sdl3.SubmitGPUCommandBufferAndAcquireFence(command)
+	submitted = true
+	if sample >= 0 { samples.submit[sample] = time.duration_nanoseconds(time.since(started)) }
+	if fence == nil { fmt.println("stage_benchmark_submit_failed", "SDL_error", sdl3.GetError()); return false }
+	defer sdl3.ReleaseGPUFence(device, fence)
+
+	started = time.now()
+	fences := [1]^sdl3.GPUFence{fence}
+	if !sdl3.WaitForGPUFences(device, true, &fences[0], 1) { return false }
+	if sample >= 0 { samples.wait[sample] = time.duration_nanoseconds(time.since(started)) }
+	native_solid_commit_submission(&renderers.solid)
+
+	mapped := sdl3.MapGPUTransferBuffer(device, download, false)
+	if mapped == nil { return false }
+	defer sdl3.UnmapGPUTransferBuffer(device, download)
+	copy(pixels, (cast([^]u8)mapped)[:len(pixels)])
+	return true
+}
+
+blend_validation_stage_print :: proc(name: string, samples: ^Blend_Stage_Samples, vertices, draws: int, scale: f32) {
+	blend_validation_stage_sort(samples.build[:])
+	blend_validation_stage_sort(samples.upload[:])
+	blend_validation_stage_sort(samples.encode[:])
+	blend_validation_stage_sort(samples.submit[:])
+	blend_validation_stage_sort(samples.wait[:])
+	p50 := BLEND_STAGE_BENCHMARK_SAMPLES/2
+	p95 := (BLEND_STAGE_BENCHMARK_SAMPLES*95+99)/100-1
+	fmt.println("surface_stage_benchmark", "workload", name, "surfaces", BLEND_STAGE_BENCHMARK_SURFACES,
+		"scale", scale, "vertices_per_batch", vertices, "draw_calls", draws, "passes", 1,
+		"uploaded_bytes_per_batch", vertices*size_of(Native_Text_Vertex),
+		"samples", BLEND_STAGE_BENCHMARK_SAMPLES,
+		"build_p50_ns", samples.build[p50], "build_p95_ns", samples.build[p95],
+		"upload_p50_ns", samples.upload[p50], "upload_p95_ns", samples.upload[p95],
+		"encode_p50_ns", samples.encode[p50], "encode_p95_ns", samples.encode[p95],
+		"submit_p50_ns", samples.submit[p50], "submit_p95_ns", samples.submit[p95],
+		"wait_p50_ns", samples.wait[p50], "wait_p95_ns", samples.wait[p95],
+		"measurement", "cpu_stages_and_fence_wait_not_presented_frame")
+}
+
+blend_validation_stage_workload :: proc(
+	renderers: ^Blend_Validation_Renderers,
+	target: ^sdl3.GPUTexture,
+	download: ^sdl3.GPUTransferBuffer,
+	pixels: []u8,
+	display: []alicorn.Paint_Command,
+	name: string,
+	scale: f32,
+) -> bool {
+	samples: Blend_Stage_Samples
+	for warmup in 0..<3 {
+		if !blend_validation_stage_readback(renderers, target, download, display, scale, {}, pixels, -1, &samples) {
+			fmt.println("surface_stage_benchmark_warmup_failed", "workload", name, "iteration", warmup)
+			return false
+		}
+	}
+	for sample in 0..<BLEND_STAGE_BENCHMARK_SAMPLES {
+		if !blend_validation_stage_readback(renderers, target, download, display, scale, {}, pixels, sample, &samples) {
+			fmt.println("surface_stage_benchmark_sample_failed", "workload", name, "sample", sample)
+			return false
+		}
+	}
+	blend_validation_stage_print(name, &samples, len(renderers.solid.vertices), len(renderers.solid.draws), scale)
+	return true
+}
+
+// Independent full-frame comparison for the flat rectangular gradient subset.
+// The CPU reference evaluates the field per pixel; it does not reuse any GPU
+// mesh or color helper.
+blend_validation_gradient_reference :: proc(
+	renderers: ^Blend_Validation_Renderers,
+	rt: ^alicorn.Runtime,
+	target: ^sdl3.GPUTexture,
+	download: ^sdl3.GPUTransferBuffer,
+	pixels: []u8,
+	horizontal, vertical: alicorn.Paint_Command,
+) -> bool {
+	previous_runtime := renderers.solid.runtime
+	renderers.solid.runtime = rt
+	defer renderers.solid.runtime = previous_runtime
+
+	horizontal_start := alicorn.Color{0.86, 0.16, 0.08, 0.5}
+	horizontal_end := alicorn.Color{0.08, 0.34, 0.92, 0.5}
+	vertical_start := alicorn.Color{0.08, 0.74, 0.2, 0.6}
+	vertical_end := alicorn.Color{0.76, 0.12, 0.4, 0.6}
+	background := sdl3.FColor{}
+	expected: [BLEND_VALIDATION_SIZE*BLEND_VALIDATION_SIZE*4]u8
+	replay := make([]u8, len(pixels), allocator=context.temp_allocator)
+	defer delete(replay)
+
+	flat_surface :: proc(command: alicorn.Paint_Command) -> (result: alicorn.Paint_Command, ok: bool) {
+		surface, payload_ok := command.payload.(alicorn.Surface_Paint)
+		if !payload_ok { return command, false }
+		surface.stroke = {}
+		surface.shape = alicorn.Surface_Paint_Shape{kind=.Rectangle}
+		result = command
+		result.payload = surface
+		return result, true
+	}
+	horizontal_flat, horizontal_ok := flat_surface(horizontal)
+	vertical_flat, vertical_ok := flat_surface(vertical)
+	if !horizontal_ok || !vertical_ok || !horizontal.semantic_surface_gradient || !vertical.semantic_surface_gradient {
+		fmt.println("surface_gradient_reference_fixture_invalid")
+		return false
+	}
+	horizontal_flat.clip = {0, 0, BLEND_VALIDATION_SIZE, BLEND_VALIDATION_SIZE}
+	horizontal_flat.opacity = 0.8
+	horizontal_flat.translation = {}
+	vertical_flat.clip = {0, 0, BLEND_VALIDATION_SIZE, BLEND_VALIDATION_SIZE}
+	vertical_flat.opacity = 0.75
+	vertical_flat.translation = {}
+	translated := horizontal_flat
+	translated.bounds = {8, 72, 48, 40}
+	translated.translation = {4, 2}
+	clipped := vertical_flat
+	clipped.bounds = {64, 72, 48, 48}
+	clipped.clip = {70, 80, 30, 20}
+	display := [4]alicorn.Paint_Command{horizontal_flat, vertical_flat, translated, clipped}
+	gradients := [2]paint_reference.Paint_Reference_Gradient{
+		{owner=horizontal.owner, start=horizontal_start, end=horizontal_end, axis=.Horizontal},
+		{owner=vertical.owner, start=vertical_start, end=vertical_end, axis=.Vertical},
+	}
+	if error := paint_reference.paint_reference_render_gradients(
+		display[:], gradients[:], BLEND_VALIDATION_SIZE, BLEND_VALIDATION_SIZE, {}, expected[:],
+	); error.code != .None {
+		fmt.println("surface_gradient_cpu_reference_rejected", "command_index", error.command_index,
+			"owner", error.owner, "reason", error.code)
+		return false
+	}
+	if !blend_validation_readback(renderers, target, download, display[:], 1, background, pixels) {
+		fmt.println("surface_gradient_reference_gpu_readback_failed", "SDL_error", sdl3.GetError())
+		return false
+	}
+	if diff := blend_validation_reference_diff(expected[:], pixels); diff.mismatched_pixels != 0 {
+		fmt.println("surface_gradient_cpu_gpu_mismatch", "mismatched_pixels", diff.mismatched_pixels,
+			"max_channel_error_bytes", diff.max_channel_error, "first_pixel", diff.first_x, diff.first_y,
+			"channel_rgba", diff.first_channel, "expected", diff.first_expected, "actual", diff.first_actual,
+			"per_channel_tolerance_bytes", 2)
+		return false
+	}
+	if !blend_validation_readback(renderers, target, download, display[:], 1, background, replay) {
+		fmt.println("surface_gradient_reference_replay_failed", "SDL_error", sdl3.GetError())
+		return false
+	}
+	replay_equal := true
+	for value, index in pixels {
+		if replay[index] != value { replay_equal = false; break }
+	}
+	if !replay_equal {
+		fmt.println("surface_gradient_reference_replay_mismatch")
+		return false
+	}
+	fmt.println("surface_gradient_cpu_reference", "target", "128x128", "scale", 1,
+		"commands", len(display), "horizontal_vertical_stops", true, "translated_field", true,
+		"clipped_field", true, "mismatched_pixels", 0, "max_channel_error_bytes", 0,
+		"rgba_tolerance_bytes", 2, "replay_equal", replay_equal)
+	return true
+}
+
+BLEND_SHAPE_BACKGROUND :: sdl3.FColor{0.11, 0.17, 0.23, 1}
+BLEND_SHAPE_CIRCLE_FILL :: alicorn.Color{0.20, 0.72, 0.38, 1}
+BLEND_SHAPE_CIRCLE_STROKE :: alicorn.Color{0.95, 0.32, 0.12, 1}
+BLEND_SHAPE_ARC_STROKE :: alicorn.Color{0.25, 0.80, 0.95, 1}
+BLEND_SHAPE_BEZIER_STROKE :: alicorn.Color{0.95, 0.60, 0.20, 1}
+
+blend_validation_shape_fixture :: proc(rt: ^alicorn.Runtime) -> (
+	circle, arc, bezier, clipped, overlap_a, overlap_b: alicorn.Paint_Command,
+	ok: bool,
+) {
+	circle_shape := alicorn.surface_shape_circle()
+	arc_shape := alicorn.surface_shape_arc(3.1415927, 3.1415927, radius=0.4, center={0.5, 0.5})
+	bezier_shape := alicorn.surface_shape_cubic_bezier({
+		{0.02, 0.80}, {0.25, 0.05}, {0.75, 0.95}, {0.98, 0.20},
+	})
+	arc_owner := alicorn.Node_ID(42)
+	bezier_owner := alicorn.Node_ID(43)
+	rt.semantic_surfaces[arc_owner] = alicorn.Semantic_Surface_Style{
+		defined=true, role=alicorn.surface_core_color_role(.Surface), shape=arc_shape,
+	}
+	rt.semantic_surfaces[bezier_owner] = alicorn.Semantic_Surface_Style{
+		defined=true, role=alicorn.surface_core_color_role(.Surface), shape=bezier_shape,
+	}
+	full_clip := alicorn.Rect{0, 0, BLEND_VALIDATION_SIZE, BLEND_VALIDATION_SIZE}
+	circle = alicorn.paint_surface_command(41, {4, 4, 28, 28}, full_clip, BLEND_SHAPE_CIRCLE_FILL,
+		shape=circle_shape,
+		stroke=alicorn.Paint_Stroke{color=BLEND_SHAPE_CIRCLE_STROKE, width=3},
+		stroke_placement=.Outside)
+	arc = alicorn.paint_surface_command(arc_owner, {36, 4, 24, 24}, full_clip, alicorn.Color{0, 0, 0, 0},
+		shape=arc_shape,
+		stroke=alicorn.Paint_Stroke{color=BLEND_SHAPE_ARC_STROKE, width=4},
+		stroke_placement=.Centered)
+	bezier = alicorn.paint_surface_command(bezier_owner, {4, 36, 56, 24}, full_clip, alicorn.Color{0, 0, 0, 0},
+		shape=bezier_shape,
+		stroke=alicorn.Paint_Stroke{color=BLEND_SHAPE_BEZIER_STROKE, width=3},
+		stroke_placement=.Centered)
+	clipped = alicorn.paint_surface_command(44, {40, 36, 24, 24}, {40, 36, 12, 24},
+		alicorn.Color{0.20, 0.80, 0.40, 0.5}, shape=circle_shape)
+	overlap_a = alicorn.paint_surface_command(45, {4, 4, 24, 24}, full_clip, alicorn.Color{1, 0, 0, 0.5}, shape=circle_shape)
+	overlap_b = alicorn.paint_surface_command(46, {4, 4, 24, 24}, full_clip, alicorn.Color{0, 0, 1, 0.5}, shape=circle_shape)
+	return circle, arc, bezier, clipped, overlap_a, overlap_b, true
+}
+
+blend_validation_shape_sample :: proc(x, y, scale: f32) -> (int, int) {
+	return int(x*scale), int(y*scale)
+}
+
+blend_validation_shape_readbacks :: proc(
+	renderers: ^Blend_Validation_Renderers,
+	rt: ^alicorn.Runtime,
+	target: ^sdl3.GPUTexture,
+	download: ^sdl3.GPUTransferBuffer,
+	pixels: []u8,
+	circle, arc, bezier, clipped, overlap_a, overlap_b: alicorn.Paint_Command,
+) -> bool {
+	previous_runtime := renderers.solid.runtime
+	renderers.solid.runtime = rt
+	defer renderers.solid.runtime = previous_runtime
+	background := BLEND_SHAPE_BACKGROUND
+	destination := blend_validation_background(background)
+	display := [3]alicorn.Paint_Command{circle, arc, bezier}
+	replay := make([]u8, len(pixels), allocator=context.temp_allocator)
+	defer delete(replay)
+	for scale in ([4]f32{1, 1.25, 1.5, 2}) {
+		if !blend_validation_readback(renderers, target, download, display[:], scale, background, pixels) {
+			fmt.println("shape_readback_failed", "scale", scale, "SDL_error", sdl3.GetError())
+			return false
+		}
+		circle_fill := blend_validation_over(destination, BLEND_SHAPE_CIRCLE_FILL)
+		circle_stroke := blend_validation_over(destination, BLEND_SHAPE_CIRCLE_STROKE)
+		circle_center_x, circle_center_y := blend_validation_shape_sample(18, 18, scale)
+		if !blend_validation_expect("shape_circle_center", scale, background, pixels,
+			circle_center_x, circle_center_y, circle_fill) { return false }
+		circle_inner_x, circle_inner_y := blend_validation_shape_sample(24, 18, scale)
+		if !blend_validation_expect("shape_circle_inner", scale, background, pixels,
+			circle_inner_x, circle_inner_y, circle_fill) { return false }
+		circle_corner_x, circle_corner_y := blend_validation_shape_sample(4, 4, scale)
+		if !blend_validation_expect("shape_circle_corner_clear", scale, background, pixels,
+			circle_corner_x, circle_corner_y, destination) {
+			fmt.println("shape_circle_corner_leaked", "scale", scale)
+			return false
+		}
+		circle_ring_x, circle_ring_y := blend_validation_shape_sample(33.5, 18, scale)
+		if !blend_validation_expect("shape_circle_stroke", scale, background, pixels,
+			circle_ring_x, circle_ring_y, circle_stroke) { return false }
+
+		arc_stroke := blend_validation_over(destination, BLEND_SHAPE_ARC_STROKE)
+		arc_center_x, arc_center_y := blend_validation_shape_sample(48, 16, scale)
+		if !blend_validation_expect("shape_arc_hole_clear", scale, background, pixels,
+			arc_center_x, arc_center_y, destination) { return false }
+		arc_radius: f32 = 0.4*24
+		for angle, index in ([4]f32{3.1415927, 3.9269908, 4.7123890, 5.4977871}) {
+			x := 48+math.cos(angle)*arc_radius
+			y := 16+math.sin(angle)*arc_radius
+			pixel_x, pixel_y := blend_validation_shape_sample(x, y, scale)
+			if !blend_validation_expect("shape_arc_centerline", scale, background, pixels,
+				pixel_x, pixel_y, arc_stroke) {
+				fmt.println("shape_arc_centerline_failed", "scale", scale, "index", index)
+				return false
+			}
+		}
+
+		bezier_stroke := blend_validation_over(destination, BLEND_SHAPE_BEZIER_STROKE)
+		for parameter, index in ([3]f32{0.25, 0.5, 0.75}) {
+			u := 1-parameter
+			x := 0.02*u*u*u + 3*0.25*u*u*parameter + 3*0.75*u*parameter*parameter + 0.98*parameter*parameter*parameter
+			y := 0.80*u*u*u + 3*0.05*u*u*parameter + 3*0.95*u*parameter*parameter + 0.20*parameter*parameter*parameter
+			pixel_x, pixel_y := blend_validation_shape_sample(4+x*56, 36+y*24, scale)
+			if !blend_validation_expect("shape_bezier_centerline", scale, background, pixels,
+				pixel_x, pixel_y, bezier_stroke) {
+				fmt.println("shape_bezier_centerline_failed", "scale", scale, "index", index)
+				return false
+			}
+		}
+		bezier_outside_x, bezier_outside_y := blend_validation_shape_sample(6, 38, scale)
+		if !blend_validation_expect("shape_bezier_outside_clear", scale, background, pixels,
+			bezier_outside_x, bezier_outside_y, destination) { return false }
+	}
+	clipped_display := [1]alicorn.Paint_Command{clipped}
+	for scale in ([4]f32{1, 1.25, 1.5, 2}) {
+		if !blend_validation_readback(renderers, target, download, clipped_display[:], scale, background, pixels) {
+			fmt.println("shape_clipped_readback_failed", "scale", scale, "SDL_error", sdl3.GetError())
+			return false
+		}
+		clipped_inside_x, clipped_inside_y := blend_validation_shape_sample(46, 48, scale)
+		clipped_fill := blend_validation_over(destination, alicorn.Color{0.20, 0.80, 0.40, 0.5})
+		if !blend_validation_expect("shape_clipped_inside", scale, background, pixels,
+			clipped_inside_x, clipped_inside_y, clipped_fill) { return false }
+		clipped_outside_x, clipped_outside_y := blend_validation_shape_sample(58, 48, scale)
+		if !blend_validation_expect("shape_clipped_outside_clear", scale, background, pixels,
+			clipped_outside_x, clipped_outside_y, destination) {
+			fmt.println("shape_clipped_outside_leaked", "scale", scale)
+			return false
+		}
+	}
+	if !blend_validation_readback(renderers, target, download, display[:], 1, background, pixels) {
+		fmt.println("shape_replay_first_readback_failed", "SDL_error", sdl3.GetError())
+		return false
+	}
+	if !blend_validation_readback(renderers, target, download, display[:], 1, background, replay) {
+		fmt.println("shape_replay_second_readback_failed", "SDL_error", sdl3.GetError())
+		return false
+	}
+	replay_equal := true
+	for value, index in pixels {
+		if replay[index] != value { replay_equal = false; break }
+	}
+	if !replay_equal { fmt.println("shape_replay_mismatch"); return false }
+
+	overlap_display := [2]alicorn.Paint_Command{overlap_a, overlap_b}
+	if !blend_validation_readback(renderers, target, download, overlap_display[:], 1, background, pixels) {
+		fmt.println("shape_overlap_readback_failed", "SDL_error", sdl3.GetError())
+		return false
+	}
+	overlap_expected := blend_validation_over(destination, alicorn.Color{1, 0, 0, 0.5})
+	overlap_expected = blend_validation_over(overlap_expected, alicorn.Color{0, 0, 1, 0.5})
+	overlap_pixel_x, overlap_pixel_y := blend_validation_shape_sample(16, 16, 1)
+	if !blend_validation_expect("shape_translucent_overlap", 1, background, pixels,
+		overlap_pixel_x, overlap_pixel_y, overlap_expected) { return false }
+	fmt.println("shape_gpu_readback", "scales", "1,1.25,1.5,2", "circle_fill_stroke", "PASS",
+		"arc_stroke", "PASS", "bezier_stroke", "PASS", "clipping", "PASS",
+		"translucent_overlap", "PASS", "replay_equal", replay_equal)
+	return true
+}
+
+blend_validation_stage_benchmarks :: proc(
+	renderers: ^Blend_Validation_Renderers,
+	rt: ^alicorn.Runtime,
+	target: ^sdl3.GPUTexture,
+	download: ^sdl3.GPUTransferBuffer,
+	pixels: []u8,
+	horizontal, circle, arc, bezier: alicorn.Paint_Command,
+) -> bool {
+	previous_runtime := renderers.solid.runtime
+	renderers.solid.runtime = rt
+	defer renderers.solid.runtime = previous_runtime
+
+	solid_display := make([dynamic]alicorn.Paint_Command, 0, BLEND_STAGE_BENCHMARK_SURFACES,
+		allocator=context.temp_allocator)
+	defer delete(solid_display)
+	gradient_display := make([dynamic]alicorn.Paint_Command, 0, BLEND_STAGE_BENCHMARK_SURFACES,
+		allocator=context.temp_allocator)
+	defer delete(gradient_display)
+	circle_display := make([dynamic]alicorn.Paint_Command, 0, BLEND_STAGE_BENCHMARK_SURFACES,
+		allocator=context.temp_allocator)
+	defer delete(circle_display)
+	arc_display := make([dynamic]alicorn.Paint_Command, 0, BLEND_STAGE_BENCHMARK_SURFACES,
+		allocator=context.temp_allocator)
+	defer delete(arc_display)
+	bezier_display := make([dynamic]alicorn.Paint_Command, 0, BLEND_STAGE_BENCHMARK_SURFACES,
+		allocator=context.temp_allocator)
+	defer delete(bezier_display)
+	rectangle_display := make([dynamic]alicorn.Paint_Command, 0, BLEND_STAGE_BENCHMARK_SURFACES,
+		allocator=context.temp_allocator)
+	defer delete(rectangle_display)
+
+	gradient_base := horizontal
+	gradient_surface, gradient_payload_ok := gradient_base.payload.(alicorn.Surface_Paint)
+	if !gradient_payload_ok { return false }
+	gradient_surface.stroke = {}
+	gradient_surface.shape = alicorn.Surface_Paint_Shape{kind=.Rectangle}
+	gradient_base.payload = gradient_surface
+	gradient_base.opacity = 1
+	gradient_base.translation = {}
+	solid_base := gradient_base
+	solid_base.semantic_surface_gradient = false
+	for index in 0..<BLEND_STAGE_BENCHMARK_SURFACES {
+		bounds := alicorn.Rect{f32(index%16)*4, f32(index/16)*4, 4, 4}
+		solid_command := solid_base
+		solid_command.bounds = bounds
+		solid_command.clip = {0, 0, 64, 64}
+		append(&solid_display, solid_command)
+		gradient_command := gradient_base
+		gradient_command.bounds = bounds
+		gradient_command.clip = {0, 0, 64, 64}
+		append(&gradient_display, gradient_command)
+		append(&rectangle_display, alicorn.paint_surface_command(50, bounds, {0, 0, 64, 64},
+			alicorn.Color{0.30, 0.45, 0.60, 1}))
+	}
+	for entry in ([3]struct {
+		command: alicorn.Paint_Command,
+		display: ^[dynamic]alicorn.Paint_Command,
+	}{{circle, &circle_display}, {arc, &arc_display}, {bezier, &bezier_display}}) {
+		for index in 0..<BLEND_STAGE_BENCHMARK_SURFACES {
+			command := entry.command
+			command.bounds = alicorn.Rect{f32(index%16)*4, f32(index/16)*4, 4, 4}
+			command.clip = {0, 0, 64, 64}
+			command.opacity = 1
+			command.translation = {}
+			append(entry.display, command)
+		}
+	}
+
+	if !blend_validation_stage_workload(renderers, target, download, pixels, solid_display[:], "rectangle-solid", 2) { return false }
+	if !blend_validation_stage_workload(renderers, target, download, pixels, gradient_display[:], "rectangle-gradient", 2) { return false }
+	if !blend_validation_stage_workload(renderers, target, download, pixels, circle_display[:], "circle-fill-stroke", 2) { return false }
+	if !blend_validation_stage_workload(renderers, target, download, pixels, arc_display[:], "arc-stroke", 2) { return false }
+	if !blend_validation_stage_workload(renderers, target, download, pixels, bezier_display[:], "bezier-stroke", 2) { return false }
+	if !blend_validation_stage_workload(renderers, target, download, pixels, rectangle_display[:], "rectangle-reference", 2) { return false }
+	return true
+}
+
 blend_validation_device :: proc() -> bool {
 	driver: cstring = nil
 	when ODIN_OS == .Darwin { driver = "metal" }
@@ -1043,6 +1515,14 @@ blend_validation_device :: proc() -> bool {
 	if !fixture_ok { return false }
 	if !blend_validation_gradient_readbacks(&renderers, &rt, target, download, pixels,
 		gradient_horizontal, gradient_vertical) { return false }
+	if !blend_validation_gradient_reference(&renderers, &rt, target, download, pixels,
+		gradient_horizontal, gradient_vertical) { return false }
+	shape_circle, shape_arc, shape_bezier, shape_clipped, shape_overlap_a, shape_overlap_b, shapes_ok :=
+		blend_validation_shape_fixture(&rt)
+	if !shapes_ok || !blend_validation_shape_readbacks(&renderers, &rt, target, download, pixels,
+		shape_circle, shape_arc, shape_bezier, shape_clipped, shape_overlap_a, shape_overlap_b) { return false }
+	if !blend_validation_stage_benchmarks(&renderers, &rt, target, download, pixels,
+		gradient_horizontal, shape_circle, shape_arc, shape_bezier) { return false }
 	if !blend_validation_gradient_gpu_benchmark(&renderers, &rt, target, download, pixels,
 		gradient_horizontal) { return false }
 	if !blend_validation_reference_scenes(&renderers, target, download, pixels) { return false }

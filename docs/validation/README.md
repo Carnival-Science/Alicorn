@@ -7,6 +7,16 @@ the current project status.
 
 ## Current acceptance and platform limits
 
+- [Shape primitives — Windows (2026-11-20)](issue-110-shapes-windows-2026-11-20.md)
+  — circle/arc/Bezier pixel probes at four DPI scales, clipping and
+  translucent overlap, circular pointer pass-through, keyboard activation,
+  rectangular accessibility bounds, and CPU build/upload/encode/submit/fence
+  costs against rectangles.
+- [Two-stop gradients — Windows (2026-11-20)](issue-119-gradients-windows-2026-11-20.md)
+  — native D3D12 readback probes for stops, midpoints, clipping, rounded
+  edges, source-over and four DPI scales; an independent CPU-reference
+  full-frame comparison; replay equality; and separated CPU-stage timings
+  against solid fills.
 - [Live-resize presentation latency — Windows (2026-11-20)](issue-211-live-resize-performance-windows-2026-11-20.md)
   — per-frame inter-present latency, `WM_WINDOWPOSCHANGED`-to-present stretch
   window, `wgpu.SurfaceConfigure` cost, description/layout cost, and

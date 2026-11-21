@@ -1,6 +1,6 @@
 # Issue #119: bounded two-stop surface gradients
 
-**Implementation status (2026-11-12):** The bounded two-stop prototype is implemented on top of `master` at `0beff9d29f6a1f8b32e0cde895fe4f9ce9f8238c` (which includes the per-corner surface validation commit). Runtime, UI, theme, application, and native unit suites pass; the example and native GPU validation target build. The Metal readback target could not start in this shell because SDL reported that the Cocoa video driver had no displays. D3D12 and a stronger-GPU run are also pending. Issue #119 remains open until those hardware acceptance checks are recorded.
+**Implementation status (2026-11-20):** The bounded two-stop prototype is implemented on top of `master` at `0beff9d29f6a1f8b32e0cde895fe4f9ce9f8238c` and is part of the v0.2.2 release. Windows D3D12 native acceptance is recorded in [issue-119-gradients-windows-2026-11-20.md](../validation/issue-119-gradients-windows-2026-11-20.md): four-scale pixel probes, an independent CPU-reference full-frame match, replay equality, and separated CPU-stage timings against solid fills. macOS Metal pixels remain unrecorded because no macOS hardware was available; the earlier macOS run only established CPU geometry and a build.
 
 The initial design review below was captured against `655c0f07dc73b3e22da184ea78e479acd0b0758f`; implementation decisions and current evidence follow.
 
@@ -33,7 +33,7 @@ Machine: MacBook Air (Apple M1, 8 CPU cores), macOS 27.2 (build 26B123), Odin `d
 | GPU validation executable build | Pass |
 | `git diff --check` | Pass |
 
-The repository-wide `tools/test.sh` bootstrap was previously stopped at its pinned AccessKit dependency check because this shell could not resolve GitHub. The suites above were run directly against the already-installed pinned dependencies. The readback executable then failed during SDL video initialization with `The video driver did not add any displays`, before selecting Metal or running a pixel case. Therefore no gradient GPU pixels or GPU p50/p95 are claimed here. Windows D3D12 and the requested stronger-GPU comparison remain pending.
+The repository-wide `tools/test.sh` bootstrap was previously stopped at its pinned AccessKit dependency check because this shell could not resolve GitHub. The suites above were run directly against the already-installed pinned dependencies. The readback executable then failed during SDL video initialization with `The video driver did not add any displays`, before selecting Metal or running a pixel case. The later Windows D3D12 run recorded below closes the pixel and CPU-stage acceptance on the production native backend; macOS Metal pixels and an integrated-GPU comparison remain unrecorded hardware limits.
 
 ### CPU geometry measurement
 
@@ -47,7 +47,7 @@ Three fresh optimized processes each measured 101 warmed CPU vertex-expansion sa
 
 The flat case shows a tiny absolute CPU cost for calculating endpoint colors; rounded cases are close in p50. Per-process p95 values vary, so this small CPU-only sample does not establish tail latency. The raw 101-sample summaries are recorded in [the benchmark output](../benchmarks/raw/issue-119-two-stop-gradients-macos-2026-11-12.txt).
 
-This establishes that the mesh path preserves bounded geometry and does not add upload bytes or a rendering pass in the source path. It does **not** establish the issue's requested native GPU frame/p95 acceptance or stronger-GPU behavior. Keep #119 open for those checks.
+This establishes that the mesh path preserves bounded geometry and does not add upload bytes or a rendering pass in the source path. The later [Windows native record](../validation/issue-119-gradients-windows-2026-11-20.md) adds D3D12 pixels, an independent CPU-reference full-frame match, replay equality, and separated CPU-stage timings. It still does not claim presented-frame latency or an integrated-GPU comparison.
 
 ### Research source update
 
