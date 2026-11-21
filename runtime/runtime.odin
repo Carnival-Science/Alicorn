@@ -1995,6 +1995,20 @@ Frame_Stats :: struct {
 	// count target identity changes, not every motion within an unchanged target.
 	pointer_events:    u64,
 	hover_target_transitions: u64,
+	// Hit testing in Alicorn has no maintained spatial index: `hit_test` walks
+	// the retained order newest-first until it finds an interactive hit. These
+	// counters keep that traversal cost separate from maintenance work so a
+	// motion-only frame cannot be charged for either. `hit_test_queries` counts
+	// public hit-test calls; `hit_test_nodes_examined` counts retained nodes
+	// scanned by those calls. `hit_geometry_updates` counts device-space hit
+	// rectangle finalization (layout and DPI changes), and `hit_index_updates`
+	// counts actual writes to the sparse `pointer_hit_shapes` map. Motion
+	// presentation changes neither: logical target hit geometry is static by
+	// contract, so both maintenance counters remain unchanged during motion.
+	hit_test_queries: u64,
+	hit_test_nodes_examined: u64,
+	hit_geometry_updates: u64,
+	hit_index_updates: u64,
 	semantic_descriptions_emitted: u64,
 	semantic_entities_resolved: u64,
 	semantic_structure_changes: u64,

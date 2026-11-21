@@ -1934,7 +1934,12 @@ system file drops or arbitrary MIME payloads.
   description, reconciliation, measurement, or layout; translation/opacity
   composition remains retained, while color changes still update the surface
   paint value and may require backend upload. A custom host flushes that work
-  with `begin_presentation_frame` / `end_presentation_frame`. The
+  with `begin_presentation_frame` / `end_presentation_frame`. Alicorn keeps no
+  maintained spatial hit index: `hit_test` scans the retained order. Motion
+  presentation changes no logical hit geometry, and `Frame_Stats` reports
+  `hit_test_queries`, `hit_test_nodes_examined`, `hit_geometry_updates`, and
+  `hit_index_updates` separately from paint/composition counters, so a
+  motion-only frame is never charged for hit-index maintenance. The
   SDL host schedules one coalesced presentation deadline per native window and
   samples at a bounded display-like cadence using its monotonic nanosecond
   clock. `Application_Services.motion_clock` supplies that same clock through
@@ -1947,7 +1952,11 @@ system file drops or arbitrary MIME payloads.
   per-window budget, not a five-second guarantee for every response: the first
   observed uncertified response starts the budget, and all uncertified
   responses active at expiry are snapped together. The requested cadence is
-  not a claim about compositor present timestamps.
+  not a claim about compositor present timestamps. The native `SDL application
+  PASS` summary reports `motion_lateness_p50_ns`, `motion_lateness_p95_ns`,
+  and `motion_lateness_p99_ns` over a bounded 256-sample ring alongside the
+  historical maximum. These are scheduler deadline-to-sample lateness values,
+  not compositor present timestamps or input-to-photon latency.
   Unopted nodes retain their existing behavior.
 - The inspector Motion tab reads a passive copy of retained owner state. It
   reports declaration source, triggering cause, intent, target, last presented
