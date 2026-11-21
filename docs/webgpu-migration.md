@@ -4526,3 +4526,188 @@ and `--renderer=sdl-gpu`. Full numbers and the before/after probe are in
   OS pointer run (this automation session cannot deliver synthetic pointer
   motion to a real window, as recorded in earlier slices). The founder's
   hands-on hover/scroll is the confirming check.
+
+## Stage C slice 6: high-DPI monitor transitions (2026-11-20)
+
+The founder acceptance for the last Stage C item is "high-DPI monitor
+transitions - correct geometry, text and hit testing." SDL3 exposes three
+distinct quantities: window coordinates (logical points), framebuffer pixels,
+and display scale. This slice audited every place the hosted WebGPU path
+consumes them, compared each against the `native/sdl_gpu` reference, and built
+an automated transition fixture for everything except the physical monitor
+drag.
+
+### The reference host's transition path
+
+`native/sdl_gpu` measures a window once per event turn
+(`read_window_metrics`): window size in points, drawable size in pixels,
+`SDL_GetWindowPixelDensity`, and `SDL_GetWindowDisplayScale`. It applies that
+measurement with `native_window_metrics_apply`:
+
+1. a logical-size change updates `rt.viewport` and invalidates the description;
+2. a `pixel_density` or `display_scale` change invalidates the description even
+   when the logical size is unchanged, because `Application.build` receives
+   `display_scale` and may size GPU surfaces from it;
+3. independent X/Y presentation scales are derived from
+   `pixel_width/logical_width` and `pixel_height/window_logical_height`;
+4. `set_presentation_scale` re-snaps retained geometry to the new device grid,
+   rebuilds the finalized display list from the unsnapped targets, and requests
+   presentation.
+
+WM_DPICHANGED itself is owned by SDL; the Windows integrated-titlebar subclass
+also observes it to refresh native chrome text, the caption-button layout, the
+DWM frame extension, and a redraw request. The live-resize path re-read the same
+measurement on every modal-loop frame but only invalidated on logical changes.
+
+### Divergences found and fixed
+
+1. **Hosted application scale was the drawable ratio, not display scale.**
+   `host/sdl3` passed `pixel_width/logical_width` as the `dpi_scale` received by
+   `Hosted_Render_Proc`; the reference passes `Window_Metrics.display_scale`.
+   They usually agree on Windows, but they are distinct inputs and different
+   platform modes can report them differently. The hosted host now reads both
+   `SDL_GetWindowPixelDensity` and `SDL_GetWindowDisplayScale`, stores them
+   separately, and passes display scale to the application description while
+   presentation continues to derive from the drawable ratio.
+2. **The hosted host did not track display scale independently.** A display
+   scale change that did not change the drawable ratio (Windows text scaling,
+   platform modes that keep the framebuffer fixed) was invisible; diagnostics
+   also reported `pixel_density == display_scale == dpi_scale`. `diagnostics`
+   now reports the two measured values separately, and
+   `sdl3_webgpu_application_apply_metrics` publishes a full measurement
+   (logical, pixel, pixel density, display scale) in one operation.
+3. **The hosted live-resize geometry check ignored scale-only changes.**
+   It compared only logical and pixel sizes, so a transition that reported the
+   same sizes but a different display scale would not adopt metrics during a
+   modal move/size loop. It now compares the two scale inputs as well.
+4. **The native live-resize path missed display-scale invalidation mid-drag.**
+   It called `set_presentation_scale` on a metadata scale change but invalidated
+   only on logical changes, so an application surface sized from
+   `display_scale` could keep its old pixel size until the drag ended. It now
+   performs the same `SDL display scale changed` invalidation as the ordinary
+   event path.
+5. **No double application of scale.** Retained paint commands remain in
+   logical units; `set_presentation_scale` only snaps the device-grid edges from
+   unsnapped targets and `layout_finalize_display` rebuilds from those targets.
+   The renderer then applies the pixel scale exactly once. Text glyphs are
+   keyed by physical size (`run.size * scale_y`) and subpixel bucket, and the
+   mesh fingerprint includes `scale_x/scale_y`, so a transition re-rasterizes
+   instead of stretching the previous atlas. Returning to an already-rasterized
+   scale reuses those slots; that is a cache hit, not a stale atlas.
+6. **State that was already correct and is now covered rather than changed.**
+   Per-window scale, Chrome Text Runs, and hit testing were already independent:
+   each `SDL3_WebGPU_Application` owns its own `Hosted_Runtime`, text engine, and
+   presenter; `win32_chrome_sync` re-reads `GetDpiForWindow`,
+   `GetWindowPixelDensity`, and `GetWindowDisplayScale` on every pre-present
+   sync and publishes the inset through `hosted_runtime_set_content_inset`;
+   pointer coordinates are divided into application space by that inset and hit
+   tested against logical `bounds`/`hit_bounds`, which presentation scaling
+   never rewrites.
+
+### Automated mixed-DPI method
+
+A real per-monitor transition cannot be originated on a single display, and
+this machine's two monitors both run 100%, so the fixture separates the two
+halves of the OS sequence:
+
+- **Window-proc half.** `tests/fixtures/dpi_transition` posts
+  `WM_DPICHANGED` and `WM_DISPLAYCHANGE` with `SendMessageW` to the real hosted
+  window. This runs the native subclass chrome branch (titlebar text refresh,
+  metrics/layout sync, DWM frame extend, redraw request) exactly as a real
+  transition does even though `GetDpiForWindow` still reports the monitor's
+  current DPI. The fixture asserts the previously idle window now presents a
+  frame and its chrome layout callback re-ran.
+- **Measurement half.** The fixture calls
+  `sdl3_webgpu_application_apply_metrics` with the measurement a real transition
+  produces: unchanged logical size, new drawable pixels, new pixel density and
+  display scale for 1.0/1.25/1.5/1.75. This drives the surface reconfigure,
+  presentation scale, description invalidation, text re-rasterization, and
+  hit-test remap deterministically.
+
+The same measurement sequence is exercised against the reference host in
+`native/sdl_gpu/dpi_transition_test.odin` through `native_window_metrics_apply`
+and in `runtime/hosted_test.odin` through `hosted_runtime_resize`, asserting the
+same observables (logical bounds, pointer target, presentation scale, display
+scale delivered to the description).
+
+### Per-window simultaneous DPI and text/hit-test acceptance
+
+The fixture runs two hosted windows on one device: a system-decorated text
+window and an integrated-titlebar chrome window. It adopts 1.25 on the first
+and 1.75 on the second, then asserts each runtime, presenter, application
+description, logical bounds, and hit-test target stays independent.
+
+For each scale on the first window it:
+
+- asserts the surface is configured at `logical * scale` and presenter scales
+  are `scale x scale`;
+- asserts the application description received `display_scale`;
+- asserts the known button's logical bounds are identical to the baseline and a
+  pointer at its logical center still targets the same node;
+- asserts the WebGPU text mesh rebuilt and, on the first visit to a scale, that
+  glyphs were rasterized;
+- captures the frame, crops to the text node, and checks glyph ink area (scales
+  with `scale^2`) and maximum adjacent luminance step (sharp edges, not a
+  bilinear rescale of the last frame).
+
+Measured on Windows 10 22H2 / RTX 2080 SUPER, D3D12, baseline 100%:
+ink 4150 at 1.0, 6026 at 1.25, 8733 at 1.5, 11440 at 1.75 (ratios 0.93-0.98 of
+`scale^2`), maximum adjacent luma step 1429/2550 at every scale, all logical
+bounds and hit targets identical. The 1.25 and 1.0 revisits re-used cached
+glyph slots and produced the same captures. Vulkan is equivalent.
+
+### Validation
+
+New or extended coverage:
+
+- `runtime/hosted_test.odin`: display-scale transitions at fixed logical size,
+  metadata-only scale changes, repeated round trips, hit-test stability, and
+  the display scale delivered to the description.
+- `host/sdl3/application_test.odin`: `apply_metrics` publishes drawable ratio
+  and display scale independently, rebuilds on a metadata change, and falls
+  back coherently on zero platform scales.
+- `native/sdl_gpu/dpi_transition_test.odin`: the same invariants through
+  `native_window_metrics_apply`.
+- `tests/fixtures/dpi_transition` + `tools/validate_native_webgpu_dpi.ps1`:
+  real hosted windows, posted monitor messages, captures, and per-window
+  scales. Passes on D3D12 and Vulkan.
+
+Suites: runtime 419, host/fonts 5, host/sdl3 8, live_resize 9, input 8,
+clipboard 3, dialogs 5, host/menus 8, host/web 14, host/diagnostics 9,
+host/presentation 7, renderer/webgpu 8, renderer/cpu 23, ui 50, testui 13,
+theme 37, native/sdl_gpu 168, scroll_capture 6, accessibility contract 1,
+`odin build tests`/`out/alicorn_tests.exe` (foundation PASS). Example 16 passes
+its seven smokes on D3D12, Vulkan, and SDL_GPU (21/21). Scratchpad at
+`b458d6e` (candidate root this branch, no source or lock change) passes
+`smoke --renderer=webgpu --backend=d3d12`, `--backend=vulkan`, and
+`--renderer=sdl-gpu` (clean and recovery legs). Details and raw logs are in
+[`validation/issue-211-dpi-transitions-windows-2026-11-20.md`](validation/issue-211-dpi-transitions-windows-2026-11-20.md).
+
+### Founder's hands-on monitor-drag checklist
+
+The automation cannot originate a real cross-monitor `WM_DPICHANGED`, so the
+remaining confirmation is physical. On the machine with two displays:
+
+1. Set the monitors to different scales (for example A 100%, B 150%) and note
+   which is primary. Use Windows 10 22H2, not a remote session.
+2. Start `out\examples\16_native_webgpu_ui.exe --workbench-smoke --interactive`
+   or Scratchpad on the hosted WebGPU build on monitor A at ~720x480.
+3. **Mid-drag DPI change:** grab the titlebar and drag slowly across the
+   boundary, then grab a window edge and drag-resize while crossing. The frame
+   must track the live size, never show the old frame stretched, and must not
+   stall until release.
+4. **Per-monitor scale:** leave the window on each monitor for several seconds.
+   Content logical size must be identical on both; text and controls must keep
+   the same apparent size, while quality increases on the higher-DPI monitor.
+5. **Text sharpness:** inspect small text, tabs, and menu labels immediately
+   after the transition. There must be no soft/blurred frame, no half-resolution
+   text, and no flash of a stretched atlas.
+6. **Chrome band:** with the integrated titlebar fixture, the band must keep
+   the same logical height, menu labels must stay vertically centered, and the
+   caption buttons must remain inside the window.
+7. **Hit testing after landing:** click a tab, close button, text field caret,
+   and scrollbar immediately after the transition. They must respond at the
+   visual target; no offset equal to the old scale factor.
+8. **Both directions:** repeat A→B, B→A, and a resize that starts on one monitor
+   and ends on the other. Watch for stale text, a blank/black frame, or a lost
+   surface. Record the monitor scales and any mismatch against this checklist.

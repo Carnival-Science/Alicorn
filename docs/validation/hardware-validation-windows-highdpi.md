@@ -5,6 +5,23 @@ Goal: prove that per-monitor scale changes and dragging a window between
 monitors of different scale do not rebuild retained geometry, and that the
 WebGPU host keeps presenting through the transition.
 
+The automated half of this check is
+`tools/validate_native_webgpu_dpi.ps1` (Stage C slice 6). It posts synthetic
+`WM_DPICHANGED`/`WM_DISPLAYCHANGE` messages, adopts the metric shape of
+1.0/1.25/1.5/1.75 transitions at the same logical size, captures text, and
+checks logical bounds, hit testing, and per-window scales. Run it first; the
+physical passes below are what it cannot cover.
+
+```powershell
+.\tools\validate_native_webgpu_dpi.ps1 -Odin C:\odin\odin.exe
+```
+
+If both monitors are at 100% (the current state of this machine), set different
+scales in **Settings → System → Display** before the physical passes. The
+expanded founder checklist is in `docs/webgpu-migration.md` (Stage C slice 6):
+mid-drag DPI change, per-monitor scale, text sharpness, chrome band metrics, and
+hit-test validity after landing.
+
 ## Prepare
 
 Build the native WebGPU example (stages `SDL3.dll` and the shared

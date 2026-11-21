@@ -263,7 +263,10 @@ sdl3_webgpu_window_create_pending :: proc(
 	}
 	child_config.logical_width, child_config.logical_height = lw, lh
 	child_config.pixel_width, child_config.pixel_height = pw, ph
-	child_config.dpi_scale = f32(pw) / f32(lw)
+	_, child_display_scale := sdl3_webgpu_application_window_scales(
+		window, lw, pw,
+	)
+	child_config.dpi_scale = child_display_scale
 	child_config.host_services.windows = sdl3_webgpu_window_service(manager)
 	child_config.host_services.quit = alicorn.Hosted_Quit_Service{
 		data=rawptr(child),

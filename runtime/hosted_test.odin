@@ -29,12 +29,14 @@ Hosted_Test_App :: struct {
 	last_dialog_status: Dialog_Status,
 	capture_scroll: bool,
 	close_result: Hosted_Close_Result,
+	last_dpi: f32,
 	host: ^Hosted_Runtime,
 }
 
 hosted_test_render :: proc(data: rawptr, ui: ^UI, width, height: int, dpi: f32) {
 	app := (^Hosted_Test_App)(data)
 	app.descriptions += 1
+	app.last_dpi = dpi
 	if container_begin(
 		ui,
 		.Root,
@@ -455,9 +457,104 @@ test_hosted_runtime_step_resize_and_idle :: proc(t: ^testing.T) {
 	testing.expect(t, restored.render_required && !restored.description_built)
 }
 
+Hosted_DPI_Transition_Observed :: struct {
+	description_built: bool,
+	dpi:               f32,
+	button_bounds:     Rect,
+	pixel_scale_x:     f32,
+	pixel_scale_y:     f32,
+	hit:               Node_ID,
+}
+
+hosted_dpi_transition_observe :: proc(
+	t: ^testing.T,
+	host: ^Hosted_Runtime,
+	app: ^Hosted_Test_App,
+	turn: u64,
+) -> Hosted_DPI_Transition_Observed {
+	step := hosted_runtime_step(host, turn)
+	rt, status := hosted_runtime_borrow(host)
+	if status != .Ok || app.button == 0 {
+		testing.expect(t, false, "the DPI fixture must retain its button")
+		return {}
+	}
+	button := rt.nodes[app.button]
+	if button == nil { testing.expect(t, false, "missing button node"); return {} }
+	center_x := button.bounds.x+button.bounds.w*0.5
+	center_y := button.bounds.y+button.bounds.h*0.5
+	hit, hit_status := hosted_runtime_pointer(host, Pointer_Event{kind=.Move, x=center_x, y=center_y})
+	if hit_status != .Ok { testing.expect(t, false, "hit test must run after a scale transition") }
+	return Hosted_DPI_Transition_Observed{
+		description_built=step.description_built,
+		dpi=app.last_dpi,
+		button_bounds=button.bounds,
+		pixel_scale_x=rt.presentation_scale_x,
+		pixel_scale_y=rt.presentation_scale_y,
+		hit=hit,
+	}
+}
+
+// A monitor transition changes the drawable pixel size and display scale while
+// the SDL window stays at the same logical size. The retained logical geometry
+// and pointer mapping must be invariant, the device-grid presentation scale
+// must follow the drawable, and the application must receive the new display
+// scale. Repeated round trips must not accumulate snapping.
 @(test)
-test_hosted_runtime_host_presentation_request_reuses_description :: proc(t: ^testing.T) {
+test_hosted_runtime_display_scale_transitions_preserve_geometry_and_hit_testing :: proc(t: ^testing.T) {
 	host: Hosted_Runtime
+	app: Hosted_Test_App
+	if hosted_test_open(&host, &app) != .Ok { testing.expect(t, false, "open failed"); return }
+	defer hosted_waker_release(&app.waker)
+	defer hosted_runtime_destroy(&host)
+	baseline := hosted_dpi_transition_observe(t, &host, &app, 1)
+	if baseline.hit != app.button {
+		testing.expect(t, false, "the baseline hit test must land on the fixture button")
+		return
+	}
+	scales := []f32{1, 1.25, 1.5, 1.75, 1.25, 1, 2}
+	turn := u64(2)
+	for scale in scales {
+		pixel_width := int(f32(240)*scale+0.5)
+		pixel_height := int(f32(240)*scale+0.5)
+		if status := hosted_runtime_resize(&host, 240, 240, pixel_width, pixel_height, scale); status != .Ok {
+			testing.expectf(t, false, "resize to scale %.2f failed: %v", scale, status)
+			return
+		}
+		observed := hosted_dpi_transition_observe(t, &host, &app, turn)
+		turn += 1
+		testing.expectf(t, observed.description_built,
+			"a display-scale change at fixed logical size must rebuild the description (scale %.2f)", scale)
+		testing.expectf(t, observed.dpi == scale,
+			"the application must receive display scale %.2f, got %.2f", scale, observed.dpi)
+		testing.expectf(t, observed.button_bounds == baseline.button_bounds,
+			"logical bounds must not depend on display scale %.2f (%.2f,%.2f %.2fx%.2f vs %.2f,%.2f %.2fx%.2f)",
+			scale,
+			observed.button_bounds.x, observed.button_bounds.y, observed.button_bounds.w, observed.button_bounds.h,
+			baseline.button_bounds.x, baseline.button_bounds.y, baseline.button_bounds.w, baseline.button_bounds.h)
+		testing.expectf(t, observed.pixel_scale_x == scale && observed.pixel_scale_y == scale,
+			"presentation scale must follow the drawable at %.2f", scale)
+		testing.expectf(t, observed.hit == app.button,
+			"a pointer at the same logical coordinate must hit the same node at scale %.2f", scale)
+	}
+	// A metadata-only transition (display scale changed, drawable ratio fixed)
+	// still rebuilds the description even though the logical geometry did not
+	// change, matching native/sdl_gpu's `metadata_scale_changed` branch.
+	before := hosted_runtime_step(&host, turn)
+	if before.render_required { _ = hosted_runtime_frame_submission_succeeded(&host) }
+	turn += 1
+	_ = hosted_runtime_resize(&host, 240, 240, 360, 360, 1.75)
+	metadata := hosted_dpi_transition_observe(t, &host, &app, turn)
+	testing.expect(t, metadata.description_built,
+		"a display-scale change with an unchanged drawable must still rebuild the application description")
+	testing.expect(t, metadata.dpi == 1.75, "the application must receive the metadata display scale")
+	testing.expect(t, metadata.pixel_scale_x == 1.5 && metadata.pixel_scale_y == 1.5,
+		"the device-grid scale must keep following the unchanged drawable ratio")
+	testing.expect(t, metadata.hit == app.button && metadata.button_bounds == baseline.button_bounds,
+		"metadata-only scale changes must not move logical geometry or hit testing")
+}
+
+@(test)
+test_hosted_runtime_host_presentation_request_reuses_description :: proc(t: ^testing.T) {	host: Hosted_Runtime
 	app: Hosted_Test_App
 	if hosted_test_open(&host, &app) != .Ok { testing.expect(t, false, "open failed"); return }
 	defer hosted_waker_release(&app.waker)

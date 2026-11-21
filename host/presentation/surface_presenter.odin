@@ -253,6 +253,19 @@ hosted_surface_presenter_resize :: proc(
 	return .Ok
 }
 
+// hosted_surface_presenter_metrics reports the currently configured drawable
+// dimensions and presentation scales. Hosts and transition fixtures use it to
+// assert that a DPI adoption reconfigured the surface before the next frame.
+hosted_surface_presenter_metrics :: proc(
+	presenter: ^Hosted_Surface_Presenter,
+) -> (logical_width, logical_height, pixel_width, pixel_height: int, scale_x, scale_y: f32, ok: bool) {
+	state := hosted_surface_state(presenter)
+	if state == nil { return }
+	return state.logical_width, state.logical_height,
+		int(state.configuration.width), int(state.configuration.height),
+		state.scale_x, state.scale_y, true
+}
+
 // Suspend or resume retained presentation when the host's visibility changes.
 // Drawable size and visibility are tracked independently so a resize while
 // hidden cannot accidentally re-enable frame scheduling.

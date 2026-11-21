@@ -146,12 +146,20 @@ native_live_resize_redraw_once :: proc(state: ^Native_Live_Resize_State) {
 	scale_changed := current_metrics.pixel_density != old_metrics.pixel_density ||
 	                 current_metrics.display_scale != old_metrics.display_scale ||
 	                 new_scale_x != old_scale_x || new_scale_y != old_scale_y
+	metadata_scale_changed := current_metrics.pixel_density != old_metrics.pixel_density ||
+	                          current_metrics.display_scale != old_metrics.display_scale
 	state.metrics^ = current_metrics
 	if scale_changed { _ = alicorn.set_presentation_scale(state.rt, new_scale_x, new_scale_y) }
 	if logical_changed {
 		state.rt.viewport.w = f32(current_metrics.logical_width)
 		state.rt.viewport.h = f32(current_metrics.logical_height)
 		alicorn.invalidate_root(state.rt, "SDL live-resize logical size changed")
+	} else if metadata_scale_changed {
+		// A window can cross a monitor boundary mid-drag without changing its
+		// logical size. Application descriptions receive display_scale and may
+		// size GPU surfaces from it, so they need the same rebuild that the
+		// ordinary event path performs.
+		alicorn.invalidate_root(state.rt, "SDL display scale changed")
 	}
 	inspector_enabled := state.inspector != nil && state.inspector.enabled
 	if state.rt.invalidated && (!inspector_enabled || !state.rt.hard_error) {

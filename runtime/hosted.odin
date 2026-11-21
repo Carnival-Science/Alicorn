@@ -198,6 +198,10 @@ Hosted_Runtime_Config :: struct {
 	state: rawptr,
 	logical_width, logical_height: int,
 	pixel_width, pixel_height: int,
+	// dpi_scale is the host's display/text scale (SDL's display scale, CSS
+	// device-pixel-ratio, or wx content scale), not the drawable-to-logical
+	// ratio. Application descriptions receive it. Presentation derives
+	// independent X/Y pixel scales from pixel/logical dimensions.
 	dpi_scale: f32,
 	runtime: Runtime_Config,
 	// menus are borrowed for the Hosted_Runtime lifetime. A host's native menu
@@ -900,7 +904,12 @@ hosted_runtime_request_presentation :: proc(
 
 // hosted_runtime_resize adopts logical and drawable dimensions together.
 // Pixel size may be zero while minimized; in that case the last device scale
-// is retained until the host reports a drawable size again.
+// is retained until the host reports a drawable size again. dpi_scale is the
+// host's display/text scale passed to the next application description;
+// presentation pixel scales always come from the drawable-to-logical ratio.
+// A display-scale change invalidates the description even when the logical
+// size is unchanged, because applications may size DPI-dependent surfaces
+// from the scale they receive.
 hosted_runtime_resize :: proc(
 	host: ^Hosted_Runtime,
 	logical_width, logical_height, pixel_width, pixel_height: int,

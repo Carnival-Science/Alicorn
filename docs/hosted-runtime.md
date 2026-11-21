@@ -609,13 +609,30 @@ destroy. Prefer the specific session accessors over borrowing the Runtime.
 ## Resize, DPI, visibility, and teardown
 
 After native resize or display-scale changes, call `hosted_runtime_resize`
-with logical size, drawable pixel size, and the host's logical DPI/text scale.
-The session updates the logical viewport, invalidates layout when needed, and
-sets independent X/Y presentation scales from drawable-to-logical dimensions.
-Zero drawable dimensions are valid while minimized; the last presentation
-scale is retained until a nonzero drawable size returns. Call
+with logical size, drawable pixel size, and the host's display/text scale
+(SDL's `GetWindowDisplayScale`, CSS device-pixel-ratio, or the equivalent
+platform content scale) - not the drawable-to-logical ratio. The session
+updates the logical viewport, invalidates layout when needed, delivers the
+display scale to the next application description, and sets independent X/Y
+presentation scales from drawable-to-logical dimensions. A display-scale
+change invalidates the description even when the logical size is unchanged,
+because applications may size DPI-dependent GPU surfaces from the scale they
+receive. Zero drawable dimensions are valid while minimized; the last
+presentation scale is retained until a nonzero drawable size returns. Call
 `hosted_runtime_set_renderable(false)` while the surface cannot present, then
 restore it and step with the current monotonic time when it becomes renderable.
+
+The SDL3 host wraps the same contract in
+`sdl3_webgpu_application_apply_metrics`: it publishes window logical size,
+drawable size, `SDL_GetWindowPixelDensity`, and `SDL_GetWindowDisplayScale`
+together, reconfigures the surface, re-syncs the native chrome inset, and then
+invalidation runs through `hosted_runtime_resize`. Ordinary SDL resize and
+display-scale events call it after re-reading the window; transition fixtures
+call it with an explicit measurement. `hosted_surface_presenter_metrics`
+reports the configured logical/drawable sizes and both presentation scales for
+diagnostics and acceptance checks. Interactive resize runs the same adoption
+from `host/sdl3/live_resize_host.odin`, including scale-only changes while a
+modal move/size loop owns the thread.
 
 ### Live resize and window movement
 

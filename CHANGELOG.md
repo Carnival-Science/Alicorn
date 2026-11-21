@@ -10,9 +10,21 @@ changelogs.
 
 - Updated Alicorn's pinned native SDL version to 3.4.20 across macOS builds,
   Windows static-link preparation, runtime validation, and package provenance.
+- The hosted SDL3/WebGPU path now keeps SDL's display scale separate from the
+  drawable-to-logical pixel density. Application descriptions receive display
+  scale (matching the SDL_GPU reference); presentation still derives independent
+  X/Y scales from the drawable. Hosted and native live-resize paths now
+  invalidate descriptions when display scale changes without a logical-size
+  change.
 
 ### Added
 
+- Added `sdl3_webgpu_application_apply_metrics`,
+  `hosted_surface_presenter_metrics`, a two-window DPI transition fixture, and
+  `tools/validate_native_webgpu_dpi.ps1`. The fixture posts synthetic
+  `WM_DPICHANGED`/`WM_DISPLAYCHANGE` messages, adopts 1.0/1.25/1.5/1.75 metric
+  transitions, captures text, and asserts logical bounds, hit testing, text
+  re-rasterization, chrome re-sync, and per-window scale independence.
 - Added a shared `alicorn:host/fonts` seeding facility and the 15th built-in
   `More_Horizontal` icon. The SDL_GPU reference, `ui.run`'s native path, and
   hosted `ui/webgpu.run` now install the same bundled and platform/DirectWrite

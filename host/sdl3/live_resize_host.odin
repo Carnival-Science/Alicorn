@@ -173,8 +173,10 @@ sdl3_webgpu_live_resize_geometry_changed :: proc(
 ) -> bool {
 	lw, lh, pw, ph, ok := sdl3_webgpu_application_window_metrics(application.window)
 	if !ok { return false }
+	pixel_density, display_scale := sdl3_webgpu_application_window_scales(application.window, lw, pw)
 	return lw != application.last_logical_width || lh != application.last_logical_height ||
-		pw != application.last_pixel_width || ph != application.last_pixel_height
+		pw != application.last_pixel_width || ph != application.last_pixel_height ||
+		pixel_density != application.pixel_density || display_scale != application.display_scale
 }
 
 // sdl3_webgpu_live_resize_render is one bounded live frame. Geometry is adopted

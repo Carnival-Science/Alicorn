@@ -9,6 +9,7 @@ import sdl3_dialogs "alicorn:host/sdl3/dialogs"
 import host_menus "alicorn:host/menus"
 import "core:c"
 import "core:fmt"
+import "core:math"
 import "core:mem"
 import "vendor:sdl3"
 import "vendor:wgpu"
@@ -70,7 +71,14 @@ SDL3_WebGPU_Application :: struct {
 	pointer_buttons: Pointer_Button_State,
 	modifiers: sdl3.Keymod,
 	text_input: SDL3_WebGPU_Text_Input_State,
+	// dpi_scale is the application-facing display/text scale (SDL's
+	// GetWindowDisplayScale), matching the reference SDL_GPU host's build
+	// callback. It is not necessarily the drawable-to-logical ratio:
+	// pixel_density carries that ratio and presentation derives its own
+	// independent X/Y scales from the drawable and window metrics.
 	dpi_scale: f32,
+	pixel_density: f32,
+	display_scale: f32,
 	clear_color: wgpu.Color,
 	last_logical_width, last_logical_height: int,
 	last_pixel_width, last_pixel_height: int,
@@ -229,6 +237,33 @@ sdl3_webgpu_application_window_metrics :: proc(
 	return int(logical_w), int(logical_h), int(pixel_w), int(pixel_h), true
 }
 
+// sdl3_webgpu_application_window_scales reads the two SDL scale inputs
+// separately. pixel_density is the framebuffer-pixels-to-window-points ratio
+// used for presentation; display_scale is the monitor's content scale and is
+// what the application description receives, matching native/sdl_gpu's
+// Application.build contract. A platform that reports zero falls back to the
+// drawable ratio so a suspended or not-yet-shown window still has a coherent
+// scale.
+sdl3_webgpu_application_window_scales :: proc(
+	window: ^sdl3.Window,
+	logical_width, pixel_width: int,
+) -> (pixel_density, display_scale: f32) {
+	if window != nil {
+		pixel_density = sdl3.GetWindowPixelDensity(window)
+		display_scale = sdl3.GetWindowDisplayScale(window)
+	}
+	if !(pixel_density > 0) || math.is_nan(pixel_density) || math.is_inf(pixel_density) {
+		pixel_density = 1
+		if logical_width > 0 && pixel_width > 0 {
+			pixel_density = f32(pixel_width)/f32(logical_width)
+		}
+	}
+	if !(display_scale > 0) || math.is_nan(display_scale) || math.is_inf(display_scale) {
+		display_scale = pixel_density
+	}
+	return
+}
+
 // Call before creating an SDL window when using the native WebGPU host.
 // AccessKit's Windows and macOS adapters install platform window integration
 // that must be prepared before the window is first shown or focused.
@@ -300,6 +335,7 @@ sdl3_webgpu_application_init :: proc(
 	if !metrics_ok || logical_width == 0 || logical_height == 0 || pixel_width == 0 || pixel_height == 0 {
 		return .Window_Failure
 	}
+	pixel_density, display_scale := sdl3_webgpu_application_window_scales(window, logical_width, pixel_width)
 	wake_event := sdl3.EventType(sdl3.RegisterEvents(1))
 	if wake_event == {} { return .Window_Failure }
 	application^ = SDL3_WebGPU_Application{
@@ -310,7 +346,9 @@ sdl3_webgpu_application_init :: proc(
 		text_input=SDL3_WebGPU_Text_Input_State{
 			window_focused=sdl3.GetKeyboardFocus() == window,
 		},
-		dpi_scale=f32(pixel_width) / f32(logical_width),
+		dpi_scale=display_scale,
+		pixel_density=pixel_density,
+		display_scale=display_scale,
 		clear_color=clear_color,
 		last_logical_width=logical_width,
 		last_logical_height=logical_height,
@@ -368,15 +406,19 @@ sdl3_webgpu_application_init :: proc(
 	   measured_pixel_width > 0 && measured_pixel_height > 0 {
 		logical_width, logical_height = measured_width, measured_height
 		pixel_width, pixel_height = measured_pixel_width, measured_pixel_height
+		pixel_density, display_scale = sdl3_webgpu_application_window_scales(
+			window, logical_width, pixel_width,
+		)
 		application.last_logical_width, application.last_logical_height = logical_width, logical_height
 		application.last_pixel_width, application.last_pixel_height = pixel_width, pixel_height
-		application.dpi_scale = f32(pixel_width) / f32(logical_width)
+		application.pixel_density = pixel_density
+		application.display_scale = display_scale
+		application.dpi_scale = display_scale
 	}
-	dpi := f32(pixel_width) / f32(logical_width)
 	config := hosted_config
 	config.logical_width, config.logical_height = logical_width, logical_height
 	config.pixel_width, config.pixel_height = pixel_width, pixel_height
-	config.dpi_scale = dpi
+	config.dpi_scale = application.display_scale
 	config.post_wake_data = rawptr(application)
 	config.post_wake = sdl3_webgpu_application_post_wake
 	config.chrome_paint = sdl3_webgpu_application_chrome_paint
@@ -462,9 +504,14 @@ sdl3_webgpu_application_attach_presenter :: proc(
 		sdl3_webgpu_application_window_metrics(application.window)
 	if !metrics_ok { return .Window_Failure }
 	if logical_width > 0 && logical_height > 0 && pixel_width > 0 && pixel_height > 0 {
+		pixel_density, display_scale := sdl3_webgpu_application_window_scales(
+			application.window, logical_width, pixel_width,
+		)
 		application.last_logical_width, application.last_logical_height = logical_width, logical_height
 		application.last_pixel_width, application.last_pixel_height = pixel_width, pixel_height
-		application.dpi_scale = f32(pixel_width) / f32(logical_width)
+		application.pixel_density = pixel_density
+		application.display_scale = display_scale
+		application.dpi_scale = display_scale
 	}
 	if application.last_logical_width <= 0 || application.last_logical_height <= 0 ||
 	   application.last_pixel_width <= 0 || application.last_pixel_height <= 0 {
@@ -545,39 +592,72 @@ sdl3_webgpu_application_pointer :: proc(
 	return status
 }
 
-sdl3_webgpu_application_resize :: proc(application: ^SDL3_WebGPU_Application) -> presentation_host.Hosted_Surface_Result {
-	if application == nil || !application.initialized { return .Invalid_Input }
-	lw, lh, pw, ph, ok := sdl3_webgpu_application_window_metrics(application.window)
-	if !ok { return .Invalid_Input }
-	dpi := application.dpi_scale
-	if lw > 0 && pw > 0 { dpi = f32(pw) / f32(lw) }
-	else if lh > 0 && ph > 0 { dpi = f32(ph) / f32(lh) }
-	if lw > 0 && lh > 0 && pw > 0 && ph > 0 {
-		application.last_logical_width, application.last_logical_height = lw, lh
-		application.last_pixel_width, application.last_pixel_height = pw, ph
+// sdl3_webgpu_application_apply_metrics adopts one coherent window measurement.
+// A real per-monitor DPI transition arrives here as a new drawable size and
+// display scale at the same logical size; tests and transition harnesses use
+// the same entry point to inject that measurement without a second monitor.
+// sync_chrome re-reads the native chrome band after the new scale is published
+// so the inset and application viewport update in the same adoption.
+sdl3_webgpu_application_apply_metrics :: proc(
+	application: ^SDL3_WebGPU_Application,
+	logical_width, logical_height, pixel_width, pixel_height: int,
+	pixel_density, display_scale: f32,
+	sync_chrome := true,
+) -> presentation_host.Hosted_Surface_Result {
+	if application == nil || !application.initialized ||
+	   logical_width < 0 || logical_height < 0 || pixel_width < 0 || pixel_height < 0 {
+		return .Invalid_Input
+	}
+	density := pixel_density
+	scale := display_scale
+	if !(density > 0) || math.is_nan(density) || math.is_inf(density) {
+		density = 1
+		if logical_width > 0 && pixel_width > 0 {
+			density = f32(pixel_width)/f32(logical_width)
+		}
+	}
+	if !(scale > 0) || math.is_nan(scale) || math.is_inf(scale) {
+		scale = density
+	}
+	application.pixel_density = density
+	application.display_scale = scale
+	application.dpi_scale = scale
+	if logical_width > 0 && logical_height > 0 && pixel_width > 0 && pixel_height > 0 {
+		application.last_logical_width, application.last_logical_height = logical_width, logical_height
+		application.last_pixel_width, application.last_pixel_height = pixel_width, pixel_height
 	}
 	if application.presenter.state == nil || application.presenter_device_lost {
-		if alicorn.hosted_runtime_resize(&application.hosted, lw, lh, pw, ph, dpi) != .Ok {
+		if alicorn.hosted_runtime_resize(
+			&application.hosted, logical_width, logical_height, pixel_width, pixel_height, scale,
+		) != .Ok {
 			return .Invalid_Input
 		}
 		renderable := !application.presenter_device_lost && application.visible &&
-			lw > 0 && lh > 0 && pw > 0 && ph > 0
+			logical_width > 0 && logical_height > 0 && pixel_width > 0 && pixel_height > 0
 		if alicorn.hosted_runtime_set_renderable(&application.hosted, renderable) != .Ok {
 			return .Invalid_Input
 		}
-		application.dpi_scale = dpi
-		sdl3_webgpu_application_sync_chrome(application)
+		if sync_chrome { sdl3_webgpu_application_sync_chrome(application) }
 		if renderable { return .Ok }
 		return .Suspended
 	}
 	result := presentation_host.hosted_surface_presenter_resize(
-		&application.presenter, lw, lh, pw, ph, dpi,
+		&application.presenter, logical_width, logical_height, pixel_width, pixel_height, scale,
 	)
-	if result == .Ok || result == .Suspended {
-		application.dpi_scale = dpi
+	if sync_chrome && (result == .Ok || result == .Suspended) {
 		sdl3_webgpu_application_sync_chrome(application)
 	}
 	return result
+}
+
+sdl3_webgpu_application_resize :: proc(application: ^SDL3_WebGPU_Application) -> presentation_host.Hosted_Surface_Result {
+	if application == nil || !application.initialized { return .Invalid_Input }
+	lw, lh, pw, ph, ok := sdl3_webgpu_application_window_metrics(application.window)
+	if !ok { return .Invalid_Input }
+	pixel_density, display_scale := sdl3_webgpu_application_window_scales(application.window, lw, pw)
+	return sdl3_webgpu_application_apply_metrics(
+		application, lw, lh, pw, ph, pixel_density, display_scale,
+	)
 }
 
 sdl3_webgpu_application_set_visible :: proc(
