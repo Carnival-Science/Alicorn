@@ -132,7 +132,25 @@ the reference and hosted builds both currently drop that service during their
 Scratchpad must map the field and call `application_file_drag_start` from its
 workspace drag threshold for the founder's Scratchpad drag-out check. This is the
 same one-line mapping the reference path would need; it is not a renderer
-difference.
+difference:
+
+```odin
+// frontends/alicorn/app_host.odin
+Scratchpad_Services :: struct {
+    // ...
+    file_drag: alicorn.File_Drag_Service,
+}
+// scratchpad_services_from_native / scratchpad_services_from_hosted
+file_drag = value.file_drag,
+
+// frontends/alicorn/drag_drop.odin, after the workspace drag threshold
+if app.workspace_drag_kind == .Workspace && app.workspace_drag_source_path != "" {
+    _ = alicorn.application_file_drag_start(app.services.file_drag, absolute_source_path)
+}
+```
+
+The path must be absolute; the tree model stores workspace-relative paths, so
+the call site joins the workspace root before starting the drag.
 
 ### 3. Drop in from Explorer (both hosts)
 
