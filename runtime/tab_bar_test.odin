@@ -467,6 +467,62 @@ test_tab_bar_compact_close_hover_preserves_layout_and_text_run :: proc(t: ^testi
 }
 
 @(test)
+test_tab_bar_motion_reorder_preserves_close_hit_geometry_without_invisible_targets :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 900, 120})
+	defer destroy_runtime(&rt)
+	items := tab_bar_test_items()
+	options := tab_bar_test_options_always_close()
+	options.animate_drag_reorder = true
+	result := tab_bar_test_build(&rt, items[:], 900, options)
+	if rt.invalidated {
+		result = tab_bar_test_build(&rt, items[:], 900, options)
+	}
+	if len(result.item_nodes) != len(items) || len(result.item_nodes) == 0 {
+		testing.expect(t, false, "the animated tab fixture should expose item roots")
+		return
+	}
+	tab_id := result.item_nodes[0]
+	close_id, close_count := tab_bar_test_close_node(&rt, tab_id)
+	if close_id == 0 || close_count != 1 {
+		testing.expect(t, false, "the selected tab should retain exactly one close control")
+		return
+	}
+	logical_hit := rt.nodes[close_id].bounds
+	hit_bounds_before := rt.nodes[close_id].hit_bounds
+	semantic_before, semantic_found := semantic_node_lookup(&rt, semantic_visual_id(close_id))
+	close_center_x := logical_hit.x+logical_hit.w*0.5
+	close_center_y := logical_hit.y+logical_hit.h*0.5
+	tab_handle, handle_status := motion_owner_begin(&rt, tab_id)
+	config := Motion_Config{omega=20, position_tolerance=0.001, velocity_tolerance=0.001}
+	testing.expect(t, handle_status == .Ok &&
+		motion_target_translation(&rt, tab_handle, Motion_Vector2{40, 0}, config, .Snap, Motion_Time(0)) == .Ok,
+		"the retained tab root should accept a reorder translation")
+	ui, ready := begin_presentation_frame(&rt)
+	if ready { end_presentation_frame(&ui) }
+	tab_command, tab_found := motion_acceptance_find_command(&rt, tab_id)
+	close_command, close_found := motion_acceptance_find_command(&rt, close_id)
+	testing.expect(t, ready && tab_found && close_found && tab_command.translation == [2]f32{40, 0} &&
+		close_command.translation == [2]f32{40, 0},
+		"the animated tab and its close affordance should move visually together")
+	testing.expect(t, rt.nodes[close_id].hit_bounds == hit_bounds_before &&
+		hit_test(&rt, close_center_x, close_center_y) == close_id,
+		"Target_Static keeps the close control clickable at its logical position during reorder motion")
+	testing.expect(t, hit_test(&rt, close_center_x+40, close_center_y) != close_id,
+		"the animated close visual must not create an invisible click target at its moved paint position")
+	if semantic_found {
+		semantic_after, after_found := semantic_node_lookup(&rt, semantic_visual_id(close_id))
+		testing.expect(t, after_found && semantic_after.bounds == semantic_before.bounds,
+			"the close control's accessible bounds must stay at its logical target geometry")
+	}
+	target := process_pointer(&rt, Pointer_Event{kind=.Down, x=close_center_x, y=close_center_y,
+		button=POINTER_BUTTON_PRIMARY})
+	_ = process_pointer(&rt, Pointer_Event{kind=.Up, x=close_center_x, y=close_center_y,
+		button=POINTER_BUTTON_PRIMARY})
+	testing.expect(t, target == close_id && rt.activation_node == close_id && rt.captured_node == 0,
+		"a logical click on the mid-reorder close control should still activate that control")
+}
+
+@(test)
 test_tab_bar_default_presentation_preserves_standard_layout :: proc(t: ^testing.T) {
 	testing.expect_value(t, int(Tab_Bar_Presentation.Standard), 0)
 	zero_options := Tab_Bar_Options{}
