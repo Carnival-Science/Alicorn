@@ -100,60 +100,137 @@ layout_percent_width_parent_extent :: proc(rt: ^Runtime, parent: ^Node) -> (f32,
 	return 0, false
 }
 
+// A percentage parent can itself be a percentage child. Retained-only layout
+// must resolve the outer relationship first or the inner one reads the
+// previous frame's resolved width. The dependency maps have no iteration order,
+// so detect that case and resolve by depth. Flat trees, including the measured
+// single-dependency consumer, keep the allocation-free single pass.
 layout_percent_width_update_retained :: proc(rt: ^Runtime) {
 	if rt == nil || !rt.percent_width_sidecar_initialized || len(rt.percent_width_dependencies) == 0 { return }
-	for child_id, &dependency in rt.percent_width_dependencies {
-		child, child_found := rt.nodes[child_id]
-		if !child_found || child == nil { continue }
-		parent, parent_found := rt.nodes[dependency.parent]
-		parent_extent: f32
-		definite := false
-		if parent_found && parent != nil { parent_extent, definite = layout_percent_width_parent_extent(rt, parent) }
-		resolved_width := f32(-1)
-		if definite {
-			if math.is_nan(parent_extent) || math.is_inf(parent_extent) || parent_extent < 0 {
-				definite = false
-			} else {
-				inner := maxf(parent_extent-2*maxf(parent.style.padding, 0), 0)
-				resolved_width = inner*dependency.fraction
-				if math.is_nan(resolved_width) || math.is_inf(resolved_width) {
-					definite = false
-					resolved_width = -1
-				}
+	has_percentage_parent := false
+	// One relationship cannot be nested. Keep the measured single-consumer case
+	// free of the extra map scan.
+	if len(rt.percent_width_dependencies) > 1 {
+		for _, dependency in rt.percent_width_dependencies {
+			if _, nested := rt.percent_width_dependencies[dependency.parent]; nested {
+				has_percentage_parent = true
+				break
 			}
 		}
-		if !definite {
-			if !dependency.parent_invalid_reported {
-				parent_label := "<missing parent>"
-				if parent_found && parent != nil { parent_label = parent.label }
-				append_diagnostic(rt, fmt.tprintf(
-					"Invalid retained percentage width at %s:%d:%d: parent %q no longer has an independently definite width; its percentage child was reset to the ordinary unspecified width. A parent that becomes content-sized, allocated, growing, or compressible must be explicitly described with a new valid relationship.",
-					child.site.file, child.site.line, child.site.column, parent_label,
-				))
-			}
-			dependency.parent_invalid_reported = true
+	}
+	if !has_percentage_parent {
+		layout_percent_width_update_pass(rt, nil)
+		return
+	}
+
+	count := len(rt.percent_width_dependencies)
+	ids := make([]Node_ID, count, allocator=rt.scratch_allocator)
+	depths := make([]int, count, allocator=rt.scratch_allocator)
+	defer {
+		delete(ids, rt.scratch_allocator)
+		delete(depths, rt.scratch_allocator)
+	}
+	index := 0
+	for child_id in rt.percent_width_dependencies {
+		ids[index] = child_id
+		depths[index] = layout_percent_width_dependency_depth(rt, child_id)
+		index += 1
+	}
+	for i in 1 ..< count {
+		id, depth := ids[i], depths[i]
+		j := i-1
+		for j >= 0 && depths[j] > depth {
+			ids[j+1] = ids[j]
+			depths[j+1] = depths[j]
+			j -= 1
+		}
+		ids[j+1] = id
+		depths[j+1] = depth
+	}
+	layout_percent_width_update_pass(rt, ids)
+}
+
+// layout_percent_width_dependency_depth counts percentage ancestors. The map
+// bound also stops a malformed cycle from spinning.
+layout_percent_width_dependency_depth :: proc(rt: ^Runtime, child_id: Node_ID) -> int {
+	depth := 0
+	current := child_id
+	for depth < len(rt.percent_width_dependencies) {
+		dependency, found := rt.percent_width_dependencies[current]
+		if !found { break }
+		if _, parent_is_percentage := rt.percent_width_dependencies[dependency.parent]; !parent_is_percentage { break }
+		current = dependency.parent
+		depth += 1
+	}
+	return depth
+}
+
+layout_percent_width_update_pass :: proc(rt: ^Runtime, order: []Node_ID) {
+	if order == nil {
+		for child_id, &dependency in rt.percent_width_dependencies {
+			layout_percent_width_update_one(rt, child_id, &dependency)
+		}
+		return
+	}
+	for child_id in order {
+		dependency, found := rt.percent_width_dependencies[child_id]
+		if !found { continue }
+		layout_percent_width_update_one(rt, child_id, &dependency)
+		rt.percent_width_dependencies[child_id] = dependency
+	}
+}
+
+layout_percent_width_update_one :: proc(rt: ^Runtime, child_id: Node_ID, dependency: ^Percent_Width_Dependency) {
+	child, child_found := rt.nodes[child_id]
+	if !child_found || child == nil { return }
+	parent, parent_found := rt.nodes[dependency.parent]
+	parent_extent: f32
+	definite := false
+	if parent_found && parent != nil { parent_extent, definite = layout_percent_width_parent_extent(rt, parent) }
+	resolved_width := f32(-1)
+	if definite {
+		if math.is_nan(parent_extent) || math.is_inf(parent_extent) || parent_extent < 0 {
+			definite = false
 		} else {
-			dependency.parent_invalid_reported = false
+			inner := maxf(parent_extent-2*maxf(parent.style.padding, 0), 0)
+			resolved_width = inner*dependency.fraction
+			if math.is_nan(resolved_width) || math.is_inf(resolved_width) {
+				definite = false
+				resolved_width = -1
+			}
 		}
-		if child.style.width == resolved_width { continue }
-		child.style.width = resolved_width
-		new_layout_hash := layout_percent_width_hash(dependency.layout_hash_base, child.kind, resolved_width, child.button_presentation)
-		layout_changed := child.layout_hash != new_layout_hash
-		if layout_changed { child.layout_hash = new_layout_hash }
-		measurement_changed := false
-		if dependency.measure_input_has_width {
-			new_measure_hash := hash_mix(dependency.measure_input_hash_base, u64(transmute(u32)resolved_width))
-			measurement_changed = measure_input_observe(rt, child_id, new_measure_hash)
+	}
+	if !definite {
+		if !dependency.parent_invalid_reported {
+			parent_label := "<missing parent>"
+			if parent_found && parent != nil { parent_label = parent.label }
+			append_diagnostic(rt, fmt.tprintf(
+				"Invalid retained percentage width at %s:%d:%d: parent %q no longer has an independently definite width; its percentage child was reset to the ordinary unspecified width. A parent that becomes content-sized, allocated, growing, or compressible must be explicitly described with a new valid relationship.",
+				child.site.file, child.site.line, child.site.column, parent_label,
+			))
 		}
-		if layout_changed || measurement_changed {
-			if measurement_changed { layout_measure_mark_dirty(rt, child) }
-			dirty_set(&child.dirty, .Layout, true)
-			dirty_set(&child.dirty, .Paint, true)
-			dirty_set(&child.dirty, .Composite, true)
-			queue_paint(rt, child_id)
-			mark_layout_ancestors(rt, child_id)
-			record_trace(rt, .Layout, child_id, "retained percentage width followed parent basis")
-		}
+		dependency.parent_invalid_reported = true
+	} else {
+		dependency.parent_invalid_reported = false
+	}
+	if child.style.width == resolved_width { return }
+	child.style.width = resolved_width
+	new_layout_hash := layout_percent_width_hash(dependency.layout_hash_base, child.kind, resolved_width, child.button_presentation)
+	layout_changed := child.layout_hash != new_layout_hash
+	if layout_changed { child.layout_hash = new_layout_hash }
+	measurement_changed := false
+	if dependency.measure_input_has_width {
+		new_measure_hash := hash_mix(dependency.measure_input_hash_base, u64(transmute(u32)resolved_width))
+		measurement_changed = measure_input_observe(rt, child_id, new_measure_hash)
+	}
+	if layout_changed || measurement_changed {
+		if measurement_changed { layout_measure_mark_dirty(rt, child) }
+		dirty_set(&child.dirty, .Layout, true)
+		dirty_set(&child.dirty, .Paint, true)
+		dirty_set(&child.dirty, .Composite, true)
+		queue_paint(rt, child_id)
+		mark_layout_ancestors(rt, child_id)
+		record_trace(rt, .Layout, child_id, "retained percentage width followed parent basis")
 	}
 }
 

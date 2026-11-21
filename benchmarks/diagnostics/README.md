@@ -59,3 +59,30 @@ $Odin = Resolve-AlicornOdin
 
 The Windows capture from 2026-10-30 is in
 [`raw/issue109-percent-sidecar-windows-2026-10-30.txt`](raw/issue109-percent-sidecar-windows-2026-10-30.txt).
+
+## Percentage-width production validation
+
+`issue158_percent_width_benchmark.odin` drives a font-picker-shaped modal
+(overlay padding, a 100%-width panel capped at 900, header/footer text, and
+twelve retained rows) through two behavior-equivalent authoring variants:
+`width=percent(1)` and `width=min(viewport.w-48, 900)`. It asserts identical
+panel and row geometry at 800 and 1200 units, then reports complete headless
+frame, application-description, and retained-layout p95 values together with
+allocator calls, requested bytes, layout updates, and measurement cache
+counters. The `resize_cap_release` trace alternates 800/1200; `same_width`
+redescribes at a constant width; `idle` polls a settled tree.
+
+```powershell
+. .\tools\common.ps1
+$Odin = Resolve-AlicornOdin
+& $Odin build benchmarks\diagnostics\issue158_percent_width_benchmark.odin `
+    -file -o:speed -collection:alicorn=. `
+    -out:out\issue158_percent_width_benchmark.exe
+1..5 | ForEach-Object { .\out\issue158_percent_width_benchmark.exe }
+```
+
+Collect five fresh processes and keep each raw capture. The 2026-11-21
+Windows capture and its interpretation are in
+[`docs/validation/issue-158-percentage-width-windows-2026-11-21.md`](../../docs/validation/issue-158-percentage-width-windows-2026-11-21.md).
+This is a consumer-shaped fixture, not the Scratchpad executable, and it does
+not measure GPU submission, present latency, or native input.
