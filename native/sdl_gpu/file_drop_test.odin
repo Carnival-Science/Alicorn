@@ -5,6 +5,7 @@ package alicorn_sdl_gpu
 // push a real SDL_EVENT_DROP_FILE through SDL's queue and assert the
 // application callback receives the exact path.
 
+import "core:sync"
 import "core:testing"
 import alicorn "../../runtime"
 import "vendor:sdl3"
@@ -22,6 +23,11 @@ file_drop_test_callback :: proc(data: rawptr, _rt: ^alicorn.Runtime, path: strin
 
 @(test)
 test_native_drop_file_event_reaches_application_with_the_exact_path :: proc(t: ^testing.T) {
+	// SDL's event queue is process-global. Serialize with the other synthetic
+	// event tests so one test cannot quit the event subsystem or drain another
+	// test's queued wake/drop event while it runs.
+	sync.mutex_lock(&native_sdl_event_test_mutex)
+	defer sync.mutex_unlock(&native_sdl_event_test_mutex)
 	if !sdl3.InitSubSystem(sdl3.INIT_EVENTS) {
 		testing.expect(t, false, "SDL event subsystem must initialize for the native file-drop test")
 		return

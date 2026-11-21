@@ -724,15 +724,28 @@ start_offscreen_readback :: proc() {
 	composite_surface_instance_uploads := state.compositor.surfaces.instance_upload_count
 	surface_vertices := 0
 	for draw in state.compositor.surfaces.draws { surface_vertices += int(draw.vertex_count) }
+	// The mixed scene uses icons from every compiled atlas page, so one initial
+	// upload of each page must total the generated atlas size. Derive it instead
+	// of pinning a byte count: adding a built-in icon can grow the last page.
+	expected_icon_atlas_bytes := u64(0)
+	for page in alicorn.ICON_ATLAS_PAGES { expected_icon_atlas_bytes += u64(len(page.pixels)) }
 	if composite_solid_meshes != 1 || composite_solid_uploads != 1 ||
 	   composite_text_meshes != 1 || composite_text_uploads != 1 || composite_atlas_uploads == 0 ||
 	   composite_icon_meshes != 1 || composite_icon_uploads != 1 || composite_icon_atlas_uploads != 2 ||
-	   state.compositor.icons.atlas_upload_bytes != 1536*1024 ||
+	   state.compositor.icons.atlas_upload_bytes != expected_icon_atlas_bytes ||
 	   composite_image_meshes != 1 || composite_image_uploads != 1 || composite_image_texture_uploads != 2 ||
 	   composite_image_texture_bytes != 2*4*4*4 || state.compositor.images.resident_bytes != 2*4*4*4 ||
 	   composite_surface_meshes != 2 || composite_surface_uploads != 2 || surface_vertices != 72 ||
 	   composite_surface_instance_uploads != 1 || len(state.compositor.surfaces.draws) != 2 {
-		fmt.panicf("initial mixed composition expected retained solid/text/icon/image/custom-surface meshes and uploads")
+		fmt.panicf("initial mixed composition expected retained solid/text/icon/image/custom-surface meshes and uploads: solid=%d/%d text=%d/%d atlas=%d icon=%d/%d ia=%d iab=%d image=%d/%d it=%d itb=%d rb=%d surf=%d/%d sv=%d si=%d draws=%d",
+			composite_solid_meshes, composite_solid_uploads,
+			composite_text_meshes, composite_text_uploads, composite_atlas_uploads,
+			composite_icon_meshes, composite_icon_uploads, composite_icon_atlas_uploads,
+			state.compositor.icons.atlas_upload_bytes,
+			composite_image_meshes, composite_image_uploads, composite_image_texture_uploads,
+			composite_image_texture_bytes, state.compositor.images.resident_bytes,
+			composite_surface_meshes, composite_surface_uploads, surface_vertices,
+			composite_surface_instance_uploads, len(state.compositor.surfaces.draws))
 	}
 	fmt.printf("[webgpu-feasibility] mixed paint-order compositor PASS commands=%d solid_meshes=%d text_meshes=%d icon_meshes=%d icon_vertex_uploads=%d icon_atlas_pages=%d icon_atlas_bytes=%d image_meshes=%d image_vertex_uploads=%d image_texture_uploads=%d image_texture_bytes=%d custom_surface_meshes=%d custom_surface_vertex_uploads=%d custom_surface_vertices=%d instance_uploads=%d\n",
 		len(mixed_display.commands), composite_solid_meshes, composite_text_meshes, composite_icon_meshes,
