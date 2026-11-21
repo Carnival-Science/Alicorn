@@ -68,9 +68,17 @@ Interaction_After_Frame_Proc :: proc(state: rawptr, rt: ^Runtime)
 // should be a stable retained ancestor of the component's focusable nodes.
 // A modal scope receives matching input before focused scopes. A composition
 // yield key remains with the native text host while IME composition is active.
+//
+// text_preempt_keys opt a scope into keys that a focused text-input owner would
+// otherwise keep. A listed key must also appear in keys. Empty by default,
+// which preserves Alicorn's command-vocabulary precedence. IME composition
+// always wins: composition-active keys only reach the scope when they are
+// absent from composition_yield_keys and are preemptable by the existing
+// command policy.
 Interaction_Scope_Options :: struct {
 	keys: Interaction_Key_Set,
 	composition_yield_keys: Interaction_Key_Set,
+	text_preempt_keys: Interaction_Key_Set,
 	pointers: Interaction_Pointer_Set,
 	modal: bool,
 	on_text_change: Interaction_Text_Change_Proc,
@@ -109,6 +117,9 @@ Application_Text_Key_Proc :: proc(
 
 Application_Text_Field_Key_Result :: enum { Unhandled, Navigation, Edit }
 
+// application_key_can_preempt_text_field is the base command-vocabulary policy
+// for a focused text owner. Interaction scopes can widen it per key with
+// Interaction_Scope_Options.text_preempt_keys; IME composition still wins.
 application_key_can_preempt_text_field :: proc(key: Application_Key, composition_active := false) -> bool {
 	if key == .Escape && composition_active { return false }
 	if key == .Workspace_Rename && composition_active { return false }
@@ -125,8 +136,10 @@ application_key_can_preempt_text_field :: proc(key: Application_Key, composition
 
 // application_dispatch_key shares the native host's rule for offering a
 // translated command to application state. A focused text owner keeps keys
-// unless the command is explicitly allowed to preempt it. Composition state
-// is supplied by the host because native IME state may outlive runtime preedit.
+// unless the command is explicitly allowed to preempt it, either by the shared
+// command policy or by a scope that declared the key in text_preempt_keys.
+// Composition state is supplied by the host because native IME state may
+// outlive runtime preedit.
 application_dispatch_key :: proc(
 	rt: ^Runtime,
 	state: rawptr,
@@ -136,8 +149,14 @@ application_dispatch_key :: proc(
 	composition_active := false,
 ) -> bool {
 	if rt == nil { return false }
-	if text_input_focused && !application_key_can_preempt_text_field(key, composition_active) { return false }
-	if interaction_scope_dispatch_key(rt, key, composition_active) { return true }
+	if text_input_focused {
+		if interaction_scope_dispatch_key(rt, key, composition_active, text_input_focused=true) {
+			return true
+		}
+		if !application_key_can_preempt_text_field(key, composition_active) { return false }
+	} else if interaction_scope_dispatch_key(rt, key, composition_active) {
+		return true
+	}
 	if callback == nil { return false }
 	if !callback(state, rt, key) { return false }
 	reason := "application keyboard command"

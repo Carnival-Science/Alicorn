@@ -186,8 +186,7 @@ sdl3_webgpu_application_key_down :: proc(
 		return .Handled
 	}
 
-	if key, mapped := application_key_from_sdl(event.key, event.mod, text_focused); mapped &&
-		(!text_focused || alicorn.application_key_can_preempt_text_field(key, composition_active)) {
+	if key, mapped := application_key_from_sdl(event.key, event.mod, text_focused); mapped {
 		key_handled, key_status := alicorn.hosted_runtime_application_key(&application.hosted, key, alicorn.Hosted_Key_Event{
 			key_code=u32(key), pressed=true, repeat=event.repeat,
 			modifiers=pointer_modifiers_from_sdl(event.mod),

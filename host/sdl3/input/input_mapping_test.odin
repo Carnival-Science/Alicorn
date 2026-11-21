@@ -124,9 +124,14 @@ test_sdl_application_shortcuts_respect_text_focus_and_platform_primary_modifier 
 		"platform primary shortcuts map to Alicorn application commands")
 	ordinary_f, ordinary_f_ok := application_key_from_sdl(sdl3.K_F, {}, true)
 	ordinary_left, ordinary_left_ok := application_key_from_sdl(sdl3.K_LEFT, {}, true)
+	text_space, text_space_ok := application_key_from_sdl(sdl3.K_SPACE, {}, true)
 	text_find, text_find_ok := application_key_from_sdl(sdl3.K_F, primary, true)
-	testing.expect(t, !ordinary_f_ok && !ordinary_left_ok && text_find_ok && text_find == .Find,
-		"ordinary text keys remain with the focused editor while explicit shortcuts may preempt")
+	testing.expect(t, ordinary_left_ok && ordinary_left == .Left && text_space_ok &&
+		text_space == .Toggle && !alicorn.application_key_can_preempt_text_field(.Left) &&
+		!alicorn.application_key_can_preempt_text_field(.Toggle),
+		"navigation and Space translate while text has focus; the shared policy still keeps them with the editor unless a scope declares a text preemption")
+	testing.expect(t, !ordinary_f_ok && text_find_ok && text_find == .Find,
+		"ordinary character-shaped keys remain with the focused editor while explicit shortcuts may preempt")
 	cycle, cycle_ok := application_key_from_sdl(sdl3.K_TAB, sdl3.KMOD_CTRL|sdl3.KMOD_SHIFT, true)
 	testing.expect(t, cycle_ok && cycle == .Tab_Previous,
 		"Control+Shift+Tab remains document navigation even when text has focus")

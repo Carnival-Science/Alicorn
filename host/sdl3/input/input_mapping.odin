@@ -228,8 +228,10 @@ context_menu_key_from_sdl :: proc(key: sdl3.Keycode) -> alicorn.Context_Menu_Key
 }
 
 // application_key_from_sdl maps the common native shortcuts shared by SDL3
-// hosts. Text-focused callers may still offer only commands that Alicorn
-// explicitly permits to preempt text editing and active IME composition.
+// hosts. Navigation and Space are translated even while a text owner is
+// focused; the shared runtime policy decides whether they preempt the text
+// owner. Character-ambiguous convenience commands remain gated here so ordinary
+// typing cannot be mistaken for a command.
 application_key_from_sdl :: proc(
 	key: sdl3.Keycode,
 	modifiers: sdl3.Keymod,
@@ -244,28 +246,19 @@ application_key_from_sdl :: proc(
 	switch key {
 	case sdl3.K_ESCAPE: return .Escape, true
 	case sdl3.K_RETURN, sdl3.K_KP_ENTER: return .Return, true
-	case sdl3.K_SPACE:
-		if !text_input_focused { return .Toggle, true }
+	case sdl3.K_SPACE: return .Toggle, true
 	case sdl3.K_F2: return .Workspace_Rename, true
 	case sdl3.K_F3: return .Find_Previous if shift else .Find_Next, true
 	case sdl3.K_F10:
 		if shift { return .Context_Menu, true }
-	case sdl3.K_LEFT:
-		if !text_input_focused { return .Left, true }
-	case sdl3.K_RIGHT:
-		if !text_input_focused { return .Right, true }
-	case sdl3.K_UP:
-		if !text_input_focused { return .Up, true }
-	case sdl3.K_DOWN:
-		if !text_input_focused { return .Down, true }
-	case sdl3.K_PAGEUP:
-		if !text_input_focused { return .Page_Up, true }
-	case sdl3.K_PAGEDOWN:
-		if !text_input_focused { return .Page_Down, true }
-	case sdl3.K_HOME:
-		if !text_input_focused { return .Home, true }
-	case sdl3.K_END:
-		if !text_input_focused { return .End, true }
+	case sdl3.K_LEFT: return .Left, true
+	case sdl3.K_RIGHT: return .Right, true
+	case sdl3.K_UP: return .Up, true
+	case sdl3.K_DOWN: return .Down, true
+	case sdl3.K_PAGEUP: return .Page_Up, true
+	case sdl3.K_PAGEDOWN: return .Page_Down, true
+	case sdl3.K_HOME: return .Home, true
+	case sdl3.K_END: return .End, true
 	case sdl3.K_1:
 		if !text_input_focused { return .Command_1, true }
 	case sdl3.K_2:

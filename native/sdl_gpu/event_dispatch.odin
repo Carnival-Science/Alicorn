@@ -526,10 +526,15 @@ pump_events :: proc(
 					application_key: Application_Key
 					mapped := true
 					switch event.key.key {
+					case sdl3.K_LEFT: application_key = .Left
+					case sdl3.K_RIGHT: application_key = .Right
 					case sdl3.K_UP: application_key = .Up
 					case sdl3.K_DOWN: application_key = .Down
+					case sdl3.K_HOME: application_key = .Home
+					case sdl3.K_END: application_key = .End
 					case sdl3.K_PAGEUP: application_key = .Page_Up
 					case sdl3.K_PAGEDOWN: application_key = .Page_Down
+					case sdl3.K_SPACE: application_key = .Toggle
 					case sdl3.K_ESCAPE: application_key = .Escape
 					case sdl3.K_RETURN, sdl3.K_KP_ENTER:
 						application_key = native_text_field_return_key(native_text_modifier(event.key.mod, sdl3.KMOD_SHIFT))

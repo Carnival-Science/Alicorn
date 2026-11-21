@@ -66,16 +66,31 @@ interaction_scope_has_input :: proc(rt: ^Runtime) -> bool {
 }
 
 @(private)
+interaction_scope_accepts_text_input_key :: proc(
+	options: Interaction_Scope_Options,
+	key: Application_Key,
+	composition_active: bool,
+) -> bool {
+	if application_key_can_preempt_text_field(key, composition_active) { return true }
+	// IME composition owns every key that the scope did not explicitly yield
+	// through composition_yield_keys; text_preempt_keys never overrides it.
+	if composition_active { return false }
+	return key in options.text_preempt_keys
+}
+
+@(private)
 interaction_scope_for_key :: proc(
 	rt: ^Runtime,
 	key: Application_Key,
 	composition_active: bool,
+	text_input_focused := false,
 ) -> (owner: Node_ID, found: bool) {
 	if rt == nil { return }
 	for i := len(rt.interaction_scopes)-1; i >= 0; i -= 1 {
 		scope := rt.interaction_scopes[i]
 		if !scope.options.modal || key not_in scope.options.keys { continue }
 		if composition_active && key in scope.options.composition_yield_keys { continue }
+		if text_input_focused && !interaction_scope_accepts_text_input_key(scope.options, key, composition_active) { continue }
 		return scope.owner, true
 	}
 	ancestor := rt.focused
@@ -83,6 +98,7 @@ interaction_scope_for_key :: proc(
 		for scope in rt.interaction_scopes {
 			if scope.owner != ancestor || key not_in scope.options.keys { continue }
 			if composition_active && key in scope.options.composition_yield_keys { continue }
+			if text_input_focused && !interaction_scope_accepts_text_input_key(scope.options, key, composition_active) { continue }
 			return scope.owner, true
 		}
 		node, exists := rt.nodes[ancestor]
@@ -94,9 +110,15 @@ interaction_scope_for_key :: proc(
 
 // interaction_scope_dispatch_key queues a key for the focused component (or
 // the topmost matching modal scope). Native text composition can retain keys
-// explicitly listed in composition_yield_keys.
-interaction_scope_dispatch_key :: proc(rt: ^Runtime, key: Application_Key, composition_active := false) -> bool {
-	owner, found := interaction_scope_for_key(rt, key, composition_active)
+// explicitly listed in composition_yield_keys. When a text-input owner is
+// focused, text_preempt_keys widens the command vocabulary the scope receives.
+interaction_scope_dispatch_key :: proc(
+	rt: ^Runtime,
+	key: Application_Key,
+	composition_active := false,
+	text_input_focused := false,
+) -> bool {
+	owner, found := interaction_scope_for_key(rt, key, composition_active, text_input_focused)
 	if !found { return false }
 	append(&rt.interaction_events, Interaction_Event_Record{
 		owner=owner,

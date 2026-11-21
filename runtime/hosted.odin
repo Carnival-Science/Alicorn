@@ -1110,10 +1110,16 @@ hosted_runtime_application_key :: proc(
 	if access_status != .Ok { return false, access_status }
 	_ = hosted_runtime_note_interaction(host)
 	if event.pressed {
-		if event.text_input_focused && !application_key_can_preempt_text_field(key, event.composition_active) {
-			return false, .Ok
+		if event.text_input_focused {
+			if interaction_scope_dispatch_key(&state.runtime, key, event.composition_active, text_input_focused=true) {
+				return true, .Ok
+			}
+			if !application_key_can_preempt_text_field(key, event.composition_active) {
+				return false, .Ok
+			}
+		} else if interaction_scope_dispatch_key(&state.runtime, key, event.composition_active) {
+			return true, .Ok
 		}
-		if interaction_scope_dispatch_key(&state.runtime, key, event.composition_active) { return true, .Ok }
 	}
 	if state.on_key == nil { return false, .Ok }
 	focused_owner := focused_node(&state.runtime)
