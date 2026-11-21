@@ -7,6 +7,14 @@ the current project status.
 
 ## Current acceptance and platform limits
 
+- [Issue #193 invalidation-frontier diagnostics (2026-11-21)](issue-193-invalidation-frontier-2026-11-21.md)
+  — GO: debug-only per-cause capture of the invalidation target, resolved
+  subscribers and ancestors, changed outputs vs visits, sampled ring nodes, and
+  fallback attribution; `frontier_inspect`/`frontier_why_touched` queries and a
+  `testui` `frontier_check` helper; six #106 corpus extensions; an adversarial
+  wrong-region trace that locates the first incorrect edge; and a paired
+  release A/B with identical Frame_Stats, global work, allocation counters,
+  and structure sizes.
 - [Issue #146 motion release gate: consolidated acceptance matrix (2026-11-21)](issue-146-motion-acceptance-matrix-2026-11-21.md)
   - all 9 issue matrix rows and 6 core invariant groups mapped to evidence;
   - local gap closures for Direct manipulation, hit-maintenance classification,

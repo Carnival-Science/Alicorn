@@ -1,0 +1,57 @@
+[fixture] initial scene fresh-parity= true
+[fixture] nodes alpha/bravo/charlie/peer: #13335199333194904991 w=81.87 h=20.80 #7495192643631381114 w=80.90 h=20.80 #462786952373983531 w=91.62 h=20.80 #5299055777892515774 w=81.76 h=20.80
+[adversarial] changed dependency: #7495192643631381114 w=80.90 h=20.80
+[adversarial] peer subscriber : #5299055777892515774 w=81.76 h=20.80
+[adversarial] fresh-parity= false (false means stale output)
+====  ADVERSARIAL: wrong-but-valid region  ====
+Alicorn invalidation frontier
+cause #2 (Application, action=0)
+  trace window: #103..#106, events=4, invalidations=1
+  invalidated region: key=fixture-peer revision=1 key-hash=3128907628967514715 requests=1
+  subscribers (1): [1164651297357844810]
+  ancestors (1): [2232316383130427725]
+  stage visits: description/reconcile=2 measure=0 layout=0 paint=0 composite=0
+  changed outputs: description=0 measure=0 layout=0 paint=0 composite=0
+  description ran without a changed output: this cause visited stages but no retained output changed
+  fallbacks: none (observed work=0)
+  sampled nodes: reconcile=[4871491486126281863] measure=[] layout=[] paint=[] composite=[]
+  where work stopped: before description output (the invalidation scheduled a description but nothing changed)
+  why node #1164651297357844810 was touched: cause #2 invalidated region key fixture-peer at revision 1; node #1164651297357844810 is subscribed instance 0
+why changed row region: cause #2 invalidated region key fixture-peer but node #7324292764110344671 is neither a subscriber nor an ancestor; it is outside the declared frontier
+[adversarial] forgotten revision idle passes= 0 fresh-parity= false (no cause exists; the fresh-runtime oracle proves staleness)
+====  ADVERSARIAL: broad-ancestor region  ====
+Alicorn invalidation frontier
+cause #3 (Application, action=0)
+  trace window: #107..#134, events=28, invalidations=1
+  invalidated region: key=fixture-parent revision=2 key-hash=7995737611405621411 requests=1
+  subscribers (1): [4871491486126281863]
+  ancestors (1): [2232316383130427725]
+  stage visits: description/reconcile=8 measure=6 layout=0 paint=6 composite=6
+  changed outputs: description=6 measure=0 layout=0 paint=6 composite=6
+  fallbacks: none (observed work=0)
+  sampled nodes: reconcile=[462786952373983531,10667907854639380641,7495192643631381114,7324292764110344671,13335199333194904991,9882743912853715911,1164651297357844810] measure=[462786952373983531,7495192643631381114,13335199333194904991] layout=[] paint=[462786952373983531,10667907854639380641,7495192643631381114,7324292764110344671,13335199333194904991,9882743912853715911] composite=[462786952373983531,10667907854639380641,7495192643631381114,7324292764110344671,13335199333194904991,9882743912853715911]
+  where work stopped: composite (last stage that produced a changed output)
+  why node #4871491486126281863 was touched: cause #3 invalidated region key fixture-parent at revision 2; node #4871491486126281863 is subscribed instance 0
+  changed description nodes: [9882743912853715911,13335199333194904991,7324292764110344671,7495192643631381114]
+  changed paint nodes: [9882743912853715911,13335199333194904991,7324292764110344671,7495192643631381114]
+  changed composite nodes: [9882743912853715911,13335199333194904991,7324292764110344671,7495192643631381114]
+[adversarial] repaired fresh-parity= true idle passes= 0
+[correct] bravo change fresh-parity= true peer unchanged= true
+====  CORRECT: child region invalidation  ====
+Alicorn invalidation frontier
+cause #2 (Application, action=0)
+  trace window: #103..#116, events=14, invalidations=1
+  invalidated region: key=fixture-bravo revision=2 key-hash=8691698079053643653 requests=1
+  subscribers (1): [7324292764110344671]
+  ancestors (2): [4871491486126281863,2232316383130427725]
+  stage visits: description/reconcile=6 measure=2 layout=0 paint=2 composite=2
+  changed outputs: description=2 measure=0 layout=0 paint=2 composite=2
+  fallbacks: none (observed work=0)
+  sampled nodes: reconcile=[7495192643631381114,4871491486126281863,1164651297357844810,10667907854639380641,9882743912853715911] measure=[7495192643631381114] layout=[] paint=[7495192643631381114,4871491486126281863] composite=[7495192643631381114,4871491486126281863]
+  where work stopped: composite (last stage that produced a changed output)
+  why node #7324292764110344671 was touched: cause #2 invalidated region key fixture-bravo at revision 2; node #7324292764110344671 is subscribed instance 0
+  changed description nodes: [4871491486126281863,7495192643631381114]
+  changed paint nodes: [4871491486126281863,7495192643631381114]
+  changed composite nodes: [4871491486126281863,7495192643631381114]
+[correct] final fresh-parity= true idle passes= 0
+[correct] capture bundle contains frontier inventory= true and cause records= true

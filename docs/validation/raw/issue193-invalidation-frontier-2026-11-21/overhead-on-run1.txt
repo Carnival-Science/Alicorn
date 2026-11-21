@@ -1,0 +1,15 @@
+ISSUE193_AB_BEGIN
+  size_of_runtime= 37736  size_of_frame_stats= 744  size_of_trace_event= 104  size_of_inspector_cause= 1672  gate_enabled= false
+  frames_built= 73  idle_frames= 585  observed_idle= 512
+  descriptions_emitted= 658  reused= 144  retained_match= 144  structure_sequence_matches= 71
+  reconcile= 658  layout= 1027  paint= 514  composite= 514
+  measure_requests= 256  hits= 0  misses= 256  executed= 256
+  layout_updates= 513  paint_updates= 514  composite_updates= 1  text_shapes= 256
+  created= 514  retired= 0  regions_skipped= 72  subtrees_reused= 72  adjacency_rebuilds= 1
+  global_fallbacks= 0  semantic_changes= 0
+  global_work_by_reason=measure-font-generation : 1,display-structure-rebuild : 1,display-scale-change : 0,display-transient-update : 0,display-incremental-fallback : 0,semantic-order-rebuild : 1
+  persistent_requested_bytes_live= 5139192  peak= 5139246  alloc_calls= 8683  free_calls= 3035
+  scratch_requested_bytes_epoch= 8  peak= 1075236  alloc_calls= 26516  resets= 73
+  idle_persistent_alloc_call_delta= 0  idle_scratch_alloc_call_delta= 0  idle_persistent_byte_delta= 0
+  active_update_p50_ns= 1900
+ISSUE193_AB_END

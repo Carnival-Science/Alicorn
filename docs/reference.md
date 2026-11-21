@@ -1979,6 +1979,18 @@ system file drops or arbitrary MIME payloads.
   reason strings. Treat reasons as borrowed and clone them if they must outlive
   the corresponding trace entry; ring-backed reasons are valid only until that
   entry is overwritten or the runtime is destroyed.
+- Debug builds capture a bounded invalidation frontier per cause
+  (`ALICORN_INVALIDATION_FRONTIER`, default on in debug;
+  `-define:ALICORN_INVALIDATION_FRONTIER=false` disables it).
+  `frontier_inspect(runtime, cause_id)` renders the declared region, revision,
+  resolved subscribers and ancestors, changed-output vs visit counts, sampled
+  nodes, fallbacks, and where work stopped.
+  `frontier_why_touched(runtime, cause_id, node_id)` explains one node's
+  relationship to that frontier. `inspect(runtime)` includes a bounded
+  `frontiers:` section. Release builds expose the same query but report that
+  capture is unavailable; they add no per-frame work, allocations, or trace
+  events. See [application mutation diagnostics](application-mutation-diagnostics.md#invalidation-frontier-issue-193)
+  and the [issue #193 validation record](validation/issue-193-invalidation-frontier-2026-11-21.md).
 - The native `Run` host accepts `--inspector` (enable `F9`) and
   `--inspector-open` (enable and show immediately). Its built-in visual
   inspector uses a separate Alicorn runtime above the application, preserving
