@@ -18,7 +18,7 @@ Install Odin and the native prerequisites from
 | 5 | [Inspector](05_inspector/main.odin) | Retained tree, focus, semantic actions, and invalidation causes |
 | 6 | [Secondary Windows](06_secondary_windows/main.odin) | Opening and closing a tool window with independent application state |
 | 7 | [Appearance](07_simple_appearance/main.odin) | Direct colors, panels, borders, rounded surfaces, and fixed-size boxes |
-| 8 | [Control Gallery](08_control_gallery/main.odin) | Font-independent icons and named icon buttons |
+| 8 | [Control Gallery](08_control_gallery/README.md) | The complete public surface: controls and validation, virtualized collections, tabs, drag reorder, split/Grid layout, positioned text, surfaces, overlays, menus, notices, motion, and themes |
 | 9 | [Retained Motion](09_retained_motion/main.odin) | Native per-window demand scheduling and paint-only analytic translation |
 | 10 | [Live Theme](10_live_theme/main.odin) | Compiled theme loading, validation, and live replacement |
 | 11 | [Third-Party Component](11_third_party_component/main.odin) | A reusable public-API compound control with a typed theme contract, unusual per-instance styling, adaptive focus identity, accessible Button behavior, and interruptible motion |
@@ -36,6 +36,7 @@ linker dependencies, builds the selected program, and launches it:
 ```sh
 ./tools/run_example.sh 01_hello
 ./tools/run_example.sh 05_inspector --inspector
+./tools/run_example.sh 08_control_gallery
 ./tools/run_example.sh 11_third_party_component
 ./tools/run_example.sh 12_custom_segmented_control
 ./tools/run_example.sh 13_surface_gradients
@@ -45,6 +46,7 @@ linker dependencies, builds the selected program, and launches it:
 ```powershell
 .\tools\run_example.ps1 -Example 01_hello
 .\tools\run_example.ps1 -Example 05_inspector -AppArgs @('--inspector')
+.\tools\run_example.ps1 -Example 08_control_gallery
 .\tools\run_example.ps1 -Example 11_third_party_component
 .\tools\run_example.ps1 -Example 12_custom_segmented_control
 .\tools\run_example.ps1 -Example 13_surface_gradients
@@ -82,11 +84,18 @@ build. Program arguments follow the example name on the shell runner and use
 6. In `06_secondary_windows`, open and close a child window, then compare its
    counter and lifecycle with the main window.
 7. In `07_simple_appearance`, change panel fill, border, or swatch colors.
-8. In `08_control_gallery`, browse the built-in icon assets and activate the
-   named icon button. To dogfood live color theme editing, edit
+8. In `08_control_gallery`, tour six sections of the public API: foundations,
+   controls, collections, layout and surfaces, overlays and commands, and motion
+   and themes. Validate the form, scroll the virtual list, close and dirty a
+   document tab, drag a row to reorder it, resize the split, open the modal and
+   context menu, switch to the light theme, and activate the named icon buttons.
+   To dogfood live color theme editing, edit
    `examples/08_control_gallery/theme.json` while the app is open, then choose
    **Reload Theme**. A color-only edit updates the accent without relayout;
    invalid JSON or changed theme structure keeps the last good palette active.
+   Pass `--smoke` to describe every section plus the modal once and exit. See the
+   [gallery notes](08_control_gallery/README.md) and
+   [component recipes](../docs/recipes.md) for copyable snippets.
 9. In `09_retained_motion`, select **Editor** and **Settings** repeatedly.
    The marker should retarget smoothly while ordinary app builds remain idle
    between selections. Leave the window alone after it settles; no motion timer
