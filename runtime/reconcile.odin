@@ -108,6 +108,18 @@ description_hash :: proc(
 	h = hash_mix(h, u64(d.kind))
 	h = hash_mix(h, u64(d.icon_id))
 	h = hash_mix(h, u64(d.font))
+	// Issue #229 phase 2 hash-coverage audit. These copied fields previously
+	// escaped the description hash and have no other typed product hash:
+	// region membership and the semantic id never reach paint/layout/measure,
+	// and scroll line metrics drive scrollbar geometry and line stepping while
+	// being absent from layout_hash. Every other copied field is either already
+	// hashed here or gated by layout_hash, paint_hash, or measure_input_hash;
+	// the reuse gate itself compares all of them exactly.
+	h = hash_mix(h, u64(d.region ? 1 : 0))
+	h = hash_mix(h, d.semantic_id.namespace)
+	h = hash_mix(h, d.semantic_id.value)
+	h = hash_mix(h, u64(transmute(u32)d.scroll_line_height))
+	h = hash_mix(h, u64(transmute(u32)d.scroll_line_width))
 	if d.kind == .Button {
 		h = hash_mix(h, hash_button_content_style(d.button_content_style))
 		h = hash_mix(h, u64(d.button_variant))
@@ -540,6 +552,7 @@ copy_node_description :: proc(
 	} else {
 		delete_key(&rt.semantic_surfaces, node.id)
 	}
+	node.has_semantic_surface = semantic_surface_style.defined
 	motion_surface_color_reconcile(rt, node.id)
 	if semantic_surface_style.defined && semantic_surface_style.open_top_edge != 0 {
 		rt.surface_top_edge_links[node.id] = semantic_surface_style.open_top_edge
@@ -549,6 +562,7 @@ copy_node_description :: proc(
 	} else {
 		delete_key(&rt.visual_parts, node.id)
 	}
+	node.has_visual_part = visual_part.defined
 	if d.kind != .Button && d.kind != .Text_Field && d.kind != .Scroll_Region && !semantic_surface_style.defined {
 		delete_key(&rt.computed_styles, node.id)
 	}
@@ -588,6 +602,7 @@ copy_node_description :: proc(
 	if !adaptive_node_has_alternative_ancestor(rt, node.id) {
 		semantic_sync_node(rt, node, semantic, previous_semantic_id)
 	}
+	node.semantic_published = semantic.role != .None
 	node.drag_source_type = d.drag_source_type
 	node.drag_source_id = d.drag_source_id
 	node.drop_target_type = d.drop_target_type
@@ -674,6 +689,281 @@ copy_node_description :: proc(
 		if rt.captured_node == node.id { rt.captured_node = 0 }
 		if rt.text_field_selection_owner == node.id { text_field_pointer_selection_cancel(rt) }
 		if rt.activation_node == node.id { rt.activation_node = 0 }
+	}
+	restore_apply_description_request(rt, node, d)
+}
+
+// ---------------------------------------------------------------------------
+// Issue #229 phase 2: exact description reuse
+//
+// The retained description is the runtime's owned copy of every value the last
+// applied per-node copy wrote. Instead of hashing the pending description and
+// then copying it field by field, reconciliation first asks whether the
+// retained node already holds exactly what the pending description asks for.
+// The comparison is exact, not a fingerprint: it reads the same fields
+// copy_node_description reads and rejects any doubt, so a match cannot be a
+// collision. A match therefore proves that running copy_node_description and
+// every hash observation would have written identical values and raised no
+// side effect, and the whole copy/hash/dirty/queue tail can be skipped.
+//
+// Every check below cites the copy_node_description branch it replaces. Keep
+// them in sync: runtime/description_reuse_test.odin mutates each field family
+// and fails if a mutation stops reaching the retained node.
+// ---------------------------------------------------------------------------
+
+// description_paint_spans_match compares the retained effective spans against
+// the effective spans the pending description would copy.
+description_paint_spans_match :: proc(node: ^Node, d: Description) -> bool {
+	index := 0
+	for span in d.text_paint_spans {
+		if !text_paint_span_has_effect(span) { continue }
+		if index >= len(node.text_paint_spans) { return false }
+		if node.text_paint_spans[index] != span { return false }
+		index += 1
+	}
+	return index == len(node.text_paint_spans)
+}
+
+// description_style_spans_match compares the retained effective style spans
+// against the pending description. copy_node_description only reallocates them
+// when their hash changes; exact comparison here also refuses a hash collision.
+description_style_spans_match :: proc(node: ^Node, d: Description) -> bool {
+	index := 0
+	for span in d.text_style_spans {
+		if !text_style_span_has_effect(span) { continue }
+		if index >= len(node.text_style_spans) { return false }
+		if node.text_style_spans[index] != span { return false }
+		index += 1
+	}
+	return index == len(node.text_style_spans)
+}
+
+// semantic_surface_color_role_equal compares the two role variants explicitly;
+// a union is not an orderable value and must not be compared with ==.
+semantic_surface_color_role_equal :: proc(a, b: Semantic_Surface_Color_Role) -> bool {
+	switch a_value in a {
+	case Style_Color_Role:
+		b_value, ok := b.(Style_Color_Role)
+		return ok && a_value == b_value
+	case Style_Extension_Color_Role_ID:
+		b_value, ok := b.(Style_Extension_Color_Role_ID)
+		return ok && a_value == b_value
+	}
+	return false
+}
+
+// semantic_surface_style_equal is exact equality for the retained surface
+// sidecar entry copy_node_description writes for this node.
+semantic_surface_style_equal :: proc(a, b: Semantic_Surface_Style) -> bool {
+	if a.defined != b.defined { return false }
+	if !a.defined { return true }
+	if !semantic_surface_color_role_equal(a.role, b.role) { return false }
+	if a.fill_override_set != b.fill_override_set || !color_equal(a.fill_override, b.fill_override) { return false }
+	if a.stroke != b.stroke || a.stroke_placement != b.stroke_placement || a.shape != b.shape { return false }
+	if a.material != b.material || a.physical_height != b.physical_height || a.material_group != b.material_group { return false }
+	if a.backdrop_effect != b.backdrop_effect { return false }
+	if a.gradient.axis != b.gradient.axis ||
+	   !semantic_surface_color_role_equal(a.gradient.end_role, b.gradient.end_role) { return false }
+	return a.open_top_edge == b.open_top_edge
+}
+
+// description_matches_retained is the exact reuse gate. It returns true only
+// when applying the pending description would change nothing observable:
+// every field copy_node_description would write already holds the pending
+// value, and every side effect it could raise is provably already satisfied.
+description_matches_retained :: proc(
+	rt: ^Runtime,
+	node: ^Node,
+	d: Description,
+	item: Pending_Item,
+	next_style_environment: Style_Environment,
+	focus_visual: Scroll_Focus_Visual,
+) -> bool {
+	if rt == nil || node == nil { return false }
+
+	// Rejection order follows mutation frequency, not field layout. A changed
+	// node must fail on the first few comparisons so the gate never taxes a
+	// high-churn pass: kind and the layout style come first because interactive
+	// workloads most often change size/position, then paint inputs, then text.
+	if node.kind != d.kind { return false }
+	if node.style != d.style || node.placement != d.placement { return false }
+	if !color_equal(node.color, d.color) ||
+	   node.color_theme_resolved != d.color_theme_resolved ||
+	   node.paint_background != d.paint_background { return false }
+	if node.label != d.label || node.text != d.text { return false }
+	if node.paint_value != d.paint_value ||
+	   node.control_value != d.control_value ||
+	   node.control_minimum != d.control_minimum ||
+	   node.control_maximum != d.control_maximum ||
+	   node.control_step != d.control_step { return false }
+	if node.key != d.key || node.explicit_key != d.explicit_key { return false }
+	if node.tooltip_text != d.tooltip_text || node.tooltip_delay_ms != d.tooltip_delay_ms { return false }
+	if node.parent != d.parent { return false }
+	if node.icon_id != d.icon_id || node.font != d.font || node.text_style != d.text_style { return false }
+	if node.site.file != d.site.file || node.site.component != d.site.component ||
+	   node.site.line != d.site.line || node.site.column != d.site.column { return false }
+	if node.identity_key != d.identity_key || node.identity_key_u64 != d.identity_key_u64 ||
+	   node.identity_key_numeric != d.identity_key_numeric ||
+	   node.identity_key_kind != d.identity_key_kind ||
+	   node.identity_key_pair != d.identity_key_pair { return false }
+	// Spans are compared exactly, not by hash.
+	if !description_paint_spans_match(node, d) { return false }
+	if !description_style_spans_match(node, d) { return false }
+	if node.style_scope_boundary != d.style_scope_boundary ||
+	   node.layout_boundary_axes != d.layout_boundary_axes { return false }
+	// A style-environment change always carries a changed dependency generation
+	// (theme, density, text scale, accent, accessibility). Never reuse across
+	// one: the copy path advances generations and invalidates computed styles.
+	if node.style_environment != next_style_environment { return false }
+	if node.adaptive_owner != d.adaptive_owner ||
+	   node.adaptive_alternative != d.adaptive_alternative ||
+	   node.adaptive_min_width != d.adaptive_min_width { return false }
+	if node.button_content_style != d.button_content_style ||
+	   node.button_variant != d.button_variant ||
+	   node.button_presentation != d.button_presentation { return false }
+	if node.region_revision != d.region_revision || node.region != d.region { return false }
+	if node.text_input_target != d.text_input_target { return false }
+	if node.text_selection_background != d.text_selection_background { return false }
+	if node.visual_row_text_node != d.visual_row_text_node ||
+	   node.visual_row_position != d.visual_row_position ||
+	   !color_equal(node.visual_row_color, d.visual_row_color) ||
+	   node.visual_row_enabled != d.visual_row_enabled { return false }
+	if node.semantic_id != d.semantic_id { return false }
+	if node.drag_source_type != d.drag_source_type || node.drag_source_id != d.drag_source_id ||
+	   node.drop_target_type != d.drop_target_type || node.drop_target_id != d.drop_target_id ||
+	   node.drop_target_mode != d.drop_target_mode { return false }
+	if node.grid_row != d.grid_row || node.grid_column != d.grid_column ||
+	   node.grid_row_span != d.grid_row_span || node.grid_column_span != d.grid_column_span ||
+	   node.grid_item != d.grid_item ||
+	   node.grid_align_x != d.grid_align_x || node.grid_align_y != d.grid_align_y { return false }
+	if node.context_menu_bounds != d.context_menu_bounds { return false }
+	if node.surface_kind != d.surface_kind || node.surface_interaction != d.surface_interaction ||
+	   node.surface_pixel_width != d.surface_pixel_width ||
+	   node.surface_pixel_height != d.surface_pixel_height ||
+	   node.surface_dpi_scale != d.surface_dpi_scale { return false }
+	if node.scroll_offset_y != d.scroll_offset_y || node.scroll_offset_x != d.scroll_offset_x ||
+	   node.scroll_content_height != d.scroll_content_height ||
+	   node.scroll_viewport_height != d.scroll_viewport_height ||
+	   node.scroll_line_height != d.scroll_line_height ||
+	   node.scroll_content_width != d.scroll_content_width ||
+	   node.scroll_viewport_width != d.scroll_viewport_width ||
+	   node.scroll_line_width != d.scroll_line_width ||
+	   node.scroll_axes != d.scroll_axes ||
+	   node.scroll_axis_behavior != d.scroll_axis_behavior ||
+	   node.scrollbar_policy != d.scrollbar_policy { return false }
+	if node.layout_scroll_offset_y != d.layout_scroll_offset_y ||
+	   node.layout_scroll_offset_x != d.layout_scroll_offset_x { return false }
+	if node.split_axis != d.split_axis || node.split_min_first != d.split_min_first ||
+	   node.split_min_second != d.split_min_second || node.split_owner != d.split_owner ||
+	   node.split_handle_size != d.split_handle_size || node.split_hit_size != d.split_hit_size { return false }
+
+	// Derived retained state the copy path recomputes from the description and
+	// from runtime-owned interaction state.
+	if node.focusable != ((d.focusable || d.text_input_target) && !d.disabled) { return false }
+	if node.disabled != d.disabled { return false }
+	if node.selected != (d.selected || rt.selected == node.id) { return false }
+	if node.text_interaction != (d.text_interaction && d.kind == .Text) { return false }
+	if node.text_interaction_show_caret != (node.text_interaction && d.text_interaction_show_caret) { return false }
+	if node.text_interaction_anchor != d.text_interaction_anchor ||
+	   node.text_interaction_focus != d.text_interaction_focus { return false }
+	if !d.text_input_target && (node.text_input_area_set || node.text_input_area != Text_Input_Area{}) { return false }
+
+	// Retained product identities that the copy path would create or release.
+	if d.kind == .Custom_Surface {
+		if node.surface_resource_generation == 0 { return false }
+	} else if node.surface_resource_generation != 0 {
+		return false
+	}
+	if node.text_run_valid && !node_has_text_product(d.kind, d.button_presentation) { return false }
+	if !node_has_text_product(d.kind, d.button_presentation) &&
+	   (node.composition.active || node.composition_run_valid) { return false }
+
+	// copy_node_description points the drag at the node when it applies a drop
+	// position; a non-None expectation must take the copy path for that side
+	// effect even though the retained value already matches.
+	expected_drop := Drop_Position.None
+	if rt.drag.phase == .Dragging && d.drop_target_type == rt.drag.drag_type &&
+	   d.drop_target_id == rt.drag.target && rt.drag.target != (Semantic_ID{}) {
+		expected_drop = rt.drag.position
+	}
+	if node.drop_position != expected_drop || expected_drop != .None { return false }
+
+	// A disabled copy path also clears runtime interaction ownership.
+	if d.disabled {
+		if node.hovered || node.pressed || node.control_pending { return false }
+		if rt.drag.phase == .Candidate && rt.drag.source_node == node.id { return false }
+		if rt.focused == node.id || rt.captured_node == node.id ||
+		   rt.text_field_selection_owner == node.id || rt.activation_node == node.id { return false }
+	}
+
+	// Motion sidecars re-derive presentation from the surface color; a node
+	// with a retained motion owner keeps the copy path.
+	if _, has_motion := rt.motion_owners[node.id]; has_motion { return false }
+
+	// Style sidecars: compare the retained entries the copy path would write.
+	// The per-node flags let the ordinary node skip the sidecar map lookups
+	// entirely when neither sidecar is declared.
+	if item.semantic_surface_style.defined != node.has_semantic_surface { return false }
+	if node.has_semantic_surface {
+		previous_surface, has_surface := rt.semantic_surfaces[node.id]
+		if !has_surface || !semantic_surface_style_equal(previous_surface, item.semantic_surface_style) { return false }
+	}
+	if item.visual_part.defined != node.has_visual_part { return false }
+	if node.has_visual_part {
+		previous_part, has_part := rt.visual_parts[node.id]
+		if !has_part || previous_part != item.visual_part { return false }
+	}
+
+	// NOTE: the measurement observation is deliberately not consulted here. On
+	// an unchanged description its input hash is unchanged, so
+	// measure_input_observe would return false and write nothing. An
+	// uninitialized observation (revision zero) is harmless: no measurement
+	// product can be stale because the description did not change, and the next
+	// copy pass initializes it.
+	// The scroll-focus presentation policy also folds into paint_hash, so a
+	// policy change must take the copy path that recomputes paint_hash and
+	// queues paint.
+	if rt.scroll_focus_visuals_initialized {
+		stored_visual, has_stored := rt.scroll_focus_visuals[node.id]
+		expect_stored := focus_visual != .Outline
+		if has_stored != expect_stored { return false }
+		if has_stored && stored_visual != focus_visual { return false }
+	} else if focus_visual != .Outline {
+		return false
+	}
+	return true
+}
+
+// apply_description_reuse_tail performs the small, descriptor-dependent part of
+// copy_node_description that exact field equality cannot prove: semantic
+// publication/removal, restore requests, and idempotent sidecar commits.
+apply_description_reuse_tail :: proc(
+	rt: ^Runtime,
+	node: ^Node,
+	d: Description,
+	item: Pending_Item,
+) {
+	// Semantic publication is not part of the retained visual description, so
+	// it is always re-derived exactly as the copy path would. Nodes with no
+	// role, no published entity, and no explicit semantic id have nothing to
+	// publish or remove.
+	if item.semantic.role != .None || node.semantic_published || node.semantic_id.namespace != 0 {
+		previous_semantic_id := node.semantic_id
+		if adaptive_node_has_alternative_ancestor(rt, node.id) && previous_semantic_id != d.semantic_id {
+			rt.adaptive_semantic_previous_ids[node.id] = previous_semantic_id
+		}
+		node.semantic_id = d.semantic_id
+		if !adaptive_node_has_alternative_ancestor(rt, node.id) {
+			semantic_sync_node(rt, node, item.semantic, previous_semantic_id)
+		}
+		node.semantic_published = item.semantic.role != .None
+	}
+	if d.region { region_index_add(rt, d.id, d.label) }
+	if item.pointer_hit_shape == .Bounds { delete_key(&rt.pointer_hit_shapes, d.id) }
+	else { rt.pointer_hit_shapes[d.id] = item.pointer_hit_shape }
+	grid_tracks_copy_retained(rt, node, item)
+	if d.kind != .Button && d.kind != .Text_Field && d.kind != .Scroll_Region && !item.semantic_surface_style.defined {
+		delete_key(&rt.computed_styles, node.id)
 	}
 	restore_apply_description_request(rt, node, d)
 }
@@ -880,24 +1170,58 @@ reconcile :: proc(rt: ^Runtime) {
 		}
 	}
 
-	desired := make(map[Node_ID]bool, allocator=rt.scratch_allocator)
-	reused_roots := make(map[Node_ID]bool, allocator=rt.scratch_allocator)
-	buckets := make([dynamic]Desired_Children, 0, allocator=rt.scratch_allocator)
-	bucket_indices := make(map[Node_ID]int, allocator=rt.scratch_allocator)
-	for item in rt.pending {
-		switch item.kind {
-		case .Description:
-			d := item.description
-			desired[d.id] = true
-			index, exists := bucket_indices[d.parent]
-			if !exists {
-				append(&buckets, Desired_Children{d.parent, make([dynamic]Node_ID, 0, allocator=rt.scratch_allocator)})
-				index = len(buckets)-1
-				bucket_indices[d.parent] = index
+	// Issue #229 phase 2 structure gate. The applied sequence is exact state:
+	// the (kind, id, parent) order of the last reconciled pass. Equality proves
+	// every desired child list and the top-level root list are identical to
+	// what reconciliation already committed, so retirement, child-list
+	// reconciliation, and the order rebuild are all skipped without hashing.
+	structure_match := DESCRIPTION_REUSE_ENABLED && len(rt.applied_structure) == len(rt.pending)
+	if structure_match {
+		for item, index in rt.pending {
+			entry := rt.applied_structure[index]
+			if entry.kind != item.kind { structure_match = false; break }
+			switch item.kind {
+			case .Description:
+				if entry.id != item.description.id || entry.parent != item.description.parent {
+					structure_match = false
+				}
+			case .Reuse_Subtree:
+				if entry.id != item.subtree { structure_match = false }
 			}
-			append(&buckets[index].children, d.id)
-		case .Reuse_Subtree:
-			reused_roots[item.subtree] = true
+			if !structure_match { break }
+		}
+	}
+	if structure_match { rt.stats.structure_sequence_matches += 1 }
+
+	// The desired map is only read by retirement and the percentage-width
+	// prune. Both are unreachable when the sequence is exact and no percentage
+	// relationship is retained, so an ordinary reuse pass allocates no maps.
+	needs_desired := !structure_match ||
+		(rt.percent_width_sidecar_initialized && len(rt.percent_width_dependencies) > 0)
+	desired: map[Node_ID]bool
+	if needs_desired { desired = make(map[Node_ID]bool, allocator=rt.scratch_allocator) }
+	reused_roots: map[Node_ID]bool
+	buckets: [dynamic]Desired_Children
+	bucket_indices: map[Node_ID]int
+	if !structure_match {
+		reused_roots = make(map[Node_ID]bool, allocator=rt.scratch_allocator)
+		buckets = make([dynamic]Desired_Children, 0, allocator=rt.scratch_allocator)
+		bucket_indices = make(map[Node_ID]int, allocator=rt.scratch_allocator)
+		for item in rt.pending {
+			switch item.kind {
+			case .Description:
+				d := item.description
+				if needs_desired { desired[d.id] = true }
+				index, exists := bucket_indices[d.parent]
+				if !exists {
+					append(&buckets, Desired_Children{d.parent, make([dynamic]Node_ID, 0, allocator=rt.scratch_allocator)})
+					index = len(buckets)-1
+					bucket_indices[d.parent] = index
+				}
+				append(&buckets[index].children, d.id)
+			case .Reuse_Subtree:
+				reused_roots[item.subtree] = true
+			}
 		}
 	}
 
@@ -955,61 +1279,74 @@ reconcile :: proc(rt: ^Runtime) {
 			record_trace(rt, .Reconcile, d.id, "new retained node")
 		} else {
 			hash_mark := perf_mark_begin()
-			new_desc_hash := description_hash(d, item.semantic_surface_style, item.visual_part, item.accessibility)
-			new_layout_hash := layout_percent_width_pending_hash(rt, d, item)
-			new_measure_input_hash := measure_input_hash(d)
-			new_paint_hash := paint_hash(d, new_desc_hash, focus_visual)
-			was_selected := node.selected
-			description_changed := node.description_hash != new_desc_hash
-			measure_state := rt.measure_states[d.id]
-			measurement_changed := measure_state.input_revision == 0 || measure_state.input_hash != new_measure_input_hash
 			next_style_environment := style_environment_with_accessibility(d.style_environment, item.accessibility)
-			style_changes := style_environment_changed_domains_for_node(rt, node, d.style, node.style_environment, next_style_environment)
-			style_stages := style_domains_dirty_stages(style_changes)
-			layout_changed := node.layout_hash != new_layout_hash || Dirty_Stage.Layout in style_stages
-			measurement_changed = measurement_changed || Dirty_Stage.Measure in style_stages
-			paint_changed := node.paint_hash != new_paint_hash || Dirty_Stage.Paint in style_stages
-			composite_changed := Dirty_Stage.Composite in style_stages
-			perf_add_mark(rt, .Reconcile_Hash, hash_mark)
-			// Region index ownership follows the retained region flag and label.
-			// copy_node_description releases the old label when it changes, so a
-			// soon-to-change label is copied into scratch before that happens.
-			copy_mark := perf_mark_begin()
-			was_region := node.region
-			label_changed := was_region && node.label != d.label
-			old_label := node.label
-			if label_changed { old_label = owned(old_label, rt.scratch_allocator) }
-			copy_node_description(rt, node, d, item.semantic, item.semantic_surface_style, item.visual_part,
-				next_style_environment, style_changes)
-			if d.region {
-				region_index_add(rt, d.id, d.label)
-				if label_changed { region_index_remove(rt, d.id, old_label) }
-			} else if was_region {
-				region_index_remove(rt, d.id, old_label)
-			}
-			if item.pointer_hit_shape == .Bounds { delete_key(&rt.pointer_hit_shapes, d.id) }
-			else { rt.pointer_hit_shapes[d.id] = item.pointer_hit_shape }
-			grid_tracks_copy_retained(rt, node, item)
-			if was_selected != node.selected {
-				visual_part_invalidate_dependents(rt, d.id, "visual part owner selection changed")
-			}
-			perf_add_mark(rt, .Reconcile_Copy, copy_mark)
-			hash_mark = perf_mark_begin()
-			node.description_hash = new_desc_hash
-			node.layout_hash = new_layout_hash
-			_ = measure_input_observe(rt, d.id, new_measure_input_hash)
-			node.paint_hash = new_paint_hash
-			perf_add_mark(rt, .Reconcile_Hash, hash_mark)
-			reason := "description reused"
-			if description_changed { reason = "description changed" }
-			mark_dirty(node, reason, description_changed, layout_changed, paint_changed || layout_changed, composite_changed, rt.persistent_allocator)
-			if measurement_changed { layout_measure_mark_dirty(rt, node) }
-			if layout_changed { mark_layout_ancestors(rt, d.id) }
-			if description_changed || layout_changed || paint_changed {
-				queue_paint(rt, d.id)
-				record_trace(rt, .Reconcile, d.id, reason)
-			} else {
+			// Issue #229 phase 2 exact reuse gate. A match proves the pending
+			// description already equals the retained description, so hashing,
+			// copying, dirty marking, measure observation, layout ancestor
+			// propagation, paint queueing, and the text-run decision would all
+			// write identical values or raise no side effect. The comparison is
+			// exact, so it cannot be defeated by a hash collision.
+			if DESCRIPTION_REUSE_ENABLED && description_matches_retained(rt, node, d, item, next_style_environment, focus_visual) {
+				perf_add_mark(rt, .Reconcile_Hash, hash_mark)
+				apply_description_reuse_tail(rt, node, d, item)
 				rt.stats.descriptions_reused += 1
+				rt.stats.descriptions_retained_match += 1
+			} else {
+				new_desc_hash := description_hash(d, item.semantic_surface_style, item.visual_part, item.accessibility)
+				new_layout_hash := layout_percent_width_pending_hash(rt, d, item)
+				new_measure_input_hash := measure_input_hash(d)
+				new_paint_hash := paint_hash(d, new_desc_hash, focus_visual)
+				was_selected := node.selected
+				description_changed := node.description_hash != new_desc_hash
+				measure_state := rt.measure_states[d.id]
+				measurement_changed := measure_state.input_revision == 0 || measure_state.input_hash != new_measure_input_hash
+				style_changes := style_environment_changed_domains_for_node(rt, node, d.style, node.style_environment, next_style_environment)
+				style_stages := style_domains_dirty_stages(style_changes)
+				layout_changed := node.layout_hash != new_layout_hash || Dirty_Stage.Layout in style_stages
+				measurement_changed = measurement_changed || Dirty_Stage.Measure in style_stages
+				paint_changed := node.paint_hash != new_paint_hash || Dirty_Stage.Paint in style_stages
+				composite_changed := Dirty_Stage.Composite in style_stages
+				perf_add_mark(rt, .Reconcile_Hash, hash_mark)
+				// Region index ownership follows the retained region flag and label.
+				// copy_node_description releases the old label when it changes, so a
+				// soon-to-change label is copied into scratch before that happens.
+				copy_mark := perf_mark_begin()
+				was_region := node.region
+				label_changed := was_region && node.label != d.label
+				old_label := node.label
+				if label_changed { old_label = owned(old_label, rt.scratch_allocator) }
+				copy_node_description(rt, node, d, item.semantic, item.semantic_surface_style, item.visual_part,
+					next_style_environment, style_changes)
+				if d.region {
+					region_index_add(rt, d.id, d.label)
+					if label_changed { region_index_remove(rt, d.id, old_label) }
+				} else if was_region {
+					region_index_remove(rt, d.id, old_label)
+				}
+				if item.pointer_hit_shape == .Bounds { delete_key(&rt.pointer_hit_shapes, d.id) }
+				else { rt.pointer_hit_shapes[d.id] = item.pointer_hit_shape }
+				grid_tracks_copy_retained(rt, node, item)
+				if was_selected != node.selected {
+					visual_part_invalidate_dependents(rt, d.id, "visual part owner selection changed")
+				}
+				perf_add_mark(rt, .Reconcile_Copy, copy_mark)
+				hash_mark = perf_mark_begin()
+				node.description_hash = new_desc_hash
+				node.layout_hash = new_layout_hash
+				_ = measure_input_observe(rt, d.id, new_measure_input_hash)
+				node.paint_hash = new_paint_hash
+				perf_add_mark(rt, .Reconcile_Hash, hash_mark)
+				reason := "description reused"
+				if description_changed { reason = "description changed" }
+				mark_dirty(node, reason, description_changed, layout_changed, paint_changed || layout_changed, composite_changed, rt.persistent_allocator)
+				if measurement_changed { layout_measure_mark_dirty(rt, node) }
+				if layout_changed { mark_layout_ancestors(rt, d.id) }
+				if description_changed || layout_changed || paint_changed {
+					queue_paint(rt, d.id)
+					record_trace(rt, .Reconcile, d.id, reason)
+				} else {
+					rt.stats.descriptions_reused += 1
+				}
 			}
 		}
 		// Commit only explicitly described nodes. Reused descendants retain their
@@ -1022,58 +1359,73 @@ reconcile :: proc(rt: ^Runtime) {
 		node.present = adaptive_default_presentation(rt, node.id)
 		if d.region { node.region_cached = true } else { node.region_cached = false }
 	}
-	layout_percent_width_prune_explicit(rt, desired)
+	if desired != nil { layout_percent_width_prune_explicit(rt, desired) }
 	layout_percent_width_update_retained(rt)
 	layout_percent_width_pending_clear(rt)
 	clear(&rt.pending_scroll_focus_visuals)
 	structure_mark := perf_mark_begin()
 
 	structure_changed := false
-	desired_roots: []Node_ID
-	if root_index, exists := bucket_indices[0]; exists { desired_roots = buckets[root_index].children[:] }
-	if !same_children(rt.top_level[:], desired_roots) {
-		for id in rt.top_level {
-			if !desired[id] { retire_subtree(rt, id, desired) }
-		}
-		clear(&rt.top_level)
-		for id in desired_roots { append(&rt.top_level, id) }
-		structure_changed = true
-	}
-
-	// Reconcile only the direct child list of explicitly described parents.
-	// A reused region is an atomic unit here, so its descendants do not enter
-	// this loop.
-	processed_parents := make(map[Node_ID]bool, allocator=rt.scratch_allocator)
-	for item in rt.pending {
-		if item.kind != .Description { continue }
-		parent_id := item.description.id
-		if processed_parents[parent_id] || reused_roots[parent_id] { continue }
-		processed_parents[parent_id] = true
-		parent, ok := rt.nodes[parent_id]
-		if !ok { continue }
-		wanted: []Node_ID
-		if index, exists := bucket_indices[parent_id]; exists { wanted = buckets[index].children[:] }
-		if !same_children(parent.children[:], wanted) {
-			for old_child in parent.children {
-				if !desired[old_child] { retire_subtree(rt, old_child, desired) }
+	if !structure_match {
+		desired_roots: []Node_ID
+		if root_index, exists := bucket_indices[0]; exists { desired_roots = buckets[root_index].children[:] }
+		if !same_children(rt.top_level[:], desired_roots) {
+			for id in rt.top_level {
+				if !desired[id] { retire_subtree(rt, id, desired) }
 			}
-			clear(&parent.children)
-			for child in wanted { append(&parent.children, child) }
-			// Child membership and order are layout inputs. Mark this parent and
-			// its ancestors so retained layout cannot preserve stale positions
-			// after keyed reorder, insertion, or removal.
-			dirty_set(&parent.dirty, .Layout, true)
-			dirty_set(&parent.dirty, .Composite, true)
-			mark_layout_ancestors(rt, parent_id)
+			clear(&rt.top_level)
+			for id in desired_roots { append(&rt.top_level, id) }
 			structure_changed = true
 		}
+
+		// Reconcile only the direct child list of explicitly described parents.
+		// A reused region is an atomic unit here, so its descendants do not enter
+		// this loop.
+		processed_parents := make(map[Node_ID]bool, allocator=rt.scratch_allocator)
+		for item in rt.pending {
+			if item.kind != .Description { continue }
+			parent_id := item.description.id
+			if processed_parents[parent_id] || reused_roots[parent_id] { continue }
+			processed_parents[parent_id] = true
+			parent, ok := rt.nodes[parent_id]
+			if !ok { continue }
+			wanted: []Node_ID
+			if index, exists := bucket_indices[parent_id]; exists { wanted = buckets[index].children[:] }
+			if !same_children(parent.children[:], wanted) {
+				for old_child in parent.children {
+					if !desired[old_child] { retire_subtree(rt, old_child, desired) }
+				}
+				clear(&parent.children)
+				for child in wanted { append(&parent.children, child) }
+				// Child membership and order are layout inputs. Mark this parent and
+				// its ancestors so retained layout cannot preserve stale positions
+				// after keyed reorder, insertion, or removal.
+				dirty_set(&parent.dirty, .Layout, true)
+				dirty_set(&parent.dirty, .Composite, true)
+				mark_layout_ancestors(rt, parent_id)
+				structure_changed = true
+			}
+		}
+		delete(processed_parents)
+		delete(reused_roots)
+		delete(bucket_indices)
+		for bucket in buckets { delete(bucket.children) }
+		delete(buckets)
+		// The applied sequence is the exact evidence the next pass compares.
+		clear(&rt.applied_structure)
+		for item in rt.pending {
+			entry := Applied_Structure_Entry{kind=item.kind}
+			switch item.kind {
+			case .Description:
+				entry.id = item.description.id
+				entry.parent = item.description.parent
+			case .Reuse_Subtree:
+				entry.id = item.subtree
+			}
+			append(&rt.applied_structure, entry)
+		}
 	}
-	delete(processed_parents)
-	delete(desired)
-	delete(reused_roots)
-	delete(bucket_indices)
-	for bucket in buckets { delete(bucket.children) }
-	delete(buckets)
+	if desired != nil { delete(desired) }
 
 	if structure_changed || len(rt.order) == 0 {
 		rebuild_order(rt)
@@ -1287,6 +1639,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	delete(rt.order)
 	delete(rt.top_level)
 	delete(rt.pending)
+	delete(rt.applied_structure)
 	delete(rt.scroll_focus_visuals)
 	delete(rt.pending_scroll_focus_visuals)
 	delete(rt.motion_intent_requests)
