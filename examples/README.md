@@ -29,6 +29,7 @@ Install Odin and the native prerequisites from
 | 15* | [WebGPU Feasibility](15_webgpu_feasibility/main.odin) | The opt-in shared WebGPU fixture: offscreen readback, compositor slices, effects, and device-loss probes |
 | 16 | [Native WebGPU UI](16_native_webgpu_ui/main.odin) | Opt-in `webgpu.run` (`alicorn:ui/webgpu`) using SDL3 input and the shared Hosted_Runtime/WebGPU surface presenter, with an app-owned wake callback probe |
 | 17 | [Browser WebGPU UI](17_browser_webgpu_ui/main.odin) | `ui.run` on `js_wasm32` with async WebGPU bootstrap, browser input, and demand-driven frames |
+| 18 | [Composable Select Parts](18_composable_select_parts/main.odin) | A copyable userland Select: custom trigger/row parts, semantic List_Box groups, virtual reveal, modal keyboard/type-ahead input, focus restoration, and an application-owned pinned Recent group |
 
 Run a lesson from the repository root. The runner resolves Odin and native
 linker dependencies, builds the selected program, and launches it:
@@ -41,6 +42,7 @@ linker dependencies, builds the selected program, and launches it:
 ./tools/run_example.sh 12_custom_segmented_control
 ./tools/run_example.sh 13_surface_gradients
 ./tools/run_example.sh 14_shape_primitives
+./tools/run_example.sh 18_composable_select_parts
 ```
 
 ```powershell
@@ -51,6 +53,7 @@ linker dependencies, builds the selected program, and launches it:
 .\tools\run_example.ps1 -Example 12_custom_segmented_control
 .\tools\run_example.ps1 -Example 13_surface_gradients
 .\tools\run_example.ps1 -Example 14_shape_primitives
+.\tools\run_example.ps1 -Example 18_composable_select_parts
 ```
 
 Use `--odin PATH` on the shell runner or `-Odin PATH` on PowerShell to select
@@ -128,6 +131,14 @@ build. Program arguments follow the example name on the shell runner and use
     the output arc, and follow the curved signal cable. The Button keeps its
     ordinary keyboard/accessibility contract while pointer hits use the
     inscribed circle. See the [example notes](14_shape_primitives/README.md).
+18. In `18_composable_select_parts`, compare the compact and rich Select
+    appearances, open both, navigate with Up/Down/Home/End, type a prefix,
+    press Enter or Escape, and click outside the popup. Focus the compact
+    trigger and press **Ctrl+1** to pin the current value into the
+    application-owned Recent group. The package uses public Button,
+    visual-part, semantic-collection, virtual-list, modal-overlay,
+    interaction-scope, after-frame, and theme facilities without changing the
+    stock Select. See its [authoring notes](18_composable_select_parts/README.md).
 
 ## Opt-in WebGPU examples
 
