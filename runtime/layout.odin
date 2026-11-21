@@ -646,6 +646,7 @@ layout_split_children :: proc(rt: ^Runtime, parent: ^Node, inner: Rect, children
 			dirty_set(&child.dirty, .Composite, true)
 			queue_paint(rt, id)
 			rt.stats.layout_updates += 1
+			frontier_note_changed(rt, .Layout, child.id)
 			record_trace(rt, .Layout, id, "split pane bounds changed")
 		}
 		if bounds_changed || clip_changed || dirty_has(child.dirty, .Layout) {
@@ -758,6 +759,7 @@ layout_adaptive_children :: proc(rt: ^Runtime, parent: ^Node, inner: Rect, child
 			dirty_set(&alternative.dirty, .Composite, true)
 			queue_paint(rt, id)
 			rt.stats.layout_updates += 1
+			frontier_note_changed(rt, .Layout, alternative.id)
 		}
 		if !was_present || bounds_changed || clip_changed || dirty_has(alternative.dirty, .Layout) {
 			layout_note_node_visit(rt, alternative)
@@ -1108,9 +1110,11 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 			dirty_set(&child.dirty, .Composite, true)
 			queue_paint(rt, id)
 			rt.stats.layout_updates += 1
+			frontier_note_changed(rt, .Layout, child.id)
 			record_trace(rt, .Layout, id, "layout hash or parent bounds changed")
 		} else if dirty_has(child.dirty, .Layout) {
 			rt.stats.layout_updates += 1
+			frontier_note_changed(rt, .Layout, child.id)
 			record_trace(rt, .Layout, id, "layout hash changed")
 		}
 		if bounds_changed || clip_changed || dirty_has(child.dirty, .Layout) {

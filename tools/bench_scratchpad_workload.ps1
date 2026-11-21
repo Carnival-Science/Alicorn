@@ -12,6 +12,10 @@ param(
     # 0 builds the same source with the pre-phase-2 copy-everything path so a
     # paired before/after measurement needs no source revert.
     [int]$DescriptionReuse = 1,
+    # Issue #193 paired release proof. Release builds short-circuit the gate at
+    # compile time, so 0 and 1 must produce identical counters and allocation
+    # behavior. The define only has an effect in debug builds.
+    [int]$InvalidationFrontier = 1,
     [switch]$SkipBuild
 )
 
@@ -32,13 +36,16 @@ function Copy-RuntimeDlls([string]$directory) {
 }
 
 if (-not $SkipBuild) {
+    # The Odin config is a bool, so the paired 0/1 switch maps to false/true.
+    $frontierDefine = if ($InvalidationFrontier -ne 0) { 'true' } else { 'false' }
     # Native compiler diagnostics are warnings on stderr; keep PowerShell 5.1
     # from promoting them to a terminating error before we read the exit code.
     $previousErrorAction = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     & $Odin build (Join-Path $RepoRoot 'benchmarks\workload_matrix') `
         "-collection:alicorn=$RepoRoot" -define:WGPU_SHARED=true `
-        "-define:ALICORN_DESCRIPTION_REUSE=$DescriptionReuse" -o:speed `
+        "-define:ALICORN_DESCRIPTION_REUSE=$DescriptionReuse" `
+        "-define:ALICORN_INVALIDATION_FRONTIER=$frontierDefine" -o:speed `
         "-out:$Executable" @($AccessKit.CompilerArguments) 2>&1 | ForEach-Object { Write-Output $_ }
     $buildExit = $LASTEXITCODE
     $ErrorActionPreference = $previousErrorAction

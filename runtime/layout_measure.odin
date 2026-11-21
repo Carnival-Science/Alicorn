@@ -733,6 +733,7 @@ layout_measure_propagate_parent_size_change :: proc(rt: ^Runtime, child_id: Node
 		return
 	}
 	record_trace(rt, .Measure, parent.id, fmt.tprintf("content size changed on axes %v after child change", changed_axes))
+	frontier_note_changed(rt, .Measure, parent.id)
 	mark_layout_ancestors(rt, parent.id, changed_axes)
 	layout_measure_propagate_parent_size_change(rt, parent.id, changed_axes)
 }
@@ -778,6 +779,7 @@ layout_measure_retained_dirty_nodes :: proc(rt: ^Runtime) {
 			continue
 		}
 		record_trace(rt, .Measure, id, fmt.tprintf("measured output changed on axes %v", changed_axes))
+		frontier_note_changed(rt, .Measure, id)
 		layout_measure_propagate_parent_size_change(rt, id, changed_axes)
 		placement_axes := layout_axes_intersection(changed_axes, state.parent_layout_dependencies)
 		if placement_axes != {} {

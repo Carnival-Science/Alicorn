@@ -2280,6 +2280,9 @@ Runtime :: struct {
 	description_mark: Perf_Mark,
 	description_timing: bool,
 	trace:       Trace_Ring,
+	// Issue #193 debug-only frontier capture. Frontier_Store is an empty
+	// struct in release builds or when ALICORN_INVALIDATION_FRONTIER=false.
+	frontier: Frontier_Store,
 	application_mutation_tracking: Application_Mutation_Tracking,
 	actions:     [dynamic]Action_Entry,
 	cause_sequence: u64,

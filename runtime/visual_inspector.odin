@@ -2,6 +2,7 @@ package alicorn
 
 import "core:fmt"
 import "core:mem"
+import "core:strings"
 
 INSPECTOR_CAUSE_LIMIT :: 20
 INSPECTOR_ROW_HEIGHT :: f32(28)
@@ -59,6 +60,8 @@ Inspector_Tree_Row :: struct {
 
 // Cause summaries borrow their strings from the existing bounded trace ring.
 // They live only through this description and are copied by reconciliation.
+// The frontier fields are fixed-size projections of the debug-only capture;
+// they stay zero in release builds.
 Inspector_Cause :: struct {
 	id: u64,
 	kind: Cause_Kind,
@@ -74,6 +77,23 @@ Inspector_Cause :: struct {
 	mutation_diagnostic: string,
 	last_reason: string,
 	visits: [Trace_Kind]u64,
+	capture_available: bool,
+	invalidations: u64,
+	region_invalidations: u64,
+	root_invalidations: u64,
+	region_key: [FRONTIER_KEY_CAPACITY]u8,
+	region_key_length: int,
+	region_key_hash: u64,
+	region_revision: u64,
+	subscribers: [FRONTIER_SUBSCRIBER_LIMIT]Node_ID,
+	subscriber_count: int,
+	ancestors: [FRONTIER_ANCESTOR_LIMIT]Node_ID,
+	ancestor_count: int,
+	changed: [Frontier_Stage]u64,
+	fallbacks: bit_set[Retained_Global_Work_Reason],
+	fallback_work: u64,
+	description_without_change: bool,
+	samples: [Trace_Kind]Frontier_Node_Samples,
 }
 
 inspector_overlay_make :: proc(allocator := context.allocator) -> Inspector_Overlay {
@@ -213,9 +233,18 @@ inspector_overlay_recent_causes :: proc(inspected: ^Runtime, allocator := contex
 			if len(causes) >= INSPECTOR_CAUSE_LIMIT { continue }
 			append(&causes, Inspector_Cause{id=event.cause_id, kind=event.cause_kind, latest_sequence=event.sequence, node=event.node, last_reason=event.reason})
 			found = len(causes)-1
+			frontier_populate_cause(inspected, event.cause_id, &causes[found])
 		}
 		cause := &causes[found]
 		cause.visits[event.kind] += 1
+		if event.node != 0 {
+			samples := &cause.samples[event.kind]
+			if samples.count < FRONTIER_SAMPLE_LIMIT &&
+				!frontier_node_list_contains(samples.nodes[:], samples.count, event.node) {
+				samples.nodes[samples.count] = event.node
+				samples.count += 1
+			}
+		}
 		if cause.action == Action_ID(0) && event.action_id != Action_ID(0) { cause.action = event.action_id }
 		#partial switch event.kind {
 		case .Cause: if len(cause.origin) == 0 { cause.origin = event.reason }
@@ -229,6 +258,9 @@ inspector_overlay_recent_causes :: proc(inspected: ^Runtime, allocator := contex
 				cause.measure_reason = event.reason
 			}
 		}
+	}
+	for &cause in causes {
+		cause.description_without_change = cause.invalidations > 0 && frontier_cause_total_changed(&cause) == 0
 	}
 	return causes
 }
@@ -459,8 +491,19 @@ inspector_overlay_motion_property_lines :: proc(
 	} else { append(lines, "  settled: yes") }
 }
 
-inspector_motion_source_label :: proc(file: string) -> string {
-	last_separator := -1
+inspector_frontier_nodes_text :: proc(nodes: []Node_ID, count: int) -> string {
+	builder := strings.builder_make(allocator=context.temp_allocator)
+	frontier_append_nodes(&builder, nodes, count)
+	return strings.to_string(builder)
+}
+
+inspector_frontier_fallbacks_text :: proc(reasons: bit_set[Retained_Global_Work_Reason]) -> string {
+	builder := strings.builder_make(allocator=context.temp_allocator)
+	frontier_append_work_reasons(&builder, reasons)
+	return strings.to_string(builder)
+}
+
+inspector_motion_source_label :: proc(file: string) -> string {	last_separator := -1
 	previous_separator := -1
 	for index in 0..<len(file) {
 		if file[index] == '/' || file[index] == '\\' {
@@ -619,7 +662,7 @@ inspector_overlay_causes :: proc(ui: ^UI, inspected: ^Runtime, height: f32) {
 	lines := make([dynamic]string,0,allocator=ui.runtime.scratch_allocator)
 	causes := inspector_overlay_recent_causes(inspected,ui.runtime.scratch_allocator)
 	if len(causes) == 0 { append(&lines,"No recorded causes.") }
-	for cause in causes {
+	for &cause in causes {
 		if cause.id == 0 { append(&lines,fmt.tprintf("Unassigned work  (latest trace #%d)",cause.latest_sequence)) }
 		else { append(&lines,fmt.tprintf("Cause #%d  %v  (latest trace #%d)",cause.id,cause.kind,cause.latest_sequence)) }
 		if len(cause.origin)>0 { append(&lines,fmt.tprintf("  Origin: %s",cause.origin)) }
@@ -634,6 +677,27 @@ inspector_overlay_causes :: proc(ui: ^UI, inspected: ^Runtime, height: f32) {
 		if len(cause.measure_reason)>0 { append(&lines,fmt.tprintf("  Measure: node=%d %s",cause.measure_node,cause.measure_reason)) }
 		append(&lines,fmt.tprintf("  Stages: reconcile=%d layout=%d paint=%d composite=%d",cause.visits[.Reconcile],cause.visits[.Layout],cause.visits[.Paint],cause.visits[.Composite]))
 		append(&lines,fmt.tprintf("  Submissions: %d  pointer=%d focus=%d retire=%d",cause.visits[.Submit],cause.visits[.Pointer],cause.visits[.Focus],cause.visits[.Retire]))
+		if cause.capture_available {
+			if cause.region_key_length > 0 {
+				append(&lines,fmt.tprintf("  Frontier: invalidations=%d root=%d region=%d key=%s revision=%d hash=%d",
+					cause.invalidations,cause.root_invalidations,cause.region_invalidations,
+					string(cause.region_key[:cause.region_key_length]),cause.region_revision,cause.region_key_hash))
+				append(&lines,fmt.tprintf("  Region subscribers: %s",inspector_frontier_nodes_text(cause.subscribers[:],cause.subscriber_count)))
+				append(&lines,fmt.tprintf("  Region ancestors: %s",inspector_frontier_nodes_text(cause.ancestors[:],cause.ancestor_count)))
+			} else if cause.invalidations > 0 {
+				append(&lines,fmt.tprintf("  Frontier: invalidations=%d root=%d region=%d",cause.invalidations,cause.root_invalidations,cause.region_invalidations))
+			}
+			append(&lines,fmt.tprintf("  Changed outputs: description=%d measure=%d layout=%d paint=%d composite=%d",
+				cause.changed[.Description],cause.changed[.Measure],cause.changed[.Layout],cause.changed[.Paint],cause.changed[.Composite]))
+			if cause.description_without_change { append(&lines,"  Description ran without a changed output.") }
+			append(&lines,fmt.tprintf("  Frontier fallbacks: %s",inspector_frontier_fallbacks_text(cause.fallbacks)))
+			append(&lines,fmt.tprintf("  Sampled nodes: reconcile=%s measure=%s layout=%s paint=%s composite=%s",
+				inspector_frontier_nodes_text(cause.samples[.Reconcile].nodes[:],cause.samples[.Reconcile].count),
+				inspector_frontier_nodes_text(cause.samples[.Measure].nodes[:],cause.samples[.Measure].count),
+				inspector_frontier_nodes_text(cause.samples[.Layout].nodes[:],cause.samples[.Layout].count),
+				inspector_frontier_nodes_text(cause.samples[.Paint].nodes[:],cause.samples[.Paint].count),
+				inspector_frontier_nodes_text(cause.samples[.Composite].nodes[:],cause.samples[.Composite].count)))
+		}
 		append(&lines,fmt.tprintf("  Last: node=%d %s",cause.node,cause.last_reason),"")
 	}
 	inspector_overlay_lines(ui,lines[:],"inspector-causes",height)

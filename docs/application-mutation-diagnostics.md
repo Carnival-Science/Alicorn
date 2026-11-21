@@ -73,3 +73,40 @@ instrumentation compiles away when disabled, but normal Odin argument
 evaluation still occurs at the call site. Keep domain and reason arguments
 cheap; guard expensive diagnostic-string construction with the same compile
 time condition used to enable the checker.
+
+## Invalidation frontier (issue #193)
+
+Debug builds also capture a bounded per-cause frontier. It is independent of
+the mutation scopes above and is enabled by default in debug builds:
+
+```powershell
+odin test runtime -debug
+# Explicitly disable:
+odin test runtime -debug -define:ALICORN_INVALIDATION_FRONTIER=false
+```
+
+For one cause, the capture records the declared region key/revision, the live
+region subscribers that `invalidate_region` already resolved, their bounded
+ancestor chain, per-stage changed-output counts, up to eight sampled node IDs
+per stage from the existing trace ring, and any `global_work_by_reason`
+fallback observed while the cause was active. It adds no trace events and
+allocates nothing; the trace ring remains the detailed source.
+
+```odin
+report := alicorn.frontier_inspect(runtime, cause_id)
+defer delete(report)
+// "Why did this declared update touch node #42?"
+why := alicorn.frontier_why_touched(runtime, cause_id, 42)
+defer delete(why)
+```
+
+`inspect(runtime)` includes a bounded `frontiers:` inventory, so existing
+capture bundles include the same data. The visual inspector Causes tab renders
+the capture beside each recent cause. Reports print IDs, counts, and stage
+names; application reason strings stay in the local trace ring.
+
+The query explains declared work. It cannot detect a change that was never
+declared: use the #106 fresh-runtime oracle (`runtime/invalidation_coherence_test.odin`)
+for a missing invalidation, and `testui.frontier_check` for an opt-in
+per-turn assertion in headless tests. In release builds the query reports that
+capture is unavailable and the runtime adds no per-frame work.

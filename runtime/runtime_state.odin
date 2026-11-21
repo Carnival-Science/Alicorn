@@ -29,6 +29,7 @@ record_trace_with_cause :: proc(rt: ^Runtime, kind: Trace_Kind, node: Node_ID, r
 		reason_owned=true,
 	}
 	trace_ring_store(rt, entry)
+	frontier_note_trace(rt, cause, entry.sequence, kind)
 }
 
 record_trace :: proc(rt: ^Runtime, kind: Trace_Kind, node: Node_ID, reason: string) {
@@ -55,6 +56,7 @@ record_trace_literal_with_cause :: proc(rt: ^Runtime, kind: Trace_Kind, node: No
 		reason_owned=false,
 	}
 	trace_ring_store(rt, entry)
+	frontier_note_trace(rt, cause, entry.sequence, kind)
 }
 
 record_trace_layout_invalidation :: proc(rt: ^Runtime, node: Node_ID, reason: Trace_Layout_Reason) {
@@ -69,6 +71,7 @@ record_trace_layout_invalidation :: proc(rt: ^Runtime, node: Node_ID, reason: Tr
 		node=node,
 		layout_reason=reason,
 	})
+	frontier_note_trace(rt, cause, rt.trace.sequence, .Invalidation)
 }
 
 trace_layout_reason_format :: proc(reason: Trace_Layout_Reason) -> string {
@@ -123,6 +126,7 @@ cause_resume :: proc(rt: ^Runtime, cause_ctx: Cause_Context) -> Cause_Scope {
 }
 
 cause_end :: proc(rt: ^Runtime, scope: Cause_Scope) {
+	frontier_note_cause_end(rt, scope.cause)
 	rt.active_cause = scope.previous
 	if scope.clear_pointer_gesture { rt.pointer_gesture_cause = Cause_Context{} }
 }
@@ -373,6 +377,7 @@ invalidate_root :: proc(rt: ^Runtime, reason := "explicit root invalidation") {
 	if len(rt.last_invalidation_reason) > 0 { delete(rt.last_invalidation_reason, rt.persistent_allocator) }
 	rt.last_invalidation_reason = owned(reason, rt.persistent_allocator)
 	record_trace_with_cause(rt, .Invalidation, 0, reason, cause_ctx)
+	frontier_note_root(rt, cause_ctx)
 	note_pending_work_cause(rt, cause_ctx)
 	if scope.cause.id != 0 { cause_end(rt, scope) }
 }
@@ -574,10 +579,14 @@ invalidate_region :: proc(rt: ^Runtime, key: string, revision: u64, reason := "e
 	// keep the result identical to a linear scan even if an entry is stale.
 	entry, indexed := rt.region_nodes[key]
 	match_count := 0
+	subscribers: [FRONTIER_SUBSCRIBER_LIMIT]Node_ID
 	if indexed {
 		for id in entry.nodes {
 			node, found := rt.nodes[id]
-			if found && node != nil && node.active && node.region && node.label == key { match_count += 1 }
+			if found && node != nil && node.active && node.region && node.label == key {
+				if match_count < FRONTIER_SUBSCRIBER_LIMIT { subscribers[match_count] = id }
+				match_count += 1
+			}
 		}
 	}
 	if match_count == 0 {
@@ -619,6 +628,7 @@ invalidate_region :: proc(rt: ^Runtime, key: string, revision: u64, reason := "e
 	if len(rt.last_invalidation_reason) > 0 { delete(rt.last_invalidation_reason, rt.persistent_allocator) }
 	rt.last_invalidation_reason = owned(fmt.tprintf("region %s revision %d: %s", key, revision, reason), rt.persistent_allocator)
 	record_trace_with_cause(rt, .Invalidation, 0, rt.last_invalidation_reason, cause_ctx)
+	frontier_note_region(rt, cause_ctx, key, revision, subscribers[:min(match_count, FRONTIER_SUBSCRIBER_LIMIT)])
 	note_pending_work_cause(rt, cause_ctx)
 	if scope.cause.id != 0 { cause_end(rt, scope) }
 }

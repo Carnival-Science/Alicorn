@@ -508,6 +508,7 @@ layout_grid_children :: proc(rt: ^Runtime, parent: ^Node, inner: Rect, children:
 			dirty_set(&child.dirty, .Composite, true)
 			queue_paint(rt, child_id)
 			if bounds_changed || clip_changed { rt.stats.layout_updates += 1 }
+			if bounds_changed || clip_changed { frontier_note_changed(rt, .Layout, child.id) }
 			if bounds_changed || clip_changed || dirty_has(child.dirty, .Layout) { layout_children(rt, child_id) }
 			dirty_set(&child.dirty, .Layout, false)
 		}

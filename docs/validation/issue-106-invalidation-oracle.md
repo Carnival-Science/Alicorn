@@ -2,7 +2,11 @@
 
 Status: initial scope COMPLETE. Two fixed-seed cases deterministically catch a
 mis-scoped invalidation and an omitted invalidation through public APIs at
-bounded cost. The remaining corpus ideas are optional follow-ups, not blockers.
+bounded cost. Issue #193 later exercised six of the previously optional corpus
+ideas (dynamic adaptive branch change, keyed owner retirement/reopen,
+same-value writes, cross-window consumers, valid-but-wrong ancestor and
+sibling targets, and structural condition changes); see the
+[#193 validation record](issue-193-invalidation-frontier-2026-11-21.md).
 
 ## Purpose and boundary
 
@@ -67,6 +71,11 @@ Covered now:
   and line geometry, and settled idle behavior in the hand-written tests;
 - reproducible generation from two fixed seeds, first-failing-prefix replay,
   action-deletion shrinking, and a stable failure report.
+- issue #193 extensions: adaptive subscription branch changes, keyed owner
+  retirement/reopen, same-value writes (no changed output), cross-window
+  consumers, wrong-but-valid ancestor vs sibling targets, and structural
+  condition add/remove. Each asserts fresh-runtime parity, and the same-value
+  case also checks the debug frontier's zero changed-output count.
 
 Remaining outside the initial scope, and why that is acceptable:
 

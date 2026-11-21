@@ -168,6 +168,23 @@ the roving configuration, and the negative-control recipe.
 The checks remain subject to the guarantee boundary below: no platform
 accessibility bridge, native IME candidate window, or pixel verification.
 
+## Invalidation-frontier checks
+
+`frontier_checks.odin` adds an opt-in per-cause assertion over the runtime's
+debug invalidation frontier. `frontier_check` selects the last turn's
+`Turn_Report.cause_id` (or an explicit cause), then checks stage visit counts,
+changed-output counts, sampled nodes, changed-vs-unchanged, fallback presence,
+and resolved region subscribers. A failed `Frontier_Report` carries the first
+violated step, stage/cause/node identity, expected and actual values, and the
+bounded turn; `frontier_failure_diagnostic` formats it like
+`pattern_failure_diagnostic`.
+
+The helper requires a debug build with `ALICORN_INVALIDATION_FRONTIER` enabled
+(the debug default). In release builds, or with
+`-define:ALICORN_INVALIDATION_FRONTIER=false`, it returns a clean
+`.Capture_Available` failure rather than passing silently. See the
+[issue #193 validation record](../docs/validation/issue-193-invalidation-frontier-2026-11-21.md).
+
 ## Guarantee boundary
 
 The harness uses Alicorn's standard runtime, bundled fonts, semantic queries,
