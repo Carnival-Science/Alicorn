@@ -637,11 +637,13 @@ layout_measure_node :: proc(
 			if node.kind == .Text_Field { max_width = maxf(max_width-2*style_text_field_horizontal_inset(rt, node.style_environment), 0) }
 		}
 		shape_calls_before := rt.text_engine.shape_calls
+		text_mark := perf_mark_begin()
 		if prepare_text_run_node(rt, node, max_width, force_unbounded=force_unbounded_text_shape && constraints.width.unbounded_max) {
 			dirty_set(&node.dirty, .Paint, true)
 			dirty_set(&node.dirty, .Composite, true)
 			queue_paint(rt, node.id)
 		}
+		perf_add_mark(rt, .Measure_Text, text_mark)
 		rt.stats.text_shape_requests += rt.text_engine.shape_calls-shape_calls_before
 	}
 	result := Measure_Result{size=layout_measure_intrinsic_size(rt, node)}

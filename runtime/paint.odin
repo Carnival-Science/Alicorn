@@ -501,6 +501,7 @@ append_visual_row_background :: proc(rt: ^Runtime, row: ^Node) {
 }
 
 update_paint :: proc(rt: ^Runtime) {
+	paint_mark := perf_mark_begin()
 	semantic_surface_refresh_top_edge_gaps(rt)
 	// A sparse range splice walks the changed node's ancestor chain and
 	// validates its recomposition against the retained slots. When most of the
@@ -971,7 +972,10 @@ update_paint :: proc(rt: ^Runtime) {
 		dirty_set(&node.dirty, .Composite, false)
 	}
 	clear(&rt.paint_queue)
+	perf_add_mark(rt, .Paint, paint_mark)
 	if rt.composition_rebuild {
+		compose_mark := perf_mark_begin()
 		rebuild_display(rt)
+		perf_add_mark(rt, .Composition, compose_mark)
 	}
 }

@@ -1955,6 +1955,10 @@ Frame_Stats :: struct {
 	surface_geometry_overflow_rejections: u64,
 	surface_clear_count: u64,
 	surface_stale_update_rejections: u64,
+	// stage_timings_ns accumulates the per-stage CPU attribution documented in
+	// perf_timing.odin. Description contains the other stages. Timers are
+	// always on and allocation-free.
+	stage_timings_ns: [RUNTIME_TIMING_STAGE_COUNT]u64,
 }
 
 // Retained_Global_Work_Reason identifies the intentional operations whose
@@ -2182,6 +2186,11 @@ Runtime :: struct {
 	diagnostic:  string,
 	last_invalidation_reason: string,
 	stats:       Frame_Stats,
+	// description_mark is the monotonic tick captured by begin_frame or
+	// begin_presentation_frame. It is closed by perf_finish_description so the
+	// Description bucket includes application build plus every runtime stage.
+	description_mark: Perf_Mark,
+	description_timing: bool,
 	trace:       Trace_Ring,
 	application_mutation_tracking: Application_Mutation_Tracking,
 	actions:     [dynamic]Action_Entry,
