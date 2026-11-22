@@ -177,7 +177,7 @@ draw_display_list :: proc(
 			display_index = run_end
 			continue
 		}
-		if run_kind == .Backdrop_Effect {
+		if run_kind == .Backdrop_Effect || run_kind == .Lighting_Group {
 			if retained_effects != nil && !native_retained_effects_composite_at(
 				retained_effects, draw.owner, command, swapchain, swap_w, swap_h,
 			) { return false }
@@ -209,13 +209,14 @@ native_paint_command_apply_content_inset :: proc(command: alicorn.Paint_Command,
 	return result
 }
 
-Native_Paint_Run_Kind :: enum { Surface, Text, Geometry, Icon, Image, Backdrop_Effect }
+Native_Paint_Run_Kind :: enum { Surface, Text, Geometry, Icon, Image, Backdrop_Effect, Lighting_Group }
 
 // Adjacent surfaces, icons, and images may batch within their own pipeline.
 // Text and custom geometry remain barriers; no run crosses a different kind.
 native_paint_run :: proc(display: []alicorn.Paint_Command, start: int) -> (kind: Native_Paint_Run_Kind, end: int) {
     if start < 0 || start >= len(display) { return .Surface, len(display) }
 	if alicorn.paint_command_is_backdrop_effect(display[start]) { return .Backdrop_Effect, start+1 }
+	if alicorn.paint_command_is_lighting_group(display[start]) { return .Lighting_Group, start+1 }
     if alicorn.paint_command_is_text(display[start]) { return .Text, start+1 }
     if alicorn.paint_command_is_geometry(display[start]) { return .Geometry, start+1 }
 	if alicorn.paint_command_is_image(display[start]) {
@@ -226,7 +227,7 @@ native_paint_run :: proc(display: []alicorn.Paint_Command, start: int) -> (kind:
 	kind = .Icon if alicorn.paint_command_is_icon(display[start]) else .Surface
     end = start+1
     for end < len(display) {
-		if alicorn.paint_command_is_text(display[end]) || alicorn.paint_command_is_geometry(display[end]) || alicorn.paint_command_is_image(display[end]) || alicorn.paint_command_is_backdrop_effect(display[end]) { break }
+		if alicorn.paint_command_is_text(display[end]) || alicorn.paint_command_is_geometry(display[end]) || alicorn.paint_command_is_image(display[end]) || alicorn.paint_command_is_effects_boundary(display[end]) { break }
         next_kind := Native_Paint_Run_Kind.Icon if alicorn.paint_command_is_icon(display[end]) else .Surface
         if next_kind != kind { break }
         end += 1

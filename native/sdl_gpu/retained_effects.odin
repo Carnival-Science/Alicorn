@@ -37,6 +37,15 @@ NATIVE_EFFECT_FILTER_FORMAT :: sdl3.GPUTextureFormat.R16G16B16A16_FLOAT
 
 Native_Effect_Tap :: cpu_renderer.Backdrop_Effect_Tap
 
+// The retained effects cache hosts two bounded compositor requests: the shipped
+// backdrop blur and the experimental lighting group (issue #105). They share
+// slot retirement, the byte budget, the capture/commit protocol, and the vertex
+// buffers; only the encoded passes differ.
+Native_Effect_Kind :: enum u8 {
+	Backdrop_Blur,
+	Lighting_Group,
+}
+
 Native_Effect_Request :: struct {
 	enabled: bool,
 	key, source_generation: u64,
@@ -48,6 +57,7 @@ Native_Effect_Request :: struct {
 
 Native_Effect_Plan :: struct {
 	active: bool,
+	kind: Native_Effect_Kind,
 	source_bounds: alicorn.Rect,
 	output_clip: alicorn.Rect,
 	width, height: sdl3.Uint32,
@@ -55,6 +65,9 @@ Native_Effect_Plan :: struct {
 	filter_tap_count: int,
 	key, source_generation: u64,
 	bytes: u64,
+	// Non-zero only for Lighting_Group plans; the CPU plan owns the bounded
+	// surface/light description and participates in cache equality.
+	lighting: cpu_renderer.Lighting_Plan,
 }
 
 Native_Effect_Status :: enum { Inactive, Cached, Render, Deferred, Fallback }
@@ -65,7 +78,7 @@ Native_Effect_Cache :: struct {
 	composite_format: sdl3.GPUTextureFormat,
 	plan: Native_Effect_Plan,
 	source, ping, output: ^sdl3.GPUTexture,
-	filter_pipeline, composite_pipeline: ^sdl3.GPUGraphicsPipeline,
+	filter_pipeline, composite_pipeline, lighting_pipeline: ^sdl3.GPUGraphicsPipeline,
 	sampler: ^sdl3.GPUSampler,
 	vertex_buffer: ^sdl3.GPUBuffer,
 	vertex_transfer: ^sdl3.GPUTransferBuffer,
@@ -77,6 +90,7 @@ Native_Effect_Cache :: struct {
 	// Lifetime counters survive reset/deactivation. Allocations counts retained
 	// SDL objects (textures, pipelines, sampler, buffer, transfer), not shaders.
 	allocations, filter_passes, composites, cache_hits: u64,
+	lighting_prepares, lighting_composites, lighting_captures: u64,
 	vertex_upload_bytes: u64,
 	output_generation, live_bytes, peak_bytes: u64,
 }
@@ -251,6 +265,15 @@ native_effect_byte_size :: proc(width, height: sdl3.Uint32) -> u64 {
 	return u64(width)*u64(height)*(4+8+8) + 2*NATIVE_EFFECT_VERTEX_BYTES
 }
 
+// Lighting needs one RGBA8 capture target and the shared vertex/transfer pair;
+// there is no half-float filter ping-pong, so it charges roughly a fifth of a
+// same-size blur.
+native_effect_lighting_byte_size :: proc(width, height: sdl3.Uint32) -> u64 {
+	return u64(width)*u64(height)*4 + 2*NATIVE_EFFECT_VERTEX_BYTES
+}
+
+
+
 native_effect_gaussian_radius :: proc(sigma_pixels: f32) -> (radius: int, ok: bool) {
 	return cpu_renderer.Backdrop_Effect_Gaussian_Radius(sigma_pixels)
 }
@@ -305,10 +328,40 @@ native_effect_plan :: proc(request: Native_Effect_Request) -> (plan: Native_Effe
 	return plan, true
 }
 
+native_lighting_plan_from_cpu :: proc(cpu_plan: cpu_renderer.Lighting_Plan) -> (plan: Native_Effect_Plan, ok: bool) {
+	if !cpu_plan.active { return plan, true }
+	plan = Native_Effect_Plan{
+			active=true,
+			kind=.Lighting_Group,
+			source_bounds=cpu_plan.source_bounds,
+			output_clip=cpu_plan.output_clip,
+			width=sdl3.Uint32(cpu_plan.width),
+			height=sdl3.Uint32(cpu_plan.height),
+			scale=cpu_plan.scale,
+			key=cpu_plan.key,
+			source_generation=cpu_plan.source_generation,
+			lighting=cpu_plan,
+	}
+	plan.bytes = native_effect_lighting_byte_size(plan.width, plan.height)
+	if !native_effect_plan_valid(plan) { return Native_Effect_Plan{}, false }
+	return plan, true
+}
+
 // The backend adapter verifies shared geometry policy plus its own resource
 // charge; GPU formats and fixed filter buffers are accounted for here.
 native_effect_plan_valid :: proc(plan: Native_Effect_Plan) -> bool {
 	if !plan.active { return true }
+	if plan.kind == .Lighting_Group {
+		if plan.bytes != native_effect_lighting_byte_size(plan.width, plan.height) { return false }
+		if !cpu_renderer.Lighting_Plan_Valid(plan.lighting) { return false }
+		// The outer plan mirrors the CPU plan so all shared slot bookkeeping
+		// (bounds, extent, key, generation) stays authoritative in one place.
+		return plan.lighting.source_bounds == plan.source_bounds &&
+			plan.lighting.output_clip == plan.output_clip &&
+			plan.lighting.width == u32(plan.width) && plan.lighting.height == u32(plan.height) &&
+			plan.lighting.scale == plan.scale &&
+			plan.lighting.key == plan.key && plan.lighting.source_generation == plan.source_generation
+	}
 	return plan.bytes == native_effect_byte_size(plan.width, plan.height) &&
 		cpu_renderer.Backdrop_Effect_Plan_Valid(native_effect_cpu_plan(plan))
 }
@@ -355,7 +408,8 @@ native_effect_release_textures :: proc(cache: ^Native_Effect_Cache) {
 
 native_effect_has_resources :: proc(cache: ^Native_Effect_Cache) -> bool {
 	return cache.source != nil || cache.ping != nil || cache.output != nil || cache.filter_pipeline != nil ||
-	       cache.composite_pipeline != nil || cache.sampler != nil || cache.vertex_buffer != nil || cache.vertex_transfer != nil
+	       cache.composite_pipeline != nil || cache.lighting_pipeline != nil || cache.sampler != nil ||
+	       cache.vertex_buffer != nil || cache.vertex_transfer != nil
 }
 
 native_effect_abort :: proc(cache: ^Native_Effect_Cache) {
@@ -375,8 +429,9 @@ native_effect_reset :: proc(cache: ^Native_Effect_Cache) {
 	if cache.sampler != nil { sdl3.ReleaseGPUSampler(cache.device, cache.sampler) }
 	if cache.filter_pipeline != nil { sdl3.ReleaseGPUGraphicsPipeline(cache.device, cache.filter_pipeline) }
 	if cache.composite_pipeline != nil { sdl3.ReleaseGPUGraphicsPipeline(cache.device, cache.composite_pipeline) }
+	if cache.lighting_pipeline != nil { sdl3.ReleaseGPUGraphicsPipeline(cache.device, cache.lighting_pipeline) }
 	cache.vertex_transfer, cache.vertex_buffer, cache.sampler = nil, nil, nil
-	cache.filter_pipeline, cache.composite_pipeline = nil, nil
+	cache.filter_pipeline, cache.composite_pipeline, cache.lighting_pipeline = nil, nil, nil
 	cache.plan = {}
 	cache.vertex_upload_pending = false
 	cache.live_bytes = 0
@@ -392,7 +447,32 @@ native_effect_destroy :: proc(cache: ^Native_Effect_Cache) {
 	native_effect_reset(cache)
 }
 
+// Sampler, vertex buffer, and upload transfer are shared by both compositor
+// kinds so switching kinds never duplicates them.
+native_effect_create_common :: proc(cache: ^Native_Effect_Cache) -> bool {
+	if cache.sampler == nil {
+		cache.sampler = sdl3.CreateGPUSampler(cache.device, {
+			min_filter=.LINEAR, mag_filter=.LINEAR, mipmap_mode=.NEAREST,
+			address_mode_u=.CLAMP_TO_EDGE, address_mode_v=.CLAMP_TO_EDGE, address_mode_w=.CLAMP_TO_EDGE, max_lod=0,
+		})
+		if cache.sampler == nil { return false }
+		native_effect_allocation(cache)
+	}
+	if cache.vertex_buffer == nil {
+		cache.vertex_buffer = sdl3.CreateGPUBuffer(cache.device, {usage={.VERTEX}, size=sdl3.Uint32(NATIVE_EFFECT_VERTEX_BYTES)})
+		if cache.vertex_buffer == nil { return false }
+		native_effect_allocation(cache, NATIVE_EFFECT_VERTEX_BYTES)
+	}
+	if cache.vertex_transfer == nil {
+		cache.vertex_transfer = sdl3.CreateGPUTransferBuffer(cache.device, {usage=.UPLOAD, size=sdl3.Uint32(NATIVE_EFFECT_VERTEX_BYTES)})
+		if cache.vertex_transfer == nil { return false }
+		native_effect_allocation(cache, NATIVE_EFFECT_VERTEX_BYTES)
+	}
+	return true
+}
+
 native_effect_create_fixed :: proc(cache: ^Native_Effect_Cache) -> bool {
+	if !native_effect_create_common(cache) { return false }
 	vertex := native_text_shader(cache.device, .VERTEX, false)
 	if vertex == nil { return false }
 	defer sdl3.ReleaseGPUShader(cache.device, vertex)
@@ -433,23 +513,48 @@ native_effect_create_fixed :: proc(cache: ^Native_Effect_Cache) -> bool {
 	cache.composite_pipeline = sdl3.CreateGPUGraphicsPipeline(cache.device, info)
 	if cache.composite_pipeline == nil { return false }
 	native_effect_allocation(cache)
-	cache.sampler = sdl3.CreateGPUSampler(cache.device, {
-		min_filter=.LINEAR, mag_filter=.LINEAR, mipmap_mode=.NEAREST,
-		address_mode_u=.CLAMP_TO_EDGE, address_mode_v=.CLAMP_TO_EDGE, address_mode_w=.CLAMP_TO_EDGE, max_lod=0,
-	})
-	if cache.sampler == nil { return false }
+	return true
+}
+
+// The lighting composite replaces captured pixels exactly once; blending stays
+// disabled so the captured prefix is not applied twice.
+native_lighting_create_fixed :: proc(cache: ^Native_Effect_Cache) -> bool {
+	if !native_effect_create_common(cache) { return false }
+	vertex := native_text_shader(cache.device, .VERTEX, false)
+	if vertex == nil { return false }
+	defer sdl3.ReleaseGPUShader(cache.device, vertex)
+	fragment := native_lighting_fragment_shader(cache.device)
+	if fragment == nil { return false }
+	defer sdl3.ReleaseGPUShader(cache.device, fragment)
+	vertex_buffers := [1]sdl3.GPUVertexBufferDescription{{slot=0, pitch=sdl3.Uint32(size_of(Native_Text_Vertex)), input_rate=.VERTEX}}
+	attributes := [3]sdl3.GPUVertexAttribute{
+		{location=0, buffer_slot=0, format=.FLOAT3, offset=0},
+		{location=1, buffer_slot=0, format=.FLOAT4, offset=sdl3.Uint32(size_of([3]f32))},
+		{location=2, buffer_slot=0, format=.FLOAT2, offset=sdl3.Uint32(size_of([3]f32)+size_of([4]f32))},
+	}
+	targets := [1]sdl3.GPUColorTargetDescription{{format=cache.composite_format}}
+	info := sdl3.GPUGraphicsPipelineCreateInfo{
+		vertex_shader=vertex, fragment_shader=fragment,
+		vertex_input_state={vertex_buffer_descriptions=&vertex_buffers[0], num_vertex_buffers=1, vertex_attributes=&attributes[0], num_vertex_attributes=3},
+		primitive_type=.TRIANGLELIST,
+		rasterizer_state={fill_mode=.FILL, cull_mode=.NONE, front_face=.COUNTER_CLOCKWISE, enable_depth_clip=true},
+		target_info={color_target_descriptions=&targets[0], num_color_targets=1},
+	}
+	cache.lighting_pipeline = sdl3.CreateGPUGraphicsPipeline(cache.device, info)
+	if cache.lighting_pipeline == nil { return false }
 	native_effect_allocation(cache)
-	cache.vertex_buffer = sdl3.CreateGPUBuffer(cache.device, {usage={.VERTEX}, size=sdl3.Uint32(NATIVE_EFFECT_VERTEX_BYTES)})
-	if cache.vertex_buffer == nil { return false }
-	native_effect_allocation(cache, NATIVE_EFFECT_VERTEX_BYTES)
-	cache.vertex_transfer = sdl3.CreateGPUTransferBuffer(cache.device, {usage=.UPLOAD, size=sdl3.Uint32(NATIVE_EFFECT_VERTEX_BYTES)})
-	if cache.vertex_transfer == nil { return false }
-	native_effect_allocation(cache, NATIVE_EFFECT_VERTEX_BYTES)
 	return true
 }
 
 native_effect_build_vertices :: proc(cache: ^Native_Effect_Cache) {
-	_, _, ok := cpu_renderer.Backdrop_Effect_Build_Mesh(native_effect_cpu_plan(cache.plan), &cache.vertices)
+	ok := false
+	if cache.plan.kind == .Lighting_Group {
+		mesh: [cpu_renderer.LIGHTING_MESH_VERTICES]Native_Text_Vertex
+		ok = cpu_renderer.Lighting_Build_Mesh(cache.plan.lighting, &mesh)
+		if ok { for vertex, index in mesh { cache.vertices[index] = vertex } }
+	} else {
+		_, _, ok = cpu_renderer.Backdrop_Effect_Build_Mesh(native_effect_cpu_plan(cache.plan), &cache.vertices)
+	}
 	if ok { cache.vertex_upload_pending = true }
 }
 
@@ -473,30 +578,48 @@ native_effect_prepare :: proc(cache: ^Native_Effect_Cache, plan: Native_Effect_P
 		native_effect_reset(cache)
 		return .Fallback
 	}
-	if cache.filter_pipeline == nil && !native_effect_create_fixed(cache) {
+	is_lighting := plan.kind == .Lighting_Group
+	if is_lighting {
+		if cache.lighting_pipeline == nil && !native_lighting_create_fixed(cache) {
+			native_effect_reset(cache)
+			return .Fallback
+		}
+		cache.lighting_prepares += 1
+	} else if cache.filter_pipeline == nil && !native_effect_create_fixed(cache) {
 		native_effect_reset(cache)
 		return .Fallback
 	}
-	if cache.source == nil || cache.plan.width != plan.width || cache.plan.height != plan.height {
+	if cache.source == nil || cache.plan.width != plan.width || cache.plan.height != plan.height ||
+	   cache.plan.kind != plan.kind {
 		// Release BEFORE allocating replacements: the budget covers the peak,
 		// including the unchanged fixed buffer and transfer buffer.
 		native_effect_release_textures(cache)
-		formats := [3]sdl3.GPUTextureFormat{cache.composite_format, NATIVE_EFFECT_FILTER_FORMAT, NATIVE_EFFECT_FILTER_FORMAT}
-		bytes_per_pixel := [3]u64{4, 8, 8}
-		for slot, index in ([3]^^sdl3.GPUTexture{&cache.source, &cache.ping, &cache.output}) {
-			slot^ = sdl3.CreateGPUTexture(cache.device, {
-			type=.D2, format=formats[index], usage={.SAMPLER, .COLOR_TARGET},
+		if is_lighting {
+			cache.source = sdl3.CreateGPUTexture(cache.device, {
+				type=.D2, format=cache.composite_format, usage={.SAMPLER, .COLOR_TARGET},
 				width=plan.width, height=plan.height, layer_count_or_depth=1, num_levels=1, sample_count=._1,
 			})
-			if slot^ == nil { native_effect_reset(cache); return .Fallback }
-			cache.texture_bytes[index] = u64(plan.width)*u64(plan.height)*bytes_per_pixel[index]
-			native_effect_allocation(cache, cache.texture_bytes[index])
+			if cache.source == nil { native_effect_reset(cache); return .Fallback }
+			cache.texture_bytes[0] = u64(plan.width)*u64(plan.height)*4
+			native_effect_allocation(cache, cache.texture_bytes[0])
+		} else {
+			formats := [3]sdl3.GPUTextureFormat{cache.composite_format, NATIVE_EFFECT_FILTER_FORMAT, NATIVE_EFFECT_FILTER_FORMAT}
+			bytes_per_pixel := [3]u64{4, 8, 8}
+			for slot, index in ([3]^^sdl3.GPUTexture{&cache.source, &cache.ping, &cache.output}) {
+				slot^ = sdl3.CreateGPUTexture(cache.device, {
+				type=.D2, format=formats[index], usage={.SAMPLER, .COLOR_TARGET},
+					width=plan.width, height=plan.height, layer_count_or_depth=1, num_levels=1, sample_count=._1,
+				})
+				if slot^ == nil { native_effect_reset(cache); return .Fallback }
+				cache.texture_bytes[index] = u64(plan.width)*u64(plan.height)*bytes_per_pixel[index]
+				native_effect_allocation(cache, cache.texture_bytes[index])
+			}
 		}
 	}
 	// Source/resource generations invalidate pixels, not the filter quad mesh.
 	// Keep geometry uploaded through a repaint with unchanged bounds/parameters.
-	changed := cache.plan.source_bounds != plan.source_bounds || cache.plan.width != plan.width ||
-	           cache.plan.height != plan.height || cache.plan.scale != plan.scale ||
+	changed := cache.plan.kind != plan.kind || cache.plan.source_bounds != plan.source_bounds ||
+	           cache.plan.width != plan.width || cache.plan.height != plan.height || cache.plan.scale != plan.scale ||
 	           cache.plan.sigma_pixels != plan.sigma_pixels || cache.plan.filter_tap_count != plan.filter_tap_count
 	cache.plan = plan
 	if changed { native_effect_build_vertices(cache) }
@@ -538,6 +661,12 @@ native_effect_encode :: proc(cache: ^Native_Effect_Cache, command: ^sdl3.GPUComm
 		cache.vertex_upload_bytes += NATIVE_EFFECT_VERTEX_BYTES
 		cache.vertex_upload_encoded = true
 	}
+	if cache.plan.kind == .Lighting_Group {
+		// No filtering: the composite shader evaluates surfaces and lights.
+		cache.encoded = true
+		cache.pending_command = command
+		return true
+	}
 	native_effect_uniforms(command, cache.plan.width, cache.plan.height)
 	for axis in 0..<2 {
 		source, target := cache.source, cache.ping
@@ -577,9 +706,28 @@ native_effect_composite :: proc(cache: ^Native_Effect_Cache, command: ^sdl3.GPUC
 	x1,y1 = clamp(x1,0,int(w)),clamp(y1,0,int(h))
 	if x1 <= x0 || y1 <= y0 { return true }
 	native_effect_uniforms(command, w, h)
+	if cache.plan.kind == .Lighting_Group {
+		uniforms, packed := cpu_renderer.Lighting_Uniforms_Pack(cache.plan.lighting, w, h)
+		if !packed { native_effect_abort(cache); return false }
+		sdl3.PushGPUFragmentUniformData(command, 0, &uniforms, sdl3.Uint32(size_of(uniforms)))
+	}
 	info := sdl3.GPUColorTargetInfo{texture=target, load_op=.LOAD, store_op=.STORE, cycle=false}
 	pass := sdl3.BeginGPURenderPass(command, &info, 1, nil)
 	if pass == nil { native_effect_abort(cache); return false }
+	if cache.plan.kind == .Lighting_Group {
+		sdl3.BindGPUGraphicsPipeline(pass, cache.lighting_pipeline)
+		sdl3.SetGPUViewport(pass, {0,0,f32(w),f32(h),0,1})
+		sdl3.SetGPUScissor(pass, {x=c.int(x0), y=c.int(y0), w=c.int(x1-x0), h=c.int(y1-y0)})
+		binding := sdl3.GPUBufferBinding{buffer=cache.vertex_buffer}
+		sdl3.BindGPUVertexBuffers(pass, 0, &binding, 1)
+		sampler := sdl3.GPUTextureSamplerBinding{texture=cache.source, sampler=cache.sampler}
+		sdl3.BindGPUFragmentSamplers(pass, 0, &sampler, 1)
+		sdl3.DrawGPUPrimitives(pass, 6, 1, 0, 0)
+		sdl3.EndGPURenderPass(pass)
+		cache.lighting_composites += 1
+		cache.composites += 1
+		return true
+	}
 	sdl3.BindGPUGraphicsPipeline(pass, cache.composite_pipeline)
 	sdl3.SetGPUViewport(pass, {0,0,f32(w),f32(h),0,1})
 	sdl3.SetGPUScissor(pass, {x=c.int(x0), y=c.int(y0), w=c.int(x1-x0), h=c.int(y1-y0)})
