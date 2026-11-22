@@ -40,6 +40,19 @@ bindings_test_key :: proc(
 	return alicorn.Binding_Key{key=key, modifiers=modifiers}
 }
 
+bindings_test_primary_modifiers :: proc(shift := false) -> alicorn.Input_Modifiers {
+	// Primary is Control on Windows/Linux and Command on macOS. Hosts normalize
+	// platform modifier state before dispatch, so the fixture must too.
+	modifiers: alicorn.Input_Modifiers
+	when ODIN_OS == .Darwin {
+		modifiers.super = true
+	} else {
+		modifiers.control = true
+	}
+	modifiers.shift = shift
+	return modifiers
+}
+
 bindings_test_open :: proc(
 	app: ^Bindings_Test_App,
 	bindings: alicorn.Binding_Table,
@@ -65,7 +78,7 @@ test_testui_single_stroke_binding_dispatches_arbitrary_action_id :: proc(t: ^tes
 	handle, status := bindings_test_open(&app, alicorn.Binding_Table{bindings=bindings})
 	if status != .Ok { testing.expect(t, false, "testui should open"); return }
 	defer close(&handle)
-	status = step(&handle, Input{kind=.Key, key=.F5, modifiers=alicorn.Input_Modifiers{control=true}})
+	status = step(&handle, Input{kind=.Key, key=.F5, modifiers=bindings_test_primary_modifiers()})
 	testing.expect_value(t, status, Status.Ok)
 	testing.expect_value(t, app.command_count, 1)
 	testing.expect_value(t, app.commands[0], alicorn.Action_ID(9001))
@@ -95,7 +108,7 @@ test_testui_chord_pending_then_complete_and_timeout_returns_to_idle :: proc(t: ^
 	if status != .Ok { testing.expect(t, false, "testui should open"); return }
 	defer close(&handle)
 
-	status = step(&handle, Input{kind=.Key, key=.K, modifiers=alicorn.Input_Modifiers{control=true}})
+	status = step(&handle, Input{kind=.Key, key=.K, modifiers=bindings_test_primary_modifiers()})
 	testing.expect_value(t, status, Status.Ok)
 	testing.expect(t, last_turn(&handle).binding_pending, "the exact prefix is held pending")
 	testing.expect(t, !handle.runtime.invalidated,
@@ -103,7 +116,7 @@ test_testui_chord_pending_then_complete_and_timeout_returns_to_idle :: proc(t: ^
 	testing.expect_value(t, last_turn(&handle).descriptions, 0)
 	testing.expect_value(t, app.command_count, 0)
 
-	status = step(&handle, Input{kind=.Key, key=.S, modifiers=alicorn.Input_Modifiers{control=true}})
+	status = step(&handle, Input{kind=.Key, key=.S, modifiers=bindings_test_primary_modifiers()})
 	testing.expect_value(t, status, Status.Ok)
 	testing.expect_value(t, app.command_count, 1)
 	testing.expect_value(t, app.commands[0], alicorn.Action_ID(911))
@@ -111,7 +124,7 @@ test_testui_chord_pending_then_complete_and_timeout_returns_to_idle :: proc(t: ^
 
 	// Re-arm and let the virtual clock cross the chord deadline. The shorter
 	// exact match fires, then the resolver is back to true idle.
-	status = step(&handle, Input{kind=.Key, key=.K, modifiers=alicorn.Input_Modifiers{control=true}})
+	status = step(&handle, Input{kind=.Key, key=.K, modifiers=bindings_test_primary_modifiers()})
 	testing.expect_value(t, status, Status.Ok)
 	status = advance_time(&handle, 500_000_000)
 	testing.expect_value(t, status, Status.Ok)
@@ -151,7 +164,7 @@ test_testui_rebind_keeps_menu_accelerator_and_dispatch_synchronized :: proc(t: ^
 		&service, 'S', alicorn.Menu_Modifiers{.Primary},
 	)
 	testing.expect(t, found && command == alicorn.Action_ID(930))
-	_ = step(&handle, Input{kind=.Key, key=.S, modifiers=alicorn.Input_Modifiers{control=true}})
+	_ = step(&handle, Input{kind=.Key, key=.S, modifiers=bindings_test_primary_modifiers()})
 	testing.expect_value(t, app.command_count, 1)
 
 	// The application remaps both borrowed surfaces. The native adapter would
@@ -176,11 +189,11 @@ test_testui_rebind_keeps_menu_accelerator_and_dispatch_synchronized :: proc(t: ^
 		&service, 'J', alicorn.Menu_Modifiers{.Primary, .Shift},
 	)
 	testing.expect(t, found && command == alicorn.Action_ID(930))
-	_ = step(&handle, Input{kind=.Key, key=.S, modifiers=alicorn.Input_Modifiers{control=true}})
+	_ = step(&handle, Input{kind=.Key, key=.S, modifiers=bindings_test_primary_modifiers()})
 	testing.expect_value(t, app.command_count, 1)
 	_ = step(&handle, Input{
 		kind=.Key, key=.J,
-		modifiers=alicorn.Input_Modifiers{control=true, shift=true},
+		modifiers=bindings_test_primary_modifiers(shift=true),
 	})
 	testing.expect_value(t, app.command_count, 2)
 	testing.expect_value(t, app.commands[1], alicorn.Action_ID(930))
@@ -203,13 +216,13 @@ test_testui_binding_cancel_cases_unmatched_pointer_and_rebind :: proc(t: ^testin
 	defer close(&handle)
 
 	// A key that is not a continuation abandons the chord and is reprocessed.
-	_ = step(&handle, Input{kind=.Key, key=.K, modifiers=alicorn.Input_Modifiers{control=true}})
-	_ = step(&handle, Input{kind=.Key, key=.P, modifiers=alicorn.Input_Modifiers{control=true}})
+	_ = step(&handle, Input{kind=.Key, key=.K, modifiers=bindings_test_primary_modifiers()})
+	_ = step(&handle, Input{kind=.Key, key=.P, modifiers=bindings_test_primary_modifiers()})
 	testing.expect(t, !last_turn(&handle).binding_pending)
 	testing.expect_value(t, app.command_count, 0)
 
 	// Pointer-down cancels a pending chord.
-	_ = step(&handle, Input{kind=.Key, key=.K, modifiers=alicorn.Input_Modifiers{control=true}})
+	_ = step(&handle, Input{kind=.Key, key=.K, modifiers=bindings_test_primary_modifiers()})
 	testing.expect(t, last_turn(&handle).binding_pending)
 	_ = click_at(&handle, 16, 16)
 	testing.expect(t, !last_turn(&handle).binding_pending)
@@ -222,15 +235,15 @@ test_testui_binding_cancel_cases_unmatched_pointer_and_rebind :: proc(t: ^testin
 			scope="Global",
 		},
 	}
-	_ = step(&handle, Input{kind=.Key, key=.K, modifiers=alicorn.Input_Modifiers{control=true}})
+	_ = step(&handle, Input{kind=.Key, key=.K, modifiers=bindings_test_primary_modifiers()})
 	set_bindings(&handle, alicorn.Binding_Table{bindings=rebound})
 	testing.expect(t, len(alicorn.binding_state_pending(&handle.binding_state)) == 0)
-	_ = step(&handle, Input{kind=.Key, key=.K, modifiers=alicorn.Input_Modifiers{control=true}})
-	_ = step(&handle, Input{kind=.Key, key=.S, modifiers=alicorn.Input_Modifiers{control=true}})
+	_ = step(&handle, Input{kind=.Key, key=.K, modifiers=bindings_test_primary_modifiers()})
+	_ = step(&handle, Input{kind=.Key, key=.S, modifiers=bindings_test_primary_modifiers()})
 	testing.expect_value(t, app.command_count, 0)
 	_ = step(&handle, Input{
 		kind=.Key, key=.J,
-		modifiers=alicorn.Input_Modifiers{control=true, shift=true},
+		modifiers=bindings_test_primary_modifiers(shift=true),
 	})
 	testing.expect_value(t, app.command_count, 1)
 	testing.expect_value(t, app.commands[0], alicorn.Action_ID(921))
