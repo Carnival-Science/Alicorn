@@ -18,7 +18,8 @@ Modes:
   (`--backend=sdl-gpu`) or `ui/webgpu.run` (`--backend=d3d12|vulkan`).
   `--treatment=<name>` and `--condition=cold|warm|resize|theme|hover|scroll|idle`
   select one cell; the app driver requests one description per planned pass
-  (24 by default).
+  (24 by default). `--scene=scratchpad --interaction=typing|scroll` swaps in
+  the representative `benchmarks/scratchpad_scene` composition.
 - `--mode=offscreen` renders the same resolved `Paint_Command` stream on the
   real GPU device at 1x, 1.25x, 1.5x, and 2x through the production
   `draw_display_list` path, then waits for the fence. The window runs cover

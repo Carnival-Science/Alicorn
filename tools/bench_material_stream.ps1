@@ -8,10 +8,12 @@ param(
         'rounded-flat-h0', 'rounded-flat-h05', 'rounded-relief-h0', 'rounded-relief-h05'
     ),
     [string[]]$Conditions = @('cold', 'warm', 'resize', 'theme', 'hover', 'scroll', 'idle'),
+    [string[]]$ScratchpadInteractions = @('typing', 'scroll'),
     [string]$OutputDir = 'out\issue-104-material-stream',
     [switch]$SkipBuild,
     [switch]$SkipWindow,
     [switch]$SkipWebGPU,
+    [switch]$SkipScratchpad,
     [switch]$SkipOffscreen,
     [switch]$Quick
 )
@@ -244,6 +246,55 @@ if (-not $SkipWindow) {
 if (-not $SkipWebGPU) {
     Invoke-WindowMatrix 'd3d12' @('--timings') 'webgpu-d3d12'
 }
+
+# ---- Scratchpad-representative variant -----------------------------------
+$scratchRows = New-Object System.Collections.Generic.List[object]
+if (-not $SkipScratchpad) {
+    $scratchDir = Join-Path $OutputDir 'scratchpad'
+    New-Item -ItemType Directory -Force -Path $scratchDir | Out-Null
+    foreach ($backend in @('sdl-gpu', 'd3d12')) {
+        $tag = if ($backend -eq 'sdl-gpu') { 'sdl-gpu-scratchpad' } else { 'webgpu-d3d12-scratchpad' }
+        $extra = if ($backend -eq 'd3d12') { @('--timings') } else { @() }
+        for ($run = 1; $run -le $Runs; $run++) {
+            foreach ($interaction in $ScratchpadInteractions) {
+                $log = Join-Path $scratchDir ("{0}-{1}-run{2}.txt" -f $tag, $interaction, $run)
+                $arguments = @(
+                    "--backend=$backend", '--scene=scratchpad', "--interaction=$interaction",
+                    "--passes=$Passes", '--smoke', "--smoke-hold-ms=$IdleHoldMs"
+                ) + $extra
+                Invoke-Logged $arguments $log 60000
+                $tokens = Read-Tokens $log
+                $submissions = if ($null -ne (Token $tokens 'primary_gpu_submissions')) { Token $tokens 'primary_gpu_submissions' } else { Token $tokens 'frames_presented' }
+                $solidUpload = Token $tokens 'solid_vertex_upload_bytes'
+                $solidDraws = Token $tokens 'solid_draw_calls'
+                $scratchRows.Add([pscustomobject]@{
+                    run = $run
+                    backend = $tag
+                    interaction = $interaction
+                    submissions = $submissions
+                    display_commands = Token $tokens 'display_commands'
+                    description_p50_ns = Token $tokens 'description_p50_ns'
+                    build_p50_ns = if ($null -ne (Token $tokens 'application_build_p50_ns')) { Token $tokens 'application_build_p50_ns' } else { Token $tokens 'runtime_step_ns_p50' }
+                    build_p95_ns = if ($null -ne (Token $tokens 'application_build_p95_ns')) { Token $tokens 'application_build_p95_ns' } else { Token $tokens 'runtime_step_ns_p95' }
+                    build_p99_ns = if ($null -ne (Token $tokens 'application_build_p99_ns')) { Token $tokens 'application_build_p99_ns' } else { Token $tokens 'runtime_step_ns_p99' }
+                    solid_build_p50_ns = Token $tokens 'solid_build_p50_ns'
+                    solid_build_p95_ns = Token $tokens 'solid_build_p95_ns'
+                    solid_build_p99_ns = Token $tokens 'solid_build_p99_ns'
+                    encode_p50_ns = Token $tokens 'renderer_encode_ns_p50'
+                    encode_p95_ns = Token $tokens 'renderer_encode_ns_p95'
+                    submit_p50_ns = Token $tokens 'queue_submit_ns_p50'
+                    solid_draw_calls = $solidDraws
+                    draw_calls_per_pass = if ($null -ne $solidDraws -and $null -ne $submissions -and $submissions -gt 0) { $solidDraws / $submissions } else { $null }
+                    solid_upload_bytes = $solidUpload
+                    solid_vertex_uploads = Token $tokens 'solid_vertex_uploads'
+                    solid_mesh_rebuilds = Token $tokens 'solid_mesh_rebuilds'
+                    solid_transform_uploads = Token $tokens 'solid_transform_uploads'
+                })
+            }
+        }
+    }
+    $scratchRows | Export-Csv -NoTypeInformation -LiteralPath (Join-Path $OutputDir 'scratchpad-runs.csv') -Encoding UTF8
+}
 $windowRows | Export-Csv -NoTypeInformation -LiteralPath (Join-Path $OutputDir 'window-runs.csv') -Encoding UTF8
 
 # ---- summary --------------------------------------------------------------
@@ -327,6 +378,40 @@ $summary.Add('## Dogfood trace')
 $summary.Add('')
 foreach ($line in $dogfoodLines) { $summary.Add("- ``$line``") }
 $summary.Add('')
+
+if (Test-Path (Join-Path $OutputDir 'scratchpad-runs.csv')) {
+    $scratch = Import-Csv (Join-Path $OutputDir 'scratchpad-runs.csv')
+    if ($scratch.Count -gt 0) {
+        $summary.Add('## Scratchpad-representative variant')
+        $summary.Add('')
+        $summary.Add('| Backend | Interaction | Submits | Display commands | Description p50 us | Build p50/p95/p99 us | Encode p50/p95 us | Solid build p50/p95 us | Draws/pass | Solid upload B | Mesh rebuilds | Transform uploads |')
+        $summary.Add('| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |')
+        $groups = $scratch | Group-Object { "$($_.backend)|$($_.interaction)" } | Sort-Object Name
+        foreach ($group in $groups) {
+            $items = @($group.Group)
+            $first = $items[0]
+            $fmtUs = { param($v) if ($null -eq $v) { 'n/a' } else { '{0:N2}' -f ([double]$v / 1000) } }
+            $fmt = { param($v) if ($null -eq $v) { 'n/a' } else { '{0:N0}' -f [double]$v } }
+            $summary.Add(("| {0} | {1} | {2} | {3} | {4} | {5}/{6}/{7} | {8}/{9} | {10}/{11} | {12} | {13} | {14} | {15} |" -f `
+                $first.backend, $first.interaction,
+                (& $fmt (Median @($items | ForEach-Object { $_.submissions }))),
+                (& $fmt (Median @($items | ForEach-Object { $_.display_commands }))),
+                (& $fmtUs (Median @($items | ForEach-Object { $_.description_p50_ns }))),
+                (& $fmtUs (Median @($items | ForEach-Object { $_.build_p50_ns }))),
+                (& $fmtUs (Median @($items | ForEach-Object { $_.build_p95_ns }))),
+                (& $fmtUs (Median @($items | ForEach-Object { $_.build_p99_ns }))),
+                (& $fmtUs (Median @($items | ForEach-Object { $_.encode_p50_ns }))),
+                (& $fmtUs (Median @($items | ForEach-Object { $_.encode_p95_ns }))),
+                (& $fmtUs (Median @($items | ForEach-Object { $_.solid_build_p50_ns }))),
+                (& $fmtUs (Median @($items | ForEach-Object { $_.solid_build_p95_ns }))),
+                (& $fmt (Median @($items | ForEach-Object { $_.draw_calls_per_pass }))),
+                (& $fmt (Median @($items | ForEach-Object { $_.solid_upload_bytes }))),
+                (& $fmt (Median @($items | ForEach-Object { $_.solid_mesh_rebuilds }))),
+                (& $fmt (Median @($items | ForEach-Object { $_.solid_transform_uploads })))))
+        }
+        $summary.Add('')
+    }
+}
 
 $summaryPath = Join-Path $OutputDir 'material-stream-summary.md'
 $summary | Set-Content -LiteralPath $summaryPath -Encoding UTF8

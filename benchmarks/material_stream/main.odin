@@ -8,6 +8,7 @@ import "core:sync"
 import "core:thread"
 import "core:time"
 import alicorn "alicorn:runtime"
+import scratchpad "alicorn:benchmarks/scratchpad_scene"
 import ui "alicorn:ui"
 import webgpu "alicorn:ui/webgpu"
 
@@ -34,11 +35,23 @@ App :: struct {
 	description_ns:   [MATERIAL_STREAM_PASSES]u64,
 	description_count: int,
 	start_tick:       time.Tick,
+	// use_scratchpad swaps the synthetic stream for the representative
+	// Scratchpad scene from the issue #229 workload. The material measurements
+	// stay on the synthetic stream; this variant checks the same conditions on
+	// an ordinary retained application composition.
+	use_scratchpad:   bool,
+	interaction:      scratchpad.Interaction,
+	scratch:          scratchpad.Scene,
+	scratch_step:     u64,
 }
 
 describe_pass :: proc(app: ^App, ctx: ^ui.UI) {
 	before := time.tick_now()
-	material_scene_describe(&app.scene, ctx)
+	if app.use_scratchpad {
+		scratchpad.scene_describe(&app.scratch, ctx)
+	} else {
+		material_scene_describe(&app.scene, ctx)
+	}
 	elapsed := u64(time.duration_nanoseconds(time.tick_since(before)))
 	if app.description_count < MATERIAL_STREAM_PASSES {
 		app.description_ns[app.description_count] = elapsed
@@ -66,7 +79,13 @@ hosted_render :: proc(app: ^App, ctx: ^ui.UI) {
 
 application_initialize :: proc(app: ^App, rt: ^alicorn.Runtime) {
 	app.rt = rt
-	material_scene_register(&app.scene, rt)
+	if app.use_scratchpad {
+		if !scratchpad.register_theme(&app.scratch, rt) {
+			fmt.eprintln("scratchpad variant theme registration failed")
+		}
+	} else {
+		material_scene_register(&app.scene, rt)
+	}
 	if !alicorn.text_engine_load_default_fonts(rt) {
 		fmt.eprintln("material stream fonts could not initialize")
 	}
@@ -83,6 +102,15 @@ application_wake :: proc(app: ^App, ctx: ui.Application_Context) {
 	app.wake_deliveries += 1
 	rt := cast(^alicorn.Runtime)ctx
 	if rt == nil || app.scene.condition == .Idle || app.passes >= app.frame_budget { return }
+	if app.use_scratchpad {
+		if app.passes <= 1 {
+			_ = scratchpad.scene_focus_field(&app.scratch, rt)
+		} else {
+			app.scratch_step += 1
+			_ = scratchpad.scene_apply_step(&app.scratch, rt, app.scratch_step)
+		}
+		return
+	}
 	_ = material_scene_advance(&app.scene, rt)
 }
 
@@ -139,6 +167,22 @@ print_summary :: proc(app: ^App) {
 	if app.start_tick != (time.Tick{}) {
 		span = u64(time.duration_nanoseconds(time.tick_since(app.start_tick)))
 	}
+	if app.use_scratchpad {
+		fmt.printf(
+			"[alicorn-material-stream] role=primary backend=%s scene=scratchpad interaction=%s "+
+			"passes=%d planned=%d wake_deliveries=%d display_commands=%d nodes=%d "+
+			"description_span_ns=%d description_p50_ns=%d description_p95_ns=%d description_p99_ns=%d\n",
+			app.backend, scratchpad.interaction_name(app.interaction),
+			app.passes, app.frame_budget, app.wake_deliveries,
+			len(app.rt.display) if app.rt != nil else 0,
+			len(app.rt.nodes) if app.rt != nil else 0,
+			span,
+			percentile_from_sorted(values[:measured], 0.50),
+			percentile_from_sorted(values[:measured], 0.95),
+			percentile_from_sorted(values[:measured], 0.99),
+		)
+		return
+	}
 	fmt.printf(
 		"[alicorn-material-stream] role=primary backend=%s treatment=%s condition=%s "+
 		"passes=%d planned=%d wake_deliveries=%d commands=%d cards=%d rows=%d realized_rows=%d "+
@@ -155,13 +199,6 @@ print_summary :: proc(app: ^App) {
 		percentile_from_sorted(values[:measured], 0.95),
 		percentile_from_sorted(values[:measured], 0.99),
 	)
-}
-
-// end_to_end_idle_probe presents one frame and then sleeps. It is used by the
-// idle condition to establish that a settled native scene requests no further
-// presentation; the host's own idle-hold exit remains the authority.
-idle_hold :: proc() {
-	time.sleep(1200*time.Millisecond)
 }
 
 parse_arg :: proc(prefix: string) -> (string, bool) {
@@ -185,6 +222,18 @@ main :: proc() {
 
 	backend := "sdl-gpu"
 	if value, ok := parse_arg("--backend="); ok { backend = value }
+	scene_name := "material"
+	if value, ok := parse_arg("--scene="); ok { scene_name = value }
+	use_scratchpad := scene_name == "scratchpad"
+	interaction := scratchpad.Interaction.Typing
+	if value, ok := parse_arg("--interaction="); ok {
+		parsed, parsed_ok := scratchpad.interaction_from_name(value)
+		if !parsed_ok {
+			fmt.eprintf("unknown scratchpad interaction %q\n", value)
+			os.exit(2)
+		}
+		interaction = parsed
+	}
 	treatment_name := TREATMENTS[0].name
 	if value, ok := parse_arg("--treatment="); ok { treatment_name = value }
 	treatment, treatment_ok := treatment_from_name(treatment_name)
@@ -212,9 +261,17 @@ main :: proc() {
 		condition=condition,
 		frame_budget=u64(passes),
 		backend=backend,
+		use_scratchpad=use_scratchpad,
+		interaction=interaction,
 	}
 	app.scene.treatment = treatment
 	app.scene.condition = condition
+	if use_scratchpad {
+		if !scratchpad.scene_init(&app.scratch, interaction, context.allocator) {
+			fmt.eprintln("scratchpad variant scene initialization failed")
+			os.exit(1)
+		}
+	}
 
 	if backend == "sdl-gpu" {
 		ui.run(
@@ -229,6 +286,7 @@ main :: proc() {
 			on_wake=application_wake,
 			on_stop=application_stop,
 		)
+		if use_scratchpad { scratchpad.scene_destroy(&app.scratch) }
 		return
 	}
 	if backend == "d3d12" || backend == "vulkan" {
@@ -245,6 +303,7 @@ main :: proc() {
 			on_wake=application_wake,
 			on_stop=application_stop,
 		)
+		if use_scratchpad { scratchpad.scene_destroy(&app.scratch) }
 		return
 	}
 	fmt.eprintf("unknown backend %q\n", backend)
