@@ -1,0 +1,283 @@
+// Manual-motion twin for the issue #91 dogfood measurement.
+//
+// This file is a scratch reference only. It is intentionally NOT compiled,
+// imported, or wired into Scratchpad: the extension is `.odin.txt` and it lives
+// under docs/validation/raw. It estimates the application code a manual
+// implementation would need for the two presented-value animations that the
+// Retained Motion API implements in the same application:
+//
+//   1. the Quick Open decorative accent birth (Reveal), including theme policy
+//      changes during the entrance and retirement when the palette closes;
+//   2. live tab reorder, including interruption/retarget, cancel/drop cleanup,
+//      reduced motion, and node retirement.
+//
+// The manual twin owns its clock, spring state, generation stamps, invalidation
+// cadence, cleanup, and reduced-motion rewrites. The motion API version instead
+// declares a typed target + intent during describe, and lets the runtime own all
+// of the above.
+
+package main
+
+import "core:math"
+import "core:time"
+import alicorn "alicorn:runtime"
+
+// ---------------------------------------------------------------------------
+// Manual spring kernel (the app would own this; Alicorn owns its equivalent)
+// ---------------------------------------------------------------------------
+
+MANUAL_OMEGA :: 18.0
+MANUAL_POSITION_EPSILON :: 0.1
+MANUAL_VELOCITY_EPSILON :: 0.5
+MANUAL_MAX_SUBSTEP_NS :: 8_000_000
+MANUAL_MAX_TAB_MOTIONS :: 64
+
+Manual_Value :: struct {
+	active:       bool,
+	value:        f64,
+	velocity:     f64,
+	target:       f64,
+	last_sample:  i64,
+	settle_bound: i64,
+}
+
+manual_value_sample :: proc(state: ^Manual_Value, reduced_motion: bool, now_ns: i64) -> bool {
+	if !state.active { return false }
+	if reduced_motion {
+		state.value = state.target
+		state.velocity = 0
+		state.active = false
+		return true
+	}
+	// Manual substeps because a stalled host turn must still converge
+	// analytically, not teleport on the first frame.
+	remaining := now_ns-state.last_sample
+	state.last_sample = now_ns
+	for remaining > 0 {
+		step := min(remaining, MANUAL_MAX_SUBSTEP_NS)
+		remaining -= step
+		dt := f64(step)/1e9
+		// Critically damped closed form, re-derived by the application.
+		displacement := state.value-state.target
+		decay := math.exp(-MANUAL_OMEGA*dt)
+		next_displacement := (displacement+(state.velocity+MANUAL_OMEGA*displacement)*dt)*decay
+		next_velocity := (state.velocity-(state.velocity+MANUAL_OMEGA*displacement)*MANUAL_OMEGA*dt)*decay
+		state.value = state.target+next_displacement
+		state.velocity = next_velocity
+		if abs(next_displacement) < MANUAL_POSITION_EPSILON && abs(next_velocity) < MANUAL_VELOCITY_EPSILON {
+			state.value = state.target
+			state.velocity = 0
+			state.active = false
+			break
+		}
+	}
+	return true
+}
+
+manual_value_retarget :: proc(state: ^Manual_Value, target: f64, reduced_motion: bool, now_ns: i64) {
+	if reduced_motion {
+		state.target = target
+		state.value = target
+		state.velocity = 0
+		state.active = false
+		return
+	}
+	// Preserve presented position and velocity; only the target changes.
+	state.target = target
+	if !state.active {
+		state.active = true
+		state.last_sample = now_ns
+	}
+}
+
+manual_settle_bound :: proc(displacement, velocity: f64) -> i64 {
+	// Conservative app-owned deadline used only to bound the wake cadence.
+	t := (abs(displacement)+abs(velocity)/MANUAL_OMEGA+MANUAL_POSITION_EPSILON)/MANUAL_POSITION_EPSILON
+	return i64(min(t, 5_000_000_000))
+}
+
+abs :: proc(value: f64) -> f64 { return value if value >= 0 else -value }
+
+// ---------------------------------------------------------------------------
+// 1. Manual birth Reveal for the Quick Open accent
+// ---------------------------------------------------------------------------
+
+Manual_Reveal :: struct {
+	node:             alicorn.Node_ID,
+	generation:       u64,
+	policy_signature: u64,
+	offset:           Manual_Value,
+	opacity:          Manual_Value,
+	started:          bool,
+}
+
+/// Registers the accent and begins from the hidden/offset pose. Returns false
+/// when the palette is not opening.
+manual_reveal_begin :: proc(reveal: ^Manual_Reveal, node: alicorn.Node_ID, now_ns: i64) -> bool {
+	if reveal == nil || node == 0 { return false }
+	reveal.node = node
+	reveal.generation += 1
+	reveal.policy_signature = 0
+	reveal.offset = Manual_Value{active=true, value=-6, target=0, last_sample=now_ns}
+	reveal.opacity = Manual_Value{active=true, value=0, target=1, last_sample=now_ns}
+	reveal.started = true
+	return true
+}
+
+manual_reveal_after_frame :: proc(reveal: ^Manual_Reveal, rt: ^alicorn.Runtime, policy_signature: u64, reduced_motion: bool) {
+	if reveal == nil || !reveal.started { return }
+	// Retirement safety: the palette may close before the entrance finishes.
+	if _, found := alicorn.node_info(rt, reveal.node); !found {
+		reveal.started = false
+		reveal.offset = {}
+		reveal.opacity = {}
+		return
+	}
+	now_ns := i64(time.tick_now())
+	if policy_signature != reveal.policy_signature {
+		// A theme / reduced-motion policy change replaces the response without
+		// replaying the birth pose.
+		reveal.policy_signature = policy_signature
+		manual_value_retarget(&reveal.offset, 0, reduced_motion, now_ns)
+		manual_value_retarget(&reveal.opacity, 1, reduced_motion, now_ns)
+	}
+	moved := manual_value_sample(&reveal.offset, reduced_motion, now_ns)
+	moved = manual_value_sample(&reveal.opacity, reduced_motion, now_ns) || moved
+	if reveal.offset.active || reveal.opacity.active {
+		// Manual bookkeeping must ask for every presentation frame.
+		alicorn.request_presentation(rt)
+	} else {
+		reveal.started = false
+	}
+}
+
+/// Applied while describing the accent. The app must re-describe or otherwise
+/// patch paint for every sampled value because this path is app-owned.
+manual_reveal_build :: proc(reveal: ^Manual_Reveal, ui: ^alicorn.UI) -> alicorn.Node_ID {
+	// There is no public paint-only opacity/translation override outside the
+	// motion API, so the manual path expresses the offset as layout padding and
+	// the opacity as a color patch, re-describing the row every sampled frame.
+	offset := f32(-reveal.offset.value)
+	alpha := f32(reveal.opacity.value)
+	alicorn.container_begin(
+		ui,
+		.Container,
+		label="manual-accent-offset",
+		style=alicorn.layout_style(.Row, padding=offset),
+	)
+	node := alicorn.surface_begin(
+		ui,
+		alicorn.surface_core_color_role(.Accent),
+		key=alicorn.key_string("scratchpad-quick-open-motion-accent"),
+		style=alicorn.layout_style(.Row, width=2, height=26),
+		fill=alicorn.Color{1, 1, 1, alpha},
+		label="scratchpad-quick-open-motion-accent",
+	)
+	alicorn.surface_end(ui)
+	alicorn.container_end(ui)
+	return node
+}
+
+manual_reveal_close :: proc(reveal: ^Manual_Reveal) {
+	if reveal == nil { return }
+	// No exit ghost and no tombstone: drop the manual state immediately.
+	reveal^ = {}
+}
+
+// ---------------------------------------------------------------------------
+// 2. Manual tab reorder presentation
+// ---------------------------------------------------------------------------
+
+Manual_Tab_Slot :: struct {
+	document_id: string,
+	node:        alicorn.Node_ID,
+	generation:  u64,
+	x:           Manual_Value,
+}
+
+Manual_Tab_Motion :: struct {
+	slots:           [MANUAL_MAX_TAB_MOTIONS]Manual_Tab_Slot,
+	count:           int,
+	policy_signature: u64,
+	cleanup_pending: bool,
+	cleanup_snap:    bool,
+}
+
+manual_tab_reorder_update :: proc(
+	state: ^Manual_Tab_Motion,
+	rt: ^alicorn.Runtime,
+	documents: []string,
+	tab_nodes: []alicorn.Node_ID,
+	order: []int,
+	stride: f32,
+	reduced_motion: bool,
+	policy_signature: u64,
+) {
+	now_ns := i64(time.tick_now())
+	if state.cleanup_pending {
+		for i in 0..<state.count {
+			manual_value_retarget(&state.slots[i].x, 0, reduced_motion || state.cleanup_snap, now_ns)
+		}
+		state.cleanup_pending = false
+		state.cleanup_snap = false
+	}
+	// Retirement and reuse: a rebuilt tab strip can retire a node and recreate
+	// it with the same logical document. The manual path must detect both.
+	for i in 0..<state.count {
+		if _, found := alicorn.node_info(rt, state.slots[i].node); !found {
+			state.slots[i] = {}
+			continue
+		}
+	}
+	count := 0
+	for document_id, index in documents {
+		if index >= len(tab_nodes) { break }
+		if count >= len(state.slots) { break }
+		node := tab_nodes[index]
+		slot := &state.slots[count]
+		if slot.node != node || slot.document_id != document_id {
+			// Reuse the presented value only when the same document identity
+			// survives; otherwise start from the new slot's logical position.
+			presented := slot.x.value
+			slot^ = Manual_Tab_Slot{document_id=document_id, node=node, generation=slot.generation+1}
+			slot.x = Manual_Value{value=presented, last_sample=now_ns}
+		}
+		slot_target := f32(order[count])*stride
+		manual_value_retarget(&slot.x, f64(slot_target), reduced_motion, now_ns)
+		count += 1
+	}
+	state.count = count
+	if policy_signature != state.policy_signature {
+		state.policy_signature = policy_signature
+		for i in 0..<state.count {
+			manual_value_retarget(&state.slots[i].x, state.slots[i].x.target, reduced_motion, now_ns)
+		}
+	}
+	any_active := false
+	for i in 0..<state.count {
+		if manual_value_sample(&state.slots[i].x, reduced_motion, now_ns) { any_active = true }
+		any_active = state.slots[i].x.active || any_active
+	}
+	state.cleanup_pending = any_active
+	if any_active { alicorn.request_presentation(rt) }
+}
+
+/// The manual path applies each sampled offset while describing the tab. The
+/// retained tab is re-described every frame; the API path keeps logical bounds
+/// and paint composition in the runtime.
+manual_tab_apply :: proc(state: ^Manual_Tab_Motion, ui: ^alicorn.UI, node: alicorn.Node_ID) -> f32 {
+	for i in 0..<state.count {
+		if state.slots[i].node == node { return f32(state.slots[i].x.value) }
+	}
+	_ = ui
+	return 0
+}
+
+// ---------------------------------------------------------------------------
+// Manual shutdown/teardown
+// ---------------------------------------------------------------------------
+
+manual_motion_destroy :: proc(reveal: ^Manual_Reveal, tabs: ^Manual_Tab_Motion) {
+	if reveal != nil { reveal^ = {} }
+	if tabs != nil { tabs^ = {} }
+}

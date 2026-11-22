@@ -1,0 +1,54 @@
+Issue #91 dogfood code-reduction measurement
+Date: 2026-11-22
+Scratchpad branch: motion/quick-open-reveal at f70d898 (base adb28fc)
+Alicorn: finish-91 at 3d49b8b
+
+Metric: physical source lines, production code only. Blank lines and
+comment-only lines are excluded. Tests are excluded on both sides. This is an
+authoring-cost estimate, not a benchmark or a runtime measurement.
+
+Motion-API implementation (the ported Scratchpad code)
+------------------------------------------------------
+Quick Open decorative accent birth Reveal
+  main.odin App state fields                       3   (main.odin 487-489)
+  open/close lifecycle                              6   (quick_open.odin 126-128, 143-145)
+  accent surface + gui.motion declaration         29   (quick_open.odin 349-377)
+  subtotal                                        38
+
+Live tab reorder presentation
+  main.odin App motion fields                       4   (main.odin 284-287)
+  reorder motion mechanics                         42   (app_layout.odin 905-918, 948-975)
+  build call site                                   5   (workbench_layout.odin 188-192)
+  subtotal                                         51
+
+Motion-API total                                   89
+
+Manual twin (docs/validation/raw/issue-91-motion-dogfood-2026-11-22/manual-twin/manual_motion_twin.odin.txt)
+------------------------------------------------------
+  total physical lines                            283
+  blank/comment-only lines                         75
+  manual-twin code lines                          208
+
+Ratio: 208 / 89 = 2.34x manual code per motion-API line.
+
+What the manual twin owns that the API does not:
+  - a monotonic clock and frame-delta bookkeeping
+  - a closed-form critically damped evaluator with bounded substeps
+  - app-owned per-owner generation stamps and retirement checks
+  - retarget without replaying the birth pose, including reduced-motion snap
+  - explicit presentation requests for every sampled frame
+  - tab identity reuse/retirement and drop/cancel cleanup
+  - re-describing the accent row each frame (no paint-only override)
+
+What is excluded from both counts:
+  - the tests (128 new Scratchpad lines on the API side; the twin is not built
+    or tested)
+  - the pre-existing drag gesture, tab layout, theme, and focus code
+  - the shared scratchpad_motion_policy_signature helper (already present for
+    tab reorder before this port)
+
+Interpretation limit: the twin is a single illustrative implementation written
+to the same public Alicorn surface. Another author could write it longer or
+shorter. The ratio supports the #91 GO gate's "removes repeated app code"
+qualitatively; it is not a benchmark and does not measure CPU, GPU, or frame
+time.

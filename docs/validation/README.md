@@ -36,6 +36,14 @@ the current project status.
   G6 on Windows/D3D12 and G9 at CI tier (Linux/Vulkan sampled; macOS/Metal host
   and settlement tier), with G10 and G11 explicitly scoped to the founder's
   physical-hardware and hands-on capture runs.
+- [Issue #91 motion dogfood: Reveal port, Scratchpad capture, physical Hz, code reduction (2026-11-22)](issue-91-motion-dogfood-2026-11-22.md)
+  — ports the pilot command-palette Reveal accent to the frontend-owned Quick
+  Open palette (`motion/quick-open-reveal` at `f70d898`), captures native tab
+  reorder and Reveal frames with timeline motion-only rows and Motion-tab
+  inspector evidence, measures the primary panel at 60/120/144/165 Hz, and
+  records an 89-vs-208-line (2.34x) motion-API/manual-twin authoring comparison;
+  recommends the #138/#140/#141/#146/#91 boundaries and leaves the founder
+  screen recording and macOS/Linux runs as hands-on follow-ups.
 - [Generic roving focus model and list/grid pattern checks (2026-11-21)](issue-225-roving-focus-2026-11-21.md)
   — pure `alicorn:runtime` `Roving_View`/`roving_propose` index model, `testui`
   `Roving_List`/`Roving_Grid` patterns, the `select_parts` and AliKit icon-picker

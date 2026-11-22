@@ -1,0 +1,30 @@
+[
+    {
+        "Requested":  60,
+        "Applied":  0,
+        "Observed":  59,
+        "Passed":  true,
+        "Log":  "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-91-motion-close-2\\out\\issue-91\\raw\\hz\\rate-60\\run.log"
+    },
+    {
+        "Requested":  120,
+        "Applied":  0,
+        "Observed":  120,
+        "Passed":  true,
+        "Log":  "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-91-motion-close-2\\out\\issue-91\\raw\\hz\\rate-120\\run.log"
+    },
+    {
+        "Requested":  144,
+        "Applied":  0,
+        "Observed":  144,
+        "Passed":  true,
+        "Log":  "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-91-motion-close-2\\out\\issue-91\\raw\\hz\\rate-144\\run.log"
+    },
+    {
+        "Requested":  165,
+        "Applied":  0,
+        "Observed":  165,
+        "Passed":  true,
+        "Log":  "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-91-motion-close-2\\out\\issue-91\\raw\\hz\\rate-165\\run.log"
+    }
+]

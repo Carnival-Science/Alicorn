@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "issue": 91,
+  "date": "2026-11-22",
+  "alicorn": {
+    "branch": "finish-91",
+    "commit": "3d49b8b",
+    "worktree": "C:/Users/saman/.local/share/opencode/worktree/191a98/finish-91-motion-close-2",
+    "odin": "dev-2026-11-nightly:08539cd",
+    "host": "native/sdl_gpu, SDL 3.4.20, Direct3D 12"
+  },
+  "scratchpad": {
+    "remote": "https://github.com/samanshaiza004/scratchpad.git",
+    "branch": "motion/quick-open-reveal",
+    "commit": "f70d898",
+    "base": "adb28fc",
+    "clone": "C:/Users/saman/AppData/Local/Temp/opencode/scratchpad-motion-91",
+    "built_against": "Alicorn 3d49b8b with --alicorn-root and --allow-alicorn-revision",
+    "renderer": "sdl-gpu (D3D12)"
+  },
+  "display": {
+    "primary": "AORUS CV27Q (GBT2705), 2560x1440",
+    "secondary": "F22 (SPT08D5), 1920x1080",
+    "default_refresh_hz": 165,
+    "supported_1440p_rates_hz": [59, 60, 120, 144, 165]
+  },
+  "captures": {
+    "local_root": "C:/Users/saman/AppData/Local/Temp/opencode/scratchpad-motion-91/out/issue-91/raw",
+    "quick_open": {
+      "baseline-settled": "quick-open/20261122T182332.287Z-0001",
+      "reveal-mid": "quick-open/20261122T182333.074Z-0002",
+      "reveal-settled": "quick-open/20261122T182334.319Z-0003",
+      "closed": "quick-open/20261122T182335.450Z-0004"
+    },
+    "tabs": {
+      "baseline-settled": "tabs/20261122T182456.876Z-0001",
+      "reorder-mid": "tabs/20261122T182458.073Z-0002",
+      "reorder-settled": "tabs/20261122T182459.290Z-0003"
+    },
+    "inspector": {
+      "initial": "inspector/20261122T182520.312Z-0001",
+      "motion-reveal": "inspector/20261122T182521.955Z-0002",
+      "motion-settled": "inspector/20261122T182524.005Z-0003"
+    },
+    "hz": "out/issue-91/raw/hz (worktree finish-91-motion-close-2)"
+  },
+  "notes": [
+    "PNG copies of key frames are committed under docs/validation/assets/issue-91.",
+    "The local capture bundles also contain screenshot.ppm, timeline.json, windows.json, inspector.txt, and events.jsonl.",
+    "Timeline excerpts under docs/validation/raw keep only motion-relevant samples and are not the complete recorder window."
+  ]
+}

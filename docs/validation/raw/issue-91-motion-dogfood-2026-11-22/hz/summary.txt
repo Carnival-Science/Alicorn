@@ -1,0 +1,10 @@
+Windows 10 Home 19045, RTX 2080 SUPER (driver 32.0.15.9597), AORUS CV27Q primary 2560x1440
+Alicorn finish-91 3d49b8b; example 09_retained_motion --motion-validation --diagnostics --capture-after=1
+D3D12, SDL 3.4.20, one ~3 s bounded run per rate (no warmup).
+
+requested observed exit samples missed p50_ns p95_ns p99_ns max_ns submissions wall_ms
+60 59 0 48 3 606733 12706433 29956333 45511533 50 3819.3
+120 120 0 49 12 755633 1334133 114056333 114158433 50 3132.2
+144 144 0 49 7 1310033 1348233 50831933 75447333 50 3051.7
+165 165 0 49 5 943533 1622233 41049133 55033333 51 3121.5
+Committed per-rate log copies use .txt; hz-results.json retains the original .log paths from the run.
