@@ -21,6 +21,16 @@ Pattern_Kind :: enum {
 	Modal_Dialog,
 	Roving_List,
 	Roving_Grid,
+	Radio_Group,
+	// Table is the static table contract: roles, nesting, coordinates, header
+	// grouping, logical counts, and ordinary document navigation. It has no
+	// managed-focus requirement.
+	Table,
+	// Data_Grid is the interactive table contract: the same structure plus
+	// managed cell focus, directional navigation, selection, and reveal. The
+	// two kinds are deliberately separate because their authoring obligations
+	// differ.
+	Data_Grid,
 }
 
 // Pattern_Part_ID names a role in a composed control. A configuration supplies
@@ -45,6 +55,16 @@ Pattern_Part_ID :: enum {
 	Modal_Action,
 	Container,
 	Item,
+	// Compound-control parts. Group names the Radio_Group collection; Table
+	// names the static table or interactive grid collection; Row, Header_Row,
+	// and Cell name published collection members. Target_Option/Disabled_Option
+	// continue to select a radio button or roving item by query.
+	Group,
+	Table,
+	Row,
+	Header_Row,
+	Cell,
+	Disabled_Cell,
 }
 
 Pattern_Step :: enum {
@@ -113,6 +133,63 @@ Pattern_Config :: struct {
 	// guesses the consumer's policy: supply the same stride, wrap, row-bound,
 	// and Home/End scope the composition publishes.
 	roving: Pattern_Roving_Config,
+	// Radio policy for .Radio_Group. Initial no-selection is legitimate; set
+	// require_initial_selection only when the consuming application itself
+	// requires a value.
+	radio: Pattern_Radio_Config,
+	// Static-table expectations. Rows and columns are compared with the
+	// published logical counts when the flags are set.
+	table: Pattern_Table_Config,
+	// Interactive-grid policy for .Data_Grid.
+	grid: Pattern_Grid_Config,
+}
+
+// Pattern_Radio_Config describes a radio group's published arrow policy. The
+// checker enforces at most one Checked item and Checked/selected_id agreement;
+// it never requires an initially selected radio.
+Pattern_Radio_Config :: struct {
+	// wrap continues arrow focus movement at the opposite end of the group.
+	wrap: bool,
+	// require_initial_selection is opt-in for consumers whose product contract
+	// mandates a value. The W3C radio pattern does not.
+	require_initial_selection: bool,
+}
+
+// Pattern_Table_Config is the static-table expectation set. The optional counts
+// are compared with the table's own published logical counts; zero disables the
+// comparison. expect_virtual_reveal is set by a consumer whose table realizes
+// rows through a bounded window and reveals them as ordinary document scrolling
+// proceeds.
+Pattern_Table_Config :: struct {
+	expected_row_count:    u64,
+	expect_row_count:      bool,
+	expected_column_count: u64,
+	expect_column_count:   bool,
+	expect_virtual_reveal: bool,
+}
+
+Pattern_Grid_Selection :: enum {
+	// None means activation is not contracted; selection checks are skipped.
+	None,
+	// Cell selection: the activated cell carries Selected and the grid's
+	// selected_id names it.
+	Cell,
+	// Row selection: the activated cell's row carries Selected and the grid's
+	// selected_id names the row collection.
+	Row,
+}
+
+// Pattern_Grid_Config is the interactive data-grid policy. It reuses the roving
+// index policy for arrows, Home/End, disabled skipping, boundaries, and wrap.
+Pattern_Grid_Config :: struct {
+	columns:     int,
+	wrap:        bool,
+	row_bounded: bool,
+	home_end_row: bool,
+	expect_reveal: bool,
+	// selection is the configured activation policy. The checker requires the
+	// selected identity to agree with the grid collection's selected_id.
+	selection: Pattern_Grid_Selection,
 }
 
 // Pattern_Roving_Focus selects the published roving representative. Container
@@ -200,6 +277,12 @@ pattern_check :: proc(handle: ^Test_Handle($T), config: Pattern_Config) -> Patte
 		_ = pattern_check_modal_dialog_impl(handle, config, &report)
 	case .Roving_List, .Roving_Grid:
 		_ = pattern_check_roving_impl(handle, config, &report)
+	case .Radio_Group:
+		_ = pattern_check_radio_impl(handle, config, &report)
+	case .Table:
+		_ = pattern_check_table_impl(handle, config, &report)
+	case .Data_Grid:
+		_ = pattern_check_data_grid_impl(handle, config, &report)
 	}
 	return report
 }
@@ -2728,5 +2811,1783 @@ pattern_check_roving_grid :: proc(handle: ^Test_Handle($T), config: Pattern_Conf
 		return report
 	}
 	_ = pattern_check_roving_impl(handle, config, &report)
+	return report
+}
+
+// ---------------------------------------------------------------------------
+// Radio group pattern
+// ---------------------------------------------------------------------------
+
+// A radio button may publish either Checked or Selected for its one selection
+// indicator. Both are accepted, but at most one item across the group may carry
+// either, and the group's selected_id must name it.
+@(private)
+pattern_radio_checked :: proc(element: ^Element) -> bool {
+	if element == nil { return false }
+	return alicorn.semantic_states_has(element.states, .Checked) ||
+		alicorn.semantic_states_has(element.states, .Selected)
+}
+
+@(private)
+pattern_radio_enabled :: proc(element: ^Element) -> bool {
+	return element != nil && !alicorn.semantic_states_has(element.states, .Disabled)
+}
+
+@(private)
+Pattern_Radio_View :: struct {
+	group:   Element,
+	items:   [dynamic]Element,
+	focused: int,
+}
+
+@(private)
+pattern_radio_view_destroy :: proc(view: ^Pattern_Radio_View) {
+	if view == nil { return }
+	destroy_element(&view.group)
+	for index in 0..<len(view.items) { destroy_element(&view.items[index]) }
+	delete(view.items)
+	view^ = {}
+}
+
+@(private)
+pattern_radio_find_index :: proc(view: ^Pattern_Radio_View, id: alicorn.Semantic_ID) -> int {
+	for item, index in view.items {
+		if item.semantic_id == id { return index }
+	}
+	return -1
+}
+
+@(private)
+pattern_radio_focusable :: proc(handle: ^Test_Handle($T), item: ^Element) -> bool {
+	if item == nil || item.visual_node == 0 { return false }
+	if info, found := alicorn.node_info(handle.runtime, item.visual_node); found { return info.focusable }
+	return false
+}
+
+// pattern_collect_radio resolves the group and its realized radios, then
+// verifies the app-owned mutual-exclusion and disabled/focus contract. It never
+// requires a selection: an initially empty group is permitted by the W3C radio
+// pattern, and require_initial_selection is an explicit consumer opt-in.
+@(private)
+pattern_collect_radio :: proc(
+	handle: ^Test_Handle($T),
+	config: Pattern_Config,
+	step: Pattern_Step,
+	report: ^Pattern_Report,
+) -> (view: Pattern_Radio_View, ok: bool) {
+	view.group, ok = pattern_require_part(handle, config, .Group, step, report)
+	if !ok { return view, false }
+	group := &view.group
+	if group.role != .Radio_Group {
+		pattern_fail(handle, report, step, .Group, group, "Semantic_Role.Radio_Group", fmt.tprintf("%v", group.role))
+		pattern_radio_view_destroy(&view)
+		return view, false
+	}
+	if !group.is_collection || group.visual_node == 0 || !group.has_bounds || group.logical_count == 0 {
+		pattern_fail(handle, report, step, .Group, group,
+			"a realized Radio_Group collection with at least one logical item",
+			fmt.tprintf("collection=%v visual=%d bounds=%v logical=%d",
+				group.is_collection, group.visual_node, group.has_bounds, group.logical_count))
+		pattern_radio_view_destroy(&view)
+		return view, false
+	}
+	if group.logical_count > PATTERN_MAX_OPTIONS {
+		pattern_fail(handle, report, step, .Group, group,
+			fmt.tprintf("at most %d radio items", PATTERN_MAX_OPTIONS), fmt.tprintf("%d logical items", group.logical_count))
+		pattern_radio_view_destroy(&view)
+		return view, false
+	}
+	view.items = make([dynamic]Element, 0, int(group.logical_count), handle.allocator)
+	snapshot := alicorn.semantic_snapshot(handle.runtime, handle.allocator)
+	defer alicorn.semantic_snapshot_destroy(&snapshot)
+	for semantic in snapshot.nodes {
+		if semantic.collection_id != group.semantic_id || semantic.role != .Radio_Button { continue }
+		element, element_ok := element_from_semantic(handle, semantic, snapshot.nodes[:])
+		if !element_ok { continue }
+		append(&view.items, element)
+	}
+	for index in 1..<len(view.items) {
+		current := view.items[index]
+		cursor := index
+		for cursor > 0 && view.items[cursor-1].position_in_set > current.position_in_set {
+			view.items[cursor] = view.items[cursor-1]
+			cursor -= 1
+		}
+		view.items[cursor] = current
+	}
+	if u64(len(view.items)) != group.logical_count {
+		pattern_fail(handle, report, step, .Group, group,
+			"every logical radio realized for deterministic roving",
+			fmt.tprintf("%d realized of %d logical items", len(view.items), group.logical_count))
+		pattern_radio_view_destroy(&view)
+		return view, false
+	}
+
+	checked_count := 0
+	checked_index := -1
+	view.focused = -1
+	for &item, index in view.items {
+		if item.role != .Radio_Button {
+			pattern_fail(handle, report, step, .Item, &item, "Semantic_Role.Radio_Button", fmt.tprintf("%v", item.role))
+			pattern_radio_view_destroy(&view)
+			return view, false
+		}
+		if item.parent_semantic_id != group.semantic_id || item.collection_id != group.semantic_id {
+			pattern_fail(handle, report, step, .Item, &item,
+				"a radio parented to and collected by the group", "parent/collection disagreement")
+			pattern_radio_view_destroy(&view)
+			return view, false
+		}
+		if item.position_in_set >= group.logical_count {
+			pattern_fail(handle, report, step, .Item, &item, "radio position inside the group",
+				fmt.tprintf("position %d", item.position_in_set))
+			pattern_radio_view_destroy(&view)
+			return view, false
+		}
+		for previous in 0..<index {
+			if view.items[previous].position_in_set == item.position_in_set {
+				pattern_fail(handle, report, step, .Item, &item, "unique radio positions", "duplicate position_in_set")
+				pattern_radio_view_destroy(&view)
+				return view, false
+			}
+		}
+		disabled := !pattern_radio_enabled(&item)
+		focusable := pattern_radio_focusable(handle, &item)
+		if item.focused {
+			if disabled {
+				pattern_fail(handle, report, .Focus_Contract, .Item, &item,
+					"a disabled radio that is not focused", "disabled radio reports focus")
+				pattern_radio_view_destroy(&view)
+				return view, false
+			}
+			if view.focused >= 0 {
+				pattern_fail(handle, report, .Containment, .Item, &item,
+					"exactly one focused radio", "more than one radio reports focus")
+				pattern_radio_view_destroy(&view)
+				return view, false
+			}
+			view.focused = index
+		}
+		if disabled {
+			if focusable {
+				pattern_fail(handle, report, .Focus_Contract, .Item, &item,
+					"a disabled radio that is not focusable", "disabled radio visual node is focusable")
+				pattern_radio_view_destroy(&view)
+				return view, false
+			}
+			if alicorn.semantic_actions_has(item.actions, .Focus) ||
+			   alicorn.semantic_actions_has(item.actions, .Press) ||
+			   alicorn.semantic_actions_has(item.actions, .Select) {
+				pattern_fail(handle, report, step, .Item, &item,
+					"a disabled radio without Focus, Press, or Select", "disabled radio advertises an action")
+				pattern_radio_view_destroy(&view)
+				return view, false
+			}
+		} else if !alicorn.semantic_actions_has(item.actions, .Press) &&
+			!alicorn.semantic_actions_has(item.actions, .Select) {
+			pattern_fail(handle, report, step, .Item, &item,
+				"an enabled radio with a Press or Select action", "enabled radio advertises no activation")
+			pattern_radio_view_destroy(&view)
+			return view, false
+		}
+		if pattern_radio_checked(&item) {
+			checked_count += 1
+			checked_index = index
+		}
+	}
+	if view.focused < 0 {
+		pattern_fail(handle, report, .Focus_Contract, .Group, group,
+			"one focused radio representative", "no radio reports focus")
+		pattern_radio_view_destroy(&view)
+		return view, false
+	}
+	if checked_count > 1 {
+		pattern_fail(handle, report, step, .Group, group,
+			"at most one Checked radio (app-owned mutual exclusion)",
+			fmt.tprintf("%d radios report Checked/Selected", checked_count))
+		pattern_radio_view_destroy(&view)
+		return view, false
+	}
+	if checked_count == 1 {
+		checked := &view.items[checked_index]
+		if !alicorn.semantic_id_is_valid(group.collection_selected_id) {
+			pattern_fail(handle, report, step, .Group, group,
+				"the group selected_id names the Checked radio", "selected_id is unset")
+			pattern_radio_view_destroy(&view)
+			return view, false
+		}
+		if group.collection_selected_id != checked.semantic_id {
+			pattern_fail(handle, report, step, .Group, group,
+				"the group selected_id names the Checked radio", "selected_id and Checked disagree")
+			pattern_radio_view_destroy(&view)
+			return view, false
+		}
+	} else {
+		if alicorn.semantic_id_is_valid(group.collection_selected_id) {
+			pattern_fail(handle, report, step, .Group, group,
+				"no selected_id while no radio is Checked", "selected_id names a radio but none is Checked")
+			pattern_radio_view_destroy(&view)
+			return view, false
+		}
+		if config.radio.require_initial_selection {
+			pattern_fail(handle, report, step, .Group, group,
+				"an initially Checked radio (consumer opted in)", "the group starts with no selection")
+			pattern_radio_view_destroy(&view)
+			return view, false
+		}
+	}
+	return view, true
+}
+
+@(private)
+pattern_radio_refresh :: proc(
+	handle: ^Test_Handle($T),
+	view: ^Pattern_Radio_View,
+	config: Pattern_Config,
+	step: Pattern_Step,
+	report: ^Pattern_Report,
+) -> bool {
+	pattern_radio_view_destroy(view)
+	refreshed, ok := pattern_collect_radio(handle, config, step, report)
+	view^ = refreshed
+	return ok
+}
+
+@(private)
+pattern_radio_verify_focus :: proc(
+	handle: ^Test_Handle($T),
+	view: ^Pattern_Radio_View,
+	step: Pattern_Step,
+	report: ^Pattern_Report,
+) -> bool {
+	focused := -1
+	for &item, index in view.items {
+		if !item.focused { continue }
+		if focused >= 0 {
+			pattern_fail(handle, report, step, .Item, &item,
+				"exactly one focused radio", "more than one radio reports focus")
+			return false
+		}
+		focused = index
+	}
+	if focused < 0 {
+		pattern_fail(handle, report, step, .Group, &view.group,
+			"one focused radio representative", "no radio reports focus")
+		return false
+	}
+	if !pattern_radio_enabled(&view.items[focused]) {
+		pattern_fail(handle, report, step, .Item, &view.items[focused],
+			"focus on an enabled radio", "focus is on a disabled radio")
+		return false
+	}
+	view.focused = focused
+	return true
+}
+
+// pattern_radio_expected is an independent linear policy model. It does not
+// call the runtime roving model, so the check compares the application's
+// behavior with the configured contract rather than with itself.
+@(private)
+pattern_radio_expected :: proc(
+	view: ^Pattern_Radio_View,
+	current: int,
+	move: alicorn.Roving_Move,
+	wrap: bool,
+) -> int {
+	count := len(view.items)
+	if current < 0 || current >= count { return -1 }
+	direction := 0
+	#partial switch move {
+	case .Left, .Up:
+		direction = -1
+	case .Right, .Down:
+		direction = 1
+	case .Home:
+		for index in 0..<count {
+			if pattern_radio_enabled(&view.items[index]) { return index if index != current else -1 }
+		}
+		return -1
+	case .End:
+		for index := count-1; index >= 0; index -= 1 {
+			if pattern_radio_enabled(&view.items[index]) { return index if index != current else -1 }
+		}
+		return -1
+	case:
+		return -1
+	}
+	for step in 1..=count {
+		index := current+direction*step
+		if wrap {
+			index = ((index%count)+count)%count
+		} else if index < 0 || index >= count {
+			return -1
+		}
+		if pattern_radio_enabled(&view.items[index]) {
+			return index if index != current else -1
+		}
+	}
+	return -1
+}
+
+@(private)
+pattern_radio_press :: proc(
+	handle: ^Test_Handle($T),
+	move: alicorn.Roving_Move,
+	step: Pattern_Step,
+	report: ^Pattern_Report,
+) -> bool {
+	key: Key
+	switch move {
+	case .Left: key = .Left
+	case .Right: key = .Right
+	case .Up: key = .Up
+	case .Down: key = .Down
+	case .Home: key = .Home
+	case .End: key = .End
+	case .Page_Up: key = .Page_Up
+	case .Page_Down: key = .Page_Down
+	}
+	return pattern_press_key(handle, key, step, .Item, report)
+}
+
+@(private)
+pattern_radio_step_and_verify :: proc(
+	handle: ^Test_Handle($T),
+	view: ^Pattern_Radio_View,
+	move: alicorn.Roving_Move,
+	config: Pattern_Config,
+	step: Pattern_Step,
+	report: ^Pattern_Report,
+) -> bool {
+	previous := view.focused
+	expected := pattern_radio_expected(view, previous, move, config.radio.wrap)
+	if !pattern_radio_press(handle, move, step, report) { return false }
+	if !pattern_radio_refresh(handle, view, config, step, report) { return false }
+	if expected < 0 {
+		if view.focused != previous {
+			pattern_fail(handle, report, step, .Item, &view.items[view.focused],
+				fmt.tprintf("%v leaves focus in place", move), "the focused radio changed")
+			return false
+		}
+		return true
+	}
+	if view.focused != expected {
+		pattern_fail(handle, report, step, .Item, &view.items[view.focused],
+			fmt.tprintf("%v moves focus to the expected enabled radio", move),
+			"focus is on a different radio")
+		return false
+	}
+	return pattern_radio_verify_focus(handle, view, step, report)
+}
+
+@(private)
+pattern_radio_verify_selection :: proc(
+	handle: ^Test_Handle($T),
+	view: ^Pattern_Radio_View,
+	expected_id: alicorn.Semantic_ID,
+	step: Pattern_Step,
+	report: ^Pattern_Report,
+) -> bool {
+	checked_count := 0
+	checked_id := alicorn.Semantic_ID{}
+	for &item in view.items {
+		if !pattern_radio_checked(&item) { continue }
+		checked_count += 1
+		checked_id = item.semantic_id
+	}
+	if checked_count != 1 {
+		pattern_fail(handle, report, step, .Group, &view.group,
+			"exactly one Checked radio after activation",
+			fmt.tprintf("%d radios report Checked/Selected", checked_count))
+		return false
+	}
+	if checked_id != expected_id {
+		pattern_fail(handle, report, step, .Group, &view.group,
+			"the activated radio is Checked", "a different radio is Checked")
+		return false
+	}
+	if view.group.collection_selected_id != expected_id {
+		pattern_fail(handle, report, step, .Group, &view.group,
+			"the group selected_id names the Checked radio", "selected_id and Checked disagree")
+		return false
+	}
+	return true
+}
+
+// pattern_radio_action_parity performs every action the group advertises. An
+// advertised action the runtime rejects is a failure, not a skipped phase. This
+// is where a non-focusable item that advertises Focus is caught.
+@(private)
+pattern_radio_action_parity :: proc(
+	handle: ^Test_Handle($T),
+	view: ^Pattern_Radio_View,
+	config: Pattern_Config,
+	report: ^Pattern_Report,
+) -> bool {
+	for &item in view.items {
+		if !pattern_radio_enabled(&item) { continue }
+		if !alicorn.semantic_actions_has(item.actions, .Focus) { continue }
+		if !pattern_focus_semantic(handle, &item, .Semantic_Action_Parity, .Item, report) { return false }
+	}
+	if !pattern_radio_refresh(handle, view, config, .Semantic_Action_Parity, report) { return false }
+	// Collect the advertised activation IDs before any refresh. Refreshing
+	// replaces the whole view, so the loop must not retain element pointers.
+	activation_ids := make([dynamic]alicorn.Semantic_ID, 0, len(view.items), handle.allocator)
+	defer delete(activation_ids)
+	for &item in view.items {
+		if !pattern_radio_enabled(&item) { continue }
+		if alicorn.semantic_actions_has(item.actions, .Press) ||
+		   alicorn.semantic_actions_has(item.actions, .Select) {
+			append(&activation_ids, item.semantic_id)
+		}
+	}
+	for id in activation_ids {
+		index := pattern_radio_find_index(view, id)
+		if index < 0 {
+			pattern_fail(handle, report, .Semantic_Action_Parity, .Item, nil,
+				"the advertised radio remains realized", "radio disappeared before its action ran")
+			return false
+		}
+		item := &view.items[index]
+		action := alicorn.Semantic_Action.None
+		if alicorn.semantic_actions_has(item.actions, .Press) {
+			action = .Press
+		} else if alicorn.semantic_actions_has(item.actions, .Select) {
+			action = .Select
+		}
+		if action == .None { continue }
+		status := pattern_step_input(handle, Input{kind=.Semantic_Action, semantic_id=id, semantic_action=action})
+		if status != .Ok {
+			return pattern_fail(handle, report, .Semantic_Action_Parity, .Item, item,
+				fmt.tprintf("advertised semantic %v accepted", action), fmt.tprintf("status %v", status),
+				last_turn_diagnostic(handle))
+		}
+		if !pattern_radio_refresh(handle, view, config, .Semantic_Action_Parity, report) { return false }
+		if !pattern_radio_verify_selection(handle, view, id, .Semantic_Action_Parity, report) { return false }
+	}
+	return true
+}
+
+@(private)
+pattern_radio_navigate_to :: proc(
+	handle: ^Test_Handle($T),
+	view: ^Pattern_Radio_View,
+	target: alicorn.Semantic_ID,
+	config: Pattern_Config,
+	step: Pattern_Step,
+	report: ^Pattern_Report,
+) -> bool {
+	for _ in 0..<PATTERN_MAX_OPTIONS {
+		if view.items[view.focused].semantic_id == target { return true }
+		target_index := pattern_radio_find_index(view, target)
+		if target_index < 0 {
+			pattern_fail(handle, report, step, .Target_Option, nil, "the target radio is realized", "target radio is absent")
+			return false
+		}
+		move := alicorn.Roving_Move.Right
+		if target_index < view.focused { move = .Left }
+		if !pattern_radio_step_and_verify(handle, view, move, config, step, report) { return false }
+	}
+	pattern_fail(handle, report, step, .Target_Option, nil,
+		"target radio reachable by roving navigation", "the navigation bound was exhausted")
+	return false
+}
+
+@(private)
+pattern_check_radio_impl :: proc(
+	handle: ^Test_Handle($T),
+	config: Pattern_Config,
+	report: ^Pattern_Report,
+) -> bool {
+	view, ok := pattern_collect_radio(handle, config, .Static_Contract, report)
+	if !ok { return false }
+	defer pattern_radio_view_destroy(&view)
+
+	// 1. Advertised Focus/Press/Select parity. This also proves the runtime can
+	// perform what the composition tells assistive technology it can do.
+	if !pattern_radio_action_parity(handle, &view, config, report) { return false }
+	if !pattern_radio_verify_focus(handle, &view, .Containment, report) { return false }
+
+	// 2. Roving arrows, disabled skipping, boundaries, and wrap.
+	moves := [7]alicorn.Roving_Move{.Home, .Right, .Right, .Left, .Left, .End, .Home}
+	for move in moves {
+		if !pattern_radio_step_and_verify(handle, &view, move, config, .Navigation, report) { return false }
+	}
+
+	// 3. Activation parity. Space, Return, a pointer click, and a semantic
+	// Press must each move the one Checked radio and clear the previous one.
+	if !pattern_has_part(config, .Target_Option) { return true }
+	target, target_ok := pattern_require_part(handle, config, .Target_Option, .Activation_Parity, report)
+	if !target_ok { return false }
+	if target.role != .Radio_Button {
+		pattern_fail(handle, report, .Activation_Parity, .Target_Option, &target,
+			"Semantic_Role.Radio_Button", fmt.tprintf("%v", target.role))
+		destroy_element(&target)
+		return false
+	}
+	if !pattern_radio_enabled(&target) {
+		pattern_fail(handle, report, .Activation_Parity, .Target_Option, &target,
+			"an enabled target radio", "target radio is disabled")
+		destroy_element(&target)
+		return false
+	}
+	target_id := target.semantic_id
+	destroy_element(&target)
+	if !pattern_radio_navigate_to(handle, &view, target_id, config, .Activation_Parity, report) { return false }
+	previous_id := alicorn.Semantic_ID{}
+	for &item in view.items {
+		if pattern_radio_checked(&item) { previous_id = item.semantic_id }
+	}
+	if !pattern_press_key(handle, .Space, .Activation_Parity, .Target_Option, report) { return false }
+	if !pattern_radio_refresh(handle, &view, config, .Activation_Parity, report) { return false }
+	if !pattern_radio_verify_selection(handle, &view, target_id, .Activation_Parity, report) { return false }
+	if previous_id.namespace != 0 && previous_id != target_id {
+		previous_index := pattern_radio_find_index(&view, previous_id)
+		if previous_index >= 0 && pattern_radio_checked(&view.items[previous_index]) {
+			pattern_fail(handle, report, .Activation_Parity, .Item, &view.items[previous_index],
+				"the previously Checked radio is cleared", "the previous radio is still Checked")
+			return false
+		}
+	}
+
+	// Return moves to a different enabled radio.
+	other_id := alicorn.Semantic_ID{}
+	for &item in view.items {
+		if item.semantic_id != target_id && pattern_radio_enabled(&item) {
+			other_id = item.semantic_id
+			break
+		}
+	}
+	if other_id.namespace != 0 {
+		if !pattern_radio_navigate_to(handle, &view, other_id, config, .Activation_Parity, report) { return false }
+		if !pattern_press_key(handle, .Return, .Activation_Parity, .Target_Option, report) { return false }
+		if !pattern_radio_refresh(handle, &view, config, .Activation_Parity, report) { return false }
+		if !pattern_radio_verify_selection(handle, &view, other_id, .Activation_Parity, report) { return false }
+		if !pattern_radio_verify_focus(handle, &view, .Activation_Parity, report) { return false }
+	}
+
+	// Pointer parity on the configured target.
+	if !pattern_radio_navigate_to(handle, &view, target_id, config, .Activation_Parity, report) { return false }
+	pointer, pointer_ok := pattern_require_part(handle, config, .Target_Option, .Activation_Parity, report)
+	if !pointer_ok { return false }
+	click_ok := pattern_click_element(handle, &pointer, .Activation_Parity, .Target_Option, report)
+	destroy_element(&pointer)
+	if !click_ok { return false }
+	if !pattern_radio_refresh(handle, &view, config, .Activation_Parity, report) { return false }
+	if !pattern_radio_verify_selection(handle, &view, target_id, .Activation_Parity, report) { return false }
+
+	// Semantic Press parity moves selection without a keyboard or pointer turn.
+	if other_id.namespace != 0 {
+		status := pattern_step_input(handle, Input{kind=.Semantic_Action, semantic_id=other_id, semantic_action=.Press})
+		if status != .Ok {
+			return pattern_fail(handle, report, .Activation_Parity, .Target_Option, nil,
+				"advertised semantic Press accepted", fmt.tprintf("status %v", status), last_turn_diagnostic(handle))
+		}
+		if !pattern_radio_refresh(handle, &view, config, .Activation_Parity, report) { return false }
+		if !pattern_radio_verify_selection(handle, &view, other_id, .Activation_Parity, report) { return false }
+	}
+	return true
+}
+
+pattern_check_radio_group :: proc(handle: ^Test_Handle($T), config: Pattern_Config) -> Pattern_Report {
+	report := Pattern_Report{ok=true}
+	report.failure.pattern = .Radio_Group
+	if handle == nil || handle.runtime == nil {
+		pattern_fail_message(&report, .Resolve_Parts, "valid test handle", "nil handle")
+		return report
+	}
+	_ = pattern_check_radio_impl(handle, config, &report)
+	return report
+}
+
+// ---------------------------------------------------------------------------
+// Static table and interactive data-grid patterns
+// ---------------------------------------------------------------------------
+
+@(private)
+pattern_table_cell_role :: proc(role: alicorn.Semantic_Role) -> bool {
+	#partial switch role {
+	case .Table_Cell, .Table_Column_Header, .Table_Row_Header:
+		return true
+	}
+	return false
+}
+
+@(private)
+Pattern_Grid_Focus :: enum {
+	Cell,
+	Row,
+}
+
+@(private)
+Pattern_Cell_View :: struct {
+	element: Element,
+	row:     int,
+	column:  u64,
+}
+
+@(private)
+Pattern_Table_View :: struct {
+	table:        Element,
+	rows:         [dynamic]Element,
+	cells:        [dynamic]Pattern_Cell_View,
+	column_count: int,
+	realized:     int,
+	focus_mode:   Pattern_Grid_Focus,
+	focused_row:  int,
+	focused_col:  int,
+}
+
+@(private)
+pattern_table_view_destroy :: proc(view: ^Pattern_Table_View) {
+	if view == nil { return }
+	destroy_element(&view.table)
+	for index in 0..<len(view.rows) { destroy_element(&view.rows[index]) }
+	for index in 0..<len(view.cells) { destroy_element(&view.cells[index].element) }
+	delete(view.rows)
+	delete(view.cells)
+	view^ = {}
+}
+
+@(private)
+pattern_table_find_row :: proc(view: ^Pattern_Table_View, id: alicorn.Semantic_ID) -> int {
+	for row, index in view.rows {
+		if row.semantic_id == id { return index }
+	}
+	return -1
+}
+
+@(private)
+pattern_table_find_cell :: proc(view: ^Pattern_Table_View, id: alicorn.Semantic_ID) -> int {
+	for cell, index in view.cells {
+		if cell.element.semantic_id == id { return index }
+	}
+	return -1
+}
+
+@(private)
+pattern_table_find_cell_at :: proc(view: ^Pattern_Table_View, row: int, column: u64) -> int {
+	for cell, index in view.cells {
+		if cell.row == row && cell.column == column { return index }
+	}
+	return -1
+}
+
+@(private)
+pattern_table_row_disabled :: proc(view: ^Pattern_Table_View, row: int) -> bool {
+	if row < 0 || row >= len(view.rows) { return true }
+	return alicorn.semantic_states_has(view.rows[row].states, .Disabled)
+}
+
+@(private)
+pattern_table_cell_disabled :: proc(view: ^Pattern_Table_View, cell: int) -> bool {
+	if cell < 0 || cell >= len(view.cells) { return true }
+	if pattern_table_row_disabled(view, view.cells[cell].row) { return true }
+	return alicorn.semantic_states_has(view.cells[cell].element.states, .Disabled)
+}
+
+@(private)
+pattern_table_node_focusable :: proc(handle: ^Test_Handle($T), element: ^Element) -> bool {
+	if element == nil || element.visual_node == 0 { return false }
+	if info, found := alicorn.node_info(handle.runtime, element.visual_node); found { return info.focusable }
+	return false
+}
+
+// pattern_collect_table_view validates the shared table/grid structure:
+// .Table collection, .Table_Row child collections, allowed cell roles nested
+// under their row, unique row/column coordinates, logical counts, and optional
+// virtual rows whose realization window matches the published metadata.
+@(private)
+pattern_collect_table_view :: proc(
+	handle: ^Test_Handle($T),
+	config: Pattern_Config,
+	step: Pattern_Step,
+	report: ^Pattern_Report,
+	require_all_realized: bool,
+) -> (view: Pattern_Table_View, ok: bool) {
+	view.table, ok = pattern_require_part(handle, config, .Table, step, report)
+	if !ok { return view, false }
+	table := &view.table
+	if table.role != .Table {
+		pattern_fail(handle, report, step, .Table, table, "Semantic_Role.Table", fmt.tprintf("%v", table.role))
+		pattern_table_view_destroy(&view)
+		return view, false
+	}
+	if !table.is_collection || table.visual_node == 0 || table.logical_count == 0 {
+		pattern_fail(handle, report, step, .Table, table,
+			"a realized Table collection with at least one logical row",
+			fmt.tprintf("collection=%v visual=%d logical=%d", table.is_collection, table.visual_node, table.logical_count))
+		pattern_table_view_destroy(&view)
+		return view, false
+	}
+	if table.logical_count > PATTERN_MAX_OPTIONS {
+		pattern_fail(handle, report, step, .Table, table,
+			fmt.tprintf("at most %d logical rows", PATTERN_MAX_OPTIONS), fmt.tprintf("%d logical rows", table.logical_count))
+		pattern_table_view_destroy(&view)
+		return view, false
+	}
+	view.rows = make([dynamic]Element, 0, int(table.logical_count), handle.allocator)
+	view.cells = make([dynamic]Pattern_Cell_View, 0, 16, handle.allocator)
+	snapshot := alicorn.semantic_snapshot(handle.runtime, handle.allocator)
+	defer alicorn.semantic_snapshot_destroy(&snapshot)
+	for semantic in snapshot.nodes {
+		if semantic.collection_id != table.semantic_id || semantic.role != .Table_Row { continue }
+		element, element_ok := element_from_semantic(handle, semantic, snapshot.nodes[:])
+		if !element_ok { continue }
+		append(&view.rows, element)
+	}
+	for index in 1..<len(view.rows) {
+		current := view.rows[index]
+		cursor := index
+		for cursor > 0 && view.rows[cursor-1].position_in_set > current.position_in_set {
+			view.rows[cursor] = view.rows[cursor-1]
+			cursor -= 1
+		}
+		view.rows[cursor] = current
+	}
+	if len(view.rows) == 0 {
+		pattern_fail(handle, report, step, .Table, table, "at least one .Table_Row collection", "no rows are published")
+		pattern_table_view_destroy(&view)
+		return view, false
+	}
+
+	view.realized = 0
+	for &row, index in view.rows {
+		if row.role != .Table_Row {
+			pattern_fail(handle, report, step, .Row, &row, "Semantic_Role.Table_Row", fmt.tprintf("%v", row.role))
+			pattern_table_view_destroy(&view)
+			return view, false
+		}
+		if !row.is_collection {
+			pattern_fail(handle, report, step, .Row, &row, "a Table_Row collection", "row is not a collection")
+			pattern_table_view_destroy(&view)
+			return view, false
+		}
+		if row.parent_semantic_id != table.semantic_id || row.collection_id != table.semantic_id {
+			pattern_fail(handle, report, step, .Row, &row,
+				"a row parented to and collected by the table", "row parent/collection disagreement")
+			pattern_table_view_destroy(&view)
+			return view, false
+		}
+		if row.position_in_set >= table.logical_count {
+			pattern_fail(handle, report, step, .Row, &row, "row position inside the table",
+				fmt.tprintf("position %d", row.position_in_set))
+			pattern_table_view_destroy(&view)
+			return view, false
+		}
+		if row.size_of_set != 0 && row.size_of_set != table.logical_count {
+			pattern_fail(handle, report, step, .Row, &row,
+				"row size_of_set to match the table's logical count",
+				fmt.tprintf("%d rows, size_of_set %d", table.logical_count, row.size_of_set))
+			pattern_table_view_destroy(&view)
+			return view, false
+		}
+		for previous in 0..<index {
+			if view.rows[previous].position_in_set == row.position_in_set {
+				pattern_fail(handle, report, step, .Row, &row, "unique row positions", "duplicate position_in_set")
+				pattern_table_view_destroy(&view)
+				return view, false
+			}
+		}
+		if row.is_virtual_item {
+			if row.visual_node != 0 {
+				pattern_fail(handle, report, step, .Row, &row,
+					"a virtual row without a visual node", "virtual row has a visual node")
+				pattern_table_view_destroy(&view)
+				return view, false
+			}
+		} else {
+			view.realized += 1
+			if row.visual_node == 0 || !row.has_bounds {
+				pattern_fail(handle, report, step, .Row, &row,
+					"a realized row with bounds", "realized row has no visual node or bounds")
+				pattern_table_view_destroy(&view)
+				return view, false
+			}
+		}
+	}
+
+	// Row coordinates are complete when every logical row is published. A
+	// consumer that publishes only the realized window is also valid.
+	if u64(len(view.rows)) == table.logical_count {
+		seen := [PATTERN_MAX_OPTIONS]bool{}
+		for &row in view.rows { seen[row.position_in_set] = true }
+		for index in 0..<int(table.logical_count) {
+			if !seen[index] {
+				pattern_fail(handle, report, step, .Row, nil,
+					"every row coordinate in the logical set",
+					fmt.tprintf("row position %d is missing", index))
+				pattern_table_view_destroy(&view)
+				return view, false
+			}
+		}
+	}
+
+	fully_realized := u64(view.realized) == table.logical_count && u64(len(view.rows)) == table.logical_count
+	window_omitted := fully_realized && table.realized_first == 0 && table.realized_last == 0
+	if !window_omitted {
+		if table.realized_last < table.realized_first || table.realized_last > table.logical_count {
+			pattern_fail(handle, report, step, .Table, table,
+				"a realized window inside the logical row count",
+				fmt.tprintf("window %d..%d of %d", table.realized_first, table.realized_last, table.logical_count))
+			pattern_table_view_destroy(&view)
+			return view, false
+		}
+		if require_all_realized {
+			if view.realized != len(view.rows) || u64(view.realized) != table.logical_count {
+				pattern_fail(handle, report, step, .Table, table,
+					"an interactive grid with every logical row realized",
+					fmt.tprintf("%d realized of %d logical rows", view.realized, table.logical_count))
+				pattern_table_view_destroy(&view)
+				return view, false
+			}
+		}
+		if self_window := table.realized_last-table.realized_first; u64(view.realized) != self_window {
+			pattern_fail(handle, report, step, .Table, table,
+				"the realized window to match the realized rows",
+				fmt.tprintf("%d realized rows, window %d..%d", view.realized, table.realized_first, table.realized_last))
+			pattern_table_view_destroy(&view)
+			return view, false
+		}
+		for &row in view.rows {
+			inside := row.position_in_set >= table.realized_first && row.position_in_set < table.realized_last
+			if row.is_virtual_item == inside {
+				pattern_fail(handle, report, step, .Row, &row,
+					"virtual rows outside and realized rows inside the published window",
+					fmt.tprintf("row %d virtual=%v inside_window=%v", row.position_in_set, row.is_virtual_item, inside))
+				pattern_table_view_destroy(&view)
+				return view, false
+			}
+		}
+	} else if require_all_realized && (view.realized != len(view.rows) || u64(view.realized) != table.logical_count) {
+		pattern_fail(handle, report, step, .Table, table,
+			"an interactive grid with every logical row realized",
+			fmt.tprintf("%d realized of %d logical rows", view.realized, table.logical_count))
+		pattern_table_view_destroy(&view)
+		return view, false
+	}
+
+	// Collect every table cell role. A cell whose collection is the table (or
+	// any non-row collection) is outside a row collection.
+	for semantic in snapshot.nodes {
+		if !pattern_table_cell_role(semantic.role) { continue }
+		if semantic.collection_id == table.semantic_id {
+			pattern_fail(handle, report, step, .Cell, &view.table,
+				"a cell collected by a .Table_Row", "cell is collected directly by the table")
+			pattern_table_view_destroy(&view)
+			return view, false
+		}
+		if !alicorn.semantic_id_is_valid(semantic.collection_id) { continue }
+		row_index := pattern_table_find_row(&view, semantic.collection_id)
+		if row_index < 0 {
+			pattern_fail(handle, report, step, .Cell, &view.table,
+				"a cell collected by a published row", "cell is outside every row collection")
+			pattern_table_view_destroy(&view)
+			return view, false
+		}
+		element, element_ok := element_from_semantic(handle, semantic, snapshot.nodes[:])
+		if !element_ok { continue }
+		append(&view.cells, Pattern_Cell_View{element=element, row=row_index, column=semantic.position_in_set})
+	}
+	for index in 1..<len(view.cells) {
+		current := view.cells[index]
+		cursor := index
+		for cursor > 0 && (view.cells[cursor-1].row > current.row ||
+			(view.cells[cursor-1].row == current.row && view.cells[cursor-1].column > current.column)) {
+			view.cells[cursor] = view.cells[cursor-1]
+			cursor -= 1
+		}
+		view.cells[cursor] = current
+	}
+	if len(view.cells) > PATTERN_MAX_OPTIONS {
+		pattern_fail(handle, report, step, .Table, table,
+			fmt.tprintf("at most %d realized cells", PATTERN_MAX_OPTIONS), fmt.tprintf("%d cells", len(view.cells)))
+		pattern_table_view_destroy(&view)
+		return view, false
+	}
+
+	view.column_count = -1
+	for &row, row_index in view.rows {
+		if row.is_virtual_item { continue }
+		row_cells := 0
+		seen := [PATTERN_MAX_OPTIONS]bool{}
+		for &cell in view.cells {
+			if cell.row != row_index { continue }
+			row_cells += 1
+			if cell.element.position_in_set >= row.logical_count {
+				pattern_fail(handle, report, step, .Cell, &cell.element,
+					"cell column inside the row's logical count",
+					fmt.tprintf("column %d of %d", cell.element.position_in_set, row.logical_count))
+				pattern_table_view_destroy(&view)
+				return view, false
+			}
+			if seen[cell.element.position_in_set] {
+				pattern_fail(handle, report, step, .Cell, &cell.element,
+					"unique column coordinates", "duplicate position_in_set")
+				pattern_table_view_destroy(&view)
+				return view, false
+			}
+			seen[cell.element.position_in_set] = true
+			if cell.element.collection_id != row.semantic_id || cell.element.parent_semantic_id != row.semantic_id {
+				part := Pattern_Part_ID.Cell
+				if cell.element.role == .Table_Column_Header { part = .Header_Row }
+				pattern_fail(handle, report, step, part, &cell.element,
+					"a cell parented to and collected by its row", "cell parent/collection disagreement")
+				pattern_table_view_destroy(&view)
+				return view, false
+			}
+			if cell.element.size_of_set != 0 && cell.element.size_of_set != row.logical_count {
+				pattern_fail(handle, report, step, .Cell, &cell.element,
+					"cell size_of_set to match the row's logical count",
+					fmt.tprintf("%d cells, size_of_set %d", row.logical_count, cell.element.size_of_set))
+				pattern_table_view_destroy(&view)
+				return view, false
+			}
+			if !cell.element.is_virtual_item && (cell.element.visual_node == 0 || !cell.element.has_bounds) {
+				pattern_fail(handle, report, step, .Cell, &cell.element,
+					"a realized cell with bounds", "cell has no visual node or bounds")
+				pattern_table_view_destroy(&view)
+				return view, false
+			}
+		}
+		if u64(row_cells) != row.logical_count {
+			pattern_fail(handle, report, step, .Row, &row,
+				"every logical cell of a realized row to be published",
+				fmt.tprintf("%d realized cells of %d", row_cells, row.logical_count))
+			pattern_table_view_destroy(&view)
+			return view, false
+		}
+		for column in 0..<int(row.logical_count) {
+			if !seen[column] {
+				pattern_fail(handle, report, step, .Row, &row,
+					"contiguous column coordinates", fmt.tprintf("column %d is missing", column))
+				pattern_table_view_destroy(&view)
+				return view, false
+			}
+		}
+		if view.column_count < 0 {
+			view.column_count = int(row.logical_count)
+		} else if int(row.logical_count) != view.column_count {
+			pattern_fail(handle, report, step, .Row, &row,
+				fmt.tprintf("the same %d column count as the other rows", view.column_count),
+				fmt.tprintf("%d columns", row.logical_count))
+			pattern_table_view_destroy(&view)
+			return view, false
+		}
+	}
+	if view.column_count <= 0 {
+		pattern_fail(handle, report, step, .Table, table, "at least one realized row with cells", "no cells are published")
+		pattern_table_view_destroy(&view)
+		return view, false
+	}
+
+	// Header grouping: when a header row is configured it must be a table row
+	// collection, and every column header must be parented to that row.
+	header_index := -1
+	if pattern_has_part(config, .Header_Row) {
+		result := pattern_find_part_optional(handle, config, .Header_Row)
+		if result.match != .Unique || result.status != .Ok {
+			pattern_fail(handle, report, step, .Header_Row, &result.element,
+				"one published header row", "header row is absent or ambiguous")
+			destroy_find_result(&result)
+			pattern_table_view_destroy(&view)
+			return view, false
+		}
+		header_index = pattern_table_find_row(&view, result.element.semantic_id)
+		if header_index < 0 {
+			pattern_fail(handle, report, step, .Header_Row, &result.element,
+				"the header row collected by the table", "header row is not a table row")
+			destroy_find_result(&result)
+			pattern_table_view_destroy(&view)
+			return view, false
+		}
+		header := &view.rows[header_index]
+		if !header.is_collection || header.parent_semantic_id != table.semantic_id {
+			pattern_fail(handle, report, step, .Header_Row, header,
+				"a header row collection parented to the table", "header row is not parented to the table")
+			destroy_find_result(&result)
+			pattern_table_view_destroy(&view)
+			return view, false
+		}
+		destroy_find_result(&result)
+	}
+	column_headers := 0
+	header_rows := [PATTERN_MAX_OPTIONS]int{}
+	for &cell in view.cells {
+		if cell.element.role != .Table_Column_Header { continue }
+		column_headers += 1
+		header_rows[cell.row] += 1
+		if header_index >= 0 && cell.row != header_index {
+			pattern_fail(handle, report, step, .Header_Row, &cell.element,
+				"every column header inside the configured header row", "column header is in another row")
+			pattern_table_view_destroy(&view)
+			return view, false
+		}
+	}
+	if header_index >= 0 && column_headers == 0 {
+		pattern_fail(handle, report, step, .Header_Row, &view.rows[header_index],
+			"at least one .Table_Column_Header in the header row", "header row has no column headers")
+		pattern_table_view_destroy(&view)
+		return view, false
+	}
+	if header_index < 0 && column_headers > 0 {
+		row_count := 0
+		for &count in header_rows {
+			if count > 0 { row_count += 1 }
+		}
+		if row_count != 1 {
+			pattern_fail(handle, report, step, .Header_Row, &view.table,
+				"column headers grouped in one header row", "column headers span multiple rows")
+			pattern_table_view_destroy(&view)
+			return view, false
+		}
+	}
+	return view, true
+}
+
+// pattern_check_table_impl is the static contract. It never requires managed
+// focus or roving; it asserts published structure and ordinary-document
+// realization, and optionally verifies that a bounded window advances through
+// ordinary Page Down scrolling.
+@(private)
+pattern_check_table_impl :: proc(
+	handle: ^Test_Handle($T),
+	config: Pattern_Config,
+	report: ^Pattern_Report,
+) -> bool {
+	view, ok := pattern_collect_table_view(handle, config, .Static_Contract, report, false)
+	if !ok { return false }
+	defer pattern_table_view_destroy(&view)
+
+	if config.table.expect_row_count && view.table.logical_count != config.table.expected_row_count {
+		return pattern_fail(handle, report, .Static_Contract, .Table, &view.table,
+			fmt.tprintf("%d logical rows", config.table.expected_row_count),
+			fmt.tprintf("%d logical rows", view.table.logical_count))
+	}
+	if config.table.expect_column_count && u64(view.column_count) != config.table.expected_column_count {
+		return pattern_fail(handle, report, .Static_Contract, .Table, &view.table,
+			fmt.tprintf("%d columns", config.table.expected_column_count),
+			fmt.tprintf("%d columns", view.column_count))
+	}
+
+	if pattern_has_part(config, .Row) {
+		row, row_ok := pattern_require_part(handle, config, .Row, .Static_Contract, report)
+		if !row_ok { return false }
+		defer destroy_element(&row)
+		if pattern_table_find_row(&view, row.semantic_id) < 0 {
+			return pattern_fail(handle, report, .Static_Contract, .Row, &row,
+				"the configured row collected by the table", "row is not a table row")
+		}
+	}
+	if pattern_has_part(config, .Cell) {
+		cell, cell_ok := pattern_require_part(handle, config, .Cell, .Static_Contract, report)
+		if !cell_ok { return false }
+		defer destroy_element(&cell)
+		if !pattern_table_cell_role(cell.role) {
+			return pattern_fail(handle, report, .Static_Contract, .Cell, &cell,
+				"a table cell role", fmt.tprintf("%v", cell.role))
+		}
+		if pattern_table_find_cell(&view, cell.semantic_id) < 0 {
+			return pattern_fail(handle, report, .Static_Contract, .Cell, &cell,
+				"the configured cell collected by a row", "cell is outside every row collection")
+		}
+		if !cell.is_virtual_item && (cell.visual_node == 0 || !cell.has_bounds) {
+			return pattern_fail(handle, report, .Static_Contract, .Cell, &cell,
+				"a realized target cell with bounds", "cell is not realized")
+		}
+	}
+
+	if config.table.expect_virtual_reveal {
+		if u64(view.realized) >= view.table.logical_count {
+			return pattern_fail(handle, report, .Static_Contract, .Table, &view.table,
+				"a virtualized table for reveal validation", "the whole table is realized")
+		}
+		first := view.table.realized_first
+		last := view.table.realized_last
+		if !pattern_press_key(handle, .Page_Down, .Virtual_Reveal, .Table, report) { return false }
+		if pattern_settle_description(handle) != .Ok {
+			return pattern_fail(handle, report, .Virtual_Reveal, .Table, nil,
+				"settled follow-up description", last_turn_diagnostic(handle))
+		}
+		refreshed, refreshed_ok := pattern_collect_table_view(handle, config, .Virtual_Reveal, report, false)
+		if !refreshed_ok { return false }
+		defer pattern_table_view_destroy(&refreshed)
+		if refreshed.table.realized_first == first && refreshed.table.realized_last == last {
+			return pattern_fail(handle, report, .Virtual_Reveal, .Table, &refreshed.table,
+				"ordinary Page Down advances the realized row window", "the realized window did not move")
+		}
+	}
+	return true
+}
+
+// pattern_grid_enabled reports whether (row, column) is an enabled grid cell.
+@(private)
+pattern_grid_enabled :: proc(view: ^Pattern_Table_View, row, column: int) -> bool {
+	if row < 0 || row >= len(view.rows) || column < 0 || column >= view.column_count { return false }
+	if pattern_table_row_disabled(view, row) { return false }
+	return pattern_table_cell_disabled(view, pattern_table_find_cell_at(view, row, u64(column))) == false
+}
+
+@(private)
+pattern_grid_row_enabled :: proc(view: ^Pattern_Table_View, row: int) -> bool {
+	if row < 0 || row >= len(view.rows) || pattern_table_row_disabled(view, row) { return false }
+	for column in 0..<view.column_count {
+		if pattern_grid_enabled(view, row, column) { return true }
+	}
+	return false
+}
+
+@(private)
+pattern_grid_linear :: proc(view: ^Pattern_Table_View, row, column: int) -> int {
+	return row*view.column_count+column
+}
+
+@(private)
+pattern_grid_cell_element :: proc(view: ^Pattern_Table_View, row, column: int) -> ^Element {
+	index := pattern_table_find_cell_at(view, row, u64(column))
+	if index < 0 { return nil }
+	return &view.cells[index].element
+}
+
+// pattern_grid_scan_row finds the nearest enabled cell in one row.
+@(private)
+pattern_grid_scan_row :: proc(view: ^Pattern_Table_View, row, start, direction, lower, upper: int) -> int {
+	for column := start; column >= lower && column < upper; column += direction {
+		if pattern_grid_enabled(view, row, column) { return column }
+	}
+	return -1
+}
+
+// pattern_grid_expected_cell is an independent model of the configured cell
+// roving policy. It scans in the direction of travel and skips disabled cells
+// and disabled rows, including a row-targeted vertical move whose same-column
+// cell is disabled.
+@(private)
+pattern_grid_expected_cell :: proc(
+	view: ^Pattern_Table_View,
+	row, column: int,
+	move: alicorn.Roving_Move,
+	config: Pattern_Grid_Config,
+) -> int {
+	rows := len(view.rows)
+	columns := view.column_count
+	if row < 0 || row >= rows || column < 0 || column >= columns { return -1 }
+	switch move {
+	case .Left, .Right:
+		direction := -1 if move == .Left else 1
+		if !config.row_bounded {
+			total := rows*columns
+			linear := pattern_grid_linear(view, row, column)
+			candidate := linear+direction
+			for _ in 0..<total {
+				if config.wrap {
+					candidate = ((candidate%total)+total)%total
+				} else if candidate < 0 || candidate >= total {
+					return -1
+				}
+				candidate_row := candidate/columns
+				candidate_column := candidate%columns
+				if pattern_grid_enabled(view, candidate_row, candidate_column) {
+					return candidate if candidate != linear else -1
+				}
+				candidate += direction
+			}
+			return -1
+		}
+		found := pattern_grid_scan_row(view, row, column+direction, direction, 0, columns)
+		if found >= 0 { return pattern_grid_linear(view, row, found) }
+		if !config.wrap { return -1 }
+		if direction < 0 {
+			found = pattern_grid_scan_row(view, row, columns-1, -1, 0, columns)
+		} else {
+			found = pattern_grid_scan_row(view, row, 0, 1, 0, columns)
+		}
+		if found >= 0 && found != column { return pattern_grid_linear(view, row, found) }
+		return -1
+	case .Up, .Down:
+		direction := -1 if move == .Up else 1
+		candidate := row+direction
+		for _ in 0..<rows {
+			if config.wrap {
+				candidate = ((candidate%rows)+rows)%rows
+			} else if candidate < 0 || candidate >= rows {
+				return -1
+			}
+			if pattern_grid_enabled(view, candidate, column) {
+				return pattern_grid_linear(view, candidate, column) if candidate != row else -1
+			}
+			candidate += direction
+		}
+		return -1
+	case .Home:
+		if config.home_end_row {
+			found := pattern_grid_scan_row(view, row, 0, 1, 0, columns)
+			if found >= 0 && found != column { return pattern_grid_linear(view, row, found) }
+			return -1
+		}
+		for candidate_row in 0..<rows {
+			found := pattern_grid_scan_row(view, candidate_row, 0, 1, 0, columns)
+			if found >= 0 {
+				linear := pattern_grid_linear(view, candidate_row, found)
+				return linear if linear != pattern_grid_linear(view, row, column) else -1
+			}
+		}
+		return -1
+	case .End:
+		if config.home_end_row {
+			found := pattern_grid_scan_row(view, row, columns-1, -1, 0, columns)
+			if found >= 0 && found != column { return pattern_grid_linear(view, row, found) }
+			return -1
+		}
+		for candidate_row := rows-1; candidate_row >= 0; candidate_row -= 1 {
+			found := pattern_grid_scan_row(view, candidate_row, columns-1, -1, 0, columns)
+			if found >= 0 {
+				linear := pattern_grid_linear(view, candidate_row, found)
+				return linear if linear != pattern_grid_linear(view, row, column) else -1
+			}
+		}
+		return -1
+	case .Page_Up, .Page_Down:
+		return -1
+	}
+	return -1
+}
+
+@(private)
+pattern_grid_expected_row :: proc(
+	view: ^Pattern_Table_View,
+	row: int,
+	move: alicorn.Roving_Move,
+	wrap: bool,
+) -> int {
+	rows := len(view.rows)
+	if row < 0 || row >= rows { return -1 }
+	direction := 0
+	#partial switch move {
+	case .Up: direction = -1
+	case .Down: direction = 1
+	case .Home:
+		for candidate in 0..<rows {
+			if pattern_grid_row_enabled(view, candidate) { return candidate if candidate != row else -1 }
+		}
+		return -1
+	case .End:
+		for candidate := rows-1; candidate >= 0; candidate -= 1 {
+			if pattern_grid_row_enabled(view, candidate) { return candidate if candidate != row else -1 }
+		}
+		return -1
+	case:
+		return -1
+	}
+	for step in 1..=rows {
+		candidate := row+direction*step
+		if wrap {
+			candidate = ((candidate%rows)+rows)%rows
+		} else if candidate < 0 || candidate >= rows {
+			return -1
+		}
+		if pattern_grid_row_enabled(view, candidate) { return candidate if candidate != row else -1 }
+	}
+	return -1
+}
+
+@(private)
+pattern_grid_verify_focus :: proc(
+	handle: ^Test_Handle($T),
+	view: ^Pattern_Table_View,
+	step: Pattern_Step,
+	report: ^Pattern_Report,
+) -> bool {
+	focused_cells := 0
+	focused_row := -1
+	focused_col := -1
+	for &cell in view.cells {
+		if !cell.element.focused { continue }
+		focused_cells += 1
+		focused_row = cell.row
+		focused_col = int(cell.column)
+	}
+	if focused_cells > 1 {
+		pattern_fail(handle, report, step, .Cell, &view.table,
+			"exactly one focused grid cell", fmt.tprintf("%d cells report focus", focused_cells))
+		return false
+	}
+	if focused_cells == 1 {
+		view.focus_mode = .Cell
+		view.focused_row = focused_row
+		view.focused_col = focused_col
+		cell := pattern_grid_cell_element(view, focused_row, focused_col)
+		if cell != nil && pattern_table_cell_disabled(view, pattern_table_find_cell_at(view, focused_row, u64(focused_col))) {
+			pattern_fail(handle, report, step, .Cell, cell,
+				"focus on an enabled grid cell", "focus is on a disabled cell")
+			return false
+		}
+		return true
+	}
+	focused_rows := 0
+	for &row, index in view.rows {
+		if !row.focused { continue }
+		focused_rows += 1
+		focused_row = index
+	}
+	if focused_rows > 1 {
+		pattern_fail(handle, report, step, .Row, &view.table,
+			"exactly one focused grid cell or row", fmt.tprintf("%d rows report focus", focused_rows))
+		return false
+	}
+	if focused_rows == 0 {
+		pattern_fail(handle, report, step, .Cell, &view.table,
+			"one focused grid cell or row", "focus escaped the grid")
+		return false
+	}
+	view.focus_mode = .Row
+	view.focused_row = focused_row
+	view.focused_col = -1
+	if !pattern_grid_row_enabled(view, focused_row) {
+		pattern_fail(handle, report, step, .Row, &view.rows[focused_row],
+			"focus on an enabled grid row", "focus is on a disabled row")
+		return false
+	}
+	return true
+}
+
+@(private)
+pattern_grid_refresh :: proc(
+	handle: ^Test_Handle($T),
+	view: ^Pattern_Table_View,
+	config: Pattern_Config,
+	step: Pattern_Step,
+	report: ^Pattern_Report,
+) -> bool {
+	pattern_table_view_destroy(view)
+	refreshed, ok := pattern_collect_table_view(handle, config, step, report, true)
+	view^ = refreshed
+	if !ok { return false }
+	return pattern_grid_verify_focus(handle, view, .Containment, report)
+}
+
+@(private)
+pattern_grid_press :: proc(
+	handle: ^Test_Handle($T),
+	move: alicorn.Roving_Move,
+	step: Pattern_Step,
+	report: ^Pattern_Report,
+) -> bool {
+	key: Key
+	switch move {
+	case .Left: key = .Left
+	case .Right: key = .Right
+	case .Up: key = .Up
+	case .Down: key = .Down
+	case .Home: key = .Home
+	case .End: key = .End
+	case .Page_Up: key = .Page_Up
+	case .Page_Down: key = .Page_Down
+	}
+	return pattern_press_key(handle, key, step, .Cell, report)
+}
+
+@(private)
+pattern_grid_step_and_verify :: proc(
+	handle: ^Test_Handle($T),
+	view: ^Pattern_Table_View,
+	move: alicorn.Roving_Move,
+	config: Pattern_Config,
+	step: Pattern_Step,
+	report: ^Pattern_Report,
+) -> bool {
+	previous_row := view.focused_row
+	previous_column := view.focused_col
+	expected := -1
+	if view.focus_mode == .Cell {
+		expected = pattern_grid_expected_cell(view, previous_row, previous_column, move, config.grid)
+	} else {
+		expected = pattern_grid_expected_row(view, previous_row, move, config.grid.wrap)
+	}
+	if !pattern_grid_press(handle, move, step, report) { return false }
+	if !pattern_grid_refresh(handle, view, config, step, report) { return false }
+	if expected < 0 {
+		if view.focus_mode == .Cell {
+			if view.focused_row != previous_row || view.focused_col != previous_column {
+				cell := pattern_grid_cell_element(view, view.focused_row, view.focused_col)
+				pattern_fail(handle, report, step, .Cell, cell,
+					fmt.tprintf("%v leaves focus in place", move), "focus moved")
+				return false
+			}
+		} else if view.focused_row != previous_row {
+			pattern_fail(handle, report, step, .Row, &view.rows[view.focused_row],
+				fmt.tprintf("%v leaves focus in place", move), "focus moved")
+			return false
+		}
+		return true
+	}
+	if view.focus_mode == .Cell {
+		if pattern_grid_linear(view, view.focused_row, view.focused_col) != expected {
+			cell := pattern_grid_cell_element(view, view.focused_row, view.focused_col)
+			pattern_fail(handle, report, step, .Cell, cell,
+				fmt.tprintf("%v moves focus to the expected enabled cell", move), "focus is on another cell")
+			return false
+		}
+		if config.grid.expect_reveal {
+			cell := pattern_grid_cell_element(view, view.focused_row, view.focused_col)
+			if cell == nil || !cell.has_bounds || !pattern_rect_intersects(cell.bounds, view.table.bounds) {
+				return pattern_fail(handle, report, .Virtual_Reveal, .Cell, cell,
+					"the focused cell is realized inside the grid viewport",
+					fmt.tprintf("bounds %v inside %v", cell.bounds, view.table.bounds))
+			}
+		}
+	} else if view.focused_row != expected {
+		pattern_fail(handle, report, step, .Row, &view.rows[view.focused_row],
+			fmt.tprintf("%v moves focus to the expected enabled row", move), "focus is on another row")
+		return false
+	}
+	return true
+}
+
+@(private)
+pattern_grid_expected_index :: proc(view: ^Pattern_Table_View, target: ^Element) -> (row, column: int, ok: bool) {
+	for &cell in view.cells {
+		if cell.element.semantic_id == target.semantic_id { return cell.row, int(cell.column), true }
+	}
+	for &row, index in view.rows {
+		if row.semantic_id == target.semantic_id { return index, -1, true }
+	}
+	return -1, -1, false
+}
+
+@(private)
+pattern_grid_selection_verify :: proc(
+	handle: ^Test_Handle($T),
+	view: ^Pattern_Table_View,
+	expected: ^Element,
+	config: Pattern_Config,
+	step: Pattern_Step,
+	report: ^Pattern_Report,
+) -> bool {
+	if config.grid.selection == .None { return true }
+	selected := 0
+	selected_id := alicorn.Semantic_ID{}
+	if config.grid.selection == .Cell {
+		for &cell in view.cells {
+			if !alicorn.semantic_states_has(cell.element.states, .Selected) { continue }
+			selected += 1
+			selected_id = cell.element.semantic_id
+		}
+		if selected != 1 || selected_id != expected.semantic_id {
+			pattern_fail(handle, report, step, .Cell, &expected^,
+				"the activated cell is the one Selected cell", "Selected does not name the activated cell")
+			return false
+		}
+	} else {
+		target_row := -1
+		for &cell in view.cells {
+			if cell.element.semantic_id == expected.semantic_id { target_row = cell.row; break }
+		}
+		if target_row >= 0 {
+			for &row, index in view.rows {
+				if !alicorn.semantic_states_has(row.states, .Selected) { continue }
+				selected += 1
+				selected_id = row.semantic_id
+			}
+			if selected != 1 || selected_id != view.rows[target_row].semantic_id {
+				pattern_fail(handle, report, step, .Row, &view.rows[target_row],
+					"the activated cell's row is the one Selected row", "Selected does not name the activated row")
+				return false
+			}
+		} else {
+			for &row in view.rows {
+				if !alicorn.semantic_states_has(row.states, .Selected) { continue }
+				selected += 1
+				selected_id = row.semantic_id
+			}
+			if selected != 1 || selected_id != expected.semantic_id {
+				pattern_fail(handle, report, step, .Row, &expected^,
+					"the activated row is the one Selected row", "Selected does not name the activated row")
+				return false
+			}
+		}
+	}
+	if view.table.collection_selected_id != selected_id {
+		pattern_fail(handle, report, step, .Table, &view.table,
+			"the table/grid selected_id names the Selected item", "selected_id and Selected disagree")
+		return false
+	}
+	return true
+}
+
+@(private)
+pattern_grid_navigate_cell :: proc(
+	handle: ^Test_Handle($T),
+	view: ^Pattern_Table_View,
+	target_row, target_column: int,
+	config: Pattern_Config,
+	step: Pattern_Step,
+	report: ^Pattern_Report,
+) -> bool {
+	for _ in 0..<PATTERN_MAX_OPTIONS {
+		if view.focus_mode == .Cell && view.focused_row == target_row && view.focused_col == target_column { return true }
+		if view.focus_mode == .Row && view.focused_row == target_row { return true }
+		if view.focus_mode == .Cell {
+			move := alicorn.Roving_Move.Right
+			if target_row > view.focused_row {
+				move = .Down
+			} else if target_row < view.focused_row {
+				move = .Up
+			} else if target_column < view.focused_col {
+				move = .Left
+			}
+			if !pattern_grid_step_and_verify(handle, view, move, config, step, report) { return false }
+			if view.focus_mode == .Row { return false }
+		} else {
+			move := alicorn.Roving_Move.Down
+			if target_row < view.focused_row { move = .Up }
+			if !pattern_grid_step_and_verify(handle, view, move, config, step, report) { return false }
+		}
+	}
+	pattern_fail(handle, report, step, .Cell, nil, "the target cell reachable by grid navigation",
+		"the navigation bound was exhausted")
+	return false
+}
+
+@(private)
+Pattern_Grid_Action :: struct {
+	id:     alicorn.Semantic_ID,
+	row:    int,
+	column: int,
+	action: alicorn.Semantic_Action,
+}
+
+@(private)
+pattern_grid_action_parity :: proc(
+	handle: ^Test_Handle($T),
+	view: ^Pattern_Table_View,
+	config: Pattern_Config,
+	report: ^Pattern_Report,
+) -> bool {
+	initial_mode := view.focus_mode
+	initial_row := view.focused_row
+	initial_column := view.focused_col
+	// Focus parity: every advertised Focus must be performable.
+	for &cell in view.cells {
+		if pattern_table_cell_disabled(view, pattern_table_find_cell_at(view, cell.row, cell.column)) { continue }
+		if !alicorn.semantic_actions_has(cell.element.actions, .Focus) { continue }
+		if !pattern_focus_semantic(handle, &cell.element, .Semantic_Action_Parity, .Cell, report) { return false }
+	}
+	if !pattern_grid_refresh(handle, view, config, .Semantic_Action_Parity, report) { return false }
+	// Restore the at-rest representative after the Focus sweep.
+	if initial_mode == .Cell {
+		index := pattern_table_find_cell_at(view, initial_row, u64(initial_column))
+		if index >= 0 && alicorn.semantic_actions_has(view.cells[index].element.actions, .Focus) {
+			if !pattern_focus_semantic(handle, &view.cells[index].element, .Semantic_Action_Parity, .Cell, report) { return false }
+			if !pattern_grid_refresh(handle, view, config, .Semantic_Action_Parity, report) { return false }
+		}
+	} else if initial_row >= 0 && initial_row < len(view.rows) &&
+		alicorn.semantic_actions_has(view.rows[initial_row].actions, .Focus) {
+		if !pattern_focus_semantic(handle, &view.rows[initial_row], .Semantic_Action_Parity, .Row, report) { return false }
+		if !pattern_grid_refresh(handle, view, config, .Semantic_Action_Parity, report) { return false }
+	}
+
+	// Press/Select parity: every advertised activation must be accepted and,
+	// when a selection policy exists, must publish the matching Selected.
+	// Collect the actions first: a refresh replaces the whole view.
+	actions := make([dynamic]Pattern_Grid_Action, 0, len(view.cells), handle.allocator)
+	defer delete(actions)
+	for &cell in view.cells {
+		if pattern_table_cell_disabled(view, pattern_table_find_cell_at(view, cell.row, cell.column)) { continue }
+		action := alicorn.Semantic_Action.None
+		if alicorn.semantic_actions_has(cell.element.actions, .Press) {
+			action = .Press
+		} else if alicorn.semantic_actions_has(cell.element.actions, .Select) {
+			action = .Select
+		}
+		if action == .None { continue }
+		append(&actions, Pattern_Grid_Action{
+			id=cell.element.semantic_id,
+			row=cell.row,
+			column=int(cell.column),
+			action=action,
+		})
+	}
+	for entry in actions {
+		status := pattern_step_input(handle, Input{kind=.Semantic_Action, semantic_id=entry.id, semantic_action=entry.action})
+		if status != .Ok {
+			return pattern_fail(handle, report, .Semantic_Action_Parity, .Cell, nil,
+				fmt.tprintf("advertised semantic %v accepted", entry.action), fmt.tprintf("status %v", status),
+				last_turn_diagnostic(handle))
+		}
+		if !pattern_grid_refresh(handle, view, config, .Semantic_Action_Parity, report) { return false }
+		index := pattern_table_find_cell_at(view, entry.row, u64(entry.column))
+		if index < 0 { continue }
+		if !pattern_grid_selection_verify(handle, view, &view.cells[index].element, config, .Semantic_Action_Parity, report) {
+			return false
+		}
+	}
+	return true
+}
+
+@(private)
+pattern_check_data_grid_impl :: proc(
+	handle: ^Test_Handle($T),
+	config: Pattern_Config,
+	report: ^Pattern_Report,
+) -> bool {
+	view, ok := pattern_collect_table_view(handle, config, .Static_Contract, report, true)
+	if !ok { return false }
+	defer pattern_table_view_destroy(&view)
+
+	if config.grid.columns > 0 && config.grid.columns != view.column_count {
+		return pattern_fail(handle, report, .Static_Contract, .Table, &view.table,
+			fmt.tprintf("%d grid columns", config.grid.columns), fmt.tprintf("%d published columns", view.column_count))
+	}
+	if view.column_count <= 1 {
+		return pattern_fail(handle, report, .Static_Contract, .Table, &view.table,
+			"an interactive grid with more than one column", "the grid is linear")
+	}
+
+	// Static disabled policy: disabled cells and rows are not focusable and do
+	// not advertise activation or focus.
+	for &row in view.rows {
+		row_disabled := alicorn.semantic_states_has(row.states, .Disabled)
+		for &cell in view.cells {
+			if cell.row < 0 || view.rows[cell.row].semantic_id != row.semantic_id { continue }
+			disabled := row_disabled || alicorn.semantic_states_has(cell.element.states, .Disabled)
+			if row_disabled && !alicorn.semantic_states_has(cell.element.states, .Disabled) {
+				pattern_fail(handle, report, .Static_Contract, .Cell, &cell.element,
+					"a disabled row to publish Disabled on its cells", "row is Disabled but a cell is not")
+				return false
+			}
+			if disabled {
+				if pattern_table_node_focusable(handle, &cell.element) {
+					pattern_fail(handle, report, .Focus_Contract, .Cell, &cell.element,
+						"a disabled cell that is not focusable", "disabled cell visual node is focusable")
+					return false
+				}
+				if alicorn.semantic_actions_has(cell.element.actions, .Focus) ||
+				   alicorn.semantic_actions_has(cell.element.actions, .Press) ||
+				   alicorn.semantic_actions_has(cell.element.actions, .Select) {
+					pattern_fail(handle, report, .Static_Contract, .Cell, &cell.element,
+						"a disabled cell without Focus, Press, or Select", "disabled cell advertises an action")
+					return false
+				}
+				if cell.element.focused {
+					pattern_fail(handle, report, .Focus_Contract, .Cell, &cell.element,
+						"a disabled cell that is not focused", "disabled cell reports focus")
+					return false
+				}
+			} else if !alicorn.semantic_actions_has(cell.element.actions, .Focus) {
+				pattern_fail(handle, report, .Static_Contract, .Cell, &cell.element,
+					"an enabled cell with a Focus action", "enabled cell is not focusable")
+				return false
+			}
+		}
+	}
+
+	if !pattern_grid_verify_focus(handle, &view, .Static_Contract, report) { return false }
+
+	// 1. Advertised Focus/Press/Select parity.
+	if !pattern_grid_action_parity(handle, &view, config, report) { return false }
+	if !pattern_grid_verify_focus(handle, &view, .Containment, report) { return false }
+
+	// 2. Directional navigation with disabled skipping, Home/End, boundaries,
+	// wrap, containment, and reveal after every turn.
+	moves := [12]alicorn.Roving_Move{.Home, .Right, .Right, .Left, .Down, .Up, .End, .Home, .Down, .Down, .Down, .Up}
+	for move in moves {
+		if !pattern_grid_step_and_verify(handle, &view, move, config, .Navigation, report) { return false }
+		if !pattern_grid_verify_focus(handle, &view, .Containment, report) { return false }
+	}
+
+	if !pattern_has_part(config, .Cell) { return true }
+	target, target_ok := pattern_require_part(handle, config, .Cell, .Activation_Parity, report)
+	if !target_ok { return false }
+	target_id := target.semantic_id
+	target_row, target_column, target_found := pattern_grid_expected_index(&view, &target)
+	destroy_element(&target)
+	if !target_found || target_row < 0 || target_column < 0 {
+		return pattern_fail(handle, report, .Activation_Parity, .Cell, nil,
+			"the target cell is an enabled grid cell", "target is absent or disabled")
+	}
+	if !pattern_grid_enabled(&view, target_row, target_column) {
+		return pattern_fail(handle, report, .Activation_Parity, .Cell, nil,
+			"the target cell is enabled", "target cell is disabled")
+	}
+	if !pattern_grid_navigate_cell(handle, &view, target_row, target_column, config, .Activation_Parity, report) {
+		return false
+	}
+	target_index := pattern_table_find_cell_at(&view, target_row, u64(target_column))
+	if target_index < 0 {
+		return pattern_fail(handle, report, .Activation_Parity, .Cell, nil,
+			"the target cell is realized", "target cell is absent")
+	}
+	if config.grid.selection != .None {
+		// Space, Return, then pointer must keep the same selected identity.
+		if !pattern_press_key(handle, .Space, .Activation_Parity, .Cell, report) { return false }
+		if !pattern_grid_refresh(handle, &view, config, .Activation_Parity, report) { return false }
+		index := pattern_table_find_cell_at(&view, target_row, u64(target_column))
+		if index < 0 { return false }
+		if !pattern_grid_selection_verify(handle, &view, &view.cells[index].element, config, .Activation_Parity, report) {
+			return false
+		}
+		if !pattern_press_key(handle, .Return, .Activation_Parity, .Cell, report) { return false }
+		if !pattern_grid_refresh(handle, &view, config, .Activation_Parity, report) { return false }
+		index = pattern_table_find_cell_at(&view, target_row, u64(target_column))
+		if index < 0 { return false }
+		if !pattern_grid_selection_verify(handle, &view, &view.cells[index].element, config, .Activation_Parity, report) {
+			return false
+		}
+		pointer_index := pattern_table_find_cell_at(&view, target_row, u64(target_column))
+		if pointer_index < 0 { return false }
+		if !pattern_click_element(handle, &view.cells[pointer_index].element, .Activation_Parity, .Cell, report) { return false }
+		if !pattern_grid_refresh(handle, &view, config, .Activation_Parity, report) { return false }
+		index = pattern_table_find_cell_at(&view, target_row, u64(target_column))
+		if index < 0 { return false }
+		if !pattern_grid_selection_verify(handle, &view, &view.cells[index].element, config, .Activation_Parity, report) {
+			return false
+		}
+	}
+
+	// Semantic Press parity moves selection to a different enabled cell.
+	pressed_id := alicorn.Semantic_ID{}
+	for &cell in view.cells {
+		if cell.element.semantic_id == target_id { continue }
+		if !pattern_grid_enabled(&view, cell.row, int(cell.column)) { continue }
+		if !alicorn.semantic_actions_has(cell.element.actions, .Press) { continue }
+		pressed_id = cell.element.semantic_id
+		break
+	}
+	if pressed_id.namespace != 0 {
+		status := pattern_step_input(handle, Input{kind=.Semantic_Action, semantic_id=pressed_id, semantic_action=.Press})
+		if status != .Ok {
+			return pattern_fail(handle, report, .Activation_Parity, .Cell, nil,
+				"advertised semantic Press accepted", fmt.tprintf("status %v", status), last_turn_diagnostic(handle))
+		}
+		if !pattern_grid_refresh(handle, &view, config, .Activation_Parity, report) { return false }
+		index := pattern_table_find_cell(&view, pressed_id)
+		if index < 0 { return false }
+		if !pattern_grid_selection_verify(handle, &view, &view.cells[index].element, config, .Activation_Parity, report) {
+			return false
+		}
+	}
+	return true
+}
+
+pattern_check_table :: proc(handle: ^Test_Handle($T), config: Pattern_Config) -> Pattern_Report {
+	report := Pattern_Report{ok=true}
+	report.failure.pattern = .Table
+	if handle == nil || handle.runtime == nil {
+		pattern_fail_message(&report, .Resolve_Parts, "valid test handle", "nil handle")
+		return report
+	}
+	_ = pattern_check_table_impl(handle, config, &report)
+	return report
+}
+
+pattern_check_data_grid :: proc(handle: ^Test_Handle($T), config: Pattern_Config) -> Pattern_Report {
+	report := Pattern_Report{ok=true}
+	report.failure.pattern = .Data_Grid
+	if handle == nil || handle.runtime == nil {
+		pattern_fail_message(&report, .Resolve_Parts, "valid test handle", "nil handle")
+		return report
+	}
+	_ = pattern_check_data_grid_impl(handle, config, &report)
 	return report
 }
