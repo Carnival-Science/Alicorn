@@ -458,19 +458,32 @@ native_accessibility_prepare_platform :: proc() -> bool {
 	return true
 }
 
+// native_accessibility_adapter_init_hwnd attaches the Windows AccessKit
+// subclassing adapter to a caller-owned HWND. Plugin hosts create the child
+// HWND themselves, so they cannot go through an SDL_Window property lookup.
+native_accessibility_adapter_init_hwnd :: proc(host: ^Native_Accessibility_Host, hwnd: rawptr) -> bool {
+	if host == nil || hwnd == nil { return false }
+	when ODIN_OS == .Windows {
+		adapter, ok := ak.windows_subclassing_adapter_create(
+			hwnd,
+			native_accessibility_activation_callback, rawptr(host),
+			native_accessibility_action_callback, rawptr(host),
+		)
+		if !ok { return false }
+		host.adapter = adapter.raw
+		return host.adapter != nil
+	} else {
+		return false
+	}
+}
+
 native_accessibility_adapter_init :: proc(host: ^Native_Accessibility_Host, window: ^sdl3.Window) -> bool {
 	if host == nil || window == nil { return false }
 	props := sdl3.GetWindowProperties(window)
 	when ODIN_OS == .Windows {
 		hwnd := sdl3.GetPointerProperty(props, "SDL.window.win32.hwnd", nil)
 		if hwnd == nil { return false }
-		adapter, ok := ak.windows_subclassing_adapter_create(
-		hwnd,
-		native_accessibility_activation_callback, rawptr(host),
-		native_accessibility_action_callback, rawptr(host),
-		)
-		if !ok { return false }
-		host.adapter = adapter.raw
+		return native_accessibility_adapter_init_hwnd(host, hwnd)
 	} else when ODIN_OS == .Darwin {
 		native_window := sdl3.GetPointerProperty(props, "SDL.window.cocoa.window", nil)
 		if native_window == nil { return false }
