@@ -71,10 +71,11 @@ Hosted_Text_Key_Proc :: proc(
 // Hosted_Key_Event carries one host-normalized key transition. key_code is
 // opaque to Runtime: Alicorn never interprets SDL, wx, or platform key
 // constants, and an external host's numeric key space cannot preempt text or
-// interaction scopes. A host that has translated a key into Alicorn's
-// Application_Key vocabulary passes that value to
-// hosted_runtime_application_key. The opaque event still reaches on_key so the
-// application retains its own shortcut policy.
+// interaction scopes. Prefer hosted_runtime_key_event with one Key_Event; a
+// host that has already translated only an Application_Key may still call
+// hosted_runtime_application_key, which forwards through the canonical path.
+// The opaque event reaches on_key so the application retains its own shortcut
+// policy.
 Hosted_Key_Event :: struct {
 	key_code: u32,
 	pressed: bool,
@@ -190,6 +191,11 @@ hosted_window_set_title :: proc(service: Hosted_Window_Service, title: string) -
 // map menu handlers directly once the host exposes menus.
 Hosted_Menu_Command_Proc :: proc(state: rawptr, rt: ^Runtime, command: Action_ID)
 
+// Hosted_Command_Proc receives one command resolved from application-owned
+// bindings. It shares the menu-command delivery shape and enabled gate so an
+// application can use one dispatch function for menus and key bindings.
+Hosted_Command_Proc :: Hosted_Menu_Command_Proc
+
 Hosted_Close_Result :: enum { Allow, Defer }
 
 // Hosted_Close_Requested_Proc decides whether a host close request may proceed.
@@ -216,6 +222,15 @@ Hosted_Runtime_Config :: struct {
 	// matches. menu_presentation is host policy (see Menu_Presentation).
 	menus: []Menu,
 	menu_presentation: Menu_Presentation,
+	// bindings is an optional, application-owned binding table. It is borrowed
+	// for the Hosted_Runtime lifetime and read on each key transition, so an
+	// application can remap by mutating the same storage and calling
+	// hosted_runtime_bindings_update. An empty table leaves the ordinary path
+	// byte-identical: no resolver state is armed and no idle wake is scheduled.
+	// on_command receives resolved commands under the same enabled gate as
+	// native menu commands.
+	bindings: Binding_Table,
+	on_command: Hosted_Command_Proc,
 	// window_decorations selects native chrome policy. Integrated_Title_Bar is
 	// the Windows host-owned titlebar band; Content_Title_Bar is the macOS
 	// full-size-content mode. System leaves chrome entirely with the platform.
@@ -344,6 +359,11 @@ Hosted_Runtime_State :: struct {
 	app_state: rawptr,
 	runtime: Runtime,
 	menus: []Menu,
+	bindings: Binding_Table,
+	// binding_state owns pending chord strokes and its scheduled deadline. It is
+	// inactive while bindings is empty.
+	binding_state: Binding_State,
+	on_command: Hosted_Command_Proc,
 	wake_control: ^Hosted_Wake_Control,
 	render: Hosted_Render_Proc,
 	render_overlays: Hosted_Render_Proc,
@@ -454,6 +474,8 @@ hosted_runtime_init :: proc(host: ^Hosted_Runtime, config: Hosted_Runtime_Config
 		owner_thread_id=sync.current_thread_id(),
 		app_state=config.state,
 		menus=config.menus,
+		bindings=config.bindings,
+		on_command=config.on_command,
 		render=config.render,
 		render_overlays=config.render_overlays,
 		on_wake=config.on_wake,
@@ -493,6 +515,7 @@ hosted_runtime_init :: proc(host: ^Hosted_Runtime, config: Hosted_Runtime_Config
 		dpi_scale=config.dpi_scale,
 		renderable=true,
 	}
+	binding_state_init(&state.binding_state, config.bindings)
 	state.runtime = new_runtime(
 		Rect{0, 0, f32(state.logical_width), f32(state.logical_height)},
 		config=config.runtime,
@@ -631,6 +654,14 @@ hosted_dispatch_scheduled_wakes :: proc(state: ^Hosted_Runtime_State, now_ns: u6
 }
 
 @(private)
+hosted_dispatch_binding_timeout :: proc(state: ^Hosted_Runtime_State, now_ns: u64) {
+	deadline, found := binding_state_deadline(&state.binding_state)
+	if !found || now_ns < deadline { return }
+	result := binding_state_timeout(&state.binding_state, state.binding_state.epoch, now_ns)
+	if result.dispatched { _ = hosted_dispatch_binding_command(state, result.command) }
+}
+
+@(private)
 hosted_dispatch_tick :: proc(state: ^Hosted_Runtime_State, now_ns: u64) {
 	if state.on_tick == nil { return }
 	if !state.has_tick {
@@ -753,6 +784,11 @@ hosted_runtime_next_deadline :: proc(state: ^Hosted_Runtime_State, now_ns: u64) 
 	if scheduled_deadline, found := scheduled_wake_state_next_deadline(&state.scheduled); found {
 		deadline = scheduled_deadline
 	}
+	// A pending binding chord is a Frequent-class deadline. Reporting it here
+	// lets the host sleep until the timeout instead of polling.
+	if binding_deadline, found := binding_state_deadline(&state.binding_state); found {
+		deadline = hosted_deadline_min(deadline, binding_deadline)
+	}
 	// Ticks run while hidden as well, matching the reference host's event loop.
 	deadline = hosted_deadline_min(deadline, hosted_tick_deadline(state, now_ns))
 	if !state.renderable { return deadline }
@@ -850,6 +886,7 @@ hosted_runtime_advance :: proc(
 	if dispatch_application_work {
 		hosted_dispatch_tick(state, now_ns)
 		hosted_dispatch_scheduled_wakes(state, now_ns)
+		hosted_dispatch_binding_timeout(state, now_ns)
 	}
 	reconcile_before := rt.stats.reconcile_nodes_visited
 	layout_before := rt.stats.layout_nodes_visited
@@ -1008,6 +1045,7 @@ hosted_runtime_pointer :: proc(host: ^Hosted_Runtime, event: Pointer_Event) -> (
 	state, access_status := hosted_runtime_get_state(host)
 	if access_status != .Ok { return 0, access_status }
 	_ = hosted_runtime_note_interaction(host, event.timestamp_ns)
+	if event.kind == .Down { _ = binding_state_cancel(&state.binding_state) }
 	rt := &state.runtime
 	dispatched_event := event
 	if state.content_inset_top > 0 && event.kind != .Cancel {
@@ -1095,37 +1133,169 @@ hosted_runtime_key :: proc(host: ^Hosted_Runtime, event: Hosted_Key_Event) -> (h
 	return handled, .Ok
 }
 
-// hosted_runtime_application_key delivers one key the host has explicitly
-// mapped to Alicorn's Application_Key vocabulary. The typed key enables the
-// shared interaction-scope preemption policy and the text-field/IME guard;
-// the accompanying Hosted_Key_Event still reaches on_key for application
-// shortcuts, with its key_code remaining opaque. Hosts that have not adopted
-// Application_Key must use hosted_runtime_key instead.
+// hosted_runtime_key_event is the canonical hosted keyboard entry point. Every
+// host key-down should become one Key_Event, whether or not it maps into the
+// legacy Application_Key vocabulary. The resolver runs before Application_Key
+// routing (menus stay the host's first check), and a binding miss falls through
+// unchanged.
+//
+// A chord deadline is a Frequent-class scheduled wake: binding_state_deadline
+// feeds hosted_runtime_next_deadline, and hosted_runtime_step applies a due
+// timeout. The runtime never polls for chord completion.
+hosted_runtime_key_event :: proc(
+	host: ^Hosted_Runtime,
+	event: Key_Event,
+) -> (handled: bool, status: Hosted_Runtime_Status) {
+	state, access_status := hosted_runtime_get_state(host)
+	if access_status != .Ok { return false, access_status }
+	if len(state.bindings.bindings) > 0 || event.has_application_key {
+		_ = hosted_runtime_note_interaction(host)
+	}
+	if len(state.bindings.bindings) > 0 {
+		now := hosted_runtime_clock_now(state)
+		result := binding_state_resolve(&state.binding_state, event, now)
+		if result.dispatched {
+			hosted_dispatch_binding_command(state, result.command)
+			return true, .Ok
+		}
+		if result.consumed { return true, .Ok }
+	}
+	if !event.has_application_key { return false, .Ok }
+	hosted_event := Hosted_Key_Event{
+		key_code=u32(event.application_key),
+		pressed=true,
+		repeat=event.repeat,
+		modifiers=input_modifiers_from_key_modifiers(event.modifiers),
+		text_input_focused=event.text_input_focused,
+		composition_active=event.composition_active,
+	}
+	handled = hosted_application_key_handled(
+		state, event.application_key, hosted_event,
+	)
+	return handled, .Ok
+}
+
+@(private)
+hosted_dispatch_binding_command :: proc(state: ^Hosted_Runtime_State, command: Action_ID) -> bool {
+	if state == nil || state.on_command == nil { return false }
+	if !menu_command_enabled(state.menus, &state.runtime, command) { return false }
+	cause := cause_begin(&state.runtime, .Native_Command, "hosted command binding", command)
+	state.on_command(state.app_state, &state.runtime, command)
+	invalidate_root(&state.runtime, "hosted application command binding")
+	cause_end(&state.runtime, cause)
+	return true
+}
+
+@(private)
+input_modifiers_from_key_modifiers :: proc(modifiers: Key_Modifiers) -> Input_Modifiers {
+	result := Input_Modifiers{
+		shift=Menu_Modifier.Shift in modifiers,
+		alt=Menu_Modifier.Alt in modifiers,
+	}
+	when ODIN_OS == .Darwin {
+		result.super = Menu_Modifier.Primary in modifiers
+		result.control = Menu_Modifier.Super in modifiers
+	} else {
+		result.control = Menu_Modifier.Primary in modifiers
+		result.super = Menu_Modifier.Super in modifiers
+	}
+	return result
+}
+
+@(private)
+key_modifiers_from_input_modifiers :: proc(modifiers: Input_Modifiers) -> Key_Modifiers {
+	result: Key_Modifiers
+	if modifiers.shift { result += {.Shift} }
+	if modifiers.alt { result += {.Alt} }
+	when ODIN_OS == .Darwin {
+		if modifiers.super { result += {.Primary} }
+		if modifiers.control { result += {.Super} }
+	} else {
+		if modifiers.control { result += {.Primary} }
+		if modifiers.super { result += {.Super} }
+	}
+	return result
+}
+
+@(private)
+hosted_application_key_handled :: proc(
+	state: ^Hosted_Runtime_State,
+	key: Application_Key,
+	event: Hosted_Key_Event,
+) -> bool {
+	if event.pressed {
+		if event.text_input_focused {
+			if interaction_scope_dispatch_key(&state.runtime, key, event.composition_active, text_input_focused=true) {
+				return true
+			}
+			if !application_key_can_preempt_text_field(key, event.composition_active) {
+				return false
+			}
+		} else if interaction_scope_dispatch_key(&state.runtime, key, event.composition_active) {
+			return true
+		}
+	}
+	if state.on_key == nil { return false }
+	focused_owner := focused_node(&state.runtime)
+	handled := state.on_key(state.app_state, &state.runtime, focused_owner, event)
+	if handled { invalidate_root(&state.runtime, "hosted application key callback") }
+	return handled
+}
+
+// hosted_runtime_application_key is the legacy shim for hosts that have already
+// translated a key into the Application_Key vocabulary. It now forwards through
+// the canonical Key_Event path; Key_Spec stays .Unknown so an application
+// binding keyed on a logical letter cannot accidentally fire from a host that
+// only supplied the legacy enum.
 hosted_runtime_application_key :: proc(
 	host: ^Hosted_Runtime,
 	key: Application_Key,
 	event: Hosted_Key_Event,
 ) -> (handled: bool, status: Hosted_Runtime_Status) {
-	state, access_status := hosted_runtime_get_state(host)
-	if access_status != .Ok { return false, access_status }
-	_ = hosted_runtime_note_interaction(host)
-	if event.pressed {
-		if event.text_input_focused {
-			if interaction_scope_dispatch_key(&state.runtime, key, event.composition_active, text_input_focused=true) {
-				return true, .Ok
-			}
-			if !application_key_can_preempt_text_field(key, event.composition_active) {
-				return false, .Ok
-			}
-		} else if interaction_scope_dispatch_key(&state.runtime, key, event.composition_active) {
-			return true, .Ok
-		}
-	}
-	if state.on_key == nil { return false, .Ok }
-	focused_owner := focused_node(&state.runtime)
-	handled = state.on_key(state.app_state, &state.runtime, focused_owner, event)
-	if handled { invalidate_root(&state.runtime, "hosted application key callback") }
-	return handled, .Ok
+	return hosted_runtime_key_event(host, Key_Event{
+		key=.Unknown,
+		modifiers=key_modifiers_from_input_modifiers(event.modifiers),
+		repeat=event.repeat,
+		composition_active=event.composition_active,
+		text_input_focused=event.text_input_focused,
+		produces_text=false,
+		application_key=key,
+		has_application_key=true,
+	})
+}
+
+// hosted_runtime_bindings_update replaces the borrowed binding table and
+// cancels any pending chord. Hosts and applications call it after mutating the
+// same borrowed storage so dispatch follows a runtime remap immediately.
+hosted_runtime_bindings_update :: proc(
+	host: ^Hosted_Runtime,
+	table: Binding_Table,
+) -> Hosted_Runtime_Status {
+	state, status := hosted_runtime_get_state(host)
+	if status != .Ok { return status }
+	state.bindings = table
+	binding_state_update(&state.binding_state, table)
+	return .Ok
+}
+
+// hosted_runtime_binding_cancel clears a pending chord without dispatching.
+// Hosts call it for focus change, committed text, IME transitions, and pointer
+// down that their own routing consumes before the canonical key path.
+hosted_runtime_binding_cancel :: proc(host: ^Hosted_Runtime) -> Hosted_Runtime_Status {
+	state, status := hosted_runtime_get_state(host)
+	if status != .Ok { return status }
+	_ = binding_state_cancel(&state.binding_state)
+	return .Ok
+}
+
+// hosted_runtime_binding_pending exposes the borrowed pending stroke list for
+// host diagnostics and conformance tests.
+hosted_runtime_binding_pending :: proc(
+	host: ^Hosted_Runtime,
+) -> ([]Binding_Key, Hosted_Runtime_Status) {
+	state, status := hosted_runtime_get_state(host)
+	if status != .Ok { return nil, status }
+	return binding_state_pending(&state.binding_state), .Ok
 }
 
 hosted_runtime_scroll :: proc(host: ^Hosted_Runtime, event: Scroll_Event) -> (handled: bool, status: Hosted_Runtime_Status) {
@@ -1218,6 +1388,7 @@ hosted_runtime_text_input :: proc(
 	state, status := hosted_runtime_get_state(host)
 	if status != .Ok { return status }
 	_ = hosted_runtime_note_interaction(host)
+	_ = binding_state_cancel(&state.binding_state)
 	rt := &state.runtime
 	target_owner := owner
 	if target_owner == 0 { target_owner = focused_node(rt) }
@@ -1259,6 +1430,7 @@ hosted_runtime_focus_changed :: proc(host: ^Hosted_Runtime, focused: bool, focus
 	state, status := hosted_runtime_get_state(host)
 	if status != .Ok { return status }
 	rt := &state.runtime
+	_ = binding_state_cancel(&state.binding_state)
 	if focused {
 		focus_indicator_set(rt, focus_visible)
 		return .Ok

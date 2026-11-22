@@ -199,6 +199,14 @@ run_native_window_menu_command :: proc(data: rawptr, rt: ^alicorn.Runtime, comma
 }
 
 @(private)
+run_native_window_command :: proc(data: rawptr, rt: ^alicorn.Runtime, command: alicorn.Action_ID) {
+	bridge := cast(^Run_Native_Window_Bridge)data
+	if bridge != nil && bridge.config.on_command != nil {
+		bridge.config.on_command(bridge.config.state, rt, command)
+	}
+}
+
+@(private)
 run_native_window_close_requested :: proc(
 	data: rawptr,
 	rt: ^alicorn.Runtime,
@@ -315,6 +323,7 @@ run_native_window_open :: proc(data: rawptr, description: alicorn.Hosted_Window_
 		height=description.height,
 		menus=description.config.menus,
 		menu_presentation=host.Application_Menu_Presentation(description.config.menu_presentation),
+		bindings=description.config.bindings,
 		window_decorations=host.Window_Decoration_Mode(description.config.window_decorations),
 		window_chrome_height=description.config.window_chrome_height,
 		window_chrome_metrics=run_native_window_chrome_metrics,
@@ -345,6 +354,9 @@ run_native_window_open :: proc(data: rawptr, description: alicorn.Hosted_Window_
 	if description.config.on_text_input != nil { application.on_text_input = run_native_window_text_input }
 	if description.config.on_menu_command != nil {
 		application.on_menu_command = run_native_window_menu_command
+	}
+	if description.config.on_command != nil {
+		application.on_command = run_native_window_command
 	}
 	if description.config.on_close_requested != nil {
 		application.on_close_requested = run_native_window_close_requested
@@ -527,6 +539,10 @@ run_application :: proc(
 		state := cast(^Hosted_Run_State(T))data
 		if state.on_menu_command != nil { state.on_menu_command(state.app, rt, command) }
 	}
+	on_command :: proc(data: rawptr, rt: ^alicorn.Runtime, command: host.Application_Command_ID) {
+		state := cast(^Hosted_Run_State(T))data
+		if state.on_command != nil { state.on_command(state.app, rt, command) }
+	}
 	on_close_requested :: proc(data: rawptr, rt: ^alicorn.Runtime) -> host.Application_Close_Result {
 		state := cast(^Hosted_Run_State(T))data
 		if state.on_close_requested != nil { return host.Application_Close_Result(state.on_close_requested(state.app, rt)) }
@@ -558,6 +574,7 @@ run_application :: proc(
 		height=height,
 		menus=run_state.menus,
 		menu_presentation=host.Application_Menu_Presentation(run_state.menu_presentation),
+		bindings=run_state.bindings,
 		window_decorations=host.Window_Decoration_Mode(run_state.window_decorations),
 		window_chrome_height=run_state.window_chrome_height,
 		window_chrome_metrics=chrome_metrics,
@@ -583,6 +600,7 @@ run_application :: proc(
 	if run_state.on_tick != nil { application.on_tick = on_tick }
 	if run_state.on_scheduled_wake != nil { application.on_scheduled_wake = on_scheduled_wake }
 	if run_state.on_menu_command != nil { application.on_menu_command = on_menu_command }
+	if run_state.on_command != nil { application.on_command = on_command }
 	if run_state.on_close_requested != nil { application.on_close_requested = on_close_requested }
 	if run_state.on_dialog != nil { application.on_dialog = on_dialog }
 	return application
@@ -624,6 +642,8 @@ run :: proc(
 	menus: []alicorn.Menu = nil,
 	menu_presentation: alicorn.Menu_Presentation = .Labels,
 	on_menu_command: proc(^T, ^alicorn.Runtime, alicorn.Action_ID) = nil,
+	bindings: alicorn.Binding_Table = {},
+	on_command: proc(^T, ^alicorn.Runtime, alicorn.Action_ID) = nil,
 	on_close_requested: proc(^T, ^alicorn.Runtime) -> alicorn.Hosted_Close_Result = nil,
 	on_dialog: proc(^T, ^alicorn.Runtime, ^alicorn.File_Dialog_Result) = nil,
 	window_decorations: alicorn.Window_Decoration_Mode = .System,
@@ -636,6 +656,7 @@ run :: proc(
 	run_state := Hosted_Run_State(T){
 		app=state, render=render, render_overlays=render_overlays,
 		menus=menus, menu_presentation=menu_presentation,
+		bindings=bindings, on_command=on_command,
 		window_decorations=window_decorations,
 		window_chrome_height=window_chrome_height,
 		window_chrome_metrics=window_chrome_metrics,
