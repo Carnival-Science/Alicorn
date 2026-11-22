@@ -73,23 +73,51 @@ load_optional_fallback_font :: proc(
 	return alicorn.text_engine_load_fallback_font_role(&rt.text_engine, role, data)
 }
 
-// load_default_fonts installs the canonical stack every desktop host uses:
-// bundled defaults first, then the bounded startup system fallbacks. It is
-// deterministic for the machine and is never called during shaping or editing.
-load_default_fonts :: proc(rt: ^alicorn.Runtime) -> bool {
-	if !alicorn.text_engine_load_default_fonts(rt) { return false }
+// load_system_fallback_fonts resolves the bounded platform fallback stack:
+// DirectWrite's locale-aware mappings on Windows plus the optional UI and
+// monospace faces. It is the whole deferred unit for hosts that arm a lazy
+// loader, and the tail of load_default_fonts for hosts that do not. Each face
+// is validated before registration, so a missing platform font stays optional.
+load_system_fallback_fonts :: proc(rt: ^alicorn.Runtime) -> int {
+	added := 0
 	when ODIN_OS == .Windows {
-		// Seed the bounded fallback stacks from DirectWrite's locale-aware
-		// system mappings during startup, never while shaping or editing text.
-		_ = load_directwrite_fallback_faces(rt)
+		added += load_directwrite_fallback_faces(rt)
 	}
-	// System faces are optional, script-oriented fallbacks; they do not alter
-	// the bundled primary typography for text the default face can render.
 	if !rt.text_engine.fallback_font_loaded && !rt.text_engine.application_fallback_font[.UI] {
-		_ = load_optional_fallback_font(rt, .UI, ui_fallback_font_path(), FALLBACK_CODEPOINTS)
+		if load_optional_fallback_font(rt, .UI, ui_fallback_font_path(), FALLBACK_CODEPOINTS) { added += 1 }
 	}
 	if !rt.text_engine.monospace_fallback_font_loaded && !rt.text_engine.application_fallback_font[.Monospace] {
-		_ = load_optional_fallback_font(rt, .Monospace, monospace_fallback_font_path(), FALLBACK_CODEPOINTS)
+		if load_optional_fallback_font(rt, .Monospace, monospace_fallback_font_path(), FALLBACK_CODEPOINTS) { added += 1 }
 	}
+	return added
+}
+
+deferred_system_fallback_thunk :: proc(ctx: rawptr) -> int {
+	return load_system_fallback_fonts((^alicorn.Runtime)(ctx))
+}
+
+// arm_deferred_system_fallbacks makes the runtime resolve the platform stack on
+// the first shaping request that no loaded face covers. The load is
+// synchronous on the shaping thread; the runtime records its cost and never
+// schedules idle work for it. Call this only after load_default_fonts with
+// defer_system_fallbacks=true.
+arm_deferred_system_fallbacks :: proc(rt: ^alicorn.Runtime) -> bool {
+	if rt == nil { return false }
+	return alicorn.text_engine_arm_system_fallback_loader(
+		&rt.text_engine,
+		rawptr(rt),
+		deferred_system_fallback_thunk,
+	)
+}
+
+// load_default_fonts installs the canonical stack every desktop host uses:
+// bundled defaults first, then the bounded system fallbacks. With
+// defer_system_fallbacks the bundled faces are installed and the platform
+// stack is left for arm_deferred_system_fallbacks; otherwise it is resolved
+// here during startup.
+load_default_fonts :: proc(rt: ^alicorn.Runtime, defer_system_fallbacks := false) -> bool {
+	if !alicorn.text_engine_load_default_fonts(rt) { return false }
+	if defer_system_fallbacks { return true }
+	_ = load_system_fallback_fonts(rt)
 	return true
 }

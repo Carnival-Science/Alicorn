@@ -1,0 +1,45 @@
+DirectWrite locale-sample face costs on the capture host (2026-11-22)
+
+Captured with a temporary in-package @(test) in host/fonts that called the same
+win32_dwrite_localized_samples + win32_dwrite_load_face_bytes path used by
+load_directwrite_fallback_faces, then printed len(data) and the face index. The
+temporary test was removed before the commit; the numbers below are its output.
+`odin test host/fonts -collection:alicorn=.`
+
+diag_sample 語 en-US bytes 13742180 face 1
+diag_sample 日本語 ja-JP bytes 13742180 face 1
+diag_sample 简体中文 zh-CN bytes 19704352 face 1
+diag_sample 繁體中文 zh-TW bytes 21402152 face 1
+diag_sample 한국어 ko-KR bytes 13457164 face 0
+diag_sample سلام ar-SA bytes 955804 face 0
+diag_sample 🎉 en-US bytes 2072388 face 0
+diag_sample ❤️ en-US bytes 2072388 face 0
+diag_sample 👍🏽 en-US bytes 2072388 face 0
+diag_sample 👩‍💻 en-US bytes 2072388 face 0
+diag_sample 1️⃣ en-US bytes 955804 face 0
+diag_sample 🇯🇵 en-US bytes 2072388 face 0
+diag_total_bytes 94321576
+
+A second temporary test loaded the eager stack and printed the registry:
+
+diag_eager files 5 faces 5 font_file_bytes 57876876 fallback_ui_loaded true fallback_mono_loaded true live 69266072
+(diag_eager_ns 2834871900 in that run is inflated by the test runner's memory
+tracking and a cold file cache; the harness measured the real phase at
+117-119 ms.)
+
+Interpretation:
+- 94,321,576 B is the raw per-sample read total; each sample reads its mapped
+  face's whole file before the runtime deduplicates identical bytes.
+- Six unique files are read: 13,742,180 (Japanese, both samples), 19,704,352
+  (Simplified Chinese), 21,402,152 (Traditional Chinese), 13,457,164 (Korean),
+  955,804 (Arabic + keycap, same file/face), 2,072,388 (emoji, four samples).
+  Unique total = 71,334,068 B (~68.0 MiB).
+- Only 5 DirectWrite faces register: `font_file_bytes` = 57,876,876 B. The
+  Korean file (13,457,164 B) is read but Runa's face parse produces no
+  registered face on this host.
+- The eager live total is 69,266,072 B: 57,876,876 DirectWrite + 9,590,844
+  NotoSansJP-VF (optional UI fallback) + 459,180 consola.ttf (optional
+  monospace fallback) + ~1,339,172 Runa structures/bookkeeping. This matches
+  the harness `fonts_requested_bytes` of 65.7-66.0 MiB.
+- The loader's return count is 7: five DirectWrite samples that added a face
+  plus the two optional role faces. It is not seven DirectWrite faces.

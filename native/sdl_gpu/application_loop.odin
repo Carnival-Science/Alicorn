@@ -26,6 +26,7 @@ run_application_loop :: proc(
 	native_menu: ^Native_Menu_Runtime,
 	startup: Native_Startup_Timing = {},
 	startup_origin: time.Tick = {},
+	fallback_probe := false,
 ) {
 	host_setup_start := time.tick_now()
 	application_instance := application
@@ -69,6 +70,16 @@ run_application_loop :: proc(
 	submitted := 0
 	timing := Native_Host_Timing{}
 	timing.startup = startup
+	// Measurement-only first-fallback-frame probe. When enabled, the host
+	// shapes one short run that requires platform fallback faces immediately
+	// after the first application submission, so the deferred load's latency is
+	// observed on the same path a first CJK/emoji text entry would take.
+	fallback_probe_done := false
+	fallback_probe_build_ns: u64 = 0
+	fallback_probe_at_ns: u64 = 0
+	fallback_probe_glyphs := 0
+	fallback_probe_fallback_glyphs := 0
+	fallback_probe_unresolved := false
 	diagnostics := native_parse_diagnostics_options()
 	breadcrumbs := native_breadcrumbs_start(diagnostics)
 	defer native_breadcrumbs_release(breadcrumbs)
@@ -1026,6 +1037,27 @@ run_application_loop :: proc(
 				// Keep the legacy field in sync so existing consumers see the same
 				// startup-relative value rather than the old loop-relative one.
 				timing.first_application_submit_ns = timing.startup.first_application_submit_ns
+				if fallback_probe && !fallback_probe_done {
+					fallback_probe_done = true
+					probe_start := time.tick_now()
+					probe_run, probe_ok := alicorn.text_run_build(
+						&rt.text_engine,
+						"日本語 🎉 →",
+						16,
+						allocator=context.allocator,
+					)
+					if probe_ok {
+						fallback_probe_glyphs = len(probe_run.glyphs)
+						for glyph in probe_run.glyphs {
+							if glyph.font_source == .Fallback { fallback_probe_fallback_glyphs += 1 }
+						}
+						fallback_probe_unresolved =
+							probe_run.font_generation & alicorn.TEXT_RUN_FALLBACK_GENERATION_MASK != 0
+						alicorn.text_run_destroy(&probe_run)
+					}
+					fallback_probe_build_ns = u64(time.duration_nanoseconds(time.tick_since(probe_start)))
+					fallback_probe_at_ns = native_startup_elapsed_ns(startup_origin)
+				}
 			}
 			native_text_commit_submission(text_renderer)
 			native_surface_commit_submission(surface_renderer)
@@ -1174,6 +1206,18 @@ run_application_loop :: proc(
 		idle_ns := time.duration_nanoseconds(time.tick_diff(last_primary_submit, time.tick_now()))
 		if idle_ns > 0 { idle_after_last_submit_ns = u64(idle_ns) }
 	}
+	deferred_font_faces := 0
+	deferred_font_ns: u64 = 0
+	deferred_font_at_ns: u64 = 0
+	if rt != nil {
+		deferred_font_faces = rt.text_engine.system_fallback_faces
+		deferred_font_ns = rt.text_engine.system_fallback_ns
+		deferred_font_at_ns = native_tick_elapsed_ns(startup_origin, rt.text_engine.system_fallback_fired_at)
+	}
+	deferred_font_before_first_submit :=
+		deferred_font_at_ns > 0 &&
+		timing.startup.first_application_submit_ns > 0 &&
+		deferred_font_at_ns < timing.startup.first_application_submit_ns
 	fmt.println(
 		"SDL application PASS",
 		"submissions", submitted,
@@ -1201,6 +1245,16 @@ run_application_loop :: proc(
 		"window_shown_ns", timing.startup.window_shown_ns,
 		"first_input_ready_ns", timing.startup.first_input_ready_ns,
 		"first_diagnostics_ns", timing.startup.first_diagnostics_ns,
+		"deferred_system_font_faces", deferred_font_faces,
+		"deferred_system_font_ns", deferred_font_ns,
+		"deferred_system_font_at_ns", deferred_font_at_ns,
+		"deferred_system_font_before_first_submit", int(deferred_font_before_first_submit),
+		"fallback_probe_build_ns", fallback_probe_build_ns,
+		"fallback_probe_at_ns", fallback_probe_at_ns,
+		"fallback_probe_glyphs", fallback_probe_glyphs,
+		"fallback_probe_fallback_glyphs", fallback_probe_fallback_glyphs,
+		"fallback_probe_unresolved", int(fallback_probe_unresolved),
+		"runtime_persistent_requested_live_bytes", runtime_live_bytes(rt),
 		"idle_after_last_submit_ns", idle_after_last_submit_ns,
 		"smoke_hold_ns", smoke_hold_ns,
 		"application_build_samples", len(timing.build_samples),

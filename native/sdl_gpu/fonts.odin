@@ -29,8 +29,15 @@ native_load_optional_fallback_font :: proc(
 	return host_fonts.load_optional_fallback_font(rt, role, path, required_codepoints)
 }
 
-native_load_default_fonts :: proc(rt: ^alicorn.Runtime) -> bool {
-	return host_fonts.load_default_fonts(rt)
+native_load_default_fonts :: proc(rt: ^alicorn.Runtime, defer_system_fallbacks := false) -> bool {
+	return host_fonts.load_default_fonts(rt, defer_system_fallbacks)
+}
+
+// native_arm_deferred_system_fonts arms the lazy platform fallback loader. The
+// host then pays the system-face cost only if first-frame text actually needs
+// a face the bundled stack does not cover.
+native_arm_deferred_system_fonts :: proc(rt: ^alicorn.Runtime) -> bool {
+	return host_fonts.arm_deferred_system_fallbacks(rt)
 }
 
 when ODIN_OS == .Windows {

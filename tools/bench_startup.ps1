@@ -19,6 +19,12 @@
   No reboot, cache purge or page-file control is performed. These are
   warm-order numbers, never cold-start claims.
 
+  With -Paired, every measured round launches a primary and a compare arm back
+  to back (same executable, different extra arguments) and alternates which arm
+  goes first. Use -PrimaryArmArguments / -CompareArmArguments for the per-arm
+  arguments and -PrimaryArmLabel / -CompareArmLabel for the summary keys. The
+  single-arm behaviour is unchanged when -Paired is absent.
+
   The process's PASS line is detected while the process is still alive so
   "settle" memory is sampled before the shutdown work (GPU idle wait,
   device/window destruction) that follows the marker line.
@@ -54,7 +60,16 @@ param(
     [string]$ScratchpadWorkspace,
     [string]$PunksFolder,
 
-    [switch]$SessionFirst
+    [switch]$SessionFirst,
+
+    # Paired A/B mode: every measured round launches the primary arm and the
+    # compare arm back to back, alternating which arm goes first. Both arms use
+    # the same executable; only the extra arguments differ.
+    [switch]$Paired,
+    [string]$PrimaryArmLabel = 'prototype',
+    [string]$CompareArmLabel = 'baseline',
+    [string[]]$PrimaryArmArguments = @(),
+    [string[]]$CompareArmArguments = @()
 )
 
 $ErrorActionPreference = 'Stop'
@@ -167,10 +182,14 @@ function Invoke-StartupLaunch {
         [string]$Executable,
         [string[]]$Arguments,
         [string]$WorkingDirectory,
-        [hashtable]$Environment
+        [hashtable]$Environment,
+        [string]$Arm = ''
     )
 
     $runName = '{0}-{1:D2}' -f $Phase, $Index
+    if (-not [string]::IsNullOrWhiteSpace($Arm)) {
+        $runName = '{0}-{1}-{2:D2}' -f $Phase, $Arm, $Index
+    }
     $runLog = Join-Path $LogRoot ('{0}-{1}.log' -f $Label, $runName)
     $stdoutLog = Join-Path $LogRoot ('{0}-{1}.stdout.log' -f $Label, $runName)
     $stderrLog = Join-Path $LogRoot ('{0}-{1}.stderr.log' -f $Label, $runName)
@@ -336,6 +355,7 @@ function Invoke-StartupLaunch {
     $result = [pscustomobject]@{
         app = $Label
         phase = $Phase
+        arm = $Arm
         run = $runName
         exit_code = $process.ExitCode
         timed_out = $timedOut
@@ -441,6 +461,44 @@ function Invoke-AppSuite {
     }
     Write-Output "app ${Name}: $($config.executable)"
     $all = New-Object System.Collections.Generic.List[object]
+    if ($Paired) {
+        $arms = @(
+            [pscustomobject]@{ label = $PrimaryArmLabel; arguments = $PrimaryArmArguments },
+            [pscustomobject]@{ label = $CompareArmLabel; arguments = $CompareArmArguments }
+        )
+        # One unmeasured warmup per arm so both arms start from the same
+        # executable-in-cache state.
+        foreach ($arm in $arms) {
+            $environment = New-LaunchEnvironment -Name $Name -Phase 'file-cache-warmup' -Index 1 -Base $config.environment
+            $arguments = @($config.arguments) + @($arm.arguments)
+            $warm = Invoke-StartupLaunch -Label $Name -Phase 'file-cache-warmup' -Index 1 -Executable $config.executable -Arguments $arguments -WorkingDirectory $config.working_directory -Environment $environment -Arm $arm.label
+            $all.Add($warm)
+            Write-Output ('  warmup {0} exit {1}, submit {2} ms' -f $arm.label, $warm.exit_code, ([double]$warm.first_application_submit_ns / 1e6))
+        }
+        for ($round = 1; $round -le $RunCount; $round++) {
+            # Alternate order every round so a monotonic drift (thermals,
+            # background load) cannot favour one arm.
+            $order = if ($round % 2 -eq 1) { $arms } else { @($arms[1], $arms[0]) }
+            foreach ($arm in $order) {
+                $environment = New-LaunchEnvironment -Name $Name -Phase 'warm-order' -Index $round -Base $config.environment
+                $arguments = @($config.arguments) + @($arm.arguments)
+                $sample = Invoke-StartupLaunch -Label $Name -Phase 'warm-order' -Index $round -Executable $config.executable -Arguments $arguments -WorkingDirectory $config.working_directory -Environment $environment -Arm $arm.label
+                $all.Add($sample)
+                Write-Output ('  run {0:D2} {9} exit {1}, shown {2:N1} ms, submit {3:N1} ms, input {4:N1} ms, fonts {10:N1} ms, WS {5:N1} MiB, private {6:N1} MiB, GPU {7:N1}/{8:N1} MiB' -f `
+                    $round, $sample.exit_code,
+                    ([double]$sample.window_shown_ns / 1e6),
+                    ([double]$sample.first_application_submit_ns / 1e6),
+                    ([double]$sample.first_input_ready_ns / 1e6),
+                    ([double]$sample.settle_working_set_bytes / 1MB),
+                    ([double]$sample.settle_private_bytes / 1MB),
+                    ([double]$sample.settle_gpu_dedicated_bytes / 1MB),
+                    ([double]$sample.settle_gpu_shared_bytes / 1MB),
+                    $arm.label,
+                    ([double]$sample.fonts_ns / 1e6))
+            }
+        }
+        return [pscustomobject]@{ config = $config; samples = $all }
+    }
     if ($SessionFirst) {
         $environment = New-LaunchEnvironment -Name $Name -Phase 'session-first' -Index 1 -Base $config.environment
         $sample = Invoke-StartupLaunch -Label $Name -Phase 'session-first' -Index 1 -Executable $config.executable -Arguments $config.arguments -WorkingDirectory $config.working_directory -Environment $environment
@@ -509,32 +567,40 @@ $metricNames = @(
     'first_diagnostics_ns'
 )
 
-$summaries = @{}
-foreach ($name in $suites.Keys) {
-    $suite = $suites[$name]
-    $measured = @($suite.samples | Where-Object { $_.phase -eq 'warm-order' })
+function Get-ArmSummary {
+    param([object[]]$Samples)
     $summary = @{}
     foreach ($metric in $metricNames) {
-        $value = Get-MetricSummary -Samples $measured -Name $metric
+        $value = Get-MetricSummary -Samples $Samples -Name $metric
         if ($null -ne $value) { $summary[$metric] = $value }
     }
-    $markerNames = @($measured[0].PSObject.Properties.Name | Where-Object {
+    $markerNames = @($Samples[0].PSObject.Properties.Name | Where-Object {
         $_ -notin $metricNames -and
-        $_ -notin @('app','phase','run','exit_code','timed_out','process_start_utc','pass_detected_elapsed_ms','log') -and
+        $_ -notin @('app','phase','arm','run','exit_code','timed_out','process_start_utc','pass_detected_elapsed_ms','log') -and
         $_ -notlike 'attr_*'
     })
     foreach ($marker in $markerNames) {
         if ($marker -in @('submissions','primary_gpu_submissions','retired','max_frames_in_flight','logical_resize_events','pixel_resize_events','scale_events','text_input_events','composition_events')) { continue }
-        $value = Get-MetricSummary -Samples $measured -Name $marker
+        $value = Get-MetricSummary -Samples $Samples -Name $marker
         if ($null -ne $value) { $summary[$marker] = $value }
     }
-    $attributionSample = $measured[0]
     $attribution = [ordered]@{}
-    foreach ($property in $attributionSample.PSObject.Properties) {
+    foreach ($property in $Samples[0].PSObject.Properties) {
         if ($property.Name -like 'attr_*') {
             $attribution[$property.Name.Substring(5)] = $property.Value
         }
     }
+    return [pscustomobject]@{
+        measured_sample_count = $Samples.Count
+        summary = $summary
+        attribution = $attribution
+    }
+}
+
+$summaries = @{}
+foreach ($name in $suites.Keys) {
+    $suite = $suites[$name]
+    $measured = @($suite.samples | Where-Object { $_.phase -eq 'warm-order' })
     $diagProbe = @($suite.samples | Where-Object { $_.phase -eq 'diagnostics-probe' } | Select-Object -First 1)
     $diagnosticsProbe = $null
     if ($diagProbe.Count -gt 0) {
@@ -546,18 +612,34 @@ foreach ($name in $suites.Keys) {
             exit_code = $diagProbe[0].exit_code
         }
     }
-    $summaries[$name] = [pscustomobject]@{
+    $entry = [pscustomobject]@{
         executable = $suite.config.executable
         arguments = $suite.config.arguments
         working_directory = $suite.config.working_directory
         environment = $suite.config.environment
         executable_facts = Get-ExecutableFacts $suite.config.executable
         samples = $suite.samples
-        measured_sample_count = $measured.Count
-        summary = $summary
-        attribution = $attribution
+        paired = [bool]$Paired
+        primary_arm_arguments = @($PrimaryArmArguments)
+        compare_arm_arguments = @($CompareArmArguments)
         diagnostics_probe = $diagnosticsProbe
     }
+    if ($Paired) {
+        $arms = [ordered]@{}
+        foreach ($label in @($PrimaryArmLabel, $CompareArmLabel)) {
+            $armSamples = @($measured | Where-Object { $_.arm -eq $label })
+            if ($armSamples.Count -eq 0) { continue }
+            $arms[$label] = Get-ArmSummary -Samples $armSamples
+        }
+        $entry | Add-Member -NotePropertyName arms -NotePropertyValue $arms
+        $entry | Add-Member -NotePropertyName measured_sample_count -NotePropertyValue $measured.Count
+    } else {
+        $armSummary = Get-ArmSummary -Samples $measured
+        $entry | Add-Member -NotePropertyName measured_sample_count -NotePropertyValue $armSummary.measured_sample_count
+        $entry | Add-Member -NotePropertyName summary -NotePropertyValue $armSummary.summary
+        $entry | Add-Member -NotePropertyName attribution -NotePropertyValue $armSummary.attribution
+    }
+    $summaries[$name] = $entry
     $csvPath = Join-Path $ResultsDirectory ('samples-{0}.csv' -f $name)
     $suite.samples | Export-Csv -LiteralPath $csvPath -NoTypeInformation -Encoding UTF8
 }
@@ -616,11 +698,21 @@ if (Test-Path $fontRoot) {
 
 $report = [pscustomobject]@{
     schema = 1
-    scenario = 'native SDL_GPU startup attribution (issue #172 phase 1)'
+    scenario = if ($Paired) { 'native SDL_GPU paired A/B (issue #172 phase 2)' } else { 'native SDL_GPU startup attribution (issue #172 phase 1)' }
     generated_at = (Get-Date).ToUniversalTime().ToString('o')
     warm_state = 'warm-order; one session-first launch and one file-cache warmup per app; no reboot or cache purge'
     runs_per_app = $Runs
     session_first_enabled = [bool]$SessionFirst
+    paired = [bool]$Paired
+    arms = if ($Paired) {
+        [pscustomobject]@{
+            primary_label = $PrimaryArmLabel
+            primary_arguments = @($PrimaryArmArguments)
+            compare_label = $CompareArmLabel
+            compare_arguments = @($CompareArmArguments)
+            order = 'round 1 primary then compare; round 2 compare then primary; alternate each round'
+        }
+    } else { $null }
     host = $hostFacts
     toolchain = [pscustomobject]@{ odin_version = $odinVersion; odin_path = 'C:\odin\odin.exe'; alicorn_commit = $alicornCommit }
     counters = [pscustomobject]@{

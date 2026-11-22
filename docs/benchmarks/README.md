@@ -6,6 +6,11 @@ without crowding the project’s user and contributor guides.
 
 ## Reports
 
+- [Deferred system fallback faces — Issue #172 phase 2, Windows (2026-11-22)](native-startup-deferred-fallback-windows-2026-11-22.md)
+  — paired A/B of deferring the DirectWrite/optional fallback stack to the
+  first shaping miss: −117 to −119 ms fonts phase and −69 MiB runtime requested
+  in all three apps, with a measured 116–121 ms first-fallback stall.
+  **NO-GO as prototyped** under the issue's interaction-latency rule.
 - [Native SDL_GPU startup attribution — Issue #172 phase 1, Windows (2026-11-21)](native-startup-attribution-windows-2026-11-21.md)
   — measurement-only startup markers plus a fresh-process attribution of
   working set, private bytes, GPU process memory, runtime requested bytes and

@@ -1,0 +1,96 @@
+{
+  "schema": 1,
+  "scenario": "native SDL_GPU paired A/B - deferred system fallback faces (issue #172 phase 2)",
+  "captured_at_local": "2026-11-22T03:00:00-06:00",
+  "alicorn": {
+    "repository": "Carnival-Science/Alicorn",
+    "branch": "finish-172",
+    "baseline_commit": "edd5a1fe1561c916cac239e886b47606b92ed500",
+    "baseline_subject": "perf(startup): add native startup attribution markers and harness",
+    "prototype_commit": "the commit that contains this report (parent edd5a1f)",
+    "change": "Defer the DirectWrite/optional system fallback stack until the first shaping request with an unresolved cluster; no timers, workers or GPU resources deferred. Measurement-only A/B flag --eager-system-fonts and probe --fallback-probe-after-first-frame.",
+    "branches": "prototype and baseline are the same executable; the baseline arm passes --eager-system-fonts and executes the pre-change startup path"
+  },
+  "apps": {
+    "hello": {
+      "source": "examples/01_hello in this worktree",
+      "build": "odin build examples/01_hello -collection:alicorn=<this worktree> -collection:accesskit=<.deps/odin-accesskit> -collection:accesskit_c=<...> -extra-linker-flags:<accesskit> -o:speed -out:out/hello-lazy.exe",
+      "executable": "out/hello-lazy.exe",
+      "executable_bytes": 7382528,
+      "executable_sha256": "a2278b2f796078e813f422578f638c74c2df0e5de8fec0022ecea97ebccafb79",
+      "arguments": ["--idle-validation-seconds=3"],
+      "extra_arguments": { "prototype": [], "baseline": ["--eager-system-fonts"] }
+    },
+    "scratchpad": {
+      "source": "clone of C:\\Users\\saman\\dev\\scratchpad",
+      "revision": "adb28fc220864e6809c9217e4437af5b92dae57b",
+      "build": "go run ./cmd/alicorn-dev build --alicorn-root <this worktree> --allow-alicorn-revision --release --odin C:\\odin\\odin.exe --renderer=sdl-gpu",
+      "executable": "C:/Users/saman/dev/scratchpad/out/alicorn/scratchpad-alicorn.exe",
+      "executable_bytes": 9784320,
+      "executable_sha256": "b77fef4eea44c5b4a48fc2799b87a841212828faf2a40ae45954f7df5bfd3cb9",
+      "workspace": "generated 193-file A/B workspace: 8 project directories x 24 files, one 5,000-line project-01/sample_00.go, README.md",
+      "workspace_path": "%TEMP%/startup-ab-172/workspace",
+      "arguments": ["--idle-validation-seconds=3"],
+      "environment": "fresh APPDATA/LOCALAPPDATA per launch; SCRATCHPAD_ALICORN_WORKSPACE=<generated workspace>; SCRATCHPAD_ALICORN_SMOKE removed",
+      "extra_arguments": { "prototype": [], "baseline": ["--eager-system-fonts"] }
+    },
+    "punks": {
+      "source": "clone of C:\\Users\\saman\\dev\\punks",
+      "revision": "029647312c2b0a90a4b19c12093ddf8cbbd99368",
+      "vendored_alicorn": "75d305e1b2e3e4bf982e5899b5217efe2bad0465 (not used; frontend compiled against this worktree)",
+      "alicorn_kit_snapshot": "856447e2083a2261d8f5b01a8ca436142f597de5",
+      "build": "cargo build -p punks-caliber --release; odin build punks-standalone/odin -collection:alicorn=<this worktree> -collection:alikit=<clone>/vendor/alicorn-kit <accesskit args> -o:speed -out:target/windows-x86_64/release/punks.exe",
+      "executable": "C:/Users/saman/dev/punks/target/windows-x86_64/release/punks.exe",
+      "executable_bytes": 7683072,
+      "executable_sha256": "f5b54cf264c111684d1143ea71650ba071f779fe7332a28f59b5d9e8ff408de5",
+      "arguments": ["--smoke", "--folder", "C:/Users/saman/dev/punks/crates/punks-audio/tests/fixtures"],
+      "extra_arguments": { "prototype": [], "baseline": ["--eager-system-fonts"] }
+    }
+  },
+  "host": {
+    "os": "Microsoft Windows 10 Home",
+    "build": "19045",
+    "computer": "SAMAN",
+    "cpu": "AMD Ryzen 5 7600X 6-Core Processor",
+    "logical_processors": 12,
+    "memory_visible_bytes": 16281268224,
+    "gpu": "NVIDIA GeForce RTX 2080 SUPER",
+    "gpu_driver_version": "32.0.15.9597",
+    "sdl": "3.4.20",
+    "gpu_backend": "Direct3D 12",
+    "desktop_load": "other desktop applications were running; CPU load recorded as 3% at the start and 47% at the end of the series in summary.json"
+  },
+  "toolchain": {
+    "odin": "dev-2026-11-nightly:08539cd",
+    "odin_path": "C:\\odin\\odin.exe",
+    "go": "go1.27.1 windows/amd64",
+    "cargo": "1.98.1 (797e8a9bc 2026-08-05)"
+  },
+  "protocol": {
+    "runner": "tools/bench_startup.ps1 -Paired",
+    "runs_per_suite": 12,
+    "order": "each round launches prototype then baseline on odd rounds and baseline then prototype on even rounds",
+    "warmup": "one unmeasured file-cache warmup per arm per app",
+    "warm_state": "warm-order only; no reboot, cache purge or page-file control",
+    "probe_suite": "6 paired rounds with --fallback-probe-after-first-frame on both arms",
+    "idle_suite": "4 paired rounds with --idle-validation-seconds=20 (Hello, Scratchpad)",
+    "control": "8 paired rounds with both arms eager (Scratchpad), to separate backend on_start jitter from an arm effect",
+    "replicate": "a second independent 12-round Scratchpad series after the first",
+    "markers": "host-tick elapsed nanoseconds from the host startup origin; window_shown after SDL_ShowWindow; first_application_submit is a GPU submission, not a visible pixel; first_input_ready is the first completed event pump",
+    "memory": "working set/private bytes sampled every 10 ms and at the PASS line; GPU Process Memory Dedicated/Shared sampled every 500 ms; runtime requested bytes are allocator requests"
+  },
+  "counters": {
+    "process": ["Process.WorkingSet64", "Process.PrivateMemorySize64", "Process.TotalProcessorTime", "Process.StartTime"],
+    "gpu": ["\\GPU Process Memory(pid_<pid>*)\\Dedicated Usage", "\\GPU Process Memory(pid_<pid>*)\\Shared Usage"],
+    "reliability": "GPU counters occasionally have no instance at a sample (missing values in 2-5 samples per suite); Punks exits immediately after PASS and the 10 ms process sampler missed the settle sample in 6 of 24 launches (7 complete pairs)"
+  },
+  "artifacts": {
+    "report": "docs/benchmarks/native-startup-deferred-fallback-windows-2026-11-22.md",
+    "runner_copy": "bench_startup.ps1",
+    "suites": ["hello", "scratchpad", "scratchpad-replicate", "punks", "probe-hello", "probe-scratchpad", "probe-punks", "idle-hello", "idle-scratchpad", "control-scratchpad-eager-vs-eager"],
+    "analysis": "analyze_pairs.ps1 -> paired-summary.json",
+    "tests": "logs-tests/",
+    "font_cost": "font-face-cost.txt",
+    "logs": "each suite writes logs/<app>-<phase>-<arm>-<round>.log"
+  }
+}

@@ -4,6 +4,7 @@ package alicorn_host_fonts
 
 import "core:os"
 import "core:testing"
+import "core:time"
 import alicorn "../../runtime"
 import runa "../../third_party/Runa"
 
@@ -93,6 +94,52 @@ test_windows_directwrite_cjk_fallback_and_optional_color_emoji :: proc(t: ^testi
 			testing.expect(t, color_emoji_slot,
 				"a mapped COLR face with layers for the sample emoji should rasterize into the RGBA atlas")
 		}
+	}
+}
+
+// The deferred stack must behave exactly like the eager one for text that
+// actually needs a platform face, and must not load anything for text the
+// bundled Latin faces already cover. This pins both halves of the lazy
+// contract: no startup cost, correct first-miss resolution.
+@(test)
+test_deferred_system_fallbacks_load_only_on_first_uncovered_text :: proc(t: ^testing.T) {
+	when ODIN_OS == .Windows {
+		rt := alicorn.new_runtime(alicorn.Rect{0, 0, 320, 120})
+		defer alicorn.destroy_runtime(&rt)
+		testing.expect(t, load_default_fonts(&rt, defer_system_fallbacks=true),
+			"deferred initialization should install the bundled faces")
+		testing.expect(t, alicorn.text_engine_registered_font_face_count(&rt.text_engine) == 0,
+			"deferred initialization must not resolve system faces during startup")
+		testing.expect(t, arm_deferred_system_fallbacks(&rt),
+			"deferred initialization must arm the platform loader")
+
+		latin, latin_ok := alicorn.text_run_build(&rt.text_engine, "Hello, Alicorn", 16, allocator=context.allocator)
+		defer if latin_ok { alicorn.text_run_destroy(&latin) }
+		testing.expect(t, latin_ok && rt.text_engine.system_fallback_faces == 0 &&
+			rt.text_engine.system_fallback_ns == 0 && rt.text_engine.system_fallback_fired_at == (time.Tick{}),
+			"Latin text covered by the bundled faces must not trigger the platform loader")
+
+		japanese, japanese_ok := alicorn.text_run_build(&rt.text_engine, "日本語 🎉", 20, allocator=context.allocator)
+		defer if japanese_ok { alicorn.text_run_destroy(&japanese) }
+		fallback_glyphs := 0
+		if japanese_ok {
+			for glyph in japanese.glyphs {
+				if glyph.font_source == .Fallback && glyph.font_face != 0 { fallback_glyphs += 1 }
+			}
+		}
+		testing.expect(t, japanese_ok && fallback_glyphs > 0,
+			"the first uncovered text must resolve through the deferred platform faces")
+		testing.expect(t, rt.text_engine.system_fallback_faces > 0 && rt.text_engine.system_fallback_ns > 0 &&
+			rt.text_engine.system_fallback_fired_at != (time.Tick{}),
+			"the deferred load must record its synchronous cost and fire moment")
+		testing.expect(t, !(japanese.font_generation & alicorn.TEXT_RUN_FALLBACK_GENERATION_MASK != 0),
+			"the reshaped run must not retain unresolved fallback coverage")
+
+		before := rt.text_engine.system_fallback_ns
+		chinese, chinese_ok := alicorn.text_run_build(&rt.text_engine, "简体中文", 20, allocator=context.allocator)
+		defer if chinese_ok { alicorn.text_run_destroy(&chinese) }
+		testing.expect(t, chinese_ok && rt.text_engine.system_fallback_ns == before,
+			"later fallback text must reuse the resolved stack instead of reloading it")
 	}
 }
 

@@ -32,8 +32,15 @@ native_run_application :: proc(
 	phase_start := startup_origin_tick
 	input_debug := macos_titlebar_fixture || windows_titlebar_fixture
 	validation_timeout_seconds := 0
+	eager_system_fonts := false
+	fallback_probe := false
 	for argument in os.args {
 		if argument == "--input-debug" { input_debug = true }
+		// Measurement-only A/B switch for the deferred system fallback stack.
+		// The default (lazy) is the prototype; --eager-system-fonts reproduces
+		// the pre-change startup path in the same binary.
+		if argument == "--eager-system-fonts" { eager_system_fonts = true }
+		if argument == "--fallback-probe-after-first-frame" { fallback_probe = true }
 		prefix := "--idle-validation-seconds="
 		legacy_prefix := "--idle-proof-seconds="
 		if strings.has_prefix(argument, legacy_prefix) { prefix = legacy_prefix }
@@ -169,7 +176,17 @@ native_run_application :: proc(
 	startup.app_init_ns = native_startup_elapsed_ns(phase_start)
 	phase_start = time.tick_now()
 	live_before = rt.allocation_stats.persistent_requested_bytes_live
-	if !native_load_default_fonts(&rt) { fail("application bundled Runa fonts could not be initialized") }
+	// Deferred system fallbacks are the phase-2 prototype: the bundled faces
+	// load here, and DirectWrite's fallback stack is resolved on the first
+	// shaping request that no loaded face covers. --eager-system-fonts keeps
+	// the pre-change path for paired measurement.
+	defer_system_fonts := !eager_system_fonts
+	if !native_load_default_fonts(&rt, defer_system_fonts) {
+		fail("application bundled Runa fonts could not be initialized")
+	}
+	if defer_system_fonts && !native_arm_deferred_system_fonts(&rt) {
+		fail("deferred system font fallback loader could not be armed")
+	}
 	startup.fonts_requested_bytes = rt.allocation_stats.persistent_requested_bytes_live - live_before
 	startup.fonts_ns = native_startup_elapsed_ns(phase_start)
 	phase_start = time.tick_now()
@@ -196,5 +213,5 @@ native_run_application :: proc(
 	if !solid_ok { fail("application solid rectangle pipeline initialization failed") }
 	defer native_solid_destroy(&solid_renderer)
 	startup.renderers_make_ns = native_startup_elapsed_ns(renderers_start)
-	run_application_loop(window, device, &rt, &text_renderer, &surface_renderer, &solid_renderer, &metrics, application, smoke, input_debug, string(selected_driver), validation_timeout_seconds=validation_timeout_seconds, native_menu=&native_menu, startup=startup, startup_origin=startup_origin_tick)
+	run_application_loop(window, device, &rt, &text_renderer, &surface_renderer, &solid_renderer, &metrics, application, smoke, input_debug, string(selected_driver), validation_timeout_seconds=validation_timeout_seconds, native_menu=&native_menu, startup=startup, startup_origin=startup_origin_tick, fallback_probe=fallback_probe)
 }

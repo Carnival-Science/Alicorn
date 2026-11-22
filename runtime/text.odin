@@ -3,6 +3,7 @@ package alicorn
 
 import "core:mem"
 import "core:strings"
+import "core:time"
 import "core:unicode"
 import "core:unicode/utf8"
 import runa "../third_party/Runa"
@@ -92,6 +93,16 @@ Text_Engine :: struct {
 	font_face_order:      [dynamic]Font_Face_ID,
 	font_face_ids_by_pointer: map[rawptr]Font_Face_ID,
 	fallback_faces_by_role: [2]Text_Font_Fallback_List,
+	// Platform fallbacks can be resolved lazily. A host arms a loader before
+	// the first frame; shaping calls it once, synchronously, on the first run
+	// whose clusters no loaded face covers.
+	system_fallback_loader:    Text_System_Fallback_Loader,
+	system_fallback_context:   rawptr,
+	system_fallback_armed:     bool,
+	system_fallback_attempted: bool,
+	system_fallback_faces:     int,
+	system_fallback_ns:        u64,
+	system_fallback_fired_at:  time.Tick,
 	font_file_bytes:      int,
 	next_font_file_id:    u32,
 	next_font_face_id:    u32,
@@ -117,6 +128,13 @@ Text_Font_Face :: struct {
 Text_Font_Fallback_List :: struct {
 	ids: [dynamic]Font_Face_ID,
 }
+
+// Text_System_Fallback_Loader is the host-owned platform font resolver. It is
+// called at most once per Text_Engine, synchronously on the shaping thread, and
+// must not shape text or re-enter the text engine. `ctx` is the pointer the
+// host supplied when arming the loader. The return value is the number of
+// fallback faces added to the engine.
+Text_System_Fallback_Loader :: #type proc(ctx: rawptr) -> int
 
 Text_Font_Source :: enum u8 {
 	Primary,
@@ -427,6 +445,37 @@ text_engine_font_stack :: proc(engine: ^Text_Engine, role: Font_Role, allocator 
 		if !already_present { append(&stack, fallback) }
 	}
 	return stack[:]
+}
+
+// text_engine_arm_system_fallback_loader defers platform fallback discovery
+// until shaping misses a face. The loader runs at most once; a miss that no
+// platform face resolves is terminal because repeating the synchronous query
+// for every later run would charge the same cost again.
+text_engine_arm_system_fallback_loader :: proc(
+	engine: ^Text_Engine,
+	ctx: rawptr,
+	loader: Text_System_Fallback_Loader,
+) -> bool {
+	if engine == nil || loader == nil { return false }
+	engine.system_fallback_loader = loader
+	engine.system_fallback_context = ctx
+	engine.system_fallback_armed = true
+	engine.system_fallback_attempted = false
+	return true
+}
+
+// text_engine_system_fallback_load runs the armed loader once and records the
+// synchronous cost. It is called from shaping, so the caller owns the
+// resulting interactive latency; there is no background timer or worker.
+text_engine_system_fallback_load :: proc(engine: ^Text_Engine) -> int {
+	if engine == nil || !engine.system_fallback_armed || engine.system_fallback_attempted { return 0 }
+	engine.system_fallback_attempted = true
+	started := time.tick_now()
+	added := engine.system_fallback_loader(engine.system_fallback_context)
+	engine.system_fallback_ns = u64(time.duration_nanoseconds(time.tick_since(started)))
+	engine.system_fallback_faces = added
+	if added > 0 { engine.system_fallback_fired_at = started }
+	return added
 }
 
 text_engine_registered_font_file_count :: proc(engine: ^Text_Engine) -> int {
@@ -1141,6 +1190,19 @@ text_tab_advance :: proc(line_x, space_advance: f32) -> f32 {
 	return advance
 }
 
+// text_lines_have_unresolved_fallback reports whether any shaped cluster
+// remained uncovered by the current face stack. Runa keeps such clusters with
+// the primary face and marks them, which is the precise signal that a
+// platform fallback face could satisfy the run.
+text_lines_have_unresolved_fallback :: proc(lines: []runa.Line) -> bool {
+	for line in lines {
+		for glyph in line.glyphs {
+			if glyph.unresolved_fallback { return true }
+		}
+	}
+	return false
+}
+
 // text_run_build shapes a complete paragraph and copies its logical geometry.
 // The returned product is safe to retain after Runa destroys its temporary
 // Line values. Coordinates are in the same logical units as the requested
@@ -1153,15 +1215,6 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 	if len(font_stack_storage) == 0 || size <= 0 { return }
 	font := font_stack_storage[0]
 	resolved_font_weight := text_engine_resolve_font_weight(engine, font_role, font_source, false, font_weight)
-	_ = text_engine_apply_font_weight(font, text_engine_weight_axis(engine, font_role, font_source), resolved_font_weight)
-	for candidate in font_stack_storage[1:] {
-		candidate_weight := text_engine_resolve_font_weight_for_font(engine, font_role, candidate, font_weight)
-		_ = text_engine_apply_font_weight(candidate, text_engine_role_weight_axis_for_font(engine, font_role, candidate), candidate_weight)
-	}
-	defer {
-		for candidate in font_stack_storage { runa.font_reset_variations(candidate) }
-	}
-	stack := runa.Font_Stack(font_stack_storage)
 	features: []runa.Feature_Setting
 	if editable {
 		// Follow the code-editor convention: keep discretionary ligatures off
@@ -1171,7 +1224,6 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 		features = runa.NO_LIGATURES[:]
 	}
 	wrap_width := max_width if overflow == .Wrap else 0
-	opts := runa.Paragraph_Opts{fonts=stack, size=size, direction=.Auto, align=.Start, max_width=wrap_width, features=features}
 	normalized_value, source_spans := text_normalize_controls(value, scratch_allocator)
 	defer { delete(source_spans) }
 	resolved_style_spans := text_style_spans_for_run(
@@ -1179,12 +1231,37 @@ text_run_build :: proc(engine: ^Text_Engine, value: string, size: f32, max_width
 		font_role, font_source, resolved_font_weight, scratch_allocator,
 	)
 	defer { delete(resolved_style_spans) }
-	previous_temp_allocator := context.temp_allocator
-	context.temp_allocator = scratch_allocator
+	opts := runa.Paragraph_Opts{size=size, direction=.Auto, align=.Start, max_width=wrap_width, features=features}
 	opts.font_style_spans = resolved_style_spans[:]
-	lines, err := runa.layout_paragraph(normalized_value, opts, &engine.cache, allocator=allocator)
-	context.temp_allocator = previous_temp_allocator
-	if err != .None { return }
+	lines: []runa.Line
+	// A lazily armed platform fallback stack is resolved on the first run that
+	// no loaded face covers, then the run is shaped once more against the
+	// widened stack. A host that loads platform faces eagerly leaves the loader
+	// unarmed and this loop runs exactly once.
+	for attempt in 0..=1 {
+		_ = text_engine_apply_font_weight(font, text_engine_weight_axis(engine, font_role, font_source), resolved_font_weight)
+		for candidate in font_stack_storage[1:] {
+			candidate_weight := text_engine_resolve_font_weight_for_font(engine, font_role, candidate, font_weight)
+			_ = text_engine_apply_font_weight(candidate, text_engine_role_weight_axis_for_font(engine, font_role, candidate), candidate_weight)
+		}
+		opts.fonts = runa.Font_Stack(font_stack_storage)
+		previous_temp_allocator := context.temp_allocator
+		context.temp_allocator = scratch_allocator
+		err: runa.Error
+		lines, err = runa.layout_paragraph(normalized_value, opts, &engine.cache, allocator=allocator)
+		context.temp_allocator = previous_temp_allocator
+		if err != .None { return }
+		if attempt == 1 || !text_lines_have_unresolved_fallback(lines) { break }
+		if text_engine_system_fallback_load(engine) == 0 { break }
+		for i := 0; i < len(lines); i += 1 { runa.line_destroy(&lines[i], allocator) }
+		delete(lines, allocator)
+		for candidate in font_stack_storage { runa.font_reset_variations(candidate) }
+		font_stack_storage = text_engine_font_stack(engine, font_role, scratch_allocator)
+		if len(font_stack_storage) == 0 { return }
+	}
+	defer {
+		for candidate in font_stack_storage { runa.font_reset_variations(candidate) }
+	}
 	defer {
 		for i := 0; i < len(lines); i += 1 { runa.line_destroy(&lines[i], allocator) }
 		delete(lines, allocator)

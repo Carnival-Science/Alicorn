@@ -89,6 +89,23 @@ native_startup_elapsed_ns :: proc(origin: time.Tick) -> u64 {
 	return u64(time.duration_nanoseconds(time.tick_since(origin)))
 }
 
+// native_tick_elapsed_ns reports the elapsed nanoseconds from origin to a
+// recorded monotonic moment. A zero moment means "not observed" and reports 0,
+// even if the clock happens to be monotonic since process start.
+native_tick_elapsed_ns :: proc(origin, moment: time.Tick) -> u64 {
+	if origin == (time.Tick{}) || moment == (time.Tick{}) { return 0 }
+	elapsed := time.duration_nanoseconds(time.tick_diff(origin, moment))
+	if elapsed <= 0 { return 0 }
+	return u64(elapsed)
+}
+
+// runtime_live_bytes reports the runtime's persistent requested bytes while the
+// process is alive. It is the allocator-requested view, not resident memory.
+runtime_live_bytes :: proc(rt: ^alicorn.Runtime) -> i64 {
+	if rt == nil || rt.allocation_stats == nil { return 0 }
+	return rt.allocation_stats.persistent_requested_bytes_live
+}
+
 // native_print_startup_attribution reports the eager host-owned resources that
 // Alicorn creates before the first frame. SDL_GPU does not expose allocation
 // sizes for device resources, so these are the host-declared sizes: buffer and

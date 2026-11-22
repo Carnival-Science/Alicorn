@@ -295,7 +295,13 @@ defer a visible hitch to the first frame or first interaction.
    embedded and Latin-complete. Risk: the first CJK/Arabic/emoji glyph would
    synchronously load a system face. Bound the load set, keep the common faces
    lazily seeded on the first miss, and measure the first-miss latency before
-   adopting.
+   adopting. **Phase-2 outcome (2026-11-22): NO-GO as prototyped.** The startup
+   win is real (fonts phase 0.00–0.23 ms, runtime requested live −68.9 MiB,
+   working set −96 to −165 MiB, 12/12 paired rounds in Hello, Scratchpad and
+   Punks), but the first shaping request that needs a platform face pays a
+   synchronous 116–121 ms stall, so the change moves a visible hitch to first
+   text input. See
+   [`native-startup-deferred-fallback-windows-2026-11-22.md`](native-startup-deferred-fallback-windows-2026-11-22.md).
 2. **Lazy icon-atlas upload (and its `SDL_WaitForGPUIdle`).** Save the 1.84 MB
    atlas upload and its staging buffer from every app that does not draw an
    icon at startup. Hello draws no icon but pays it inside
