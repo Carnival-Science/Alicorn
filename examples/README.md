@@ -13,7 +13,7 @@ Install Odin and the native prerequisites from
 |---|---|---|
 | 1 | [Hello](01_hello/main.odin) | Typed `ui.run`, app-owned state, text, and a button |
 | 2 | [Form](02_form/main.odin) | One-package controls, managed text buffers, accessible labels, and app-owned values |
-| 3 | [Async List](03_async_list/main.odin) | Typed `ui.run` lifecycle, app-owned worker/completion storage, `ui.key_scope`, scoped virtualization, and true idle |
+| 3 | [Async List](03_async_list/main.odin) | Typed `ui.run` lifecycle, app-owned worker/page storage, incremental wake adoption, `ui.key_scope`, scoped virtualization, and true idle |
 | 4 | [Custom Surface](04_custom_surface/main.odin) | Retained GPU geometry inside a clipped UI panel; resize and DPI-aware updates |
 | 5 | [Inspector](05_inspector/main.odin) | Retained tree, focus, semantic actions, and invalidation causes |
 | 6 | [Secondary Windows](06_secondary_windows/main.odin) | Opening and closing a tool window with independent application state |
@@ -66,12 +66,13 @@ build. Program arguments follow the example name on the shell runner and use
 1. In `01_hello`, change the greeting or button label, then click **Increment**.
 2. In `02_form`, edit the name, toggle the checkbox, adjust the slider, and
    compare the application-owned values shown at the bottom.
-3. In `03_async_list`, wait for the worker result, scroll, and select rows. The
-   list describes only visible records. Follow the explicit worker start,
-   mutex-protected completion and shutdown join; `ui.wake` requests one host
-   event, and `on_wake` adopts the result and calls `ui.invalidate`. The host
-   then returns to event wait. Pass `--smoke` to run the bounded wake/idle
-   check (`./tools/run_example.sh 03_async_list --smoke`).
+3. In `03_async_list`, watch 500-row pages arrive, scroll while they load, and
+   select rows. The list describes only visible records. The worker publishes
+   completed prefixes under a mutex and calls `ui.wake`; `on_wake` adopts the
+   latest prefix and invalidates the UI. Wakes can coalesce, and the host
+   returns to event wait after the worker completes. Pass `--smoke` to check
+   completion and bounded post-load descriptions
+   (`./tools/run_example.sh 03_async_list --smoke`).
 4. In `04_custom_surface`, change the waveform function or segment count. The
    application description stays idle while scheduled callbacks update the
    retained surface geometry.
