@@ -275,15 +275,19 @@ run_hosted_config :: proc(
 		bindings=run_state.bindings,
 		window_decorations=run_state.window_decorations,
 		window_chrome_height=run_state.window_chrome_height,
-		window_chrome_metrics=chrome_metrics,
-		window_chrome_layout=chrome_layout,
-		window_chrome_appearance=chrome_appearance,
 		on_host_services=host_services,
 		post_wake_data=post_wake_data,
 		post_wake=post_wake,
 		render=describe,
 		interaction_update_policy=run_state.interaction_update_policy,
 	}
+	// A non-nil layout callback transfers titlebar hit testing to the app. Keep
+	// the host's integrated-caption drag behavior when the app declares no layout.
+	if run_state.window_chrome_metrics != nil || run_state.window_chrome_layout != nil {
+		config.window_chrome_metrics = chrome_metrics
+		config.window_chrome_layout = chrome_layout
+	}
+	if run_state.window_chrome_appearance != nil { config.window_chrome_appearance = chrome_appearance }
 	if run_state.on_initialize != nil { config.on_initialize = initialize }
 	if run_state.on_services != nil || run_state.on_start != nil { config.on_start = start }
 	if run_state.on_wake != nil { config.on_wake = wake }

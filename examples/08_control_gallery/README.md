@@ -27,7 +27,7 @@ application code in this directory.
 |---|---|---|
 | Overview | [`showcase.odin`](showcase.odin), [`foundations.odin`](foundations.odin) | A waveform built with retained geometry, a grouped Select, a gradient surface, a keyboard-accessible gain slider, and paint-only playhead motion. Scroll down for typography, built-in icons, buttons, and semantics. |
 | Controls | [`controls.odin`](controls.odin) | `ui.text_field` with app-owned required-field validation and the `.Invalid` state, pointer-bound checkbox and slider, slider value text, `select_control` with a disabled option, and keyboard/focus behavior. |
-| Collections | [`collections.odin`](collections.odin) | A 500-row fixed-height `ui.virtual_list`, connected document tabs with close and dirty states, a drag-reordered list with `Semantic_ID` sources and targets, and a non-virtualized `scroll_region`. |
+| Collections | [`collections.odin`](collections.odin) | A 500-row fixed-height `ui.virtual_list`, connected document tabs with close and dirty states, a drag-reordered list with `Semantic_ID` sources and targets, and an intrinsically measured non-virtualized `scroll_region`. |
 | Layout & surfaces | [`layout_surfaces.odin`](layout_surfaces.odin) | A draggable split with two panes, a shared-track `Grid`, surface-local `positioned_text`, a two-stop gradient, circle and arc surfaces, and a retained geometry surface updated after layout. |
 | Overlays | [`overlays_themes.odin`](overlays_themes.odin) | A modal overlay with application-owned dismissal and focus restoration, a delayed tooltip, persistent notices, a single-level context menu, and native View/Help menus with accelerators. |
 | Motion & themes | [`overlays_themes.odin`](overlays_themes.odin) | Paint-only retained motion, Ember and Paper palettes registered in code, the runtime default, a live-reloaded JSON theme, and a scoped accent override. |
@@ -52,6 +52,13 @@ menu storage, native menus, smoke mode, and the footer.
 6. In **Motion & themes**, switch to **Paper**, then edit
    [`theme.json`](theme.json) and choose **Reload theme.json**. Only color values
    may change; the last good palette stays active on parse or structure errors.
+
+The gallery's regular scroll regions measure their retained content at the
+resolved viewport width. Virtualized collections continue to provide explicit
+extents because their unrealized rows are not in the retained tree. The gallery
+interaction tests exercise nested wheel input, keyboard scrolling,
+scrollbar-thumb dragging, narrow card stacking, modal Escape dismissal, focus
+restoration, and deletion of one stable virtual-list record.
 
 ## Theme reload
 

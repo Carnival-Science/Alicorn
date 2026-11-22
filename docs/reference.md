@@ -1206,6 +1206,12 @@ position-based identity.
 - `virtual_list_ensure_visible` scrolls a fixed-row item into view.
 - `scroll_region_begin/end` and `virtual_list_metrics` are lower-level tools
   for custom or variable-height scrolling layouts.
+  Use `content_height_auto=true` with `scroll_region_begin` when all content is
+  described as retained children; Alicorn measures those children at the
+  assigned width and derives the scroll extent (including text wrapping). Keep
+  an explicit `content_height` for virtualized or otherwise unrealized content.
+  Set `focusable=true` to enable keyboard scrolling: arrows move by one line,
+  Page Up/Down move by one viewport, and Home/End jump to the content bounds.
   `scroll_region_begin(..., focus_visual=.Content)` opts one region out of the
   generic rectangular focus outline. The public `Scroll_Focus_Visual` enum has
   `Outline` (the default for every existing scroll region and list) and `Content`.

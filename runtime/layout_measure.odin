@@ -135,7 +135,9 @@ layout_size_is_fit_content :: proc(value: f32) -> bool {
 }
 
 layout_node_has_content_height :: proc(node: ^Node) -> bool {
-	if node == nil || node.adaptive_owner || !layout_size_is_fit_content(node.style.height) { return false }
+	if node == nil || node.adaptive_owner { return false }
+	if node.kind == .Scroll_Region && node.scroll_content_height_auto { return true }
+	if !layout_size_is_fit_content(node.style.height) { return false }
 	if node.kind == .Scroll_Region { return true }
 	return node.kind == .Container && (node.style.direction == .Column || node.style.direction == .Row)
 }
@@ -198,9 +200,10 @@ layout_measure_content_signature :: proc(rt: ^Runtime, node: ^Node) -> u64 {
 	h := hash_mix(1469598103934665603, node.layout_hash)
 	h = hash_mix(h, u64(node.kind))
 	h = hash_mix(h, u64(transmute(u32)node.scroll_content_height))
+	h = hash_mix(h, u64(node.scroll_content_height_auto ? 1 : 0))
 	// Scroll regions measure their declared logical extent, not the currently
 	// realized virtual rows. Scrolling therefore does not perturb this key.
-	if node.kind == .Scroll_Region { return h }
+	if node.kind == .Scroll_Region && !node.scroll_content_height_auto { return h }
 	for child_id in node.children {
 		child, ok := rt.nodes[child_id]
 		if !ok || child == nil || !child.active { continue }
@@ -315,12 +318,17 @@ layout_content_add_units :: proc(total: i64, amount: Layout_Unit) -> i64 {
 
 layout_measure_content_height :: proc(rt: ^Runtime, node: ^Node, constraints: Layout_Constraints) -> Layout_Unit {
 	if rt == nil || node == nil { return 0 }
-	if node.kind == .Scroll_Region {
+	content_constraints := constraints
+	if node.kind == .Scroll_Region && !node.scroll_content_height_auto {
 		outer := layout_unit_extent(node.scroll_content_height+2*maxf(node.style.padding, 0))
 		style_constraint := layout_axis_constraint_normalize(node.style.min_height, node.style.max_height)
 		return layout_measure_constrain_axis(outer, style_constraint)
 	}
-	if node.kind != .Container || (node.style.direction != .Column && node.style.direction != .Row) {
+	if node.kind == .Scroll_Region && node.scroll_content_height_auto {
+		content_constraints.height = layout_axis_constraint_normalize(0, -1)
+	}
+	if (node.kind != .Container && node.kind != .Scroll_Region) ||
+		(node.style.direction != .Column && node.style.direction != .Row) {
 		record_trace(rt, .Measure, node.id, "fit-content height currently requires a Row or Column Container")
 		return 0
 	}
@@ -333,7 +341,7 @@ layout_measure_content_height :: proc(rt: ^Runtime, node: ^Node, constraints: La
 			// Positioned children own explicit placement, not flow space.
 			if child.placement.valid { continue }
 			realized_children += 1
-			child_constraints := layout_content_child_constraints(rt, node, child, constraints)
+			child_constraints := layout_content_child_constraints(rt, node, child, content_constraints)
 			measured := layout_measure_node(rt, child, child_constraints)
 			child_state := rt.measure_states[child_id]
 			child_state.parent_size_dependencies = {.Height_To_Height}
@@ -360,8 +368,8 @@ layout_measure_content_height :: proc(rt: ^Runtime, node: ^Node, constraints: La
 		realized_children = len(children)
 		max_child_height: Layout_Unit = 0
 		row_width: f32 = -1
-		if !constraints.width.unbounded_max {
-			row_width = layout_unit_to_f32(constraints.width.max)
+		if !content_constraints.width.unbounded_max {
+			row_width = layout_unit_to_f32(content_constraints.width.max)
 		} else if node.style.width >= 0 {
 			row_width = clampf(node.style.width, node.style.min_width, node.style.max_width)
 		}
@@ -379,7 +387,7 @@ layout_measure_content_height :: proc(rt: ^Runtime, node: ^Node, constraints: La
 			resolve_main_sizes(rt, children[:], .Row, available_units, main_sizes)
 			for child_id, index in children {
 				child := rt.nodes[child_id]
-				child_constraints := layout_content_row_assigned_child_constraints(rt, child, main_sizes[index], constraints)
+				child_constraints := layout_content_row_assigned_child_constraints(rt, child, main_sizes[index], content_constraints)
 				measured := layout_measure_node(rt, child, child_constraints)
 				child_state := rt.measure_states[child_id]
 				child_state.parent_size_dependencies = {.Width_To_Height, .Height_To_Height}
@@ -421,10 +429,14 @@ layout_measure_content_dependencies :: proc(
 	node: ^Node,
 	constraints: Layout_Constraints,
 ) -> Measure_Constraint_Dependencies {
-	if rt == nil || node == nil || node.kind != .Container { return {} }
+	if rt == nil || node == nil ||
+		(node.kind != .Container && !(node.kind == .Scroll_Region && node.scroll_content_height_auto)) { return {} }
 	dependencies: Measure_Constraint_Dependencies
 	if !constraints.width.unbounded_max { dependencies += {.Width_To_Width} }
-	if !constraints.height.unbounded_max { dependencies += {.Height_To_Height} }
+	if !constraints.height.unbounded_max &&
+		!(node.kind == .Scroll_Region && node.scroll_content_height_auto) {
+		dependencies += {.Height_To_Height}
+	}
 	for child_id in node.children {
 		child, ok := rt.nodes[child_id]
 		if !ok || child == nil || !child.active { continue }

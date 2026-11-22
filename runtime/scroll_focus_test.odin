@@ -167,6 +167,92 @@ test_scroll_focus_visual_changes_only_paint :: proc(t: ^testing.T) {
 	}
 }
 
+scroll_auto_extent_test_render :: proc(rt: ^Runtime, rows: int) -> Node_ID {
+	invalidate_root(rt, "auto scroll extent fixture")
+	ui, build := begin_frame(rt)
+	if !build { return 0 }
+	container_begin(&ui, .Root, key=key_string("auto-scroll-root"),
+		style=layout_style(.Column, width=320, height=160))
+	region := scroll_region_begin(
+		&ui,
+		key=key_string("auto-scroll-region"),
+		viewport_height=100,
+		content_height_auto=true,
+		line_height=20,
+		style=layout_style(.Column, width=200, height=100),
+		label="Measured content scroll region",
+		axes=.Vertical,
+		focusable=true,
+	)
+	for row in 0..<rows {
+		_ = text(&ui, "Measured row", key=key_u64(u64(row+1)),
+			style=layout_style(height=20))
+	}
+	scroll_region_end(&ui)
+	container_end(&ui)
+	end_frame(&ui)
+	return region.id
+}
+
+@(test)
+test_scroll_region_measures_realized_content_and_keeps_input :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 320, 160})
+	defer destroy_runtime(&rt)
+	region_id := scroll_auto_extent_test_render(&rt, 12)
+	if !testing.expect(t, region_id != 0, "the measured scroll region should be described") { return }
+	node := rt.nodes[region_id]
+	testing.expect(t,
+		node.scroll_content_height_auto && node.scroll_content_height >= 240 &&
+		node.scrollbar_vertical_visible && node.scrollbar_vertical_thumb.h > 0,
+		"the runtime should derive the full content extent and a usable scrollbar thumb")
+	if !testing.expect(t, focus(&rt, region_id), "the explicitly focusable scroll region should accept keyboard focus") { return }
+	_ = application_route_focused_control_key(&rt, .Down)
+	if !testing.expect(t, scroll_region_offset(&rt, region_id) == 20,
+		"Arrow Down should advance a focused region by its configured line height") { return }
+	_ = application_route_focused_control_key(&rt, .Page_Down)
+	if !testing.expect(t, scroll_region_offset(&rt, region_id) == 120,
+		"Page Down should advance a focused region by one viewport") { return }
+	_ = application_route_focused_control_key(&rt, .End)
+	if !testing.expect(t, scroll_region_offset(&rt, region_id) == 140,
+		"End should reach the final content row") { return }
+	_ = application_route_focused_control_key(&rt, .Home)
+	if !testing.expect(t, scroll_region_offset(&rt, region_id) == 0,
+		"Home should return a focused region to its first row") { return }
+	viewport := node.scroll_viewport_bounds
+	handled := process_scroll(&rt, Scroll_Event{
+		delta_y=-1,
+		x=viewport.x+viewport.w*0.5,
+		y=viewport.y+viewport.h*0.5,
+	})
+	testing.expect(t, handled && scroll_region_offset(&rt, region_id) > 0,
+		"wheel input should advance the measured scroll region")
+
+	node = rt.nodes[region_id]
+	thumb := node.scrollbar_vertical_thumb
+	track := node.scrollbar_vertical_track
+	_ = process_pointer(&rt, Pointer_Event{
+		kind=.Down, x=thumb.x+thumb.w*0.5, y=thumb.y+thumb.h*0.5,
+		button=POINTER_BUTTON_PRIMARY,
+	})
+	_ = process_pointer(&rt, Pointer_Event{
+		kind=.Move, x=thumb.x+thumb.w*0.5, y=track.y+track.h-1,
+	})
+	testing.expect(t,
+		rt.scrollbar_drag_node == region_id &&
+		scroll_region_offset(&rt, region_id) >= node.scroll_content_height-node.scroll_viewport_height-1,
+		"dragging the measured thumb should reach the final content rows")
+	_ = process_pointer(&rt, Pointer_Event{
+		kind=.Up, x=thumb.x+thumb.w*0.5, y=track.y+track.h-1,
+		button=POINTER_BUTTON_PRIMARY,
+	})
+
+	_ = scroll_auto_extent_test_render(&rt, 16)
+	node = rt.nodes[region_id]
+	testing.expect(t, node.scroll_content_height >= 320 &&
+		scroll_region_offset(&rt, region_id) <= node.scroll_content_height-node.scroll_viewport_height,
+		"a re-described scroll region should update its extent and clamp retained offset safely")
+}
+
 @(test)
 test_scroll_focus_visual_preserves_semantic_focus_and_text_input :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 320, 120})

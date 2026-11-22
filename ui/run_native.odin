@@ -326,11 +326,17 @@ run_native_window_open :: proc(data: rawptr, description: alicorn.Hosted_Window_
 		bindings=description.config.bindings,
 		window_decorations=host.Window_Decoration_Mode(description.config.window_decorations),
 		window_chrome_height=description.config.window_chrome_height,
-		window_chrome_metrics=run_native_window_chrome_metrics,
-		window_chrome_layout=run_native_window_chrome_layout,
-		window_chrome_appearance=run_native_window_chrome_appearance,
 		build=run_native_window_build,
 		interaction_update_policy=host.Application_Interaction_Update_Policy(description.config.interaction_update_policy),
+	}
+	// A non-nil layout callback transfers titlebar hit testing to the app. Keep
+	// the host's integrated-caption drag behavior when the app declares no layout.
+	if description.config.window_chrome_metrics != nil || description.config.window_chrome_layout != nil {
+		application.window_chrome_metrics = run_native_window_chrome_metrics
+		application.window_chrome_layout = run_native_window_chrome_layout
+	}
+	if description.config.window_chrome_appearance != nil {
+		application.window_chrome_appearance = run_native_window_chrome_appearance
 	}
 	if description.config.on_initialize != nil { application.on_initialize = run_native_window_initialize }
 	if description.config.on_host_services != nil { application.on_services = run_native_window_services }
@@ -577,12 +583,16 @@ run_application :: proc(
 		bindings=run_state.bindings,
 		window_decorations=host.Window_Decoration_Mode(run_state.window_decorations),
 		window_chrome_height=run_state.window_chrome_height,
-		window_chrome_metrics=chrome_metrics,
-		window_chrome_layout=chrome_layout,
-		window_chrome_appearance=chrome_appearance,
 		build=build,
 		interaction_update_policy=host.Application_Interaction_Update_Policy(run_state.interaction_update_policy),
 	}
+	// Leave these callbacks nil for ordinary integrated titlebars so native
+	// hosts keep their default draggable caption surface.
+	if run_state.window_chrome_metrics != nil || run_state.window_chrome_layout != nil {
+		application.window_chrome_metrics = chrome_metrics
+		application.window_chrome_layout = chrome_layout
+	}
+	if run_state.window_chrome_appearance != nil { application.window_chrome_appearance = chrome_appearance }
 	if run_state.on_initialize != nil { application.on_initialize = initialize }
 	if run_state.on_services != nil { application.on_services = on_services }
 	if run_state.on_start != nil { application.on_start = start }

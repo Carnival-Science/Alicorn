@@ -211,8 +211,12 @@ focused_control_key_from_sdl :: proc(key: sdl3.Keycode) -> (mapped: alicorn.Appl
 	switch key {
 	case sdl3.K_SPACE: return .Toggle, true
 	case sdl3.K_RETURN, sdl3.K_KP_ENTER: return .Return, true
-	case sdl3.K_LEFT, sdl3.K_DOWN: return .Left, true
-	case sdl3.K_RIGHT, sdl3.K_UP: return .Right, true
+	case sdl3.K_LEFT: return .Left, true
+	case sdl3.K_DOWN: return .Down, true
+	case sdl3.K_RIGHT: return .Right, true
+	case sdl3.K_UP: return .Up, true
+	case sdl3.K_PAGEUP: return .Page_Up, true
+	case sdl3.K_PAGEDOWN: return .Page_Down, true
 	case sdl3.K_HOME: return .Home, true
 	case sdl3.K_END: return .End, true
 	case: return {}, false

@@ -141,26 +141,27 @@ gallery_reorder_list :: proc(app: ^App, ctx: ^ui.UI) {
 gallery_virtual_records :: proc(app: ^App, ctx: ^ui.UI) {
 	if list, ok := ui.virtual_list(
 		ctx,
-		GALLERY_RECORD_COUNT,
+		app.record_count,
 		GALLERY_ROW_HEIGHT,
 		key="gallery-records",
 		width=-1,
 		height=260,
 		grow=0,
-		label="500 stable records",
+		label=fmt.tprintf("%d stable records", app.record_count),
 		focusable=true,
 	); ok {
 		for position in list.first..<list.last {
+			record_id := app.record_ids[position]
 			if ui.button(
 				ctx,
-				gallery_record_label(app, position),
-				key=ui.key_u64(u64(position+1)),
+				gallery_record_label(app, record_id),
+				key=ui.key_u64(u64(record_id+1)),
 				style=ui.layout_style(.Row, width=-1, height=GALLERY_ROW_HEIGHT),
-				state=alicorn.Button_State{selected=position == app.selected_record},
+				state=alicorn.Button_State{selected=record_id == app.selected_record},
 				content_style=alicorn.button_content_style(.Start, .Center, padding_x=10),
 				variant=.Default,
 			) {
-				app.selected_record = position
+				app.selected_record = record_id
 			}
 		}
 	}
@@ -171,11 +172,12 @@ gallery_scroll_lines :: proc(ctx: ^ui.UI) {
 		ctx,
 		key="gallery-scroll-region",
 		viewport_height=118,
-		content_height=22*22,
+		content_height_auto=true,
 		line_height=22,
 		style=ui.layout_style(.Column, height=118, clip=true),
 		label="Non-virtualized scroll region",
 		axes=.Vertical,
+		focusable=true,
 	)
 	if region.id == 0 { return }
 	if ui.column(ctx, gap=0, label="gallery-scroll-content") {
@@ -202,28 +204,34 @@ gallery_collections :: proc(app: ^App, ctx: ^ui.UI) {
 	)
 
 	if gallery_section_columns(ctx) {
-		if ui.column(ctx, grow=1, gap=12) {
+		column_grow := f32(1) if ctx.runtime.viewport.w >= GALLERY_TWO_COLUMN_WIDTH else f32(0)
+		if ui.column(ctx, grow=column_grow, gap=12) {
 			if ui.panel(ctx, key=alicorn.key_string("collections-records"), padding=12, gap=8, stroke=ui.border(1, alicorn.style_color(ctx, .Border)), radius=8, label="Virtual list") {
-				gallery_card_title(ctx, fmt.tprintf("Virtual list · %d fixed-height rows", GALLERY_RECORD_COUNT))
+				gallery_card_title(ctx, fmt.tprintf("Virtual list · %d fixed-height rows", app.record_count))
 				gallery_virtual_records(app, ctx)
-				ui.text(
-					ctx,
-					fmt.tprintf("Selected %03d · only [first,last) rows are described",
-						app.selected_record+1),
-					size=12,
-					color=alicorn.style_color(ctx, .Muted_Text),
-				)
+				if app.record_count > 0 {
+					ui.text(
+						ctx,
+						fmt.tprintf("Selected %03d · only [first,last) rows are described",
+							app.selected_record+1),
+						size=12,
+						color=alicorn.style_color(ctx, .Muted_Text),
+					)
+				} else {
+					ui.text(ctx, "No records remain. Restart the gallery to reset the sample.",
+						size=12, color=alicorn.style_color(ctx, .Muted_Text))
+				}
 			}
 
 			if ui.panel(ctx, key=alicorn.key_string("collections-scroll"), padding=12, gap=8, stroke=ui.border(1, alicorn.style_color(ctx, .Border)), radius=8, label="Scroll region") {
 				gallery_card_title(ctx, "Scroll region · 22 logical lines")
 				gallery_scroll_lines(ctx)
-				ui.text(ctx, "Wheel, scrollbar, Page Up/Down, Home, and End are retained by the region.",
+				ui.text(ctx, "Tab to focus, then use arrows, Page Up/Down, Home, or End to scroll.",
 					size=11, color=alicorn.style_color(ctx, .Muted_Text))
 			}
 		}
 
-		if ui.column(ctx, grow=1, gap=12) {
+		if ui.column(ctx, grow=column_grow, gap=12) {
 			if ui.panel(ctx, key=alicorn.key_string("collections-documents"), padding=12, gap=8, stroke=ui.border(1, alicorn.style_color(ctx, .Border)), radius=8, label="Document tabs") {
 				gallery_card_title(ctx, "Document tabs · close and dirty state")
 				gallery_document_tabs(app, ctx)

@@ -91,15 +91,8 @@ GALLERY_SECTION_TITLES := [GALLERY_SECTION_COUNT]string{
 	"Overlays",
 	"Motion & themes",
 }
-
-// Allow room for each section's reference controls below the fold.
-GALLERY_SECTION_HEIGHTS := [GALLERY_SECTION_COUNT]f32{
-	1080,
-	700,
-	700,
-	720,
-	600,
-	650,
+GALLERY_SECTION_TAB_LABELS := [GALLERY_SECTION_COUNT]string{
+	"Overview", "Controls", "Lists", "Layout", "Dialogs", "Motion",
 }
 
 GALLERY_ICONS := [15]Icon_Caption{
@@ -156,6 +149,9 @@ App :: struct {
 	search_selected: bool,
 
 	selected_record: int,
+	record_count:    int,
+	record_ids:      [GALLERY_RECORD_COUNT]int,
+	record_ids_initialized: bool,
 	renamed_record:  bool,
 	order:           [5]Order_Item,
 	selected_order:  int,
@@ -167,6 +163,7 @@ App :: struct {
 
 	dialog_open:   bool,
 	dialog_opener: alicorn.Node_ID,
+	dialog_focus_restore_attempts: int,
 	command_status: [160]u8,
 	command_status_len: int,
 	pending_notice: bool,
@@ -523,10 +520,10 @@ gallery_apply_command :: proc(app: ^App, command: alicorn.Action_ID) {
 	}
 }
 
-gallery_record_label :: proc(app: ^App, position: int) -> string {
-	label := fmt.tprintf("Record %03d · %s", position+1, "stable")
-	if app != nil && app.renamed_record && position == app.selected_record {
-		return fmt.tprintf("Record %03d · renamed", position+1)
+gallery_record_label :: proc(app: ^App, record_id: int) -> string {
+	label := fmt.tprintf("Record %03d · %s", record_id+1, "stable")
+	if app != nil && app.renamed_record && record_id == app.selected_record {
+		return fmt.tprintf("Record %03d · renamed", record_id+1)
 	}
 	return label
 }
@@ -547,12 +544,12 @@ gallery_section_content :: proc(app: ^App, ctx: ^ui.UI) {
 
 gallery_navigation :: proc(app: ^App, ctx: ^ui.UI) {
 	items: [GALLERY_SECTION_COUNT]alicorn.Tab_Bar_Item
-	for title, index in GALLERY_SECTION_TITLES {
+	for title, index in GALLERY_SECTION_TAB_LABELS {
 		items[index] = alicorn.Tab_Bar_Item{
 			key=ui.key_u64(u64(index+1)),
 			label=title,
 			selected=app.section == Section(index),
-			tooltip=title,
+			tooltip=GALLERY_SECTION_TITLES[index],
 		}
 	}
 	result := alicorn.tab_bar(
@@ -560,7 +557,7 @@ gallery_navigation :: proc(app: ^App, ctx: ^ui.UI) {
 		"gallery-sections",
 		items[:],
 		options=alicorn.Tab_Bar_Options{
-			min_tab_width=126, max_tab_width=182, height=40, gap=2, presentation=.Compact, appearance=.Connected,
+			min_tab_width=82, max_tab_width=134, height=40, gap=2, presentation=.Compact, appearance=.Connected,
 			selected_fill=alicorn.style_color(ctx, .Surface),
 			selected_text=alicorn.style_color(ctx, .Text), selected_fill_set=true,
 		},
@@ -623,11 +620,8 @@ render :: proc(app: ^App, ctx: ^ui.UI) {
 			gallery_navigation(app, ctx)
 			if ui.panel(ctx, key="gallery-workspace", grow=1, clip=true,
 				corner_radii={top_right=14, bottom_right=14, bottom_left=14}, label="Gallery workspace") {
-				height := GALLERY_SECTION_HEIGHTS[int(app.section)]
-				if ctx.runtime.viewport.w < GALLERY_TWO_COLUMN_WIDTH { height += 440 }
-				if compact && app.section == .Overview { height += 330 }
 				region := alicorn.scroll_region_begin(ctx, key=ui.key_u64(u64(int(app.section)+1)),
-					content_height=height, line_height=28,
+					content_height_auto=true, line_height=28,
 					style=ui.layout_style(.Column, grow=1, clip=true),
 					label="Gallery section content", axes=.Vertical)
 				if region.id != 0 {
@@ -670,6 +664,10 @@ gallery_palette :: proc(hex_colors: [alicorn.STYLE_COLOR_ROLE_COUNT]u32) -> alic
 gallery_initialize :: proc(app: ^App, rt: ^alicorn.Runtime) {
 	if app == nil || rt == nil { return }
 	app.allocator = context.allocator
+	if !app.record_ids_initialized {
+		for record_id in 0..<GALLERY_RECORD_COUNT { app.record_ids[record_id] = record_id }
+		app.record_ids_initialized = true
+	}
 
 	// Register two palettes over the built-in component recipes.
 	ember_colors := [alicorn.STYLE_COLOR_ROLE_COUNT]u32{
@@ -781,6 +779,7 @@ main :: proc() {
 		gain=0.65,
 		density_key=2,
 		selected_record=41,
+		record_count=GALLERY_RECORD_COUNT,
 		selected_order=0,
 		active_doc=0,
 		motion_choice=0,

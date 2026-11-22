@@ -27,9 +27,11 @@ gallery_section_columns_end :: proc(ctx: ^ui.UI, opened: bool) {
 
 @(deferred_in_out=gallery_section_columns_end)
 gallery_section_columns :: proc(ctx: ^ui.UI) -> bool {
-	direction := alicorn.Layout_Direction.Row if ctx.runtime.viewport.w >= GALLERY_TWO_COLUMN_WIDTH else .Column
+	two_columns := ctx.runtime.viewport.w >= GALLERY_TWO_COLUMN_WIDTH
+	direction := alicorn.Layout_Direction.Row if two_columns else .Column
+	align := alicorn.Align.Start if two_columns else .Stretch
 	return alicorn.container_begin(ctx, .Container, key="gallery-demo-columns",
-		style=ui.layout_style(direction, height=alicorn.LAYOUT_SIZE_FIT_CONTENT, gap=12, align=.Start)) != 0
+		style=ui.layout_style(direction, height=alicorn.LAYOUT_SIZE_FIT_CONTENT, gap=12, align=align)) != 0
 }
 
 gallery_icon_caption_row :: proc(ctx: ^ui.UI, captions: []Icon_Caption) {

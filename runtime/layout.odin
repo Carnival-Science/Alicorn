@@ -786,6 +786,33 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 	count := len(children)
 	inner := Rect{parent.bounds.x + parent.style.padding, parent.bounds.y + parent.style.padding, parent.bounds.w - 2*parent.style.padding, parent.bounds.h - 2*parent.style.padding}
 	if parent.kind == .Scroll_Region {
+		if parent.scroll_content_height_auto {
+			padding := maxf(parent.style.padding, 0)
+			constraints := Layout_Constraints{
+				width=layout_axis_constraint_normalize(parent.bounds.w, parent.bounds.w),
+				height=layout_axis_constraint_normalize(0, -1),
+			}
+			outer_height := layout_measure_content_height(rt, parent, constraints)
+			auto_height := maxf(layout_unit_to_f32(outer_height)-2*padding, 0)
+			auto_geometry := scroll_bar_geometry(
+				parent.bounds,
+				parent.scroll_content_width,
+				auto_height,
+				parent.style.padding,
+				parent.scroll_axes,
+				parent.scrollbar_policy,
+			)
+			if auto_geometry.vertical_visible {
+				content_outer_width := auto_geometry.viewport.w+2*padding
+				constraints.width = layout_axis_constraint_normalize(content_outer_width, content_outer_width)
+				outer_height = layout_measure_content_height(rt, parent, constraints)
+				auto_height = maxf(layout_unit_to_f32(outer_height)-2*padding, 0)
+			}
+			if parent.scroll_content_height != auto_height {
+				parent.scroll_content_height = auto_height
+				rt.scroll_geometry_changed = true
+			}
+		}
 		geometry := scroll_bar_geometry(
 			parent.bounds,
 			parent.scroll_content_width,

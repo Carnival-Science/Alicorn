@@ -211,9 +211,77 @@ application_dispatch_overlay_key :: proc(
 	return select_handled || context_menu_handle_key(rt, key)
 }
 
+// focused_scroll_region_key gives explicitly focusable scroll regions the
+// usual line, page, and endpoint navigation without claiming keys for every
+// scroll surface in the application.
+focused_scroll_region_key :: proc(rt: ^Runtime, key: Application_Key) -> bool {
+	if rt == nil { return false }
+	id := rt.focused
+	node, ok := rt.nodes[id]
+	if !ok || !node_is_presentation_active(rt, id) || node.kind != .Scroll_Region ||
+		!node.focusable || node.disabled || !node_is_in_modal_overlay(rt, id, modal_overlay_root(rt)) {
+		return false
+	}
+	line_y := node.scroll_line_height
+	if line_y <= 0 { line_y = 24 }
+	line_x := node.scroll_line_width
+	if line_x <= 0 { line_x = 24 }
+	max_y := maxf(node.scroll_content_height-node.scroll_viewport_height, 0)
+	max_x := maxf(node.scroll_content_width-node.scroll_viewport_width, 0)
+	#partial switch key {
+	case .Up:
+		if node.scroll_axes != .Horizontal {
+			_ = scroll_region_set_offset(rt, id, node.scroll_offset_y-line_y, "focused scroll region moved up")
+			return true
+		}
+	case .Down:
+		if node.scroll_axes != .Horizontal {
+			_ = scroll_region_set_offset(rt, id, node.scroll_offset_y+line_y, "focused scroll region moved down")
+			return true
+		}
+	case .Page_Up:
+		if node.scroll_axes != .Horizontal {
+			_ = scroll_region_set_offset(rt, id, node.scroll_offset_y-node.scroll_viewport_height, "focused scroll region paged up")
+			return true
+		}
+	case .Page_Down:
+		if node.scroll_axes != .Horizontal {
+			_ = scroll_region_set_offset(rt, id, node.scroll_offset_y+node.scroll_viewport_height, "focused scroll region paged down")
+			return true
+		}
+	case .Left:
+		if node.scroll_axes != .Vertical {
+			_ = scroll_region_set_offset_x(rt, id, node.scroll_offset_x-line_x, "focused scroll region moved left")
+			return true
+		}
+	case .Right:
+		if node.scroll_axes != .Vertical {
+			_ = scroll_region_set_offset_x(rt, id, node.scroll_offset_x+line_x, "focused scroll region moved right")
+			return true
+		}
+	case .Home:
+		if node.scroll_axes == .Horizontal {
+			_ = scroll_region_set_offset_x(rt, id, 0, "focused scroll region moved to horizontal start")
+		} else {
+			_ = scroll_region_set_offset(rt, id, 0, "focused scroll region moved to start")
+		}
+		return true
+	case .End:
+		if node.scroll_axes == .Horizontal {
+			_ = scroll_region_set_offset_x(rt, id, max_x, "focused scroll region moved to horizontal end")
+		} else {
+			_ = scroll_region_set_offset(rt, id, max_y, "focused scroll region moved to end")
+		}
+		return true
+	case:
+	}
+	return false
+}
+
 // application_route_focused_control_key is shared by native and headless
 // hosts after text and transient overlay routing has declined the key.
 application_route_focused_control_key :: proc(rt: ^Runtime, key: Application_Key) -> bool {
+	if focused_scroll_region_key(rt, key) { return true }
 	#partial switch key {
 	case .Toggle: return activate_focused(rt, .Space)
 	case .Return: return activate_focused(rt, .Enter)

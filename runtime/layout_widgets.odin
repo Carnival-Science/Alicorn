@@ -146,9 +146,9 @@ root :: proc(ui: ^UI, body: proc(), style := DEFAULT_STYLE, loc := #caller_locat
 	return root_simple(ui, body, style, loc)
 }
 
-// Scroll_Region_Handle is the resolved, retained state of a fixed-height
-// scroll region. The offset is owned by the runtime; applications use the
-// handle only to virtualize their content during the current description.
+// Scroll_Region_Handle is the resolved, retained state of a scroll region.
+// The offset is owned by the runtime; applications use the handle to
+// virtualize content during the current description.
 Scroll_Region_Handle :: struct {
 	id:              Node_ID,
 	offset_y:        f32,
@@ -183,15 +183,24 @@ scroll_region_begin :: proc(
 	focusable := false,
 	restore := Scroll_Restore_Request{},
 	focus_visual := Scroll_Focus_Visual.Outline,
+	content_height_auto := false,
 ) -> Scroll_Region_Handle {
 	rt := ui.runtime
 	resolved_source := resolve_source(Source_Site{}, "scroll_region", loc)
 	resolved_color, paints := resolve_container_color(.Scroll_Region, color)
+	resolved_content_height := content_height
+	if content_height_auto {
+		resolved_content_height = 0
+		identity := identity_hash_key(current_identity_parent(ui), resolved_source, key)
+		if previous, ok := rt.nodes[identity]; ok && previous.scroll_content_height_auto {
+			resolved_content_height = previous.scroll_content_height
+		}
+	}
 	resolved_viewport := viewport_height
 	if resolved_viewport <= 0 {
 		if style.height >= 0 { resolved_viewport = style.height }
 		if layout_size_is_fit_content(style.height) {
-			fit_height := content_height+2*maxf(style.padding, 0)
+			fit_height := resolved_content_height+2*maxf(style.padding, 0)
 			resolved_viewport = clampf(fit_height, maxf(style.min_height, 0), style.max_height)
 		}
 		if resolved_viewport <= 0 && !layout_size_is_fit_content(style.height) { resolved_viewport = 180 }
@@ -202,15 +211,15 @@ scroll_region_begin :: proc(
 		if resolved_width <= 0 { resolved_width = 320 }
 	}
 	outer_height, outer_width := resolved_viewport, resolved_width
-	geometry := scroll_bar_geometry(Rect{0, 0, outer_width, outer_height}, content_width, content_height, style.padding, axes, scrollbars)
+	geometry := scroll_bar_geometry(Rect{0, 0, outer_width, outer_height}, content_width, resolved_content_height, style.padding, axes, scrollbars)
 	resolved_viewport = geometry.viewport.h
 	resolved_width = geometry.viewport.w
-	max_scroll := maxf(content_height-resolved_viewport, 0)
+	max_scroll := maxf(resolved_content_height-resolved_viewport, 0)
 	max_scroll_x := maxf(content_width-resolved_width, 0)
 	id := emit_key(
 		ui, .Scroll_Region, resolved_source, label=label, key=key,
 		style=style, color=resolved_color, paint_background=paints, focusable=focusable,
-		scroll_content_height=content_height,
+		scroll_content_height=resolved_content_height,
 		scroll_viewport_height=resolved_viewport,
 		scroll_line_height=line_height,
 		scroll_content_width=content_width,
@@ -223,6 +232,7 @@ scroll_region_begin :: proc(
 	last := len(rt.pending)-1
 	if last >= 0 && rt.pending[last].kind == .Description && rt.pending[last].description.id == id {
 		rt.pending[last].description.scrollbar_policy = scrollbars
+		rt.pending[last].description.scroll_content_height_auto = content_height_auto
 		if focus_visual != .Outline {
 			if !rt.scroll_focus_visuals_initialized {
 				rt.scroll_focus_visuals = make(map[Node_ID]Scroll_Focus_Visual, allocator=rt.persistent_allocator)
@@ -246,12 +256,12 @@ scroll_region_begin :: proc(
 		if viewport_width <= 0 && style.width < 0 && previous.bounds.w > 0 {
 			outer_width = previous.bounds.w
 		}
-		geometry = scroll_bar_geometry(Rect{0, 0, outer_width, outer_height}, content_width, content_height, style.padding, axes, scrollbars, previous.scroll_offset_x, previous.scroll_offset_y)
+		geometry = scroll_bar_geometry(Rect{0, 0, outer_width, outer_height}, content_width, resolved_content_height, style.padding, axes, scrollbars, previous.scroll_offset_x, previous.scroll_offset_y)
 		resolved_viewport = geometry.viewport.h
 		resolved_width = geometry.viewport.w
-		offset_y = clampf(previous.scroll_offset_y, 0, maxf(content_height-resolved_viewport, 0))
+		offset_y = clampf(previous.scroll_offset_y, 0, maxf(resolved_content_height-resolved_viewport, 0))
 		offset_x = clampf(previous.scroll_offset_x, 0, maxf(content_width-resolved_width, 0))
-		max_scroll = maxf(content_height-resolved_viewport, 0)
+		max_scroll = maxf(resolved_content_height-resolved_viewport, 0)
 		max_scroll_x = maxf(content_width-resolved_width, 0)
 	}
 	request_started := false

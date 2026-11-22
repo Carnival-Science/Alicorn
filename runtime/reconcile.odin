@@ -172,6 +172,7 @@ description_hash :: proc(
 	h = hash_mix(h, u64(transmute(u32)d.scroll_offset_y))
 	h = hash_mix(h, u64(transmute(u32)d.scroll_offset_x))
 	h = hash_mix(h, u64(transmute(u32)d.scroll_content_height))
+	h = hash_mix(h, u64(d.scroll_content_height_auto ? 1 : 0))
 	h = hash_mix(h, u64(transmute(u32)d.scroll_viewport_height))
 	h = hash_mix(h, u64(transmute(u32)d.scroll_line_height))
 	h = hash_mix(h, u64(transmute(u32)d.scroll_content_width))
@@ -196,7 +197,9 @@ measure_input_hash_base :: proc(d: Description) -> (u64, bool) {
 		h = hash_mix(h, hash_string(d.text))
 	case .Scroll_Region:
 		if !layout_size_is_fit_content(d.style.height) { return h, false }
-		h = hash_mix(h, u64(transmute(u32)d.scroll_content_height))
+		if !d.scroll_content_height_auto {
+			h = hash_mix(h, u64(transmute(u32)d.scroll_content_height))
+		}
 	case:
 		return h, false
 	}
@@ -288,6 +291,7 @@ layout_hash :: proc(d: Description) -> u64 {
 	// reserved viewport and its descendant clipping, so they are layout inputs.
 	h = hash_mix(h, u64(transmute(u32)d.scroll_content_width))
 	h = hash_mix(h, u64(transmute(u32)d.scroll_content_height))
+	h = hash_mix(h, u64(d.scroll_content_height_auto ? 1 : 0))
 	h = hash_mix(h, u64(transmute(u32)d.scroll_viewport_width))
 	h = hash_mix(h, u64(transmute(u32)d.scroll_viewport_height))
 	h = hash_mix(h, u64(d.scroll_axes))
@@ -646,6 +650,7 @@ copy_node_description :: proc(
 	node.layout_scroll_offset_y = d.layout_scroll_offset_y
 	node.layout_scroll_offset_x = d.layout_scroll_offset_x
 	node.scroll_content_height = d.scroll_content_height
+	node.scroll_content_height_auto = d.scroll_content_height_auto
 	node.scroll_viewport_height = d.scroll_viewport_height
 	node.scroll_line_height = d.scroll_line_height
 	node.scroll_content_width = d.scroll_content_width
@@ -860,6 +865,7 @@ description_matches_retained :: proc(
 	   node.surface_pixel_height != d.surface_pixel_height ||
 	   node.surface_dpi_scale != d.surface_dpi_scale { return false }
 	if node.scroll_offset_y != d.scroll_offset_y || node.scroll_offset_x != d.scroll_offset_x ||
+	   node.scroll_content_height_auto != d.scroll_content_height_auto ||
 	   node.scroll_content_height != d.scroll_content_height ||
 	   node.scroll_viewport_height != d.scroll_viewport_height ||
 	   node.scroll_line_height != d.scroll_line_height ||

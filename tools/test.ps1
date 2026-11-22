@@ -75,6 +75,9 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin test ui "-collection:alicorn=$RepoRoot" @($AccessKit.CompilerArguments) -out:out\alicorn_ui_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $Odin test examples\08_control_gallery "-collection:alicorn=$RepoRoot" `
+	@($AccessKit.CompilerArguments) -out:out\alicorn_gallery_tests.exe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & "$PSScriptRoot\check_web_ui_package.ps1" -Odin $Odin
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin test testui "-collection:alicorn=$RepoRoot" @($AccessKit.CompilerArguments) -out:out\alicorn_testui_tests.exe

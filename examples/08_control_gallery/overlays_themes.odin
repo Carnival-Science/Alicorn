@@ -271,16 +271,53 @@ gallery_motion_themes :: proc(app: ^App, ctx: ^ui.UI) {
 
 gallery_restore_dialog_focus :: proc(state: rawptr, rt: ^alicorn.Runtime) {
 	app := cast(^App)state
-	if app != nil && app.dialog_opener != 0 {
-		_ = alicorn.focus(rt, app.dialog_opener)
+	if app == nil || app.dialog_opener == 0 { return }
+	if alicorn.focus(rt, app.dialog_opener) {
+		app.dialog_focus_restore_attempts = 0
+		return
+	}
+	// The description that consumed Escape still contains the modal subtree.
+	// Retry once after the invalidated root has been described without it.
+	if app.dialog_focus_restore_attempts == 0 {
+		app.dialog_focus_restore_attempts = 1
+		_ = alicorn.interaction_after_frame_register(rt, state, gallery_restore_dialog_focus)
 	}
 }
 
 gallery_close_dialog :: proc(app: ^App, ctx: ^ui.UI, message: string) {
 	app.dialog_open = false
+	app.dialog_focus_restore_attempts = 0
 	gallery_command_status_set(app, message)
 	_ = ui.after_frame(ctx, rawptr(app), gallery_restore_dialog_focus)
 	alicorn.invalidate_root(ctx.runtime, "gallery dialog dismissed")
+}
+
+gallery_delete_selected_record :: proc(app: ^App, ctx: ^ui.UI) {
+	if app == nil || ctx == nil { return }
+	if app.record_count <= 0 {
+		gallery_close_dialog(app, ctx, "There are no records left to delete.")
+		return
+	}
+	deleted_position := -1
+	for record_id, position in app.record_ids[:app.record_count] {
+		if record_id == app.selected_record {
+			deleted_position = position
+			break
+		}
+	}
+	if deleted_position < 0 { deleted_position = app.record_count-1 }
+	deleted_record := app.record_ids[deleted_position]
+	for position in deleted_position..<app.record_count-1 {
+		app.record_ids[position] = app.record_ids[position+1]
+	}
+	app.record_count -= 1
+	if app.record_count > 0 {
+		app.selected_record = app.record_ids[min(deleted_position, app.record_count-1)]
+	} else {
+		app.selected_record = 0
+	}
+	app.renamed_record = false
+	gallery_close_dialog(app, ctx, fmt.tprintf("Deleted record %03d from the collection.", deleted_record+1))
 }
 
 gallery_context_menu_overlay :: proc(app: ^App, ctx: ^ui.UI) {
@@ -304,16 +341,28 @@ gallery_context_menu_overlay :: proc(app: ^App, ctx: ^ui.UI) {
 }
 
 gallery_dialog_overlay :: proc(app: ^App, ctx: ^ui.UI) {
-	if alicorn.modal_overlay_begin(
+	overlay := alicorn.modal_overlay_begin(
 		ctx,
 		"gallery-modal",
 		style=ui.layout_style(.Column, align=.Center, justify=.Center),
 		backdrop_color=alicorn.Color{0.01, 0.02, 0.04, 0.74},
-	) == 0 { return }
+	)
+	if overlay == 0 { return }
 	theme_id := gallery_active_theme(app)
 	theme_scope := alicorn.Style_Environment_Scope{}
 	if theme_id != 0 {
 		theme_scope = alicorn.style_environment_push(ctx, alicorn.Style_Environment{theme=theme_id})
+	}
+	_ = alicorn.interaction_scope_register(ctx.runtime, overlay, rawptr(app), alicorn.Interaction_Scope_Options{
+		keys={.Escape},
+		modal=true,
+	})
+	for {
+		event, found := alicorn.interaction_event_next(ctx.runtime, overlay)
+		if !found { break }
+		if event.kind == .Key && event.key == .Escape {
+			gallery_close_dialog(app, ctx, "Cancelled the modal with Escape and restored focus.")
+		}
 	}
 	if ui.panel(ctx, width=440, height=218, padding=22, gap=12,
 		fill=alicorn.style_color(ctx, .Surface),
@@ -328,14 +377,14 @@ gallery_dialog_overlay :: proc(app: ^App, ctx: ^ui.UI) {
 			"A modal confirmation with destructive and cancel actions.",
 		)
 		gallery_card_title(ctx, "Confirm record deletion")
-		ui.text(ctx, fmt.tprintf("Record %03d will be removed. This sample does not modify the list; it demonstrates modal ownership.", app.selected_record+1),
+		ui.text(ctx, fmt.tprintf("Record %03d will be removed from the virtual list. This action cannot be undone for this session.", app.selected_record+1),
 			size=12, color=alicorn.style_color(ctx, .Muted_Text))
 		if ui.row(ctx, gap=8, align=.Center) {
-			if ui.button(ctx, "Delete", key="dialog-delete", width=110, height=32, variant=.Danger) {
-				gallery_close_dialog(app, ctx, "Confirmed deletion from the modal.")
-			}
 			if ui.button(ctx, "Cancel", key="dialog-cancel", width=110, height=32, variant=.Quiet) {
 				gallery_close_dialog(app, ctx, "Cancelled the modal and restored focus.")
+			}
+			if ui.button(ctx, "Delete", key="dialog-delete", width=110, height=32, variant=.Danger) {
+				gallery_delete_selected_record(app, ctx)
 			}
 			ui.text(ctx, "Escape also dismisses.", size=11,
 				color=alicorn.style_color(ctx, .Muted_Text))

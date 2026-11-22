@@ -107,11 +107,15 @@ test_sdl_pointer_modifier_cache_clears_on_focus_loss :: proc(t: ^testing.T) {
 
 @(test)
 test_sdl_control_key_mappings_are_backend_independent :: proc(t: ^testing.T) {
-	focused_cases := [6]struct { key: sdl3.Keycode, action: alicorn.Application_Key }{
+	focused_cases := [10]struct { key: sdl3.Keycode, action: alicorn.Application_Key }{
 		{sdl3.K_SPACE, .Toggle},
 		{sdl3.K_RETURN, .Return},
 		{sdl3.K_LEFT, .Left},
-		{sdl3.K_UP, .Right},
+		{sdl3.K_DOWN, .Down},
+		{sdl3.K_RIGHT, .Right},
+		{sdl3.K_UP, .Up},
+		{sdl3.K_PAGEUP, .Page_Up},
+		{sdl3.K_PAGEDOWN, .Page_Down},
 		{sdl3.K_HOME, .Home},
 		{sdl3.K_END, .End},
 	}
