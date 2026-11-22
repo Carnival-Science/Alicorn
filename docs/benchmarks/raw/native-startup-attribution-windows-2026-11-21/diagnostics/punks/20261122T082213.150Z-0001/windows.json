@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "kind": "alicorn-native-window-diagnostics",
+  "primary": {
+	  "sdl_window_id": 3,
+	  "sdl_position_x": 800,
+	  "sdl_position_y": 340,
+	  "focused": false,
+	  "mouse_focused": false,
+	  "always_on_top": false,
+	  "logical_width": 960,
+	  "logical_height": 720,
+	  "window_logical_height": 720,
+	  "pixel_width": 960,
+	  "pixel_height": 720,
+	  "pixel_density": 1.0000,
+	  "display_scale": 1.0000,
+	  "runtime": {
+	    "viewport": {"x": 0.000, "y": 0.000, "width": 960.000, "height": 720.000},
+	    "retained_nodes": 106,
+	    "display_commands": 95,
+	    "focused_node": 0,
+	    "gpu_submissions": 1,
+	    "frame_needs_submission": false,
+	    "presentation_revision": 6,
+	    "submitted_revision": 6
+	  }, "win32": null},
+  "secondary": null
+}

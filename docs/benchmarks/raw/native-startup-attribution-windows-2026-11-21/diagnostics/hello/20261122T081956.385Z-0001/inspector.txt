@@ -1,0 +1,44 @@
+Alicorn inspector
+keyboard focus: 0 selected node: 0 captured: 0
+semantic focus: none
+retained nodes: 5
+semantics: revision=1 entities=3 latest=(0>1 +3 -0) requests=0 work=(described=3 resolved=9 structure=3 properties=0 focus-search=0 active-update=0)
+last invalidation: SDL application initial frame
+drag: phase=Idle type=0 source=(0,0) source-node=0 target=(0,0) target-node=0 position=None state=Free tracking=Free preview=(mode=Auto ready=false 0.0x0.0 display-start=0 commands=0)
+frame: 1 built=1 idle=0 regions-skipped=0 subtrees-reused=0 adjacency-rebuilds=1 surface-updates=0 geometry-updates=0 surface-clears=0 stale-surface-updates=0 geometry-overflow-rejections=0 surface-pending=false presentation=1 submitted=1
+work: reconcile=5 measure=7 measure_hits=2 measure_misses=5 text_shapes=3 layout=9 paint=5 compose=5 style_resolutions=1 style_cache_hits=0 created=5 retired=0
+actions:
+recent trace:
+  #71 Submit cause=none node=0 GPU frame submission acknowledged
+frontiers:
+  capture disabled (release build or ALICORN_INVALIDATION_FRONTIER=false)
+Node: 7695120239058113604 parent=0 kind=Root source=C:/Users/saman/.local/share/opencode/worktree/191a98/finish-172-startup-attribution/ui/run_common.odin:75:10 component=container key="alicorn.ui.root" scope="" bounds=(0.0,0.0 720.0x480.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 1462699060948749770 parent=7695120239058113604 kind=Container source=C:/Users/saman/.local/share/opencode/worktree/191a98/finish-172-startup-attribution/examples/01_hello/main.odin:14:5 component=container key="" scope="" bounds=(0.0,0.0 720.0x156.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 11464078954988048041 parent=1462699060948749770 kind=Text source=C:/Users/saman/.local/share/opencode/worktree/191a98/finish-172-startup-attribution/examples/01_hello/main.odin:15:3 component=text key="" scope="" bounds=(24.0,24.0 672.0x31.2)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(14,Leading) selection=(14,Leading)->(14,Leading) reason: new retained node
+  text run: valid=true bytes=14 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 10142444942859181898 parent=1462699060948749770 kind=Text source=C:/Users/saman/.local/share/opencode/worktree/191a98/finish-172-startup-attribution/examples/01_hello/main.odin:16:3 component=text key="" scope="" bounds=(24.0,67.2 672.0x20.8)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(8,Leading) selection=(8,Leading)->(8,Leading) reason: new retained node
+  text run: valid=true bytes=8 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 11245487470087607987 parent=1462699060948749770 kind=Button source=C:/Users/saman/.local/share/opencode/worktree/191a98/finish-172-startup-attribution/examples/01_hello/main.odin:17:6 component=button key="" scope="" bounds=(24.0,100.0 672.0x32.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Default selected=false hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label="Increment"
+  text run: valid=true bytes=9 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+  button recipe: variant=default recipe=button.default base=(Subtle_Surface,Text) surface=(0.080,0.100,0.140,1.000) text=(0.880,0.910,0.960,1.000) indicator=None/Text
+  applied transforms: | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  computed style: dependencies=paint resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.default surface.base=Subtle_Surface text.base=Text focus.base=Focus semantic-active.base=Semantic_Focus indicator.base=Text

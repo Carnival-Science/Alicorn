@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "kind": "alicorn-native-window-diagnostics",
+  "primary": {
+	  "sdl_window_id": 3,
+	  "sdl_position_x": 672,
+	  "sdl_position_y": 289,
+	  "focused": false,
+	  "mouse_focused": false,
+	  "always_on_top": false,
+	  "logical_width": 1216,
+	  "logical_height": 799,
+	  "window_logical_height": 799,
+	  "pixel_width": 1216,
+	  "pixel_height": 799,
+	  "pixel_density": 1.0000,
+	  "display_scale": 1.0000,
+	  "runtime": {
+	    "viewport": {"x": 0.000, "y": 0.000, "width": 1216.000, "height": 799.000},
+	    "retained_nodes": 56,
+	    "display_commands": 35,
+	    "focused_node": 0,
+	    "gpu_submissions": 1,
+	    "frame_needs_submission": false,
+	    "presentation_revision": 2,
+	    "submitted_revision": 2
+	  }, "win32": {
+    "hwnd": 2753070,
+    "outer_rect": [672, 289, 1888, 1088],
+    "client_origin": [672, 289],
+    "dpi": 96,
+    "native_always_on_top": false,
+    "topmost_promotions_preserved": 0,
+    "position_history": [
+      {"timestamp_ns": 12589400, "message": "window_position_changing", "outer_rect": [672, 289, 1888, 1088], "client_origin": [680, 320], "sdl_position": [680, 320], "dpi": 96, "native_always_on_top": false, "requested_position": [0, 0], "requested_flags": 55, "effective_flags": 55, "move_preserved": false},
+      {"timestamp_ns": 12680200, "message": "window_position_changed", "outer_rect": [672, 289, 1888, 1088], "client_origin": [672, 289], "sdl_position": [672, 289], "dpi": 96, "native_always_on_top": false, "requested_position": [672, 289], "requested_flags": 63, "effective_flags": 63, "move_preserved": false},
+      {"timestamp_ns": 1518844700, "message": "window_position_changing", "outer_rect": [672, 289, 1888, 1088], "client_origin": [672, 289], "sdl_position": [672, 289], "dpi": 96, "native_always_on_top": false, "requested_position": [0, 0], "requested_flags": 67, "effective_flags": 67, "move_preserved": false},
+      {"timestamp_ns": 1519553500, "message": "window_position_changing", "outer_rect": [672, 289, 1888, 1088], "client_origin": [672, 289], "sdl_position": [672, 289], "dpi": 96, "native_always_on_top": false, "requested_position": [0, 0], "requested_flags": 3, "effective_flags": 3, "move_preserved": false},
+      {"timestamp_ns": 1521250300, "message": "activation_changed", "outer_rect": [672, 289, 1888, 1088], "client_origin": [672, 289], "sdl_position": [672, 289], "dpi": 96, "native_always_on_top": false, "requested_position": [0, 0], "requested_flags": 0, "effective_flags": 0, "move_preserved": false},
+      {"timestamp_ns": 1521398800, "message": "window_position_changed", "outer_rect": [672, 289, 1888, 1088], "client_origin": [672, 289], "sdl_position": [672, 289], "dpi": 96, "native_always_on_top": false, "requested_position": [672, 289], "requested_flags": 268441667, "effective_flags": 268441667, "move_preserved": false}]}},
+  "secondary": null
+}

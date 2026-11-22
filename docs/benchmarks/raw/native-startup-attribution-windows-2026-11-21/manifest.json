@@ -1,0 +1,95 @@
+{
+  "schema": 1,
+  "scenario": "native SDL_GPU startup attribution (issue #172 phase 1)",
+  "captured_at_local": "2026-11-22T02:20:00-06:00",
+  "alicorn": {
+    "repository": "Carnival-Science/Alicorn",
+    "worktree": "finish-172-startup-attribution",
+    "base_commit": "5424267aa52966205791894892d712451c1aef0a",
+    "base_commit_subject": "test(webgpu): drive an active motion through induced D3D12 removal (#146 G6)",
+    "instrumentation": "uncommitted measurement-only startup markers at capture time; published in the phase-1 commit",
+    "note": "The host was not optimized. Markers, the attribution line and the PowerShell runner are the only changes."
+  },
+  "apps": {
+    "hello": {
+      "source": "examples/01_hello in this worktree",
+      "revision": "5424267aa52966205791894892d712451c1aef0a + measurement-only uncommitted changes",
+      "build": "odin build examples/01_hello -collection:alicorn=<worktree> <accesskit args> -o:speed -out:out/hello.exe",
+      "executable": "out/hello.exe",
+      "executable_bytes": 7377408,
+      "arguments": ["--idle-validation-seconds=3"],
+      "sdl3_dll_bytes": 2848768
+    },
+    "scratchpad": {
+      "source": "clone of C:\\Users\\saman\\dev\\scratchpad",
+      "revision": "adb28fc220864e6809c9217e4437af5b92dae57b",
+      "caliber_revision": "197cd964cc7265bc60df599a6b8562eac7c75f3a",
+      "build": "go run ./cmd/alicorn-dev build --alicorn-root <this worktree> --allow-alicorn-revision --release --odin C:\\odin\\odin.exe --renderer=sdl-gpu",
+      "executable": "out/alicorn/scratchpad-alicorn.exe",
+      "executable_bytes": 9783296,
+      "workspace": "generated 193-file A/B workspace (8 directories, 24 files each, 5,000-line application/sample_00.go, README.md)",
+      "arguments": ["--idle-validation-seconds=3"],
+      "environment": "fresh APPDATA/LOCALAPPDATA per launch; SCRATCHPAD_ALICORN_WORKSPACE=<generated workspace>; SCRATCHPAD_ALICORN_SMOKE removed"
+    },
+    "punks": {
+      "source": "clone of C:\\Users\\saman\\dev\\punks",
+      "revision": "029647312c2b0a90a4b19c12093ddf8cbbd99368",
+      "vendored_alicorn": "75d305e1b2e3e4bf982e5899b5217efe2bad0465 (v0.2.1-25-g75d305e; not used for this host)",
+      "alicorn_kit_snapshot": "856447e2083a2261d8f5b01a8ca436142f597de5",
+      "caliber_revision": "4814a5161809f37d07f8456b81988013f038867a",
+      "build": "cargo build -p punks-caliber --release; odin build punks-standalone/odin -collection:alicorn=<this worktree> -collection:alikit=<clone>/vendor/alicorn-kit <accesskit args> -o:speed",
+      "executable": "target/windows-x86_64/release/punks.exe",
+      "executable_bytes": 7678464,
+      "arguments": ["--smoke", "--folder", "crates/punks-audio/tests/fixtures"],
+      "scene": "built-in smoke: open the fixture folder, select and audition the first audio file, stop, search, render the waveform, exit"
+    }
+  },
+  "host": {
+    "os": "Microsoft Windows 10 Home",
+    "build": "19045",
+    "computer": "samanshaiza004",
+    "cpu": "AMD Ryzen 5 7600X 6-Core Processor",
+    "logical_processors": 12,
+    "memory_visible_bytes": 16281268224,
+    "gpu": "NVIDIA GeForce RTX 2080 SUPER",
+    "gpu_driver_version": "32.0.15.9597",
+    "sdl": "3.4.20",
+    "gpu_backend": "Direct3D 12",
+    "desktop_load": "other desktop applications (Discord, browsers, OpenCode) were running; CPU load recorded in summary.json"
+  },
+  "toolchain": {
+    "odin": "dev-2026-11-nightly:08539cd",
+    "odin_path": "C:\\odin\\odin.exe",
+    "go": "go1.27.1 windows/amd64",
+    "cargo": "1.98.1 (797e8a9bc 2026-08-05)"
+  },
+  "counters": {
+    "process": [
+      "Process.WorkingSet64",
+      "Process.PrivateMemorySize64",
+      "Process.TotalProcessorTime",
+      "Process.StartTime"
+    ],
+    "gpu": [
+      "\\GPU Process Memory(pid_<pid>*)\\Dedicated Usage",
+      "\\GPU Process Memory(pid_<pid>*)\\Shared Usage"
+    ],
+    "units": "bytes",
+    "gpu_sampling": "every 500 ms and once at the PASS marker; summed over the process's LUID/phys instances",
+    "process_sampling": "every 10 ms during the launch; settle values captured when the PASS line was observed"
+  },
+  "warm_state": "warm-order; one session-first launch and one unmeasured file-cache warmup per app; no reboot, cache purge or page-file control",
+  "runs_per_app": 12,
+  "extra_runs_per_app": {
+    "session_first": 1,
+    "file_cache_warmup": 1,
+    "diagnostics_probe": 1
+  },
+  "artifacts": {
+    "runner": "bench_startup.ps1",
+    "summary": "summary.json",
+    "samples": ["samples-hello.csv", "samples-scratchpad.csv", "samples-punks.csv", "samples.csv"],
+    "logs": "logs/",
+    "diagnostics": "diagnostics/<app>/ (bundle JSON and window JSON; screenshot PPMs were discarded)"
+  }
+}

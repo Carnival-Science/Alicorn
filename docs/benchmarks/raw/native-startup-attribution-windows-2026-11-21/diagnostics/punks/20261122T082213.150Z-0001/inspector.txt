@@ -1,0 +1,664 @@
+Alicorn inspector
+keyboard focus: 0 selected node: 0 captured: 0
+semantic focus: none
+retained nodes: 106
+semantics: revision=4 entities=55 latest=(3>4 +1 -0) requests=0 work=(described=174 resolved=217 structure=90 properties=2 focus-search=0 active-update=0)
+last invalidation: Punks state published
+drag: phase=Idle type=0 source=(0,0) source-node=0 target=(0,0) target-node=0 position=None state=Free tracking=Free preview=(mode=Auto ready=false 0.0x0.0 display-start=0 commands=0)
+frame: 4 built=4 idle=0 regions-skipped=0 subtrees-reused=0 adjacency-rebuilds=2 surface-updates=2 geometry-updates=2 surface-clears=0 stale-surface-updates=0 geometry-overflow-rejections=0 surface-pending=false presentation=6 submitted=6
+work: reconcile=358 measure=123 measure_hits=34 measure_misses=89 text_shapes=71 layout=365 paint=126 compose=241 style_resolutions=37 style_cache_hits=9 created=109 retired=3
+actions:
+recent trace:
+  #1876 Submit cause=none node=0 GPU frame submission acknowledged
+frontiers:
+  capture disabled (release build or ALICORN_INVALIDATION_FRONTIER=false)
+Node: 13689417626675528803 parent=0 kind=Root source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/main.odin:695:10 component=container key="" scope="" bounds=(0.0,0.0 960.0x720.0)
+  description: reused layout: reused paint: reused composite: changed
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 6908482068972179392 parent=13689417626675528803 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:821:5 component=container key="punks-workspace" scope="" bounds=(0.0,0.0 960.0x720.0)
+  description: reused layout: reused paint: reused composite: changed
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  semantic surface: direct fill shape=rectangle radius=0.00 corner-radii=(0.00 0.00 0.00 0.00) arc=(center=0.000,0.000 radius=0.000 start=0.000 sweep=0.000) bezier=[[0, 0], [0, 0], [0, 0], [0, 0]] material=0(flat) height=0.00 group=0 fill=(0.094,0.106,0.114,1.000) gradient=None end=(0.000,0.000,0.000,0.000) stroke=(0.000,0.000,0.000,0.000;0.00;Centered) resolution=retained-cache dependencies=paint,material generations=(paint=1 material=1)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 17957917555833436022 parent=6908482068972179392 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:442:5 component=container key="application-tabs" scope="" bounds=(10.0,10.0 940.0x42.0)
+  description: reused layout: reused paint: reused composite: changed
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 879296394435621480 parent=17957917555833436022 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:443:7 component=text key="" scope="" bounds=(10.0,10.0 92.0x42.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(6,Leading) selection=(6,Leading)->(6,Leading) reason: new retained node
+  text run: valid=true bytes=6 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 17772597860266330732 parent=17957917555833436022 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:346:12 component=container key="punks-library-tabs" scope="" bounds=(114.0,13.0 792.0x36.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: description changed
+Node: 8967382817155217682 parent=17772597860266330732 kind=Scroll_Region source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:346:12 component=scroll_region key="" scope_u64=1 bounds=(114.0,13.0 792.0x36.0)
+  description: reused layout: reused paint: reused composite: changed
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: description changed
+  scrollbar style: recipe=scrollbar.default resolution=retained-cache state=(hovered=false pressed=false) dependencies=paint generations=(paint=1)
+  token provenance: scrollbar.default track.base=Scrollbar_Track thumb.base=Scrollbar_Thumb corner.base=Surface
+Node: 8684773882274770691 parent=8967382817155217682 kind=Virtual_List source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:346:12 component=container key="" scope_u64=1 bounds=(114.0,13.0 940.0x36.0)
+  description: reused layout: reused paint: reused composite: changed
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: description reused
+Node: 5287845654571969691 parent=8684773882274770691 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:346:12 component=button key="" scope_u64=1 bounds=(114.0,13.0 180.0x36.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  semantic surface: direct fill shape=connected-tab-contour radius=0.00 corner-radii=(0.00 0.00 0.00 0.00) arc=(center=0.000,0.000 radius=0.000 start=0.000 sweep=0.000) bezier=[[0, 0], [0, 0], [0, 0], [0, 0]] material=0(flat) height=0.00 group=0 fill=(0.176,0.200,0.212,1.000) gradient=None end=(0.000,0.000,0.000,0.000) stroke=(0.000,0.000,0.000,0.000;0.00;Centered) resolution=retained-cache dependencies=paint,material generations=(paint=1 material=1)
+  selected=true semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Default selected=true hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  tab identity: label="fixtures" recipe=tab.document variant=button.tab
+  text run: valid=true bytes=0 paint-spans=0 style-spans=0 faces=[] unresolved=false
+  button recipe: variant=tab recipe=button.tab base=(Subtle_Surface,Muted_Text) surface=(0.176,0.200,0.212,1.000) text=(0.910,0.906,0.882,1.000) indicator=Underline/Text
+  applied transforms: selected | focus-mode=keyboard-only
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  optical surface: shape=rounded-rectangle radius=3.00 corner-radii=(3.00 3.00 3.00 3.00) material=2 height=1.500 (paint only)
+  computed style: dependencies=paint,material resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=1)
+  token provenance: button.tab surface.base=Subtle_Surface text.base=Muted_Text focus.base=Focus semantic-active.base=Semantic_Focus indicator.base=Text surface.selected=Subtle_Surface text.selected=Text
+Node: 8165876746358626195 parent=5287845654571969691 kind=Container source=C:/Users/saman/.local/share/opencode/worktree/191a98/finish-172-startup-attribution/runtime/tab_bar.odin:494:8 component=container key="" scope_u64=7 bounds=(114.0,13.0 180.0x1.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 11591527027981122970 parent=5287845654571969691 kind=Container source=C:/Users/saman/.local/share/opencode/worktree/191a98/finish-172-startup-attribution/runtime/tab_bar.odin:504:17 component=container key="" scope_u64=1 bounds=(134.0,14.0 140.0x34.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 13024475915522386361 parent=11591527027981122970 kind=Container source=C:/Users/saman/.local/share/opencode/worktree/191a98/finish-172-startup-attribution/runtime/tab_bar.odin:518:8 component=container key="" scope_u64=8 bounds=(134.0,14.0 140.0x34.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 522771070964393995 parent=13024475915522386361 kind=Text source=C:/Users/saman/.local/share/opencode/worktree/191a98/finish-172-startup-attribution/runtime/tab_bar.odin:522:15 component=text key="" scope_u64=2 bounds=(134.0,20.6 140.0x20.8)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(8,Leading) selection=(8,Leading)->(8,Leading) reason: new retained node
+  text run: valid=true bytes=8 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 8014002044976017681 parent=5287845654571969691 kind=Container source=C:/Users/saman/.local/share/opencode/worktree/191a98/finish-172-startup-attribution/runtime/tab_bar.odin:624:19 component=container key="" scope_u64=6 bounds=(114.0,48.0 180.0x0.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  semantic surface: role=core.Accent shape=rectangle radius=0.00 corner-radii=(0.00 0.00 0.00 0.00) arc=(center=0.000,0.000 radius=0.000 start=0.000 sweep=0.000) bezier=[[0, 0], [0, 0], [0, 0], [0, 0]] material=0(flat) height=0.00 group=0 fill=(0.835,0.639,0.388,1.000) gradient=None end=(0.000,0.000,0.000,0.000) stroke=(0.000,0.000,0.000,0.000;0.00;Centered) resolution=retained-cache dependencies=paint,material generations=(paint=1 material=1)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 17285237911680149289 parent=17957917555833436022 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:359:5 component=button key="punks-new-tab" scope="" bounds=(918.0,15.0 32.0x32.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Default selected=false hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label="+"
+  text run: valid=true bytes=1 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+  button recipe: variant=toolbar recipe=button.toolbar base=(Surface,Text) surface=(0.133,0.153,0.165,1.000) text=(0.910,0.906,0.882,1.000) indicator=None/Text
+  applied transforms: | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  optical surface: shape=rounded-rectangle radius=3.00 corner-radii=(3.00 3.00 3.00 3.00) material=2 height=1.500 (paint only)
+  computed style: dependencies=paint,material resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.toolbar surface.base=Surface text.base=Text focus.base=Focus semantic-active.base=Semantic_Focus indicator.base=Text
+Node: 3171100164530679623 parent=6908482068972179392 kind=Split source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:824:12 component=split key="punks-library-split" scope="" bounds=(10.0,60.0 940.0x624.0)
+  split: axis=Horizontal preferred=216.00 resolved=216.00 dragging=false
+  description: reused layout: reused paint: reused composite: changed
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 10704038796378834340 parent=3171100164530679623 kind=Container source=C:/Users/saman/.local/share/opencode/worktree/191a98/finish-172-startup-attribution/runtime/layout_widgets.odin:106:9 component=container key="first" scope="" bounds=(10.0,60.0 216.0x624.0)
+  description: reused layout: reused paint: reused composite: changed
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 13667441096065902868 parent=10704038796378834340 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:559:5 component=container key="library-sidebar-surface" scope="" bounds=(10.0,60.0 216.0x624.0)
+  description: reused layout: reused paint: reused composite: changed
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  semantic surface: role=core.Surface shape=rounded-rectangle radius=5.00 corner-radii=(5.00 5.00 5.00 5.00) arc=(center=0.000,0.000 radius=0.000 start=0.000 sweep=0.000) bezier=[[0, 0], [0, 0], [0, 0], [0, 0]] material=1(analytic-relief) height=-1.75 group=0 fill=(0.133,0.153,0.165,1.000) gradient=None end=(0.000,0.000,0.000,0.000) stroke=(0.000,0.000,0.000,0.000;0.00;Centered) resolution=retained-cache dependencies=paint,material generations=(paint=1 material=1)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 3761999463317951849 parent=13667441096065902868 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:572:7 component=text key="" scope="" bounds=(22.0,72.0 192.0x15.6)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(7,Leading) selection=(7,Leading)->(7,Leading) reason: new retained node
+  text run: valid=true bytes=7 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 12974515172086509412 parent=13667441096065902868 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:577:7 component=text key="" scope="" bounds=(22.0,97.6 192.0x22.1)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(8,Leading) selection=(8,Leading)->(8,Leading) reason: description changed
+  text run: valid=true bytes=8 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 12543693691225718107 parent=13667441096065902868 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:578:7 component=text key="" scope="" bounds=(22.0,129.7 192.0x15.6)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(7,Leading) selection=(7,Leading)->(7,Leading) reason: new retained node
+  text run: valid=true bytes=7 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 11123717430212730171 parent=13667441096065902868 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/vendor/alicorn-kit/tree_view/tree_view.odin:124:20 component=container key="tree-root" scope="" bounds=(22.0,155.3 192.0x516.7)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 10496886120360991021 parent=11123717430212730171 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/vendor/alicorn-kit/tree_view/tree_view.odin:143:7 component=text key="tree-empty" scope="" bounds=(22.0,155.3 192.0x20.8)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(15,Leading) selection=(15,Leading)->(15,Leading) reason: new retained node
+  text run: valid=true bytes=15 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 7150106053659027917 parent=3171100164530679623 kind=Split_Handle source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:833:3 component=split_divider key="divider" scope="" bounds=(226.0,60.0 2.0x624.0)
+  split handle: owner=3171100164530679623 captured=false visual=(226.0,60.0 2.0x624.0) hit=(222.0,60.0 10.0x624.0) owner-position=216.00 owner-dragging=false
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 991238559636699869 parent=3171100164530679623 kind=Container source=C:/Users/saman/.local/share/opencode/worktree/191a98/finish-172-startup-attribution/runtime/layout_widgets.odin:117:9 component=container key="second" scope="" bounds=(228.0,60.0 722.0x624.0)
+  description: reused layout: reused paint: reused composite: changed
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 10921547893932957758 parent=991238559636699869 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:835:6 component=container key="" scope="" bounds=(228.0,60.0 722.0x624.0)
+  description: reused layout: reused paint: reused composite: changed
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 12799593006122754339 parent=10921547893932957758 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:516:5 component=container key="" scope="" bounds=(228.0,60.0 722.0x36.0)
+  description: reused layout: reused paint: reused composite: changed
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 7621725737748858706 parent=12799593006122754339 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:517:6 component=button key="navigate-up" scope="" bounds=(228.0,62.0 48.0x32.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: description changed
+  button/tab state: presentation=Default selected=false hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label="Up"
+  text run: valid=true bytes=2 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.176,0.200,0.212,0.000) text=(0.678,0.706,0.710,1.000) indicator=None/Text
+  applied transforms: | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  optical surface: shape=rounded-rectangle radius=3.00 corner-radii=(3.00 3.00 3.00 3.00) material=2 height=1.500 (paint only)
+  computed style: dependencies=paint,material resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface text.base=Muted_Text focus.base=Focus semantic-active.base=Semantic_Focus indicator.base=Text
+Node: 7690320624655897403 parent=12799593006122754339 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:528:6 component=container key="" scope="" bounds=(284.0,62.0 554.0x32.0)
+  description: reused layout: reused paint: reused composite: changed
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 6774120862355113863 parent=7690320624655897403 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:501:6 component=button key="" scope_u64=45056 bounds=(284.0,62.0 128.0x32.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Default selected=false hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label="fixtures"
+  text run: valid=true bytes=8 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.176,0.200,0.212,0.000) text=(0.678,0.706,0.710,1.000) indicator=None/Text
+  applied transforms: | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  optical surface: shape=rounded-rectangle radius=3.00 corner-radii=(3.00 3.00 3.00 3.00) material=2 height=1.500 (paint only)
+  computed style: dependencies=paint,material resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface text.base=Muted_Text focus.base=Focus semantic-active.base=Semantic_Focus indicator.base=Text
+Node: 1140661225264876904 parent=12799593006122754339 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:531:6 component=button key="open-folder" scope="" bounds=(846.0,62.0 104.0x32.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Default selected=false hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label="Open folder"
+  text run: valid=true bytes=11 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+  button recipe: variant=toolbar recipe=button.toolbar base=(Surface,Text) surface=(0.133,0.153,0.165,1.000) text=(0.910,0.906,0.882,1.000) indicator=None/Text
+  applied transforms: | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  optical surface: shape=rounded-rectangle radius=3.00 corner-radii=(3.00 3.00 3.00 3.00) material=2 height=1.500 (paint only)
+  computed style: dependencies=paint,material resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.toolbar surface.base=Surface text.base=Text focus.base=Focus semantic-active.base=Semantic_Focus indicator.base=Text
+Node: 14849590458902553376 parent=10921547893932957758 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:535:5 component=container key="" scope="" bounds=(228.0,104.0 722.0x38.0)
+  description: reused layout: reused paint: reused composite: changed
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 10239287884271522544 parent=14849590458902553376 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:536:12 component=text key="" scope="" bounds=(228.0,104.0 48.7x38.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(6,Leading) selection=(6,Leading)->(6,Leading) reason: new retained node
+  text run: valid=true bytes=6 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 10000602947110917133 parent=14849590458902553376 kind=Text_Field source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:536:12 component=text_field key="search" scope="" bounds=(286.7,105.0 592.3x36.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  text run: valid=true bytes=0 paint-spans=0 style-spans=0 faces=[] unresolved=false
+  text field style: recipe=text_field.default resolution=retained-cache state=(hovered=false focused=false) dependencies=paint generations=(paint=1)
+  token provenance: text_field.default surface.base=Surface text.base=Text border.base=Border focus-border.focused=Focus focus.overlay=Focus selection.base=Selection caret.base=Accent
+Node: 2843173269699513615 parent=14849590458902553376 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:554:7 component=text key="" scope="" bounds=(889.1,104.0 60.9x38.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(9,Leading) selection=(9,Leading)->(9,Leading) reason: description changed
+  text run: valid=true bytes=9 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 1174823495425881257 parent=10921547893932957758 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:590:5 component=container key="results-surface" scope="" bounds=(228.0,150.0 722.0x244.0)
+  description: reused layout: reused paint: reused composite: changed
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  semantic surface: direct fill shape=rounded-rectangle radius=5.00 corner-radii=(5.00 5.00 5.00 5.00) arc=(center=0.000,0.000 radius=0.000 start=0.000 sweep=0.000) bezier=[[0, 0], [0, 0], [0, 0], [0, 0]] material=1(analytic-relief) height=-1.75 group=0 fill=(0.106,0.122,0.133,1.000) gradient=None end=(0.000,0.000,0.000,0.000) stroke=(0.231,0.263,0.275,1.000;1.00;Inside) resolution=retained-cache dependencies=paint,material generations=(paint=1 material=1)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 11041521414094890988 parent=1174823495425881257 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:605:6 component=container key="" scope="" bounds=(238.0,160.0 702.0x30.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 13431664737959977036 parent=11041521414094890988 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:606:8 component=container key="" scope="" bounds=(244.0,167.0 16.0x16.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 12252013973337856215 parent=11041521414094890988 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:607:8 component=text key="" scope="" bounds=(270.0,166.0 480.0x18.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(4,Leading) selection=(4,Leading)->(4,Leading) reason: new retained node
+  text run: valid=true bytes=4 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 2779808953466501894 parent=11041521414094890988 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:609:9 component=text key="" scope="" bounds=(760.0,166.0 76.0x18.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(6,Leading) selection=(6,Leading)->(6,Leading) reason: new retained node
+  text run: valid=true bytes=6 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 10704017805031890845 parent=11041521414094890988 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:610:9 component=text key="" scope="" bounds=(846.0,166.0 88.0x18.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(4,Leading) selection=(4,Leading)->(4,Leading) reason: new retained node
+  text run: valid=true bytes=4 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 4006743655006564411 parent=1174823495425881257 kind=Scroll_Region source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:619:29 component=scroll_region key="audio-results" scope="" bounds=(238.0,194.0 702.0x190.0)
+  description: reused layout: reused paint: reused composite: changed
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  scrollbar style: recipe=scrollbar.default resolution=retained-cache state=(hovered=false pressed=false) dependencies=paint generations=(paint=1)
+  token provenance: scrollbar.default track.base=Scrollbar_Track thumb.base=Scrollbar_Thumb corner.base=Surface
+Node: 13032484384355024145 parent=4006743655006564411 kind=Virtual_List source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:619:29 component=container key="" scope="" bounds=(238.0,194.0 702.0x190.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: description reused
+Node: 16889191239107272992 parent=13032484384355024145 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:188:19 component=button key="path:1a373eefedfb38228b1ee13d205f9a73c68e9a4c2e4ed76ef4afc6e4e4d22b20" scope="" bounds=(238.0,194.0 702.0x32.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Default selected=false hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label=""
+  text run: valid=true bytes=0 paint-spans=0 style-spans=0 faces=[] unresolved=false
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.176,0.200,0.212,0.000) text=(0.678,0.706,0.710,1.000) indicator=None/Text
+  applied transforms: | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  optical surface: shape=rounded-rectangle radius=3.00 corner-radii=(3.00 3.00 3.00 3.00) material=2 height=1.500 (paint only)
+  computed style: dependencies=paint,material resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface text.base=Muted_Text focus.base=Focus semantic-active.base=Semantic_Focus indicator.base=Text
+Node: 9085589835897854417 parent=16889191239107272992 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:209:6 component=container key="" scope="" bounds=(244.0,202.0 16.0x16.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 9129990462436918900 parent=16889191239107272992 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:210:6 component=text key="entry-name" scope="" bounds=(270.0,200.0 480.0x20.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(11,Leading) selection=(11,Leading)->(11,Leading) reason: new retained node
+  text run: valid=true bytes=11 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 11448858519652063387 parent=16889191239107272992 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:214:7 component=text key="" scope="" bounds=(760.0,200.0 76.0x20.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(3,Leading) selection=(3,Leading)->(3,Leading) reason: new retained node
+  text run: valid=true bytes=3 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 4555690031541629837 parent=16889191239107272992 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:220:7 component=text key="" scope="" bounds=(846.0,200.0 88.0x20.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(4,Leading) selection=(4,Leading)->(4,Leading) reason: new retained node
+  text run: valid=true bytes=4 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 11827812547200193653 parent=13032484384355024145 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:188:19 component=button key="path:605d5318c48a26499e77ceb5c1abafe09ceced32984a1466d0ce14df46590e8e" scope="" bounds=(238.0,226.0 702.0x32.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Default selected=false hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label=""
+  text run: valid=true bytes=0 paint-spans=0 style-spans=0 faces=[] unresolved=false
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.176,0.200,0.212,0.000) text=(0.678,0.706,0.710,1.000) indicator=None/Text
+  applied transforms: | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  optical surface: shape=rounded-rectangle radius=3.00 corner-radii=(3.00 3.00 3.00 3.00) material=2 height=1.500 (paint only)
+  computed style: dependencies=paint,material resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface text.base=Muted_Text focus.base=Focus semantic-active.base=Semantic_Focus indicator.base=Text
+Node: 16823455793232194932 parent=11827812547200193653 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:209:6 component=container key="" scope="" bounds=(244.0,234.0 16.0x16.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 4545828875637117007 parent=11827812547200193653 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:210:6 component=text key="entry-name" scope="" bounds=(270.0,232.0 480.0x20.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(9,Leading) selection=(9,Leading)->(9,Leading) reason: new retained node
+  text run: valid=true bytes=9 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 10353177862290874874 parent=11827812547200193653 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:214:7 component=text key="" scope="" bounds=(760.0,232.0 76.0x20.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(4,Leading) selection=(4,Leading)->(4,Leading) reason: new retained node
+  text run: valid=true bytes=4 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 9640075357860801260 parent=11827812547200193653 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:220:7 component=text key="" scope="" bounds=(846.0,232.0 88.0x20.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(7,Leading) selection=(7,Leading)->(7,Leading) reason: new retained node
+  text run: valid=true bytes=7 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 8683763329120453149 parent=13032484384355024145 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:188:19 component=button key="path:59199cbb0e3f3fff3a54fe6ea16103c4f23c7edc2543518bf4bf1079d3561d6a" scope="" bounds=(238.0,258.0 702.0x32.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Default selected=false hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label=""
+  text run: valid=true bytes=0 paint-spans=0 style-spans=0 faces=[] unresolved=false
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.176,0.200,0.212,0.000) text=(0.678,0.706,0.710,1.000) indicator=None/Text
+  applied transforms: | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  optical surface: shape=rounded-rectangle radius=3.00 corner-radii=(3.00 3.00 3.00 3.00) material=2 height=1.500 (paint only)
+  computed style: dependencies=paint,material resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface text.base=Muted_Text focus.base=Focus semantic-active.base=Semantic_Focus indicator.base=Text
+Node: 677734967433890124 parent=8683763329120453149 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:209:6 component=container key="" scope="" bounds=(244.0,266.0 16.0x16.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 18234082895671225383 parent=8683763329120453149 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:210:6 component=text key="entry-name" scope="" bounds=(270.0,264.0 480.0x20.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(8,Leading) selection=(8,Leading)->(8,Leading) reason: new retained node
+  text run: valid=true bytes=8 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 18148518401325214530 parent=8683763329120453149 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:214:7 component=text key="" scope="" bounds=(760.0,264.0 76.0x20.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(3,Leading) selection=(3,Leading)->(3,Leading) reason: new retained node
+  text run: valid=true bytes=3 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 11363084884538916164 parent=8683763329120453149 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:220:7 component=text key="" scope="" bounds=(846.0,264.0 88.0x20.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(6,Leading) selection=(6,Leading)->(6,Leading) reason: new retained node
+  text run: valid=true bytes=6 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 10497153147292703142 parent=13032484384355024145 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:188:19 component=button key="path:cca60065f89e9391036373528522dff6fa241ab2abe76c2c09e731e08fceb888" scope="" bounds=(238.0,290.0 702.0x32.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Default selected=false hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label=""
+  text run: valid=true bytes=0 paint-spans=0 style-spans=0 faces=[] unresolved=false
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.176,0.200,0.212,0.000) text=(0.678,0.706,0.710,1.000) indicator=None/Text
+  applied transforms: | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  optical surface: shape=rounded-rectangle radius=3.00 corner-radii=(3.00 3.00 3.00 3.00) material=2 height=1.500 (paint only)
+  computed style: dependencies=paint,material resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface text.base=Muted_Text focus.base=Focus semantic-active.base=Semantic_Focus indicator.base=Text
+Node: 1787376121532879027 parent=10497153147292703142 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:209:6 component=container key="" scope="" bounds=(244.0,298.0 16.0x16.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 7414392243881923414 parent=10497153147292703142 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:210:6 component=text key="entry-name" scope="" bounds=(270.0,296.0 480.0x20.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(8,Leading) selection=(8,Leading)->(8,Leading) reason: new retained node
+  text run: valid=true bytes=8 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 2068769478121196165 parent=10497153147292703142 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:214:7 component=text key="" scope="" bounds=(760.0,296.0 76.0x20.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(3,Leading) selection=(3,Leading)->(3,Leading) reason: new retained node
+  text run: valid=true bytes=3 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 10700114107199899779 parent=10497153147292703142 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:220:7 component=text key="" scope="" bounds=(846.0,296.0 88.0x20.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(6,Leading) selection=(6,Leading)->(6,Leading) reason: new retained node
+  text run: valid=true bytes=6 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 8815274771882201881 parent=13032484384355024145 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:188:19 component=button key="path:f51dac35ed050460e646d89c4be48c1ec14216fbc3ba70d9357796c466e3eb38" scope="" bounds=(238.0,322.0 702.0x32.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Default selected=false hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label=""
+  text run: valid=true bytes=0 paint-spans=0 style-spans=0 faces=[] unresolved=false
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.176,0.200,0.212,0.000) text=(0.678,0.706,0.710,1.000) indicator=None/Text
+  applied transforms: | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  optical surface: shape=rounded-rectangle radius=3.00 corner-radii=(3.00 3.00 3.00 3.00) material=2 height=1.500 (paint only)
+  computed style: dependencies=paint,material resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface text.base=Muted_Text focus.base=Focus semantic-active.base=Semantic_Focus indicator.base=Text
+Node: 15192891144667300392 parent=8815274771882201881 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:209:6 component=container key="" scope="" bounds=(244.0,330.0 16.0x16.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 5047438183666659083 parent=8815274771882201881 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:210:6 component=text key="entry-name" scope="" bounds=(270.0,328.0 480.0x20.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(8,Leading) selection=(8,Leading)->(8,Leading) reason: new retained node
+  text run: valid=true bytes=8 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 627352931728253398 parent=8815274771882201881 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:214:7 component=text key="" scope="" bounds=(760.0,328.0 76.0x20.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(3,Leading) selection=(3,Leading)->(3,Leading) reason: new retained node
+  text run: valid=true bytes=3 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 13414246318257813560 parent=8815274771882201881 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:220:7 component=text key="" scope="" bounds=(846.0,328.0 88.0x20.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(7,Leading) selection=(7,Leading)->(7,Leading) reason: new retained node
+  text run: valid=true bytes=7 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 9988443868499634335 parent=10921547893932957758 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:671:5 component=container key="audition-deck" scope="" bounds=(228.0,402.0 722.0x282.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  semantic surface: role=core.Surface shape=rounded-rectangle radius=5.00 corner-radii=(5.00 5.00 5.00 5.00) arc=(center=0.000,0.000 radius=0.000 start=0.000 sweep=0.000) bezier=[[0, 0], [0, 0], [0, 0], [0, 0]] material=2(analytic-relief) height=1.50 group=0 fill=(0.133,0.153,0.165,1.000) gradient=None end=(0.000,0.000,0.000,0.000) stroke=(0.231,0.263,0.275,1.000;1.00;Inside) resolution=retained-cache dependencies=paint,material generations=(paint=1 material=1)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 1890129462421277879 parent=9988443868499634335 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:684:6 component=container key="audition-track-info" scope="" bounds=(240.0,414.0 698.0x28.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 5463154848345865086 parent=1890129462421277879 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:710:17 component=container key="audition-status-indicator" scope="" bounds=(240.0,423.0 10.0x10.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  semantic surface: direct fill shape=rounded-rectangle radius=5.00 corner-radii=(5.00 5.00 5.00 5.00) arc=(center=0.000,0.000 radius=0.000 start=0.000 sweep=0.000) bezier=[[0, 0], [0, 0], [0, 0], [0, 0]] material=0(flat) height=0.00 group=0 fill=(0.678,0.706,0.710,1.000) gradient=None end=(0.000,0.000,0.000,0.000) stroke=(0.000,0.000,0.000,0.000;0.00;Centered) resolution=retained-cache dependencies=paint,material generations=(paint=1 material=1)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 9780636477945682227 parent=1890129462421277879 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:719:8 component=text key="audition-track-name" scope="" bounds=(260.0,414.0 548.0x28.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(20,Leading) selection=(20,Leading)->(20,Leading) reason: new retained node
+  text run: valid=true bytes=20 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 7757544849437692222 parent=1890129462421277879 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:726:8 component=text key="audition-track-metadata" scope="" bounds=(818.0,414.0 120.0x28.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  text run: valid=true bytes=0 paint-spans=0 style-spans=0 faces=[] unresolved=false
+Node: 1327216533846500586 parent=9988443868499634335 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/waveform.odin:136:5 component=container key="waveform-layout" scope="" bounds=(240.0,448.0 698.0x100.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 14226850962778463120 parent=1327216533846500586 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/waveform.odin:138:6 component=container key="waveform-zoom-controls" scope="" bounds=(240.0,448.0 698.0x32.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 4813390369165730733 parent=14226850962778463120 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/waveform.odin:141:7 component=button key="waveform-zoom-out" scope="" bounds=(782.0,448.0 32.0x32.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Default selected=false hovered=false pressed=false disabled=true focused=false keyboard-focus-visible=false
+  button identity: label="-"
+  text run: valid=true bytes=1 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.176,0.200,0.212,0.000) text=(0.678,0.706,0.710,1.000) indicator=None/Text
+  applied transforms: disabled | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  optical surface: shape=rounded-rectangle radius=3.00 corner-radii=(3.00 3.00 3.00 3.00) material=2 height=1.500 (paint only)
+  computed style: dependencies=paint,material resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface text.base=Muted_Text focus.base=Focus semantic-active.base=Semantic_Focus indicator.base=Text text.disabled=Muted_Text
+Node: 13641010221890178255 parent=14226850962778463120 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/waveform.odin:148:7 component=button key="waveform-zoom-fit" scope="" bounds=(818.0,448.0 40.0x32.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Default selected=false hovered=false pressed=false disabled=true focused=false keyboard-focus-visible=false
+  button identity: label="Fit"
+  text run: valid=true bytes=3 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.176,0.200,0.212,0.000) text=(0.678,0.706,0.710,1.000) indicator=None/Text
+  applied transforms: disabled | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  optical surface: shape=rounded-rectangle radius=3.00 corner-radii=(3.00 3.00 3.00 3.00) material=2 height=1.500 (paint only)
+  computed style: dependencies=paint,material resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface text.base=Muted_Text focus.base=Focus semantic-active.base=Semantic_Focus indicator.base=Text text.disabled=Muted_Text
+Node: 6440443135061154716 parent=14226850962778463120 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/waveform.odin:155:7 component=button key="waveform-zoom-in" scope="" bounds=(862.0,448.0 32.0x32.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Default selected=false hovered=false pressed=false disabled=true focused=false keyboard-focus-visible=false
+  button identity: label="+"
+  text run: valid=true bytes=1 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.176,0.200,0.212,0.000) text=(0.678,0.706,0.710,1.000) indicator=None/Text
+  applied transforms: disabled | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  optical surface: shape=rounded-rectangle radius=3.00 corner-radii=(3.00 3.00 3.00 3.00) material=2 height=1.500 (paint only)
+  computed style: dependencies=paint,material resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface text.base=Muted_Text focus.base=Focus semantic-active.base=Semantic_Focus indicator.base=Text text.disabled=Muted_Text
+Node: 5085163811275957467 parent=14226850962778463120 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/waveform.odin:161:18 component=text key="waveform-zoom-level" scope="" bounds=(898.0,448.0 40.0x32.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(4,Leading) selection=(4,Leading)->(4,Leading) reason: new retained node
+  text run: valid=true bytes=5 paint-spans=0 style-spans=0 faces=[2] unresolved=false
+Node: 11429736195333196337 parent=1327216533846500586 kind=Grid source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/waveform.odin:169:5 component=container key="waveform-timeline" scope="" bounds=(240.0,482.0 698.0x66.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 7313784207014937772 parent=11429736195333196337 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/waveform.odin:171:12 component=container key="waveform-seek-owner" scope="" bounds=(240.0,482.0 698.0x66.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 3656021754116854718 parent=7313784207014937772 kind=Slider source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/waveform.odin:173:13 component=slider_f32 key="audition-seek" scope="" bounds=(240.0,482.0 698.0x66.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  slider style: recipe=slider.default resolution=retained-cache state=(hovered=false pressed=false disabled=true focused=false) applied=disabled focus-mode=always dependencies=paint generations=(paint=1)
+  token provenance: slider.default
+  track surface.base=Border text.base=Muted_Text border.base=Border surface.disabled=Window_Background
+  fill surface.base=Accent text.base=Accent_Text border.base=Accent surface.disabled=Muted_Text
+  thumb surface.base=Text text.base=Text border.base=Border surface.disabled=Muted_Text border.disabled=Muted_Text
+  label surface.base=Surface text.base=Text border.base=Border text.disabled=Muted_Text focus.overlay=Focus
+Node: 1896589622380104441 parent=11429736195333196337 kind=Custom_Surface source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/waveform.odin:183:18 component=gpu_geometry_surface key="waveform-peaks" scope="" bounds=(240.0,482.0 698.0x66.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  surface: payload-revision=2 interaction=Inert kind=Geometry samples=0 rectangles=0 segments=2 circles=0 point-markers=0 pixels=0x0 dpi=1.00 clip=(240.0,482.0 698.0x66.0)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 4521575237061203696 parent=11429736195333196337 kind=Custom_Surface source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/waveform.odin:185:17 component=gpu_geometry_surface key="waveform-playhead" scope="" bounds=(240.0,482.0 698.0x66.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  surface: payload-revision=0 interaction=Inert kind=Geometry samples=0 rectangles=0 segments=0 circles=0 point-markers=0 pixels=0x0 dpi=1.00 clip=(240.0,482.0 698.0x66.0)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 9803299399813613470 parent=11429736195333196337 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/waveform.odin:193:21 component=text key="waveform-placeholder" scope="" bounds=(468.3,503.0 241.5x24.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(40,Leading) selection=(40,Leading)->(40,Leading) reason: new retained node
+  text run: valid=true bytes=40 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 2077031375577861462 parent=9988443868499634335 kind=Grid source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/waveform.odin:213:5 component=container key="waveform-footer" scope="" bounds=(240.0,554.0 698.0x22.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 7372792351505975954 parent=2077031375577861462 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/waveform.odin:224:12 component=text key="waveform-start-time" scope="" bounds=(240.0,554.0 126.5x22.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(7,Leading) selection=(7,Leading)->(7,Leading) reason: new retained node
+  text run: valid=true bytes=7 paint-spans=0 style-spans=0 faces=[2] unresolved=false
+Node: 8599381090938624079 parent=2077031375577861462 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/waveform.odin:231:13 component=text key="waveform-current-time" scope="" bounds=(374.5,554.0 349.1x22.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(17,Leading) selection=(17,Leading)->(17,Leading) reason: new retained node
+  text run: valid=true bytes=17 paint-spans=0 style-spans=0 faces=[2] unresolved=false
+Node: 5873664888751656271 parent=2077031375577861462 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/waveform.odin:238:15 component=text key="waveform-status" scope="" bounds=(731.5,554.0 72.0x22.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  text run: valid=true bytes=0 paint-spans=0 style-spans=0 faces=[] unresolved=false
+Node: 13840418682616526450 parent=2077031375577861462 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/waveform.odin:245:10 component=text key="waveform-end-time" scope="" bounds=(884.9,554.0 53.1x22.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(7,Leading) selection=(7,Leading)->(7,Leading) reason: new retained node
+  text run: valid=true bytes=7 paint-spans=0 style-spans=0 faces=[2] unresolved=false
+Node: 11289801806464907832 parent=9988443868499634335 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:732:6 component=container key="audition-transport" scope="" bounds=(240.0,582.0 698.0x40.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 9905458308233055386 parent=11289801806464907832 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:733:7 component=button key="audition-previous" scope="" bounds=(240.0,582.0 78.0x40.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Default selected=false hovered=false pressed=false disabled=true focused=false keyboard-focus-visible=false
+  button identity: label="Previous"
+  text run: valid=true bytes=8 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.176,0.200,0.212,0.000) text=(0.678,0.706,0.710,1.000) indicator=None/Text
+  applied transforms: disabled | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  optical surface: shape=rounded-rectangle radius=3.00 corner-radii=(3.00 3.00 3.00 3.00) material=2 height=1.500 (paint only)
+  computed style: dependencies=paint,material resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface text.base=Muted_Text focus.base=Focus semantic-active.base=Semantic_Focus indicator.base=Text text.disabled=Muted_Text
+Node: 5666565963503219694 parent=11289801806464907832 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:66:18 component=button key="audition-start-pause" scope="" bounds=(326.0,582.0 40.0x40.0)
+  description: reused layout: reused paint: reused composite: reused
+  pointer hit shape: Circle (layout and accessibility bounds remain rectangular)
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Custom selected=false hovered=false pressed=false disabled=true focused=false keyboard-focus-visible=false
+  button identity: label="Start"
+  button recipe: variant=default recipe=button.default base=(Subtle_Surface,Text) surface=(0.133,0.153,0.165,1.000) text=(0.678,0.706,0.710,1.000) indicator=None/Text
+  applied transforms: disabled | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  optical surface: shape=rounded-rectangle radius=4.00 corner-radii=(4.00 4.00 4.00 4.00) material=2 height=1.500 (paint only)
+  computed style: dependencies=paint,material resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.default surface.base=Subtle_Surface text.base=Text focus.base=Focus semantic-active.base=Semantic_Focus indicator.base=Text surface.disabled=Surface text.disabled=Muted_Text
+Node: 16116150060909894922 parent=5666565963503219694 kind=Grid source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:85:10 component=container key="audition-play-layers" scope="" bounds=(326.0,582.0 40.0x40.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 10087481235903533606 parent=16116150060909894922 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:89:11 component=container key="audition-play-face" scope="" bounds=(326.0,582.0 40.0x40.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  semantic surface: direct fill shape=circle radius=0.00 corner-radii=(0.00 0.00 0.00 0.00) arc=(center=0.000,0.000 radius=0.000 start=0.000 sweep=0.000) bezier=[[0, 0], [0, 0], [0, 0], [0, 0]] material=0(flat) height=0.00 group=0 fill=(0.176,0.200,0.212,1.000) gradient=None end=(0.000,0.000,0.000,0.000) stroke=(0.000,0.000,0.000,0.000;0.00;Centered) resolution=retained-cache dependencies=paint,material generations=(paint=1 material=1)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 5652565772270442828 parent=16116150060909894922 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:97:12 component=container key="audition-play-hover" scope="" bounds=(326.0,582.0 40.0x40.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  semantic surface: role=core.Accent_Hover shape=arc radius=0.00 corner-radii=(0.00 0.00 0.00 0.00) arc=(center=0.500,0.500 radius=0.460 start=-1.571 sweep=6.283) bezier=[[0, 0], [0, 0], [0, 0], [0, 0]] material=0(flat) height=0.00 group=0 fill=(0.894,0.718,0.498,1.000) gradient=None end=(0.000,0.000,0.000,0.000) stroke=(0.894,0.718,0.498,1.000;1.50;Centered) resolution=retained-cache dependencies=paint,material generations=(paint=1 material=1)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 11322960147570816389 parent=16116150060909894922 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:107:12 component=container key="audition-play-track" scope="" bounds=(326.0,582.0 40.0x40.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  semantic surface: role=core.Border shape=arc radius=0.00 corner-radii=(0.00 0.00 0.00 0.00) arc=(center=0.500,0.500 radius=0.460 start=-1.571 sweep=6.283) bezier=[[0, 0], [0, 0], [0, 0], [0, 0]] material=0(flat) height=0.00 group=0 fill=(0.231,0.263,0.275,1.000) gradient=None end=(0.000,0.000,0.000,0.000) stroke=(0.231,0.263,0.275,1.000;2.00;Centered) resolution=retained-cache dependencies=paint,material generations=(paint=1 material=1)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 7326053925542011230 parent=16116150060909894922 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:130:17 component=container key="audition-play-focus" scope="" bounds=(326.0,582.0 40.0x40.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  semantic surface: role=core.Focus shape=circle radius=0.00 corner-radii=(0.00 0.00 0.00 0.00) arc=(center=0.000,0.000 radius=0.000 start=0.000 sweep=0.000) bezier=[[0, 0], [0, 0], [0, 0], [0, 0]] material=0(flat) height=0.00 group=0 fill=(0.894,0.718,0.498,1.000) gradient=None end=(0.000,0.000,0.000,0.000) stroke=(0.894,0.718,0.498,1.000;2.00;Inside) resolution=retained-cache dependencies=paint,material generations=(paint=1 material=1)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 11317340722394788924 parent=16116150060909894922 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:164:13 component=container key="" scope_u64=1 bounds=(326.0,582.0 40.0x40.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  semantic surface: role=core.Text shape=cubic-bezier radius=0.00 corner-radii=(0.00 0.00 0.00 0.00) arc=(center=0.000,0.000 radius=0.000 start=0.000 sweep=0.000) bezier=[[0.41, 0.29], [0.41, 0.43], [0.41, 0.57], [0.41, 0.71]] material=0(flat) height=0.00 group=0 fill=(0.910,0.906,0.882,1.000) gradient=None end=(0.000,0.000,0.000,0.000) stroke=(0.678,0.706,0.710,1.000;3.20;Centered) resolution=retained-cache dependencies=paint,material generations=(paint=1 material=1)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 11317344020929673557 parent=16116150060909894922 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:164:13 component=container key="" scope_u64=2 bounds=(326.0,582.0 40.0x40.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  semantic surface: role=core.Text shape=cubic-bezier radius=0.00 corner-radii=(0.00 0.00 0.00 0.00) arc=(center=0.000,0.000 radius=0.000 start=0.000 sweep=0.000) bezier=[[0.41, 0.71], [0.49333334, 0.64], [0.5766667, 0.57], [0.66, 0.5]] material=0(flat) height=0.00 group=0 fill=(0.910,0.906,0.882,1.000) gradient=None end=(0.000,0.000,0.000,0.000) stroke=(0.678,0.706,0.710,1.000;3.20;Centered) resolution=retained-cache dependencies=paint,material generations=(paint=1 material=1)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 11317342921418045346 parent=16116150060909894922 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:164:13 component=container key="" scope_u64=3 bounds=(326.0,582.0 40.0x40.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  semantic surface: role=core.Text shape=cubic-bezier radius=0.00 corner-radii=(0.00 0.00 0.00 0.00) arc=(center=0.000,0.000 radius=0.000 start=0.000 sweep=0.000) bezier=[[0.66, 0.5], [0.5766667, 0.43], [0.49333334, 0.36], [0.41, 0.29]] material=0(flat) height=0.00 group=0 fill=(0.910,0.906,0.882,1.000) gradient=None end=(0.000,0.000,0.000,0.000) stroke=(0.678,0.706,0.710,1.000;3.20;Centered) resolution=retained-cache dependencies=paint,material generations=(paint=1 material=1)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 2901284331173569291 parent=11289801806464907832 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:767:7 component=button key="audition-stop" scope="" bounds=(374.0,582.0 60.0x40.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: description changed
+  button/tab state: presentation=Default selected=false hovered=false pressed=false disabled=true focused=false keyboard-focus-visible=false
+  button identity: label="Stop"
+  text run: valid=true bytes=4 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.176,0.200,0.212,0.000) text=(0.678,0.706,0.710,1.000) indicator=None/Text
+  applied transforms: disabled | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  optical surface: shape=rounded-rectangle radius=3.00 corner-radii=(3.00 3.00 3.00 3.00) material=2 height=1.500 (paint only)
+  computed style: dependencies=paint,material resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface text.base=Muted_Text focus.base=Focus semantic-active.base=Semantic_Focus indicator.base=Text text.disabled=Muted_Text
+Node: 7128334885617114227 parent=11289801806464907832 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:778:7 component=button key="audition-next" scope="" bounds=(442.0,582.0 66.0x40.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Default selected=false hovered=false pressed=false disabled=true focused=false keyboard-focus-visible=false
+  button identity: label="Next"
+  text run: valid=true bytes=4 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.176,0.200,0.212,0.000) text=(0.678,0.706,0.710,1.000) indicator=None/Text
+  applied transforms: disabled | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  optical surface: shape=rounded-rectangle radius=3.00 corner-radii=(3.00 3.00 3.00 3.00) material=2 height=1.500 (paint only)
+  computed style: dependencies=paint,material resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface text.base=Muted_Text focus.base=Focus semantic-active.base=Semantic_Focus indicator.base=Text text.disabled=Muted_Text
+Node: 15168569996297283841 parent=9988443868499634335 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:791:6 component=container key="audition-volume-row" scope="" bounds=(240.0,628.0 698.0x44.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 13341042133225160723 parent=15168569996297283841 kind=Slider source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:793:7 component=slider_f32 key="audition-volume" scope="" bounds=(240.0,628.0 648.0x44.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: description changed
+  slider style: recipe=slider.default resolution=retained-cache state=(hovered=false pressed=false disabled=false focused=false) applied= focus-mode=always dependencies=paint generations=(paint=1)
+  token provenance: slider.default
+  track surface.base=Border text.base=Muted_Text border.base=Border
+  fill surface.base=Accent text.base=Accent_Text border.base=Accent
+  thumb surface.base=Text text.base=Text border.base=Border
+  label surface.base=Surface text.base=Text border.base=Border focus.overlay=Focus
+Node: 3558404542801936943 parent=15168569996297283841 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:806:8 component=text key="audition-volume-value" scope="" bounds=(896.0,628.0 42.0x44.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(4,Leading) selection=(4,Leading)->(4,Leading) reason: description changed
+  text run: valid=true bytes=4 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 5421992072720865559 parent=6908482068972179392 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/punks/punks-standalone/odin/library_view.odin:851:7 component=text key="application-status" scope="" bounds=(10.0,692.0 940.0x18.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(7,Leading) selection=(7,Leading)->(7,Leading) reason: description changed
+  text run: valid=true bytes=7 paint-spans=0 style-spans=0 faces=[1] unresolved=false

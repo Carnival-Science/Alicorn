@@ -7,6 +7,7 @@ import "core:os"
 import "core:c"
 import "core:strconv"
 import "core:strings"
+import "core:time"
 import alicorn "../../runtime"
 import "vendor:sdl3"
 
@@ -22,6 +23,13 @@ native_run_application :: proc(
 	macos_titlebar_fixture := false,
 	windows_titlebar_fixture := false,
 ) {
+	// Startup attribution origin. Everything below is measurement-only; marker
+	// timestamps are elapsed nanoseconds from this point unless named otherwise.
+	startup_origin := time.now()
+	startup_origin_tick := time.tick_now()
+	startup: Native_Startup_Timing
+	startup.origin_unix_ns = u64(time.time_to_unix_nano(startup_origin))
+	phase_start := startup_origin_tick
 	input_debug := macos_titlebar_fixture || windows_titlebar_fixture
 	validation_timeout_seconds := 0
 	for argument in os.args {
@@ -48,6 +56,7 @@ native_run_application :: proc(
 	}
 	configure_platform_activation()
 	if !sdl3.Init(sdl3.INIT_VIDEO) { fail("SDL_Init failed") }
+	startup.sdl_init_ns = native_startup_elapsed_ns(phase_start)
 	defer sdl3.Quit()
 	fmt.println("sdl_video_driver", sdl3.GetCurrentVideoDriver())
 	linked_sdl_version := sdl3.GetVersion()
@@ -74,7 +83,9 @@ native_run_application :: proc(
 	// Windows requires AccessKit's subclassing adapter to be installed before
 	// the HWND is first shown or focused. run_application_loop builds the initial
 	// semantic snapshot and installs the adapter before showing this window.
+	phase_start = time.tick_now()
 	window := sdl3.CreateWindow(title_cstring, c.int(width), c.int(height), sdl3.WindowFlags{.HIDDEN, .RESIZABLE, .HIGH_PIXEL_DENSITY})
+	startup.window_create_ns = native_startup_elapsed_ns(phase_start)
 	if window == nil { fail("SDL_CreateWindow failed") }
 	defer sdl3.DestroyWindow(window)
 	menu_application := application
@@ -121,7 +132,9 @@ native_run_application :: proc(
 	formats := sdl3.GPUShaderFormat{.SPIRV, .DXIL, .MSL}
 	gpu_driver_name: cstring = nil
 	when ODIN_OS == .Darwin { gpu_driver_name = "metal" }
+	phase_start = time.tick_now()
 	device := sdl3.CreateGPUDevice(formats, false, gpu_driver_name)
+	startup.gpu_device_create_ns = native_startup_elapsed_ns(phase_start)
 	if device == nil { fail("SDL_CreateGPUDevice failed") }
 	defer sdl3.DestroyGPUDevice(device)
 	selected_driver := sdl3.GetGPUDeviceDriver(device)
@@ -131,29 +144,57 @@ native_run_application :: proc(
 			fail("macOS SDL_GPU did not select the requested Metal driver")
 		}
 	}
-		if !sdl3.ClaimWindowForGPUDevice(device, window) { fail("SDL_ClaimWindowForGPUDevice failed") }
+	phase_start = time.tick_now()
+	if !sdl3.ClaimWindowForGPUDevice(device, window) { fail("SDL_ClaimWindowForGPUDevice failed") }
+	startup.gpu_claim_window_ns = native_startup_elapsed_ns(phase_start)
 	defer sdl3.ReleaseWindowFromGPUDevice(device, window)
 	// The reusable desktop host favors interaction latency. The foundation
 	// stress fixture below intentionally uses three frames; ordinary apps use
 	// two unless they explicitly opt into throughput-oriented stress behavior.
 	if !sdl3.SetGPUAllowedFramesInFlight(device, 2) { fail("SDL_SetGPUAllowedFramesInFlight failed") }
-	rt := alicorn.new_runtime(alicorn.Rect{0, 0, f32(metrics.logical_width), f32(metrics.logical_height)})
+	// The host owns the allocation-stats record used by the startup
+	// attribution output. Passing it in does not change allocation behavior.
+	startup_allocation_stats: alicorn.Runtime_Allocation_Stats
+	phase_start = time.tick_now()
+	rt := alicorn.new_runtime(
+		alicorn.Rect{0, 0, f32(metrics.logical_width), f32(metrics.logical_height)},
+		config=alicorn.Runtime_Config{allocation_stats=&startup_allocation_stats},
+	)
+	startup.runtime_init_ns = native_startup_elapsed_ns(phase_start)
 	defer alicorn.destroy_runtime(&rt)
+	phase_start = time.tick_now()
+	live_before := rt.allocation_stats.persistent_requested_bytes_live
 	if application.on_initialize != nil { application.on_initialize(application.state, &rt) }
+	startup.app_init_requested_bytes = rt.allocation_stats.persistent_requested_bytes_live - live_before
+	startup.app_init_ns = native_startup_elapsed_ns(phase_start)
+	phase_start = time.tick_now()
+	live_before = rt.allocation_stats.persistent_requested_bytes_live
 	if !native_load_default_fonts(&rt) { fail("application bundled Runa fonts could not be initialized") }
+	startup.fonts_requested_bytes = rt.allocation_stats.persistent_requested_bytes_live - live_before
+	startup.fonts_ns = native_startup_elapsed_ns(phase_start)
+	phase_start = time.tick_now()
+	renderers_start := phase_start
 	text_renderer, text_ok := native_text_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window), &rt)
+	startup.text_renderer_make_ns = native_startup_elapsed_ns(phase_start)
 	if !text_ok { fail("application GPU text pipeline initialization failed") }
 	defer native_text_destroy(&text_renderer)
+	phase_start = time.tick_now()
 	when ODIN_OS == .Windows {
 		if !native_menu_prepare_gpu(&native_menu, &rt, &text_renderer) {
 			fail("integrated title bar GPU text initialization failed")
 		}
 	}
+	startup.chrome_text_make_ns = native_startup_elapsed_ns(phase_start)
+	phase_start = time.tick_now()
 	surface_renderer, surface_ok := native_surface_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window), &rt)
+	startup.surface_renderer_make_ns = native_startup_elapsed_ns(phase_start)
 	if !surface_ok { fail("application GPU surface pipeline initialization failed") }
 	defer native_surface_destroy(&surface_renderer)
+	phase_start = time.tick_now()
 	solid_renderer, solid_ok := native_solid_make(device, sdl3.GetGPUSwapchainTextureFormat(device, window), &rt)
+	startup.solid_renderer_make_ns = native_startup_elapsed_ns(phase_start)
 	if !solid_ok { fail("application solid rectangle pipeline initialization failed") }
 	defer native_solid_destroy(&solid_renderer)
-	run_application_loop(window, device, &rt, &text_renderer, &surface_renderer, &solid_renderer, &metrics, application, smoke, input_debug, string(selected_driver), validation_timeout_seconds=validation_timeout_seconds, native_menu=&native_menu)
+	startup.renderers_make_ns = native_startup_elapsed_ns(renderers_start)
+	run_application_loop(window, device, &rt, &text_renderer, &surface_renderer, &solid_renderer, &metrics, application, smoke, input_debug, string(selected_driver), validation_timeout_seconds=validation_timeout_seconds, native_menu=&native_menu, startup=startup, startup_origin=startup_origin_tick)
 }

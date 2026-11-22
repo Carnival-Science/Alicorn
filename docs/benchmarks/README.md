@@ -6,6 +6,11 @@ without crowding the project’s user and contributor guides.
 
 ## Reports
 
+- [Native SDL_GPU startup attribution — Issue #172 phase 1, Windows (2026-11-21)](native-startup-attribution-windows-2026-11-21.md)
+  — measurement-only startup markers plus a fresh-process attribution of
+  working set, private bytes, GPU process memory, runtime requested bytes and
+  the host-declared eager resource budget for Hello, Scratchpad and Punks, with
+  warm/cold limits and a ranked lazy-init candidate list.
 - [v0.3.0 measured performance ledger — Windows (2026-11-21)](v030-performance-ledger.md)
   — consolidated stage ledger for invalidation lookup, measure, layout, paint,
   display finalization, description/reconcile, and keyed regions; one row per

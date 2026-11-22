@@ -1,0 +1,10 @@
+{"schema":1,"timestamp_utc":"20261122T082212.234Z","monotonic_ns":470984800,"thread_id":556036,"source":"alicorn","event":"session.started","request_id":0}
+{"schema":1,"timestamp_utc":"20261122T082212.653Z","monotonic_ns":890462300,"thread_id":556036,"source":"application","event":"directory.open.command.begin","request_id":1}
+{"schema":1,"timestamp_utc":"20261122T082212.957Z","monotonic_ns":1194212500,"thread_id":556036,"source":"application","event":"directory.enumeration.started","request_id":1}
+{"schema":1,"timestamp_utc":"20261122T082213.007Z","monotonic_ns":1244123000,"thread_id":556036,"source":"application","event":"directory.open.command.submitted","request_id":1}
+{"schema":1,"timestamp_utc":"20261122T082213.112Z","monotonic_ns":1348723300,"thread_id":556036,"source":"application","event":"directory.enumeration.completed","request_id":1}
+{"schema":1,"timestamp_utc":"20261122T082213.659Z","monotonic_ns":1895770700,"thread_id":556036,"source":"alicorn","event":"dialog.shutdown.begin","request_id":0}
+{"schema":1,"timestamp_utc":"20261122T082213.712Z","monotonic_ns":1949261300,"thread_id":556036,"source":"alicorn","event":"dialog.shutdown.complete","request_id":0}
+{"schema":1,"timestamp_utc":"20261122T082213.740Z","monotonic_ns":1977464800,"thread_id":556036,"source":"alicorn","event":"application.stop.begin","request_id":0}
+{"schema":1,"timestamp_utc":"20261122T082213.798Z","monotonic_ns":2034883200,"thread_id":556036,"source":"alicorn","event":"application.stop.completed","request_id":0}
+{"schema":1,"timestamp_utc":"20261122T082213.879Z","monotonic_ns":2116335600,"thread_id":556036,"source":"alicorn","event":"session.ended","request_id":0}

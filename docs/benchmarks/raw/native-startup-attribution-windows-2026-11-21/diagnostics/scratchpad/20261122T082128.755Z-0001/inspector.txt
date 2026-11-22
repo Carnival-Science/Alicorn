@@ -1,0 +1,408 @@
+Alicorn inspector
+keyboard focus: 0 selected node: 0 captured: 0
+semantic focus: none
+restore: target=1408698666415441484 control=Split token=2 outcome=Applied reason=Resolved requested=(250.00,0.00) preferred=(250.00,0.00) resolved=(250.00,0.00) semantic=(0,0) realized=0 layout=1
+restore: target=677710846788544659 control=Scroll token=1 outcome=Applied reason=Resolved requested=(0.00,0.00) preferred=(0.00,0.00) resolved=(0.00,0.00) semantic=(0,0) realized=0 layout=2
+retained nodes: 56
+semantics: revision=2 entities=28 latest=(1>2 +9 -0) requests=0 work=(described=52 resolved=89 structure=33 properties=0 focus-search=0 active-update=0)
+last invalidation: scroll restoration requires one virtual range correction
+drag: phase=Idle type=0 source=(0,0) source-node=0 target=(0,0) target-node=0 position=None state=Free tracking=Free preview=(mode=Auto ready=false 0.0x0.0 display-start=0 commands=0)
+frame: 2 built=2 idle=0 regions-skipped=0 subtrees-reused=0 adjacency-rebuilds=2 surface-updates=0 geometry-updates=0 surface-clears=0 stale-surface-updates=0 geometry-overflow-rejections=0 surface-pending=false presentation=2 submitted=2
+work: reconcile=106 measure=24 measure_hits=7 measure_misses=17 text_shapes=25 layout=168 paint=78 compose=66 style_resolutions=7 style_cache_hits=1 created=56 retired=0
+actions:
+  file.open · Open File… (id=2638452923 enabled=true checked=false)
+  file.quick-open · Quick Open… (id=3280194761 enabled=true checked=false)
+  workspace.open · Open Folder… (id=679136528 enabled=true checked=false)
+  file.save · Save (id=2825482690 enabled=false checked=false)
+  document.close · Close Document (id=2640640634 enabled=false checked=false)
+  edit.undo · Undo (id=1268049623 enabled=false checked=false)
+  edit.redo · Redo (id=997713377 enabled=false checked=false)
+  tab.next · Next Document (id=460182523 enabled=false checked=false)
+  tab.previous · Previous Document (id=3566315931 enabled=false checked=false)
+  workspace.refresh · Refresh Workspace (id=1845323219 enabled=true checked=false)
+  workspace.new-file · New File (id=495197879 enabled=true checked=false)
+  workspace.new-folder · New Folder (id=722489425 enabled=true checked=false)
+  workspace.rename · Rename (id=2940504170 enabled=true checked=false)
+  workspace.move · Move (id=4037264565 enabled=true checked=false)
+  workspace.trash · Move to Trash (id=770285426 enabled=true checked=false)
+  document.format · Format table (id=1156365501 enabled=false checked=false)
+  edit.indent-lines · Indent lines (id=4089642801 enabled=false checked=false)
+  edit.outdent-lines · Outdent lines (id=812607344 enabled=false checked=false)
+  edit.delete-line · Delete line (id=1819389071 enabled=false checked=false)
+  edit.insert-line-above · Insert line above (id=2282892881 enabled=false checked=false)
+  edit.insert-line-below · Insert line below (id=1753637805 enabled=false checked=false)
+  edit.move-line-up · Move line up (id=1269611601 enabled=false checked=false)
+  edit.move-line-down · Move line down (id=3104507480 enabled=false checked=false)
+  edit.duplicate-line · Duplicate line (id=2080758819 enabled=false checked=false)
+  edit.join-lines · Join lines (id=2072521471 enabled=false checked=false)
+  selection.expand · Expand Selection (id=3813265317 enabled=false checked=false)
+  comment.toggle · Toggle comment (id=3598162524 enabled=false checked=false)
+  item.toggle · Toggle task (id=4062889924 enabled=false checked=false)
+  markdown.toggle-strong · Strong (id=2006010014 enabled=false checked=false)
+  markdown.toggle-emphasis · Emphasis (id=2407642523 enabled=false checked=false)
+  markdown.toggle-strike · Strikethrough (id=1629787395 enabled=false checked=false)
+  markdown.toggle-inline-code · Inline code (id=3443273182 enabled=false checked=false)
+  markdown.insert-link · Link (id=2880378214 enabled=false checked=false)
+  markdown.heading-1 · Heading 1 (id=1498516602 enabled=false checked=false)
+  markdown.heading-2 · Heading 2 (id=1481738983 enabled=false checked=false)
+  markdown.heading-3 · Heading 3 (id=1464961364 enabled=false checked=false)
+  markdown.toggle-bulleted-list · Bulleted list (id=1482385163 enabled=false checked=false)
+  markdown.toggle-numbered-list · Numbered list (id=3986942800 enabled=false checked=false)
+  markdown.toggle-quote · Quote (id=2422980099 enabled=false checked=false)
+  markdown.insert-task · Task (id=1140623411 enabled=false checked=false)
+  markdown.insert-code-block · Code block (id=3687870655 enabled=false checked=false)
+  markdown.set-fence-language · Code fence language (id=3586096547 enabled=false checked=false)
+  markdown.insert-table · Table (id=2526485026 enabled=false checked=false)
+  markdown.table-next · Next table cell (id=34475768 enabled=false checked=false)
+  markdown.table-previous · Previous table cell (id=1394107480 enabled=false checked=false)
+  markdown.table-enter · Next table row (id=1537300157 enabled=false checked=false)
+  markdown.insert-divider · Divider (id=155833323 enabled=false checked=false)
+  markdown.smart-paste · Paste as link (id=2584537053 enabled=false checked=false)
+recent trace:
+  #939 Submit cause=none node=0 GPU frame submission acknowledged
+frontiers:
+  capture disabled (release build or ALICORN_INVALIDATION_FRONTIER=false)
+Node: 16974990923245328568 parent=0 kind=Root source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/frontends/alicorn/app_layout.odin:131:10 component=container key="" scope="" bounds=(0.0,0.0 1216.0x799.0)
+  description: reused layout: reused paint: reused composite: changed
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 1408698666415441484 parent=16974990923245328568 kind=Split source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/frontends/alicorn/app_layout.odin:180:22 component=split key="scratchpad-workspace-editor-split" scope="" bounds=(0.0,0.0 1216.0x799.0)
+  split: axis=Horizontal preferred=250.00 resolved=250.00 dragging=false
+  description: reused layout: reused paint: reused composite: changed
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 4132683515932161557 parent=1408698666415441484 kind=Container source=C:/Users/saman/.local/share/opencode/worktree/191a98/finish-172-startup-attribution/runtime/layout_widgets.odin:106:9 component=container key="first" scope="" bounds=(0.0,0.0 250.0x799.0)
+  description: reused layout: reused paint: reused composite: changed
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 10048641885866654508 parent=4132683515932161557 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/frontends/alicorn/app_layout.odin:712:12 component=container key="" scope="" bounds=(0.0,0.0 250.0x32.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 17424398023455034900 parent=10048641885866654508 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/frontends/alicorn/app_layout.odin:726:13 component=container key="" scope="" bounds=(0.0,0.0 8.0x32.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 12451276232376782866 parent=10048641885866654508 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/frontends/alicorn/app_layout.odin:611:15 component=container key="workspace-panel-tabs" scope="" bounds=(8.0,0.0 234.0x32.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 16272580582473293040 parent=12451276232376782866 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/frontends/alicorn/app_layout.odin:620:26 component=container key="workspace-panel-root-path" scope="" bounds=(8.0,1.0 202.0x30.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 4818981036902336161 parent=16272580582473293040 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/frontends/alicorn/app_layout.odin:637:13 component=button key="workspace-panel-root-path-text" scope="" bounds=(8.0,1.0 202.0x30.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Default selected=false hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label="C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\startup-attribution-172\\workspace"
+  text run: valid=true bytes=34 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.020,0.024,0.027,0.000) text=(0.468,0.434,0.376,1.000) indicator=None/Text
+  applied transforms: | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  computed style: dependencies=paint resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface(token=35) provenance=[scratchpad.charcoal.subtle_surface] text.base=Muted_Text(token=30) provenance=[scratchpad.charcoal.muted_text] focus.base=Focus(token=28) provenance=[scratchpad.charcoal.focus] semantic-active.base=Semantic_Focus(token=34) provenance=[scratchpad.charcoal.semantic_focus] indicator.base=Text(token=53) provenance=[scratchpad.charcoal.text]
+Node: 1052579146005400704 parent=12451276232376782866 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/frontends/alicorn/app_layout.odin:654:31 component=icon_button key="workspace-panel-search" scope="" bounds=(212.0,1.0 30.0x30.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Default selected=false hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label=""
+  text run: valid=true bytes=0 paint-spans=0 style-spans=0 faces=[] unresolved=false
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.020,0.024,0.027,0.000) text=(0.468,0.434,0.376,1.000) indicator=None/Text
+  applied transforms: | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  computed style: dependencies=paint resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface(token=35) provenance=[scratchpad.charcoal.subtle_surface] text.base=Muted_Text(token=30) provenance=[scratchpad.charcoal.muted_text] focus.base=Focus(token=28) provenance=[scratchpad.charcoal.focus] semantic-active.base=Semantic_Focus(token=34) provenance=[scratchpad.charcoal.semantic_focus] indicator.base=Text(token=53) provenance=[scratchpad.charcoal.text]
+Node: 2942599056961446558 parent=10048641885866654508 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/frontends/alicorn/app_layout.odin:743:16 component=container key="" scope="" bounds=(242.0,0.0 8.0x32.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 4478266976565150463 parent=4132683515932161557 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/frontends/alicorn/app_layout.odin:198:3 component=container key="" scope="" bounds=(0.0,32.0 250.0x767.0)
+  description: reused layout: reused paint: reused composite: changed
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  semantic surface: role=core.Surface token=37 shape=rectangle radius=0.00 corner-radii=(0.00 0.00 0.00 0.00) arc=(center=0.000,0.000 radius=0.000 start=0.000 sweep=0.000) bezier=[[0, 0], [0, 0], [0, 0], [0, 0]] material=4(analytic-relief) height=-1.75 group=0 fill=(0.012,0.014,0.017,1.000) gradient=None end=(0.000,0.000,0.000,0.000) stroke=(0.000,0.000,0.000,0.000;0.00;Centered) resolution=retained-cache dependencies=paint,material generations=(paint=1 material=1)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 11445396971840257739 parent=4478266976565150463 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/frontends/alicorn/app_layout.odin:674:5 component=container key="" scope="" bounds=(8.0,40.0 234.0x32.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 15062204083892775846 parent=11445396971840257739 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/frontends/alicorn/app_layout.odin:675:6 component=button key="workspace-sidebar-files" scope="" bounds=(8.0,42.0 62.0x28.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=true semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Default selected=true hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label="Files"
+  text run: valid=true bytes=5 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.115,0.072,0.041,0.180) text=(0.468,0.434,0.376,1.000) indicator=None/Text
+  applied transforms: selected | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  computed style: dependencies=paint resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface(token=35) provenance=[scratchpad.charcoal.subtle_surface] text.base=Muted_Text(token=30) provenance=[scratchpad.charcoal.muted_text] focus.base=Focus(token=28) provenance=[scratchpad.charcoal.focus] semantic-active.base=Semantic_Focus(token=34) provenance=[scratchpad.charcoal.semantic_focus] indicator.base=Text(token=53) provenance=[scratchpad.charcoal.text] surface.selected=Accent(token=19) provenance=[scratchpad.charcoal.accent]
+Node: 17491889437871626436 parent=11445396971840257739 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/frontends/alicorn/app_layout.odin:682:6 component=button key="workspace-sidebar-git" scope="" bounds=(74.0,42.0 58.0x28.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Default selected=false hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label="Git"
+  text run: valid=true bytes=3 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.020,0.024,0.027,0.000) text=(0.468,0.434,0.376,1.000) indicator=None/Text
+  applied transforms: | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  computed style: dependencies=paint resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface(token=35) provenance=[scratchpad.charcoal.subtle_surface] text.base=Muted_Text(token=30) provenance=[scratchpad.charcoal.muted_text] focus.base=Focus(token=28) provenance=[scratchpad.charcoal.focus] semantic-active.base=Semantic_Focus(token=34) provenance=[scratchpad.charcoal.semantic_focus] indicator.base=Text(token=53) provenance=[scratchpad.charcoal.text]
+Node: 4873534748796298091 parent=4478266976565150463 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:137:20 component=container key="tree-root" scope="" bounds=(8.0,78.0 234.0x713.0)
+  description: reused layout: reused paint: reused composite: changed
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 677710846788544659 parent=4873534748796298091 kind=Scroll_Region source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:155:10 component=scroll_region key="tree-rows" scope="" bounds=(8.0,78.0 234.0x713.0)
+  description: reused layout: reused paint: reused composite: changed
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  scrollbar style: recipe=scrollbar.default resolution=retained-cache state=(hovered=false pressed=false) dependencies=paint generations=(paint=1)
+  token provenance: scrollbar.default track.base=Scrollbar_Track(token=32) provenance=[scratchpad.charcoal.scrollbar_track] thumb.base=Scrollbar_Thumb(token=31) provenance=[scratchpad.charcoal.scrollbar_thumb] corner.base=Surface(token=37) provenance=[scratchpad.charcoal.surface]
+Node: 6190161394369674980 parent=677710846788544659 kind=Virtual_List source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:155:10 component=container key="" scope="" bounds=(8.0,78.0 234.0x713.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: description reused
+Node: 15131420796372095495 parent=6190161394369674980 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:205:21 component=button key="" scope_pair=(2702999057,9431351913033350706) bounds=(8.0,78.0 234.0x26.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Custom selected=false hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label="application"
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.020,0.024,0.027,0.000) text=(0.468,0.434,0.376,1.000) indicator=None/Text
+  applied transforms: | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  computed style: dependencies=paint resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface(token=35) provenance=[scratchpad.charcoal.subtle_surface] text.base=Muted_Text(token=30) provenance=[scratchpad.charcoal.muted_text] focus.base=Focus(token=28) provenance=[scratchpad.charcoal.focus] semantic-active.base=Semantic_Focus(token=34) provenance=[scratchpad.charcoal.semantic_focus] indicator.base=Text(token=53) provenance=[scratchpad.charcoal.text]
+Node: 8062102707119211394 parent=15131420796372095495 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:249:8 component=container key="tree-item-icon" scope="" bounds=(11.0,83.0 16.0x16.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 8403260761482690543 parent=15131420796372095495 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:257:16 component=text key="tree-label" scope="" bounds=(33.0,81.0 206.0x20.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(11,Leading) selection=(11,Leading)->(11,Leading) reason: new retained node
+  text run: valid=true bytes=11 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 10552528043309461476 parent=6190161394369674980 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:205:21 component=button key="" scope_pair=(2702999057,4061182087586280675) bounds=(8.0,104.0 234.0x26.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Custom selected=false hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label="docs"
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.020,0.024,0.027,0.000) text=(0.468,0.434,0.376,1.000) indicator=None/Text
+  applied transforms: | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  computed style: dependencies=paint resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface(token=35) provenance=[scratchpad.charcoal.subtle_surface] text.base=Muted_Text(token=30) provenance=[scratchpad.charcoal.muted_text] focus.base=Focus(token=28) provenance=[scratchpad.charcoal.focus] semantic-active.base=Semantic_Focus(token=34) provenance=[scratchpad.charcoal.semantic_focus] indicator.base=Text(token=53) provenance=[scratchpad.charcoal.text]
+Node: 839608369209430055 parent=10552528043309461476 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:249:8 component=container key="tree-item-icon" scope="" bounds=(11.0,109.0 16.0x16.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 1259917531810385874 parent=10552528043309461476 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:257:16 component=text key="tree-label" scope="" bounds=(33.0,107.0 206.0x20.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(4,Leading) selection=(4,Leading)->(4,Leading) reason: new retained node
+  text run: valid=true bytes=4 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 7223222101255287094 parent=6190161394369674980 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:205:21 component=button key="" scope_pair=(2702999057,9104438842462720157) bounds=(8.0,130.0 234.0x26.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Custom selected=false hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label="document"
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.020,0.024,0.027,0.000) text=(0.468,0.434,0.376,1.000) indicator=None/Text
+  applied transforms: | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  computed style: dependencies=paint resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface(token=35) provenance=[scratchpad.charcoal.subtle_surface] text.base=Muted_Text(token=30) provenance=[scratchpad.charcoal.muted_text] focus.base=Focus(token=28) provenance=[scratchpad.charcoal.focus] semantic-active.base=Semantic_Focus(token=34) provenance=[scratchpad.charcoal.semantic_focus] indicator.base=Text(token=53) provenance=[scratchpad.charcoal.text]
+Node: 7930598421009144829 parent=7223222101255287094 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:249:8 component=container key="tree-item-icon" scope="" bounds=(11.0,135.0 16.0x16.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 10492627733900084884 parent=7223222101255287094 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:257:16 component=text key="tree-label" scope="" bounds=(33.0,133.0 206.0x20.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(8,Leading) selection=(8,Leading)->(8,Leading) reason: new retained node
+  text run: valid=true bytes=8 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 1140380957690778846 parent=6190161394369674980 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:205:21 component=button key="" scope_pair=(2702999057,10699668428338790085) bounds=(8.0,156.0 234.0x26.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Custom selected=false hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label="editor"
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.020,0.024,0.027,0.000) text=(0.468,0.434,0.376,1.000) indicator=None/Text
+  applied transforms: | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  computed style: dependencies=paint resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface(token=35) provenance=[scratchpad.charcoal.subtle_surface] text.base=Muted_Text(token=30) provenance=[scratchpad.charcoal.muted_text] focus.base=Focus(token=28) provenance=[scratchpad.charcoal.focus] semantic-active.base=Semantic_Focus(token=34) provenance=[scratchpad.charcoal.semantic_focus] indicator.base=Text(token=53) provenance=[scratchpad.charcoal.text]
+Node: 12160628982146651717 parent=1140380957690778846 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:249:8 component=container key="tree-item-icon" scope="" bounds=(11.0,161.0 16.0x16.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 7961344633144107852 parent=1140380957690778846 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:257:16 component=text key="tree-label" scope="" bounds=(33.0,159.0 206.0x20.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(6,Leading) selection=(6,Leading)->(6,Leading) reason: new retained node
+  text run: valid=true bytes=6 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 3769330191492341629 parent=6190161394369674980 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:205:21 component=button key="" scope_pair=(2702999057,13653271153886568544) bounds=(8.0,182.0 234.0x26.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Custom selected=false hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label="runtime"
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.020,0.024,0.027,0.000) text=(0.468,0.434,0.376,1.000) indicator=None/Text
+  applied transforms: | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  computed style: dependencies=paint resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface(token=35) provenance=[scratchpad.charcoal.subtle_surface] text.base=Muted_Text(token=30) provenance=[scratchpad.charcoal.muted_text] focus.base=Focus(token=28) provenance=[scratchpad.charcoal.focus] semantic-active.base=Semantic_Focus(token=34) provenance=[scratchpad.charcoal.semantic_focus] indicator.base=Text(token=53) provenance=[scratchpad.charcoal.text]
+Node: 11432375469455576332 parent=3769330191492341629 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:249:8 component=container key="tree-item-icon" scope="" bounds=(11.0,187.0 16.0x16.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 7633235487813441613 parent=3769330191492341629 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:257:16 component=text key="tree-label" scope="" bounds=(33.0,185.0 206.0x20.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(7,Leading) selection=(7,Leading)->(7,Leading) reason: new retained node
+  text run: valid=true bytes=7 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 9227199477208506314 parent=6190161394369674980 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:205:21 component=button key="" scope_pair=(2702999057,13352466317358439009) bounds=(8.0,208.0 234.0x26.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Custom selected=false hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label="tests"
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.020,0.024,0.027,0.000) text=(0.468,0.434,0.376,1.000) indicator=None/Text
+  applied transforms: | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  computed style: dependencies=paint resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface(token=35) provenance=[scratchpad.charcoal.subtle_surface] text.base=Muted_Text(token=30) provenance=[scratchpad.charcoal.muted_text] focus.base=Focus(token=28) provenance=[scratchpad.charcoal.focus] semantic-active.base=Semantic_Focus(token=34) provenance=[scratchpad.charcoal.semantic_focus] indicator.base=Text(token=53) provenance=[scratchpad.charcoal.text]
+Node: 16889457285862133305 parent=9227199477208506314 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:249:8 component=container key="tree-item-icon" scope="" bounds=(11.0,213.0 16.0x16.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 14577273416416902616 parent=9227199477208506314 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:257:16 component=text key="tree-label" scope="" bounds=(33.0,211.0 206.0x20.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(5,Leading) selection=(5,Leading)->(5,Leading) reason: new retained node
+  text run: valid=true bytes=5 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 15342817108779645491 parent=6190161394369674980 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:205:21 component=button key="" scope_pair=(2702999057,13513098077697058798) bounds=(8.0,234.0 234.0x26.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Custom selected=false hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label="themes"
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.020,0.024,0.027,0.000) text=(0.468,0.434,0.376,1.000) indicator=None/Text
+  applied transforms: | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  computed style: dependencies=paint resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface(token=35) provenance=[scratchpad.charcoal.subtle_surface] text.base=Muted_Text(token=30) provenance=[scratchpad.charcoal.muted_text] focus.base=Focus(token=28) provenance=[scratchpad.charcoal.focus] semantic-active.base=Semantic_Focus(token=34) provenance=[scratchpad.charcoal.semantic_focus] indicator.base=Text(token=53) provenance=[scratchpad.charcoal.text]
+Node: 13738848157624376070 parent=15342817108779645491 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:249:8 component=container key="tree-item-icon" scope="" bounds=(11.0,239.0 16.0x16.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 801714644594133419 parent=15342817108779645491 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:257:16 component=text key="tree-label" scope="" bounds=(33.0,237.0 206.0x20.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(6,Leading) selection=(6,Leading)->(6,Leading) reason: new retained node
+  text run: valid=true bytes=6 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 5856055727953059824 parent=6190161394369674980 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:205:21 component=button key="" scope_pair=(2702999057,17536604832704301631) bounds=(8.0,260.0 234.0x26.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Custom selected=false hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label="tools"
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.020,0.024,0.027,0.000) text=(0.468,0.434,0.376,1.000) indicator=None/Text
+  applied transforms: | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  computed style: dependencies=paint resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface(token=35) provenance=[scratchpad.charcoal.subtle_surface] text.base=Muted_Text(token=30) provenance=[scratchpad.charcoal.muted_text] focus.base=Focus(token=28) provenance=[scratchpad.charcoal.focus] semantic-active.base=Semantic_Focus(token=34) provenance=[scratchpad.charcoal.semantic_focus] indicator.base=Text(token=53) provenance=[scratchpad.charcoal.text]
+Node: 9104928585288281435 parent=5856055727953059824 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:249:8 component=container key="tree-item-icon" scope="" bounds=(11.0,265.0 16.0x16.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 349372471955352686 parent=5856055727953059824 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:257:16 component=text key="tree-label" scope="" bounds=(33.0,263.0 206.0x20.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(5,Leading) selection=(5,Leading)->(5,Leading) reason: new retained node
+  text run: valid=true bytes=5 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 4308274659097204791 parent=6190161394369674980 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:205:21 component=button key="" scope_pair=(2702999057,1618591143538255618) bounds=(8.0,286.0 234.0x26.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Custom selected=false hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label="README.md"
+  button recipe: variant=quiet recipe=button.quiet base=(Subtle_Surface,Muted_Text) surface=(0.020,0.024,0.027,0.000) text=(0.468,0.434,0.376,1.000) indicator=None/Text
+  applied transforms: | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  computed style: dependencies=paint resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.quiet surface.base=Subtle_Surface(token=35) provenance=[scratchpad.charcoal.subtle_surface] text.base=Muted_Text(token=30) provenance=[scratchpad.charcoal.muted_text] focus.base=Focus(token=28) provenance=[scratchpad.charcoal.focus] semantic-active.base=Semantic_Focus(token=34) provenance=[scratchpad.charcoal.semantic_focus] indicator.base=Text(token=53) provenance=[scratchpad.charcoal.text]
+Node: 5683843046222760370 parent=4308274659097204791 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:249:8 component=container key="tree-item-icon" scope="" bounds=(11.0,291.0 16.0x16.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 14242659633835026655 parent=4308274659097204791 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/third_party/alicorn-kit/tree_view/tree_view.odin:257:16 component=text key="tree-label" scope="" bounds=(33.0,289.0 206.0x20.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(9,Leading) selection=(9,Leading)->(9,Leading) reason: new retained node
+  text run: valid=true bytes=9 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 5809090099059930863 parent=1408698666415441484 kind=Split_Handle source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/frontends/alicorn/app_layout.odin:220:14 component=split_divider key="divider" scope="" bounds=(250.0,0.0 2.0x799.0)
+  split handle: owner=1408698666415441484 captured=false visual=(250.0,0.0 2.0x799.0) hit=(246.0,0.0 10.0x799.0) owner-position=250.00 owner-dragging=false
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 3389032112354343756 parent=1408698666415441484 kind=Container source=C:/Users/saman/.local/share/opencode/worktree/191a98/finish-172-startup-attribution/runtime/layout_widgets.odin:117:9 component=container key="second" scope="" bounds=(252.0,0.0 964.0x799.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 14400081462729702832 parent=3389032112354343756 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/frontends/alicorn/app_layout.odin:757:12 component=container key="" scope="" bounds=(252.0,0.0 964.0x32.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 4107345367821905925 parent=14400081462729702832 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/frontends/alicorn/app_layout.odin:778:2 component=container key="" scope="" bounds=(252.0,0.0 209.0x32.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 11786779961184868703 parent=3389032112354343756 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/frontends/alicorn/app_layout.odin:231:3 component=container key="" scope="" bounds=(252.0,32.0 964.0x767.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 4165593451075989393 parent=11786779961184868703 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/frontends/alicorn/workbench_layout.odin:294:10 component=container key="workbench-group-1" scope="" bounds=(252.0,32.0 964.0x767.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 15761675574016728139 parent=4165593451075989393 kind=Container source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/frontends/alicorn/workbench_layout.odin:327:6 component=container key="" scope="" bounds=(252.0,32.0 964.0x767.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 12999671321450574821 parent=15761675574016728139 kind=Image source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/frontends/alicorn/workbench_layout.odin:330:10 component=image key="scratchpad-brand-mark" scope="" bounds=(714.0,327.3 40.0x40.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+Node: 13449811170376743787 parent=15761675574016728139 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/frontends/alicorn/workbench_layout.odin:334:5 component=text key="" scope="" bounds=(252.0,375.3 964.0x20.8)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(16,Leading) selection=(16,Leading)->(16,Leading) reason: new retained node
+  text run: valid=true bytes=16 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 15379495819802170350 parent=15761675574016728139 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/frontends/alicorn/workbench_layout.odin:335:5 component=text key="" scope="" bounds=(252.0,404.1 964.0x20.8)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(49,Leading) selection=(49,Leading)->(49,Leading) reason: new retained node
+  text run: valid=true bytes=49 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+Node: 14154059999428711519 parent=15761675574016728139 kind=Button source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/frontends/alicorn/workbench_layout.odin:336:8 component=button key="empty-editor-quick-open" scope="" bounds=(629.0,432.9 210.0x42.0)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(0,Leading) selection=(0,Leading)->(0,Leading) reason: new retained node
+  button/tab state: presentation=Default selected=false hovered=false pressed=false disabled=false focused=false keyboard-focus-visible=false
+  button identity: label="Quick Open…"
+  text run: valid=true bytes=13 paint-spans=0 style-spans=0 faces=[1] unresolved=false
+  button recipe: variant=primary recipe=button.primary base=(Accent,Accent_Text) surface=(0.546,0.292,0.105,1.000) text=(0.008,0.006,0.004,1.000) indicator=None/Text
+  applied transforms: | focus-mode=always
+ | focus overlay=Focus semantic-active overlay=Semantic_Focus
+  computed style: dependencies=paint resolution=retained-cache generations=(metrics=0 typography=0 paint=1 material=0)
+  token provenance: button.primary surface.base=Accent(token=19) provenance=[scratchpad.charcoal.accent] text.base=Accent_Text(token=22) provenance=[scratchpad.charcoal.accent_text] focus.base=Focus(token=28) provenance=[scratchpad.charcoal.focus] semantic-active.base=Semantic_Focus(token=34) provenance=[scratchpad.charcoal.semantic_focus] indicator.base=Text(token=53) provenance=[scratchpad.charcoal.text]
+Node: 16032386738815968250 parent=15761675574016728139 kind=Text source=C:/Users/saman/AppData/Local/Temp/opencode/startup-attribution-172/scratchpad/frontends/alicorn/workbench_layout.odin:339:5 component=text key="" scope="" bounds=(252.0,482.9 964.0x20.8)
+  description: reused layout: reused paint: reused composite: reused
+  style environment: text-scale=1.00 accessibility-appearance=(increased-contrast=false reduce-motion=false reduce-transparency=false differentiate-without-color=false)
+  selected=false semantic_active=false hovered=false pressed=false caret=(23,Leading) selection=(23,Leading)->(23,Leading) reason: new retained node
+  text run: valid=true bytes=23 paint-spans=0 style-spans=0 faces=[1] unresolved=false

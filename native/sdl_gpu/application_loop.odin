@@ -24,7 +24,10 @@ run_application_loop :: proc(
 	gpu_driver := "unknown",
 	validation_timeout_seconds := 0,
 	native_menu: ^Native_Menu_Runtime,
+	startup: Native_Startup_Timing = {},
+	startup_origin: time.Tick = {},
 ) {
+	host_setup_start := time.tick_now()
 	application_instance := application
 	if native_menu == nil {
 		fail("native menu bridge is required for application loop storage")
@@ -65,6 +68,7 @@ run_application_loop :: proc(
 	wait_count := 0
 	submitted := 0
 	timing := Native_Host_Timing{}
+	timing.startup = startup
 	diagnostics := native_parse_diagnostics_options()
 	breadcrumbs := native_breadcrumbs_start(diagnostics)
 	defer native_breadcrumbs_release(breadcrumbs)
@@ -163,8 +167,11 @@ run_application_loop :: proc(
 	text_input_state.suspended = native_inspector_keyboard_owns_input(inspector)
 	pointer_modifier_state := sdl3.GetModState()
 	pointer_button_state := Native_Pointer_Button_State{}
+	timing.startup.host_loop_setup_ns = u64(time.duration_nanoseconds(time.tick_since(host_setup_start)))
 	alicorn.invalidate_root(rt, "SDL application initial frame")
+	initial_build_start := time.tick_now()
 	_ = native_application_build_until_stable(&application_instance, rt, metrics, &timing, stop_on_hard_error=inspector.enabled)
+	timing.startup.build_initial_ns = u64(time.duration_nanoseconds(time.tick_since(initial_build_start)))
 	when ODIN_OS == .Darwin { native_darwin_titlebar_sync_layout(native_menu) }
 	when ODIN_OS == .Windows {
 		if native_menu != nil {
@@ -190,6 +197,7 @@ run_application_loop :: proc(
 		}
 	}
 	if !sdl3.ShowWindow(window) || !sdl3.RaiseWindow(window) { fail("SDL application window could not be shown after native host initialization") }
+	timing.startup.window_shown_ns = native_startup_elapsed_ns(startup_origin)
 	live_resize_state := Native_Live_Resize_State{
 		active=true,
 		window=window,
@@ -500,6 +508,12 @@ run_application_loop :: proc(
 			motion_breadcrumbs=breadcrumbs,
 			bindings=&binding_service,
 		)
+		// First completed primary-window event-pump iteration: the host has
+		// drained OS input at least once for the now-shown window. This marker
+		// does not wait for a user input event and is not an input-latency claim.
+		if timing.startup.first_input_ready_ns == 0 {
+			timing.startup.first_input_ready_ns = native_startup_elapsed_ns(startup_origin)
+		}
 		_ = host_bindings.binding_service_timeout(
 			&binding_service, rt, u64(sdl3.GetTicksNS()),
 		)
@@ -1003,10 +1017,15 @@ run_application_loop :: proc(
 			flight := Native_In_Flight{fence=fence}
 			flight.serial = u64(submitted+1)
 			append(&in_flight, flight)
-			if application_submission_pending && timing.first_application_submit_ns == 0 {
-				// Measure from the application-loop timing origin to the first
-				// successful GPU submission that consumes an application frame.
-				timing.first_application_submit_ns = u64(time.duration_nanoseconds(time.since(start)))
+			if application_submission_pending && timing.startup.first_application_submit_ns == 0 {
+				// First successful GPU submission that consumes an application
+				// frame, measured from the host startup origin. Fence completion,
+				// scan-out and presentation completion are not observed here; this
+				// is not time-to-first-visible-pixel.
+				timing.startup.first_application_submit_ns = native_startup_elapsed_ns(startup_origin)
+				// Keep the legacy field in sync so existing consumers see the same
+				// startup-relative value rather than the old loop-relative one.
+				timing.first_application_submit_ns = timing.startup.first_application_submit_ns
 			}
 			native_text_commit_submission(text_renderer)
 			native_surface_commit_submission(surface_renderer)
@@ -1074,6 +1093,11 @@ run_application_loop :: proc(
 			devtools_hud_deadline_ns = native_devtools_hud_next_wake_ns(&devtools_recorder, u64(sdl3.GetTicksNS()))
 		}
 		if native_write_diagnostics(&diagnostics, start, gpu_driver, metrics^, rt, text_renderer, surface_renderer, solid_renderer, &timing, &text_events, &devtools_recorder) {
+			if timing.startup.first_diagnostics_ns == 0 {
+				// Time from the startup origin to the first diagnostics bundle
+				// being written, i.e. the historical post-submit marker.
+				timing.startup.first_diagnostics_ns = native_startup_elapsed_ns(startup_origin)
+			}
 			windows_path := fmt.tprintf("%s/windows.json", diagnostics.last_capture_dir)
 			if native_write_window_diagnostics(windows_path, window, metrics^, rt, native_menu, &secondary_windows) {
 				fmt.println("alicorn_diagnostics", "windows", windows_path)
@@ -1157,6 +1181,26 @@ run_application_loop :: proc(
 		"retired", retired,
 		"max_frames_in_flight", max_in_flight,
 		"wall_ns", elapsed_ns,
+		"startup_origin_unix_ns", timing.startup.origin_unix_ns,
+		"sdl_init_ns", timing.startup.sdl_init_ns,
+		"window_create_ns", timing.startup.window_create_ns,
+		"gpu_device_create_ns", timing.startup.gpu_device_create_ns,
+		"gpu_claim_window_ns", timing.startup.gpu_claim_window_ns,
+		"runtime_init_ns", timing.startup.runtime_init_ns,
+		"host_loop_setup_ns", timing.startup.host_loop_setup_ns,
+		"app_init_ns", timing.startup.app_init_ns,
+		"app_init_requested_bytes", timing.startup.app_init_requested_bytes,
+		"fonts_ns", timing.startup.fonts_ns,
+		"fonts_requested_bytes", timing.startup.fonts_requested_bytes,
+		"renderers_make_ns", timing.startup.renderers_make_ns,
+		"text_renderer_make_ns", timing.startup.text_renderer_make_ns,
+		"chrome_text_make_ns", timing.startup.chrome_text_make_ns,
+		"surface_renderer_make_ns", timing.startup.surface_renderer_make_ns,
+		"solid_renderer_make_ns", timing.startup.solid_renderer_make_ns,
+		"build_initial_ns", timing.startup.build_initial_ns,
+		"window_shown_ns", timing.startup.window_shown_ns,
+		"first_input_ready_ns", timing.startup.first_input_ready_ns,
+		"first_diagnostics_ns", timing.startup.first_diagnostics_ns,
 		"idle_after_last_submit_ns", idle_after_last_submit_ns,
 		"smoke_hold_ns", smoke_hold_ns,
 		"application_build_samples", len(timing.build_samples),
@@ -1282,4 +1326,7 @@ run_application_loop :: proc(
 		"application_stabilization_rebuilds", timing.application_stabilization_rebuilds,
 		"application_stabilization_limit_hits", timing.application_stabilization_limit_hits,
 	)
+	// Host-declared eager resource budget plus the runtime's requested-byte
+	// counters at exit. This is a separate line so the PASS schema stays stable.
+	native_print_startup_attribution(rt)
 }

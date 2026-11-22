@@ -7,9 +7,50 @@ import alicorn "alicorn:runtime"
 // nanoseconds; they never describe GPU execution or display scanout.
 FRAME_SAMPLES :: 240
 
+// Startup_Timing attributes host initialization to explicit phases and records
+// the startup milestones. The timing origin is the first statement of the
+// native host entry point: it excludes OS process creation and the Odin runtime
+// entry stub, and includes SDL initialization. All values are elapsed
+// nanoseconds from that origin, measured with the monotonic tick clock so
+// system-time adjustments cannot corrupt them. origin_unix_ns is the wall-clock
+// origin for correlating with an external process start timestamp.
+//
+// first_application_submit_ns is the first successful GPU submission that
+// consumes an application frame. It is deliberately NOT a first-visible
+// metric: SDL_GPU exposes fence completion, not scan-out or presentation
+// completion, so time to first visible pixel is not observable from the host.
+//
+// first_input_ready_ns is the completion of the first primary-window event
+// pump iteration, i.e. the first point at which the host has drained OS input
+// for the shown window. It does not require an input event to arrive.
+Startup_Timing :: struct {
+	origin_unix_ns:               u64,
+	sdl_init_ns:                  u64,
+	window_create_ns:             u64,
+	gpu_device_create_ns:         u64,
+	gpu_claim_window_ns:          u64,
+	runtime_init_ns:              u64,
+	host_loop_setup_ns:           u64,
+	app_init_ns:                  u64,
+	app_init_requested_bytes:     i64,
+	fonts_ns:                     u64,
+	fonts_requested_bytes:        i64,
+	renderers_make_ns:            u64,
+	text_renderer_make_ns:        u64,
+	chrome_text_make_ns:          u64,
+	surface_renderer_make_ns:     u64,
+	solid_renderer_make_ns:       u64,
+	build_initial_ns:             u64,
+	window_shown_ns:              u64,
+	first_application_submit_ns:  u64,
+	first_input_ready_ns:         u64,
+	first_diagnostics_ns:         u64,
+}
+
 // Timing accumulates host-loop measurements. Hosts fill only the fields their
 // backend can measure; a zero means "not measured here", not "no cost".
 Timing :: struct {
+	startup:             Startup_Timing,
 	frames:              u64,
 	event_pump_ns:       u64,
 	application_build_ns: u64,

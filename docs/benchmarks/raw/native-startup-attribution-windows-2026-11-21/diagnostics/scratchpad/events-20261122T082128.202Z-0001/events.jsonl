@@ -1,0 +1,6 @@
+{"schema":1,"timestamp_utc":"20261122T082128.203Z","monotonic_ns":972737200,"thread_id":562072,"source":"alicorn","event":"session.started","request_id":0}
+{"schema":1,"timestamp_utc":"20261122T082131.747Z","monotonic_ns":4516953000,"thread_id":562072,"source":"alicorn","event":"dialog.shutdown.begin","request_id":0}
+{"schema":1,"timestamp_utc":"20261122T082131.937Z","monotonic_ns":4707229800,"thread_id":562072,"source":"alicorn","event":"dialog.shutdown.complete","request_id":0}
+{"schema":1,"timestamp_utc":"20261122T082132.115Z","monotonic_ns":4885549900,"thread_id":562072,"source":"alicorn","event":"application.stop.begin","request_id":0}
+{"schema":1,"timestamp_utc":"20261122T082132.571Z","monotonic_ns":5341162500,"thread_id":562072,"source":"alicorn","event":"application.stop.completed","request_id":0}
+{"schema":1,"timestamp_utc":"20261122T082132.724Z","monotonic_ns":5493809300,"thread_id":562072,"source":"alicorn","event":"session.ended","request_id":0}

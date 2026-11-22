@@ -1,0 +1,83 @@
+{
+  "schema": 1,
+  "kind": "alicorn-flight-recorder",
+  "timestamp_clock": "monotonic",
+  "sample_order": "oldest_to_newest",
+  "sample_count": 1,
+    "samples": [
+    {
+      "sample_index": 0,
+      "timestamp_ns": 1383071100,
+      "cause": {
+        "id": 0,
+        "kind": "host_event"
+      },
+      "activity_class": "app",
+      "work": {
+        "app_builds": 2,
+        "stabilization_rebuilds": 1,
+        "host_wakes": 1,
+        "pointer_events": 0,
+        "hover_target_transitions": 0,
+        "presentation_updates": 3,
+        "gpu_submissions": 1,
+        "surface_updates": 1,
+        "descriptions_emitted": 212,
+        "descriptions_reused": 167,
+        "regions_skipped": 0,
+        "retained_subtrees_reused": 0,
+        "reconcile_visits": 212,
+        "layout_visits": 204,
+        "paint_visits": 51,
+        "composition_visits": 95,
+        "nodes_created": 36,
+        "nodes_retired": 3,
+        "semantic_descriptions_emitted": 108,
+        "semantic_entities_resolved": 114,
+        "semantic_structure_changes": 56,
+        "semantic_property_changes": 1,
+        "semantic_projection_nodes_added": 24,
+        "semantic_projection_nodes_updated": 30,
+        "semantic_projection_nodes_removed": 3,
+        "accessibility_activation_wakes": 0,
+        "accessibility_action_wakes": 0,
+        "accessibility_reveal_wakes": 0,
+        "accessibility_updates_submitted": 0,
+        "accessibility_requests_received": 0,
+        "accessibility_requests_dropped": 0,
+        "semantic_focus_search_visits": 0,
+        "semantic_active_update_visits": 0,
+        "measure_requests": 60,
+        "measure_cache_hits": 31,
+        "measure_cache_misses": 29,
+        "measure_nodes_examined": 4,
+        "measure_nodes_executed": 29,
+        "display_commands_finalized": 95,
+        "display_finalization_full_passes": 1,
+        "semantic_order_nodes_examined": 106,
+        "global_fallbacks": 0,
+        "global_work_by_reason": {
+          "measure_font_generation": 0,
+          "display_structure_rebuild": 1,
+          "display_scale_change": 0,
+          "display_transient_update": 0,
+          "display_incremental_fallback": 0,
+          "semantic_order_rebuild": 1
+        },
+        "text_shape_requests": 29,
+        "persistent_allocations": 747,
+        "persistent_bytes_live": 71407964,
+        "scratch_requested_bytes": 2076
+      },
+      "timing_ns": {
+        "application_build": 917600,
+        "gpu_encode": 2936300,
+        "gpu_submit": 636800,
+        "input_to_submit": 0
+      }
+    }
+  ],
+  "pointer_event_count": 0,
+  "pointer_events": [
+  ]
+}

@@ -1,0 +1,4 @@
+{"schema":1,"timestamp_utc":"20261122T081956.184Z","monotonic_ns":656922000,"thread_id":560808,"source":"alicorn","event":"session.started","request_id":0}
+{"schema":1,"timestamp_utc":"20261122T081959.375Z","monotonic_ns":3848060200,"thread_id":560808,"source":"alicorn","event":"dialog.shutdown.begin","request_id":0}
+{"schema":1,"timestamp_utc":"20261122T081959.538Z","monotonic_ns":4011450200,"thread_id":560808,"source":"alicorn","event":"dialog.shutdown.complete","request_id":0}
+{"schema":1,"timestamp_utc":"20261122T081959.672Z","monotonic_ns":4144661000,"thread_id":560808,"source":"alicorn","event":"session.ended","request_id":0}

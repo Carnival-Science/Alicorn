@@ -20,6 +20,7 @@ NATIVE_DIAGNOSTICS_APPLICATION :: diag.APPLICATION
 
 Native_Diagnostics_Options :: diag.Options
 Native_Host_Timing :: diag.Timing
+Native_Startup_Timing :: diag.Startup_Timing
 Native_Text_Event_Telemetry :: diag.Text_Event_Telemetry
 
 native_diagnostics_default_capture_dir :: proc() -> (directory, failure: string) {
@@ -76,6 +77,77 @@ native_timing_add_sample :: proc(samples: ^[dynamic; NATIVE_DIAGNOSTIC_FRAME_SAM
 
 native_timing_percentile :: proc(samples: []u64, fraction: f64) -> u64 {
 	return diag.timing_percentile(samples, fraction)
+}
+
+// native_startup_elapsed_ns reports elapsed time from the startup origin using
+// the monotonic tick clock (QueryPerformanceCounter on Windows). The host must
+// not use wall-clock differences for startup markers: system-time adjustments
+// can step by tens of seconds during a launch. The zero Tick guard keeps test
+// call sites from reporting garbage.
+native_startup_elapsed_ns :: proc(origin: time.Tick) -> u64 {
+	if origin == (time.Tick{}) { return 0 }
+	return u64(time.duration_nanoseconds(time.tick_since(origin)))
+}
+
+// native_print_startup_attribution reports the eager host-owned resources that
+// Alicorn creates before the first frame. SDL_GPU does not expose allocation
+// sizes for device resources, so these are the host-declared sizes: buffer and
+// transfer-buffer create sizes plus the known icon-atlas upload. Pipeline
+// backends, driver heaps and shader caches remain unattributable here.
+//
+// This is measurement-only output. It deliberately prints declared bytes, not
+// working set, private bytes or GPU residency. The runtime's requested-byte
+// counters are logical allocator requests, not resident memory.
+native_print_startup_attribution :: proc(rt: ^alicorn.Runtime) {
+	vertex_stride := u64(size_of(Native_Text_Vertex))
+	text_vertex_bytes := u64(NATIVE_TEXT_INITIAL_VERTICES) * vertex_stride
+	solid_vertex_bytes := u64(NATIVE_SOLID_INITIAL_VERTICES) * vertex_stride
+	surface_vertex_bytes := u64(MAX_SURFACE_VERTICES) * vertex_stride
+	icon_vertex_bytes := u64(NATIVE_ICON_INITIAL_VERTICES) * vertex_stride
+	image_vertex_bytes := u64(NATIVE_IMAGE_INITIAL_VERTICES) * vertex_stride
+	atlas_transfer_bytes: u64 = 4 * 1024 * 1024
+	icon_atlas_bytes: u64 = 0
+	for page in alicorn.ICON_ATLAS_PAGES { icon_atlas_bytes += u64(len(page.pixels)) }
+	font_bytes := u64(len(alicorn.DEFAULT_UI_FONT_DATA)) +
+		u64(len(alicorn.DEFAULT_UI_ITALIC_FONT_DATA)) +
+		u64(len(alicorn.DEFAULT_MONO_FONT_DATA)) +
+		u64(len(alicorn.DEFAULT_MONO_ITALIC_FONT_DATA))
+	// Vertex buffers and their upload staging buffers are created together.
+	declared_gpu_bytes := 2*text_vertex_bytes + atlas_transfer_bytes +
+		solid_vertex_bytes*2 + surface_vertex_bytes*2 +
+		icon_vertex_bytes*2 + icon_atlas_bytes + image_vertex_bytes*2
+	runtime_live: i64 = 0
+	runtime_peak: i64 = 0
+	scratch_peak: u64 = 0
+	if rt != nil && rt.allocation_stats != nil {
+		runtime_live = rt.allocation_stats.persistent_requested_bytes_live
+		runtime_peak = rt.allocation_stats.persistent_requested_bytes_peak
+		scratch_peak = rt.allocation_stats.scratch_requested_bytes_peak
+	}
+	fmt.println(
+		"alicorn_startup_attribution",
+		"basis", "host_declared_resource_sizes_not_measured_residency",
+		"gpu_pipelines", 5,
+		"vertex_stride_bytes", vertex_stride,
+		"text_vertex_buffer_bytes", text_vertex_bytes,
+		"text_vertex_transfer_bytes", text_vertex_bytes,
+		"text_atlas_transfer_bytes", atlas_transfer_bytes,
+		"solid_vertex_buffer_bytes", solid_vertex_bytes,
+		"solid_vertex_transfer_bytes", solid_vertex_bytes,
+		"surface_vertex_buffer_bytes", surface_vertex_bytes,
+		"surface_vertex_transfer_bytes", surface_vertex_bytes,
+		"icon_vertex_buffer_bytes", icon_vertex_bytes,
+		"icon_vertex_transfer_bytes", icon_vertex_bytes,
+		"icon_atlas_gpu_bytes", icon_atlas_bytes,
+		"image_vertex_buffer_bytes", image_vertex_bytes,
+		"image_vertex_transfer_bytes", image_vertex_bytes,
+		"font_embedded_bytes", font_bytes,
+		"host_declared_gpu_bytes", declared_gpu_bytes,
+		"host_declared_total_bytes", declared_gpu_bytes + font_bytes,
+		"runtime_persistent_requested_live_bytes", runtime_live,
+		"runtime_persistent_requested_peak_bytes", runtime_peak,
+		"runtime_scratch_requested_peak_bytes", scratch_peak,
+	)
 }
 
 // native_smoke_hold_ns reads an optional idle hold for bounded smoke runs.
