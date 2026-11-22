@@ -610,6 +610,11 @@ Pointer_Event :: struct {
 POINTER_BUTTON_PRIMARY :: 1
 POINTER_BUTTON_MIDDLE :: 2
 POINTER_BUTTON_SECONDARY :: 3
+// Auxiliary navigation buttons. SDL's X1/X2 and the browser's mouse-button
+// indices 3/4 both describe back/forward, so hosts expose them through the
+// ordinary pointer path instead of synthesizing keyboard navigation.
+POINTER_BUTTON_BACK :: 4
+POINTER_BUTTON_FORWARD :: 5
 
 // Scroll_Event preserves both precise device deltas and whole wheel ticks.
 // Positive deltas describe content motion right/down, decreasing the viewport

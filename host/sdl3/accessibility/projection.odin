@@ -35,6 +35,14 @@ Accessibility_Projection_Role :: enum {
 	List_Box_Option,
 	Status,
 	Alert,
+	Radio_Button,
+	Radio_Group,
+	Progress,
+	Table,
+	Table_Row,
+	Table_Cell,
+	Table_Column_Header,
+	Table_Row_Header,
 	Generic_Container,
 }
 
@@ -375,6 +383,14 @@ accessibility_projection_role :: proc(role: alicorn.Semantic_Role) -> Accessibil
 	case .List_Box_Option: return .List_Box_Option
 	case .Status: return .Status
 	case .Alert: return .Alert
+	case .Radio_Button: return .Radio_Button
+	case .Radio_Group: return .Radio_Group
+	case .Progress: return .Progress
+	case .Table: return .Table
+	case .Table_Row: return .Table_Row
+	case .Table_Cell: return .Table_Cell
+	case .Table_Column_Header: return .Table_Column_Header
+	case .Table_Row_Header: return .Table_Row_Header
 	case .None: return .Generic_Container
 	}
 	return .Generic_Container

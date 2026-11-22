@@ -259,6 +259,14 @@ layer.
 | [Component recipes](recipes.md) | Compact, copyable excerpts from the Control Gallery. Useful building blocks, not a substitute for a complete component page. |
 | [Pattern conformance checks](reference.md#pattern-conformance-checks-testui) | The `testui.pattern_check` API, part contract, and negative-control recipe. |
 
+Radio groups, progress indicators, and tables are not yet shipped components.
+The semantic foundation they need—explicit `Radio_Button`/`Radio_Group`,
+`Progress`, and `Table`/`Table_Row`/`Table_Cell` roles with nested
+collections—is covered by `runtime/semantic_compound_roles_test.odin` and the
+UI-level `ui/ui_semantic_compound_test.odin` fixture. The AliKit radio,
+progress, and table components should treat those tests as their parts-and-
+semantics reference before extracting shared code.
+
 ## Documentation template for component pages
 
 Every component page uses this section order. A short component may combine

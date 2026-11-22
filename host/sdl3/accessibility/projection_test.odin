@@ -615,3 +615,83 @@ test_accessibility_projection_orders_realized_and_virtual_collection_items_logic
 		ordered[0] == first_id && ordered[1] == second_id && ordered[2] == third_id,
 		"assistive technology must receive realized and virtual rows in logical collection order")
 }
+
+@(test)
+test_accessibility_projection_maps_compound_roles_to_accesskit_natives :: proc(t: ^testing.T) {
+	// The binding's generated Role constants are the contract with AccessKit
+	// 0.23.1. Keep the numeric values pinned here so an upstream renumbering
+	// cannot silently change what assistive technology receives.
+	testing.expect(t,
+		u8(ACCESSKIT_ROLE_RADIO_BUTTON) == 16 &&
+		u8(ACCESSKIT_ROLE_RADIO_GROUP) == 102 &&
+		u8(ACCESSKIT_ROLE_PROGRESS_INDICATOR) == 101 &&
+		u8(ACCESSKIT_ROLE_TABLE) == 25 &&
+		u8(ACCESSKIT_ROLE_ROW) == 6 &&
+		u8(ACCESSKIT_ROLE_CELL) == 2 &&
+		u8(ACCESSKIT_ROLE_ROW_HEADER) == 21 &&
+		u8(ACCESSKIT_ROLE_COLUMN_HEADER) == 22,
+		"the AccessKit binding must expose the documented native role numbers")
+
+	cases := [8]struct {
+		semantic: alicorn.Semantic_Role,
+		projected: Accessibility_Projection_Role,
+		accesskit: ak.Role,
+	}{
+		{.Radio_Button, .Radio_Button, ACCESSKIT_ROLE_RADIO_BUTTON},
+		{.Radio_Group, .Radio_Group, ACCESSKIT_ROLE_RADIO_GROUP},
+		{.Progress, .Progress, ACCESSKIT_ROLE_PROGRESS_INDICATOR},
+		{.Table, .Table, ACCESSKIT_ROLE_TABLE},
+		{.Table_Row, .Table_Row, ACCESSKIT_ROLE_ROW},
+		{.Table_Cell, .Table_Cell, ACCESSKIT_ROLE_CELL},
+		{.Table_Column_Header, .Table_Column_Header, ACCESSKIT_ROLE_COLUMN_HEADER},
+		{.Table_Row_Header, .Table_Row_Header, ACCESSKIT_ROLE_ROW_HEADER},
+	}
+	nodes: [8]alicorn.Semantic_Node
+	for entry, index in cases {
+		nodes[index] = alicorn.Semantic_Node{
+			id=alicorn.Semantic_ID{namespace=27, value=u64(index)+1},
+			role=entry.semantic,
+			label="Compound role",
+			tree_order=u64(index)+1,
+		}
+	}
+	snapshot := accessibility_projection_test_snapshot(21, nodes[:])
+	projection, status := accessibility_projection_from_snapshot(snapshot, context.temp_allocator)
+	defer accessibility_projection_destroy(&projection)
+	if !testing.expect(t, status == .Success, "compound-role snapshots should project") { return }
+	for entry, index in cases {
+		id := alicorn.Semantic_ID{namespace=27, value=u64(index)+1}
+		projected, found := accessibility_projection_node_by_semantic_id(projection, id)
+		testing.expect(t, found && projected.role == entry.projected &&
+			native_accessibility_accesskit_role(projected.role) == entry.accesskit,
+			"each compound semantic role should map to its backend-neutral and AccessKit native role")
+	}
+}
+
+@(test)
+test_accessibility_projection_preserves_progress_values_and_radio_checked_state :: proc(t: ^testing.T) {
+	progress_id := alicorn.Semantic_ID{namespace=28, value=1}
+	radio_id := alicorn.Semantic_ID{namespace=28, value=2}
+	radio_states := alicorn.semantic_states_add({}, .Checked)
+	nodes := [2]alicorn.Semantic_Node{
+		{id=progress_id, role=.Progress, label="Upload", value="42%",
+			numeric_value=0.42, numeric_minimum=0, numeric_maximum=1, numeric_step=0.01,
+			has_numeric_value=true, tree_order=1},
+		{id=radio_id, role=.Radio_Button, label="Medium", states=radio_states,
+			position_in_set=1, size_of_set=3, tree_order=2},
+	}
+	snapshot := accessibility_projection_test_snapshot(22, nodes[:])
+	projection, status := accessibility_projection_from_snapshot(snapshot, context.temp_allocator)
+	defer accessibility_projection_destroy(&projection)
+	progress, progress_found := accessibility_projection_node_by_semantic_id(projection, progress_id)
+	radio, radio_found := accessibility_projection_node_by_semantic_id(projection, radio_id)
+	testing.expect(t, status == .Success && progress_found && progress.role == .Progress &&
+		progress.has_numeric_value && progress.numeric_value == 0.42 &&
+		progress.numeric_minimum == 0 && progress.numeric_maximum == 1 && progress.numeric_step == 0.01 &&
+		progress.value == "42%",
+		"Progress should export its numeric range and human-readable value")
+	testing.expect(t, radio_found && radio.role == .Radio_Button &&
+		accessibility_projection_state_has(radio.states, .Checked) &&
+		radio.has_position_in_set && radio.position_in_set == 1,
+		"a radio should preserve checked state and its position in the group")
+}

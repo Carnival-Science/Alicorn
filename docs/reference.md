@@ -464,6 +464,13 @@ Native hosts also populate `Pointer_Event.target_key` from the hit or captured
 node when it has an explicit key. Direct callers of `process_pointer` receive
 the target `Node_ID` and can query `node_identity_key` themselves.
 
+`POINTER_BUTTON_BACK` (4) and `POINTER_BUTTON_FORWARD` (5) identify the
+auxiliary navigation buttons. The SDL host maps SDL's `X1`/`X2` buttons and the
+web host maps DOM mouse-button indices 3 and 4 to them. Like the secondary and
+middle buttons, they do not press, focus, or activate retained controls; the
+`Pointer_Event` reaches `on_pointer` unchanged so the application can implement
+its own history navigation.
+
 `Runtime`'s fields are exported for Odin interoperability, but are internal
 implementation details and are not a supported application API. Use
 `node_info`, `text_field_value`, `focused_node`, `captured_node`,
@@ -1394,6 +1401,38 @@ physical acceptance separately confirms representative bounded virtualized
 traversal; see the [acceptance matrix](validation/issue-103-final.md) for the
 tested scope and record limitations.
 
+#### Compound roles: radios, progress, and tables
+
+These compound families publish explicitly; Alicorn supplies no hidden defaults
+for them. `Radio_Button` items live in a `Radio_Group` collection. `Progress`
+presents a value through the shared numeric fields. `Table` contains
+`Table_Row` collections, and each row contains `Table_Cell`,
+`Table_Column_Header`, or `Table_Row_Header` items.
+
+| Semantic role | AccessKit role |
+| --- | --- |
+| `Radio_Button` | RadioButton (16) |
+| `Radio_Group` | RadioGroup (102) |
+| `Progress` | ProgressIndicator (101) |
+| `Table` | Table (25) |
+| `Table_Row` | Row (6) |
+| `Table_Cell` | Cell (2) |
+| `Table_Column_Header` | ColumnHeader (22) |
+| `Table_Row_Header` | RowHeader (21) |
+
+`Radio_Group`, `Table`, and `Table_Row` are collection owners, so
+`semantic_collection_begin` accepts them. A radio publishes its own role,
+`Checked` state, and `Press`/`Focus` actions; `semantic_action_request` routes
+`Press` through the same retained control activation as a Button. A table row is
+itself a collection, so a cell's `position_in_set` is its column coordinate and
+its `collection_id`/`parent` name the row. An item's own `parent` can name a
+group inside the row (for example a shared column-header group) exactly as it
+can inside a list box. Publish header rows and cells with the same APIs; use
+`semantic_collection_virtual_item` with a `Table_Row` role for logical rows that
+are outside the realized window. `semantic_numeric_range(ui, value, minimum,
+maximum, step)` supplies numeric properties for a `Progress` or `Slider`; the
+human-readable value stays in the description's `value`.
+
 ### Accessibility boundary
 
 The semantic store and snapshot/delta API are backend-neutral runtime data;
@@ -1403,7 +1442,8 @@ exact base revision and fall back to a snapshot on mismatch. Actions route by
 stable `Semantic_ID` through semantic action/reveal requests, never fake
 pointer input. The adapter covers common controls, text fields/areas/runs,
 SetTextSelection and ReplaceSelectedText actions, Tab/TabList, list boxes and
-options, combo boxes, status and alert live regions, and the bounded-collection
+options, combo boxes, radio groups and radios, progress indicators, tables with
+row/cell/header roles, status and alert live regions, and the bounded-collection
 slice. Linux platform integration is not included.
 
 The final physical acceptance matrix confirms representative Windows and macOS

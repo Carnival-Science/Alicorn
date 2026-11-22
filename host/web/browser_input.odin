@@ -369,11 +369,7 @@ browser_input_dispatch_pointer :: proc(input: ^Browser_Input, event: js.Event, k
 	}
 	button := 0
 	if kind == .Down || kind == .Up {
-		switch event.mouse.button {
-		case 0: button = alicorn.POINTER_BUTTON_PRIMARY
-		case 1: button = alicorn.POINTER_BUTTON_MIDDLE
-		case 2: button = alicorn.POINTER_BUTTON_SECONDARY
-		}
+		button = browser_pointer_button_from_mouse(int(event.mouse.button))
 	}
 	if kind == .Down {
 		input.pointer_active = true

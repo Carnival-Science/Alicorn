@@ -68,6 +68,14 @@ ACCESSKIT_ROLE_MULTILINE_TEXT_INPUT :: ak.ROLE_MULTILINE_TEXT_INPUT
 ACCESSKIT_ROLE_TREE :: ak.ROLE_TREE
 ACCESSKIT_ROLE_TOOLTIP :: ak.ROLE_TOOLTIP
 ACCESSKIT_ROLE_WINDOW :: ak.ROLE_WINDOW
+ACCESSKIT_ROLE_RADIO_BUTTON :: ak.ROLE_RADIO_BUTTON
+ACCESSKIT_ROLE_RADIO_GROUP :: ak.ROLE_RADIO_GROUP
+ACCESSKIT_ROLE_PROGRESS_INDICATOR :: ak.ROLE_PROGRESS_INDICATOR
+ACCESSKIT_ROLE_TABLE :: ak.ROLE_TABLE
+ACCESSKIT_ROLE_ROW :: ak.ROLE_ROW
+ACCESSKIT_ROLE_CELL :: ak.ROLE_CELL
+ACCESSKIT_ROLE_COLUMN_HEADER :: ak.ROLE_COLUMN_HEADER
+ACCESSKIT_ROLE_ROW_HEADER :: ak.ROLE_ROW_HEADER
 
 ACCESSKIT_TOGGLED_FALSE :: ak.TOGGLED_FALSE
 ACCESSKIT_TOGGLED_TRUE :: ak.TOGGLED_TRUE
@@ -771,7 +779,9 @@ native_accessibility_build_node :: proc(
 	}
 	if accessibility_projection_state_has(source.states, .Disabled) { ak.node_set_disabled(&node, true) }
 	if accessibility_projection_state_has(source.states, .Selected) { ak.node_set_selected(&node, true) }
-	if source.role == .Check_Box {
+	// Check boxes and radio buttons expose the authored Checked state through
+	// AccessKit's Toggled property; other roles keep it in semantic state only.
+	if source.role == .Check_Box || source.role == .Radio_Button {
 		toggled := ACCESSKIT_TOGGLED_FALSE
 		if accessibility_projection_state_has(source.states, .Checked) { toggled = ACCESSKIT_TOGGLED_TRUE }
 		ak.node_set_toggled(&node, toggled)
@@ -879,6 +889,14 @@ native_accessibility_accesskit_role :: proc(role: Accessibility_Projection_Role)
 	case .List_Box_Option: return ACCESSKIT_ROLE_LIST_BOX_OPTION
 	case .Status: return ACCESSKIT_ROLE_STATUS
 	case .Alert: return ACCESSKIT_ROLE_ALERT
+	case .Radio_Button: return ACCESSKIT_ROLE_RADIO_BUTTON
+	case .Radio_Group: return ACCESSKIT_ROLE_RADIO_GROUP
+	case .Progress: return ACCESSKIT_ROLE_PROGRESS_INDICATOR
+	case .Table: return ACCESSKIT_ROLE_TABLE
+	case .Table_Row: return ACCESSKIT_ROLE_ROW
+	case .Table_Cell: return ACCESSKIT_ROLE_CELL
+	case .Table_Column_Header: return ACCESSKIT_ROLE_COLUMN_HEADER
+	case .Table_Row_Header: return ACCESSKIT_ROLE_ROW_HEADER
 	case .Generic_Container: return ACCESSKIT_ROLE_GENERIC_CONTAINER
 	}
 	return ACCESSKIT_ROLE_UNKNOWN

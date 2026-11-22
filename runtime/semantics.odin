@@ -31,6 +31,17 @@ Semantic_Role :: enum {
 	List_Box_Option,
 	Status,
 	Alert,
+	// Compound-control roles. Radio groups and tables are collections whose
+	// items use the ordinary parent/collection fields; a table row and cell
+	// nest by naming their owner in item.parent.
+	Radio_Button,
+	Radio_Group,
+	Progress,
+	Table,
+	Table_Row,
+	Table_Cell,
+	Table_Column_Header,
+	Table_Row_Header,
 }
 
 Semantic_Live_Announcement :: enum {
@@ -443,6 +454,16 @@ semantic_text_owner_role_is_valid :: proc(role: Semantic_Role) -> bool {
 	return role == .Text_Area || role == .Text_Field
 }
 
+// semantic_collection_role_is_valid lists the roles that own a collection.
+// Radio groups and tables are also collections; a Table_Row is a collection so
+// its cells can name the row as their parent without a separate coordinate
+// model.
+@(private)
+semantic_collection_role_is_valid :: proc(role: Semantic_Role) -> bool {
+	return role == .List || role == .Tree || role == .Tab_List || role == .List_Box ||
+		role == .Radio_Group || role == .Table || role == .Table_Row
+}
+
 @(private)
 semantic_pending_text_owner :: proc(rt: ^Runtime, owner_id: Semantic_ID) -> ^Semantic_Descriptor {
 	if rt == nil || !semantic_id_is_valid(owner_id) { return nil }
@@ -481,8 +502,7 @@ semantic_node_set :: proc(rt: ^Runtime, description: Semantic_Node_Description) 
 	if description.collection_id.namespace != 0 && description.size_of_set != 0 && description.position_in_set >= description.size_of_set {
 		return false
 	}
-	if description.is_collection && description.role != .List && description.role != .Tree &&
-	   description.role != .Tab_List && description.role != .List_Box {
+	if description.is_collection && !semantic_collection_role_is_valid(description.role) {
 		return false
 	}
 	next := semantic_node_from_description(description)
@@ -1005,7 +1025,7 @@ semantic_collection_begin :: proc(
 	parent := Semantic_ID{},
 ) -> Semantic_Collection_Handle {
 	if ui == nil || ui.runtime == nil || !semantic_id_is_valid(id) ||
-	   (role != .List && role != .Tree && role != .Tab_List && role != .List_Box) ||
+	   !semantic_collection_role_is_valid(role) ||
 	   realized_first > realized_last || realized_last > logical_count { return {} }
 	rt := ui.runtime
 	rt.semantic_collection_generation += 1
@@ -1302,6 +1322,28 @@ semantic_range_value_text :: proc(ui: ^UI, value: string) -> bool {
 	return true
 }
 
+// semantic_numeric_range supplies the numeric properties of the most recently
+// described range-like control. Slider uses it through its built-in defaults;
+// components that publish a Progress role explicitly call it directly. The
+// human-readable value stays separate: use semantic_range_value_text for a
+// Slider or pass `value` to semantic_describe_as.
+semantic_numeric_range :: proc(
+	ui: ^UI,
+	value, minimum, maximum, step: f64,
+) -> bool {
+	if ui == nil || ui.runtime == nil || len(ui.runtime.pending) == 0 { return false }
+	last := len(ui.runtime.pending)-1
+	if ui.runtime.pending[last].kind != .Description { return false }
+	pending := &ui.runtime.pending[last]
+	if pending.semantic.role != .Slider && pending.semantic.role != .Progress { return false }
+	pending.semantic.numeric_value = value
+	pending.semantic.numeric_minimum = minimum
+	pending.semantic.numeric_maximum = maximum
+	pending.semantic.numeric_step = step
+	pending.semantic.has_numeric_value = true
+	return true
+}
+
 semantic_describe_as :: proc(
 	ui: ^UI,
 	id: Semantic_ID,
@@ -1592,7 +1634,7 @@ semantic_action_request :: proc(
 	if visual != nil {
 		#partial switch action {
 		case .Press:
-			if entity.node.role != .Button && entity.node.role != .Checkbox { break }
+			if entity.node.role != .Button && entity.node.role != .Checkbox && entity.node.role != .Radio_Button { break }
 			rt.activation_sequence += 1
 			rt.activation_node = visual.id
 			rt.stats.accessibility_action_wakes += 1
