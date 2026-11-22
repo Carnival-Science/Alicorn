@@ -108,7 +108,7 @@ try {
             $lastMotionActiveIndex = -1
             for ($lineIndex = 0; $lineIndex -lt $lines.Count; $lineIndex += 1) {
                 if ($lines[$lineIndex] -match 'post-recovery frame presented') { $postFrameIndex = $lineIndex }
-                if ($lines[$lineIndex] -match 'motion_probe tick \d+ active_owners=[1-9]') { $lastMotionActiveIndex = $lineIndex }
+                if ($lines[$lineIndex] -match 'motion_probe tick \d+ active_owners [1-9]') { $lastMotionActiveIndex = $lineIndex }
             }
             $motionAfterPostFrame = $postFrameIndex -ge 0 -and $lastMotionActiveIndex -gt $postFrameIndex
         }

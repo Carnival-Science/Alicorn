@@ -79,6 +79,9 @@ App :: struct {
 	removal_motion_ticks: int,
 	removal_motion_active_ticks: int,
 	removal_motion_settled_after_stop: bool,
+	removal_motion_quit: bool,
+	removal_motion_quit_owners: int,
+	removal_motion_flip_tick: int,
 	windows: ui.UI_Window_Service,
 	dialogs: ui.UI_Dialog_Service,
 	quit: alicorn.Hosted_Quit_Service,
@@ -258,9 +261,16 @@ render :: proc(app: ^App, ctx: ^ui.UI) {
 				// --timing-motion probe keeps its fixed 180 -> -180 reveal.
 				target_x := f64(180)
 				from_x := f64(-180)
-				if app.removal_motion_probe && app.removal_motion_phase {
-					target_x = -180
-					from_x = 180
+				intent := ui.Motion_Intent.Reveal
+				if app.removal_motion_probe {
+					// Reveal is a birth animation, so a re-armed probe that has
+					// already been revealed would never start a new owner. Scale
+					// the probe as an ordinary settle retarget instead.
+					intent = .Settle
+					if app.removal_motion_phase {
+						target_x = -180
+						from_x = 180
+					}
 				}
 				marker := alicorn.container_begin(
 					ctx,
@@ -274,7 +284,7 @@ render :: proc(app: ^App, ctx: ^ui.UI) {
 					ctx,
 					marker,
 					ui.Motion_Target{translation=ui.Motion_Vector2{target_x, 0}, has_translation=true},
-					.Reveal,
+					intent,
 					ui.Motion_Vector2{from_x, 0},
 				)
 				alicorn.container_end(ctx)
@@ -344,10 +354,12 @@ live_resize_after_frame :: proc(app: ^App, rt: ^alicorn.Runtime) {
 	alicorn.invalidate_root(rt, "live-resize smoke motion ping-pong")
 }
 
-// REMOVAL_MOTION_STOP_TICK bounds the removal probe so the bounded --smoke exit
-// can observe settlement after recovery. At 60 Hz it holds motion across roughly
-// four seconds, well past the induced removal and recovery window.
-REMOVAL_MOTION_STOP_TICK :: 240
+// REMOVAL_MOTION_STOP_TICK stops re-arming so the final response can settle;
+// REMOVAL_MOTION_QUIT_TICK bounds the probe so it quits itself instead of
+// relying on the bounded --smoke exit (which would leave no room to observe a
+// fresh motion after device recovery).
+REMOVAL_MOTION_STOP_TICK :: 120
+REMOVAL_MOTION_QUIT_TICK :: 200
 
 // removal_motion_tick logs the retained owner count every host turn. The log
 // order around the host's removal/recovery traces is the evidence that a motion
@@ -363,8 +375,22 @@ removal_motion_tick :: proc(app: ^App, rt: ^alicorn.Runtime) {
 		"active_owners", activity.active_owners,
 		"active_properties", activity.active_properties,
 	)
-	if app.removal_motion_ticks > REMOVAL_MOTION_STOP_TICK && activity.active_owners == 0 {
+	if app.removal_motion_ticks >= REMOVAL_MOTION_STOP_TICK && activity.active_owners == 0 {
 		app.removal_motion_settled_after_stop = true
+	}
+	// on_after_frame only runs inside a description pass, so a settled motion
+	// would never wake the host again. Re-arm from the per-step tick instead.
+	if app.removal_motion_ticks < REMOVAL_MOTION_STOP_TICK && activity.active_owners == 0 &&
+	   app.removal_motion_flip_tick != app.removal_motion_ticks {
+		app.removal_motion_flip_tick = app.removal_motion_ticks
+		app.removal_motion_phase = !app.removal_motion_phase
+		alicorn.invalidate_root(rt, "removal motion probe ping-pong")
+	}
+	if app.removal_motion_ticks >= REMOVAL_MOTION_QUIT_TICK &&
+	   (app.removal_motion_settled_after_stop || app.removal_motion_ticks >= REMOVAL_MOTION_QUIT_TICK+60) {
+		app.removal_motion_quit_owners = activity.active_owners
+		app.removal_motion_quit = true
+		ui.ui_quit_request(app.quit)
 	}
 }
 
@@ -372,18 +398,25 @@ removal_motion_after_frame :: proc(app: ^App, rt: ^alicorn.Runtime) {
 	if app == nil || rt == nil || !app.removal_motion_probe { return }
 	if app.removal_motion_ticks >= REMOVAL_MOTION_STOP_TICK { return }
 	if alicorn.motion_activity(rt).active_owners > 0 { return }
+	// on_after_frame runs after every description pass, and one host step may
+	// stabilize through several passes. Flip at most once per step, otherwise
+	// the passes cancel each other and the target never changes.
+	if app.removal_motion_flip_tick == app.removal_motion_ticks { return }
+	app.removal_motion_flip_tick = app.removal_motion_ticks
 	app.removal_motion_phase = !app.removal_motion_phase
 	alicorn.invalidate_root(rt, "removal motion probe ping-pong")
 }
 
 removal_motion_report :: proc(app: ^App) -> bool {
 	if app == nil || !app.removal_motion_probe { return true }
-	ok := app.removal_motion_active_ticks >= 30 && app.removal_motion_settled_after_stop
+	ok := app.removal_motion_active_ticks >= 30 && app.removal_motion_settled_after_stop &&
+		app.removal_motion_quit && app.removal_motion_quit_owners == 0
 	fmt.println(
 		"motion_removal_smoke", "PASS" if ok else "FAIL",
 		"ticks", app.removal_motion_ticks,
 		"active_ticks", app.removal_motion_active_ticks,
 		"settled_after_stop", app.removal_motion_settled_after_stop,
+		"quit_owners", app.removal_motion_quit_owners,
 	)
 	return ok
 }
@@ -1153,9 +1186,10 @@ main :: proc() {
 		if argument == "--timing-motion" { app.timing_motion = true }
 		if argument == "--removal-motion-probe" {
 			// Paired with --test-remove-d3d12-device in the validation build.
+			// The probe quits itself after settlement so it can observe motion
+			// after device recovery instead of exiting on the first frame.
 			app.removal_motion_probe = true
 			app.timing_motion = true
-			smoke = true
 		}
 		if argument == "--defer-close" { app.defer_close_once = true }
 		if argument == "--child-smoke" {
