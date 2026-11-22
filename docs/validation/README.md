@@ -32,7 +32,10 @@ the current project status.
   - local gap closures for Direct manipulation, hit-maintenance classification,
   high-contrast/DPI presentation, three-level and scrolled composition, tab
   close under reorder motion, shutdown during an active transition, and native
-  lateness p50/p95/p99; core passes, platform items G6/G9/G10/G11 remain.
+  lateness p50/p95/p99; core passes, and the final 2026-11-22 section closes
+  G6 on Windows/D3D12 and G9 at CI tier (Linux/Vulkan sampled; macOS/Metal host
+  and settlement tier), with G10 and G11 explicitly scoped to the founder's
+  physical-hardware and hands-on capture runs.
 - [Generic roving focus model and list/grid pattern checks (2026-11-21)](issue-225-roving-focus-2026-11-21.md)
   — pure `alicorn:runtime` `Roving_View`/`roving_propose` index model, `testui`
   `Roving_List`/`Roving_Grid` patterns, the `select_parts` and AliKit icon-picker

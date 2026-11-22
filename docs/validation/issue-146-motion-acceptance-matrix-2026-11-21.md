@@ -263,3 +263,191 @@ Windows/D3D12 machine with a real GPU. It does not prove macOS/Metal or
 Linux/Vulkan behavior, physical refresh-rate behavior, compositor present
 timestamps, input-to-photon latency, GPU loss during an active transition, or
 the Scratchpad #60 dogfood workflow. Those are the named follow-ups above.
+
+## Final v0.3.0 validation (2026-11-22)
+
+This section appends the v0.3.0 release-gate pass and supersedes the
+"Platform acceptance follow-ups" table above for the release decision. It does
+not rewrite the slice evidence. Source baseline: `ac469a4` plus the
+documentation commit that carries this section. All CI workflows below ran
+green against that baseline; the push-triggered workflows were re-run on the
+documentation commit (the WebGPU legs are not path-triggered by docs and keep
+the same code they validated at `ac469a4`).
+
+### Final CI (all workflows green)
+
+| Workflow | Run | Result |
+| --- | --- | --- |
+| Alicorn foundation (Windows) | [44999874732](https://github.com/Carnival-Science/Alicorn/actions/runs/44999874732) | success |
+| Alicorn foundation (macOS) | [44999874786](https://github.com/Carnival-Science/Alicorn/actions/runs/44999874786) | success |
+| Native packaging | [44999874891](https://github.com/Carnival-Science/Alicorn/actions/runs/44999874891) | success |
+| Icon asset reproducibility | [44999874795](https://github.com/Carnival-Science/Alicorn/actions/runs/44999874795) | success |
+| WebGPU feasibility (browser) | [44999874869](https://github.com/Carnival-Science/Alicorn/actions/runs/44999874869) | success |
+| WebGPU feasibility (Linux) | [44999874809](https://github.com/Carnival-Science/Alicorn/actions/runs/44999874809) | success |
+| WebGPU feasibility (macOS arm64) | [44999874741](https://github.com/Carnival-Science/Alicorn/actions/runs/44999874741) | success |
+
+Three pre-existing CI failures were found and fixed in this gate, all in
+harnesses rather than runtime behavior:
+
+1. **js/wasm closure.** The official `dev-2026-11` compiler compiles
+   `*_test.odin` during a plain `odin build`, so `tests/fixtures/web_ui_package`
+   pulled `core:os` and `core:testing` into the WASM closure through
+   `runtime/bindings_test.odin`, `key_event_test.odin`, and `roving_test.odin`.
+   Those three files now carry the `#+build !js` guard the other 86 runtime test
+   files already had.
+2. **Unix AccessKit arguments.** `tools/check.sh` and `tools/test.sh` invoked
+   `odin test testui` without the AccessKit collection and linker flags, so the
+   package could not compile its transitive native accessibility import on
+   macOS/Linux. They now match the already-fixed `tools/test.ps1` invocation.
+3. **Platform primary modifier in fixtures.** `testui/command_bindings_test.odin`
+   and `host/sdl3/input/bindings_mapping_test.odin` sent Control while asserting
+   the platform-neutral `Primary` modifier. Primary is Command on macOS and
+   Control on Windows/Linux; both fixtures now send the platform primary, which
+   is what the host normalizes.
+
+`odin test testui` is 37/37 on macOS and Windows; `odin test host/sdl3/input` is
+10/10; `odin test runtime` is 511/511 on Windows and Linux.
+
+### G6 - GPU loss during an active motion (Windows/D3D12, closed)
+
+Re-ran the induced backend-removal harness with a live motion owner. The
+patched `wgpu-native` v29.0.1.1 library carries the callback, error-routing, and
+test-removal patches; it was rebuilt with Rust 1.98.1 and bindgen against the
+Python `libclang` 18.1.1 wheel (the prior record used LLVM 23.1.5; the artifact
+proves the same API path, and the DLL hash is not compared across builds).
+
+`examples/16_native_webgpu_ui` gains `--removal-motion-probe`, built only with
+`-define:ALICORN_WEBGPU_TEST_D3D12_REMOVE_DEVICE=true`. It drives a bounded
+settle ping-pong on the retained marker, logs `motion_probe tick N
+active_owners M` every host turn, and quits itself after settlement.
+`tools/validate_wgpu_native_backend_removal.ps1` adds a
+`removal-during-motion` case that requires motion at loss, motion at
+reattachment, motion after the post-recovery frame, and a settled PASS.
+
+Run on 2026-11-22 (RTX 2080 SUPER, D3D12):
+
+```text
+removal-during-motion: PASS (exit=0 removal=True callback=True recovered=True
+  post_frame=True motion_at_loss=True motion_after_recovery=True
+  motion_after_post_frame=True motion_smoke=True)
+
+test removal trace: motion before-removal active_owners=1 active_properties=1
+test removal: ID3D12Device5::RemoveDevice issued=true
+test removal trace: device-lost callback fired reason=Unknown
+test removal trace: motion after-recovery-reattach active_owners=1 active_properties=1
+WebGPU device recovered; retained application state preserved
+test removal trace: post-recovery frame presented
+motion_removal_smoke PASS ticks 200 active_ticks 114 settled_after_stop true quit_owners 0
+```
+
+All eight harness cases pass (`ordinary-smoke`, `synthetic-callback`,
+`primary-removal`, three removal repetitions, `primary-plus-child-removal`,
+`removal-during-motion`). Logs: `out/webgpu-phase0/backend-removal/` (ignored
+local artifact). This is harness-induced `ID3D12Device5::RemoveDevice`, not a
+TDR, OS reset, or driver-initiated loss, and not macOS/Linux GPU-loss evidence.
+
+### G9 - macOS/Linux motion (CI tier, closed at CI tier)
+
+**Linux / Vulkan (lavapipe).** The WebGPU Linux job now runs
+`odin test runtime` (511/511) and then builds and runs example 09 with
+`--motion-validation` under Xvfb using the Mesa lavapipe ICD. Run
+[44999874809](https://github.com/Carnival-Science/Alicorn/actions/runs/44999874809),
+step `Validate retained motion on Vulkan (lavapipe, SDL_GPU native host)`:
+
+```text
+sdl_video_driver x11
+gpu_driver_selected vulkan
+motion_validation settled_checkpoint active_owners 0
+motion_validation idle_checkpoint active_owners 0
+SDL application PASS submissions 53 retired 53
+motion_samples 49 motion_timer_wakes 49 motion_missed_intervals 0
+motion_lateness_p50_ns 637987 motion_lateness_p95_ns 1062614 motion_lateness_p99_ns 1069129
+```
+
+This is a real sampled motion run on a native SDL_GPU host: retargets,
+settlement, an idle interval, zero missed intervals, and 49 motion samples. The
+adapter is software Vulkan (Mesa llvmpipe via lavapipe) on a CI runner, not
+physical hardware.
+
+**macOS / Metal.** The foundation macOS job builds and runs the same example
+with `--motion-validation`. Run
+[44999874786](https://github.com/Carnival-Science/Alicorn/actions/runs/44999874786),
+step `Validate retained motion on Metal (SDL_GPU native host)`:
+
+```text
+gpu_driver_selected metal
+motion_validation settled_checkpoint active_owners 0
+SDL application PASS submissions 3 retired 3
+motion_samples 0 motion_missed_intervals 0
+```
+
+Honest limit: the macOS runner is a paravirtual Metal device and the window was
+not sampled on this leg, so the run proves the native host, scheduler wiring,
+corrective retarget sequence, settlement checkpoints, and clean bounded exit on
+macOS/Metal, but it does **not** prove a sampled macOS animation. Sampled motion
+evidence for this cycle is Linux/Vulkan above and the Windows/D3D12 runs earlier
+in this record.
+
+Artifacts: `motion-validation-lavapipe` and `motion-validation-metal` on the run
+pages.
+
+### G10 - Physical 60/120/144 Hz (explicitly scoped to founder-run)
+
+This remains a physical-hardware acceptance item and is not claimed by any run
+above. The release gate accepts the analytic cadence evidence on file plus the
+existing operator runbook:
+
+- Analytic sampling: `motion_math_test.odin`
+  `test_motion_sampling_cadence_and_long_stall_are_invariant` compares 30/60/144
+  Hz sampling paths and a 200 ms stall against the closed-form response.
+- Operator runbook: [Windows high-DPI validation](hardware-validation-windows-highdpi.md)
+  (three passes, coordinate reminder, evidence template). The 60/120/144 Hz
+  presentation capture runs on the founder's physical panel and is appended
+  there, not inferred from CI.
+- No compositor-present timestamp, panel-refresh, or input-to-photon claim is
+  made by this record.
+
+### G11 - Scratchpad #60 native capture (explicitly scoped to founder-hands-on)
+
+The Scratchpad motion dogfood capture was not produced in this pass. The
+Scratchpad checkout used for dogfood is on
+`codex/issue-211-webgpu-frontend` with uncommitted generated theme files, and
+the earlier scripted-pointer route failed to drive the real Scratchpad window
+reliably, so a scripted capture here would not be trustworthy evidence.
+
+Source-workflow coverage that does exist: Scratchpad's `command_palette_test`
+palette-motion fixture and `connected_titlebar_test` tab cases exercise the
+reveal/selection contract headlessly and assert that tab selection requires no
+motion owner. That is source-level evidence, not a native capture.
+
+Founder-hands-on steps (record result in the Scratchpad validation folder and
+link it from #146):
+
+1. Build the Alicorn frontend in the Scratchpad checkout
+   (`out/alicorn/scratchpad-alicorn.exe`) using its documented build script,
+   with the desired appearance fixture.
+2. Launch it on the physical Windows desktop and open the command palette
+   (Primary+Shift+P). Let the palette reveal run; press `F12` during the reveal
+   to write an Alicorn diagnostics bundle (it includes the motion transition
+   ring and stage counters).
+3. Switch document tabs to capture the tab indicator/selection behavior; press
+   `F12` again after the indicator settles.
+4. Record the bundle paths, the Scratchpad commit, and the observed reveal
+   frames in the Scratchpad validation record; link that record from #146.
+
+### Final tally and release-gate statement
+
+| Item | Final state |
+| --- | --- |
+| Core motion contract (9 rows, 6 invariant groups) | **Complete**; no core failure found in this cycle. |
+| G6 GPU loss during motion | **Complete** on the Windows/D3D12 native tier via harness-induced backend removal. |
+| G9 macOS/Linux motion | **Complete at CI tier**: Linux/Vulkan sampled motion; macOS/Metal host+scheduler+settlement. Physical-hardware runs remain out of scope for CI. |
+| G10 physical 60/120/144 Hz | **Explicitly scoped** to founder-run with the runbook above and analytic cadence tests. |
+| G11 Scratchpad #60 native capture | **Explicitly scoped** to founder-hands-on with the steps above; source-level fixtures exist. |
+
+Release statement: the core motion invariants pass, and every platform record is
+at the tier achievable for this cycle (Windows/D3D12 native with a real GPU,
+Linux/Vulkan and macOS/Metal CI tier, physical-Hz and the Scratchpad capture
+explicitly scoped to the founder). No core blocker was found. The close
+decision remains the founder's; this record does not close #146.
+

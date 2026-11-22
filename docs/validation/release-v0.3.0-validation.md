@@ -175,9 +175,11 @@ run on the final SHA. Applying that convention:
 - [x] Changelog release-candidate section drafted (performance, correctness,
       validation, scope).
 - [x] Documentation indexes updated.
-- [ ] CI run on the final release SHA: Windows foundation, macOS foundation
+- [x] CI run on the final release SHA: Windows foundation, macOS foundation
       (Metal readback), native packaging (Windows static SDL, macOS), icon
-      reproducibility, browser WebGPU, Linux WebGPU, macOS WebGPU.
+      reproducibility, browser WebGPU, Linux WebGPU, macOS WebGPU. All seven
+      workflows are green at `ac469a4`; the run table and per-item status are in
+      the [#146 matrix final-validation section](issue-146-motion-acceptance-matrix-2026-11-21.md#final-v030-validation-2026-11-22).
 - [ ] `tools/test.ps1` and `tools/test.sh` run end to end on the official
       `dev-2026-11` release, confirming the testui argument fix and the wasm
       package check.
