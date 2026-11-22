@@ -45,6 +45,20 @@ menu_service_init :: proc(
 	}
 }
 
+// menu_service_update replaces the borrowed menu descriptions. An application
+// that remaps a shortcut mutates the same borrowed storage and then calls this
+// (or simply calls native_menu_adapter_rebuild) so the native menu presentation
+// and accelerator table stay synchronized with dispatch.
+menu_service_update :: proc(
+	service: ^Menu_Service,
+	menus: []alicorn.Menu,
+	presentation: alicorn.Menu_Presentation,
+) {
+	if service == nil { return }
+	service.menus = menus
+	service.presentation = presentation
+}
+
 menu_service_match_shortcut :: proc(
 	service: ^Menu_Service,
 	key: rune,
@@ -116,6 +130,11 @@ Native_Menu_Adapter :: struct {
 	pending_command: alicorn.Action_ID,
 	has_pending:     bool,
 	prepared:        bool,
+	// menu_open is true while the platform menu loop owns input. A rebuild
+	// requested in that window is deferred to close so the platform never has
+	// its active menu destroyed underneath it.
+	menu_open:       bool,
+	rebuild_pending: bool,
 }
 
 // native_menu_adapter_take_pending consumes one command queued by a native
@@ -134,6 +153,34 @@ native_menu_adapter_queue :: proc(adapter: ^Native_Menu_Adapter, command: alicor
 	if adapter == nil || command == alicorn.Action_ID(0) { return }
 	adapter.pending_command = command
 	adapter.has_pending = true
+}
+
+// native_menu_adapter_rebuild recreates the platform menu from the service's
+// current borrowed descriptions. A host calls it after a runtime shortcut
+// remap when labels, structure, or accelerator text changed. Windows defers the
+// rebuild while a native menu loop owns input; the deferred request is drained
+// when the loop closes or by native_menu_adapter_drain_rebuild from a host safe
+// point.
+native_menu_adapter_rebuild :: proc(adapter: ^Native_Menu_Adapter) -> bool {
+	if adapter == nil || !adapter.prepared { return false }
+	if adapter.menu_open {
+		adapter.rebuild_pending = true
+		return true
+	}
+	adapter.rebuild_pending = false
+	window := adapter.window
+	service := adapter.service
+	chrome := adapter.chrome
+	native_menu_adapter_destroy(adapter)
+	return native_menu_adapter_prepare(adapter, window, service, chrome)
+}
+
+// native_menu_adapter_drain_rebuild applies a rebuild deferred while the native
+// menu was open. Hosts may call it at an event-loop safe point; the Windows
+// adapter also drains it when the menu loop exits.
+native_menu_adapter_drain_rebuild :: proc(adapter: ^Native_Menu_Adapter) -> bool {
+	if adapter == nil || !adapter.rebuild_pending || adapter.menu_open { return false }
+	return native_menu_adapter_rebuild(adapter)
 }
 
 // menu_presentation_labels_visible reports whether menu labels belong in the

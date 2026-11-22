@@ -26,6 +26,13 @@ native_menu_adapter_refresh :: proc(adapter: ^Native_Menu_Adapter) {
 	_ = adapter
 }
 
+// Linux keeps menu descriptions as semantic accelerator metadata only; there
+// is no native menu to rebuild or relabel.
+native_menu_adapter_refresh_accelerators :: proc(adapter: ^Native_Menu_Adapter) -> bool {
+	_ = adapter
+	return true
+}
+
 native_menu_adapter_activate_chrome :: proc(adapter: ^Native_Menu_Adapter) -> bool {
 	if adapter == nil { return false }
 	adapter.chrome_active = false
@@ -70,4 +77,6 @@ native_menu_adapter_destroy :: proc(adapter: ^Native_Menu_Adapter) {
 	adapter.pending_command = {}
 	adapter.has_pending = false
 	adapter.prepared = false
+	adapter.menu_open = false
+	adapter.rebuild_pending = false
 }

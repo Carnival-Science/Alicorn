@@ -447,6 +447,7 @@ Native_Event_Wait_Deadline_Source :: enum {
 	Notice,
 	Application_Scheduled,
 	Devtools_Hud,
+	Binding_Chord,
 	Child_Motion,
 	Child_Tick,
 	Child_Scheduled,
@@ -456,7 +457,7 @@ Native_Event_Wait_Deadline_Source :: enum {
 	Validation_Exit,
 }
 
-NATIVE_EVENT_WAIT_DEADLINE_SOURCE_COUNT :: 17
+NATIVE_EVENT_WAIT_DEADLINE_SOURCE_COUNT :: 18
 
 // SDL event waits use a negative timeout for an indefinite wait. Merge a new
 // nonnegative deadline without accidentally replacing an earlier retry/tick.

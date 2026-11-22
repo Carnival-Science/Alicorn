@@ -16,6 +16,12 @@ Hosted_Run_State :: struct($T: typeid) {
 	// an accelerator matches.
 	menus: []alicorn.Menu,
 	menu_presentation: alicorn.Menu_Presentation,
+	// bindings is opt-in. An empty table leaves the ordinary ui.run path
+	// unchanged. When set, every host key-down becomes one alicorn.Key_Event and
+	// the host resolver runs after native menu accelerators and before the
+	// built-in Application_Key vocabulary. on_command receives resolved commands.
+	bindings: alicorn.Binding_Table,
+	on_command: proc(^T, ^alicorn.Runtime, alicorn.Action_ID),
 	window_decorations: alicorn.Window_Decoration_Mode,
 	window_chrome_height: f32,
 	window_chrome_metrics: alicorn.Window_Chrome_Metrics_Proc,
@@ -219,6 +225,10 @@ run_hosted_config :: proc(
 		state := cast(^Hosted_Run_State(T))data
 		if state.on_menu_command != nil { state.on_menu_command(state.app, rt, command) }
 	}
+	command :: proc(data: rawptr, rt: ^alicorn.Runtime, command: alicorn.Action_ID) {
+		state := cast(^Hosted_Run_State(T))data
+		if state.on_command != nil { state.on_command(state.app, rt, command) }
+	}
 	close_requested :: proc(data: rawptr, rt: ^alicorn.Runtime) -> alicorn.Hosted_Close_Result {
 		state := cast(^Hosted_Run_State(T))data
 		if state.on_close_requested != nil { return state.on_close_requested(state.app, rt) }
@@ -262,6 +272,7 @@ run_hosted_config :: proc(
 		runtime=runtime_config,
 		menus=run_state.menus,
 		menu_presentation=run_state.menu_presentation,
+		bindings=run_state.bindings,
 		window_decorations=run_state.window_decorations,
 		window_chrome_height=run_state.window_chrome_height,
 		window_chrome_metrics=chrome_metrics,
@@ -290,6 +301,7 @@ run_hosted_config :: proc(
 	if run_state.on_tick != nil { config.on_tick = tick }
 	if run_state.on_after_frame != nil { config.on_after_frame = after_frame }
 	if run_state.on_menu_command != nil { config.on_menu_command = menu_command }
+	if run_state.on_command != nil { config.on_command = command }
 	if run_state.on_close_requested != nil { config.on_close_requested = close_requested }
 	if run_state.on_dialog != nil { config.on_dialog = dialog }
 	if run_state.root_ownership == .Application && run_state.render_overlays != nil {

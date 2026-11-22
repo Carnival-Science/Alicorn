@@ -101,6 +101,124 @@ web_key_primary_modifier :: proc(event: Browser_Key_Event, platform: Browser_Pla
 	return event.meta if platform == .MacOS else event.control
 }
 
+// web_key_spec maps DOM KeyboardEvent.code into Alicorn's host-neutral binding
+// vocabulary. KeyboardEvent.code is layout-independent, matching the physical
+// intent of a user-configured shortcut.
+web_key_spec :: proc(code: string) -> (spec: alicorn.Key_Spec, mapped: bool) {
+	switch code {
+	case "KeyA": return .A, true
+	case "KeyB": return .B, true
+	case "KeyC": return .C, true
+	case "KeyD": return .D, true
+	case "KeyE": return .E, true
+	case "KeyF": return .F, true
+	case "KeyG": return .G, true
+	case "KeyH": return .H, true
+	case "KeyI": return .I, true
+	case "KeyJ": return .J, true
+	case "KeyK": return .K, true
+	case "KeyL": return .L, true
+	case "KeyM": return .M, true
+	case "KeyN": return .N, true
+	case "KeyO": return .O, true
+	case "KeyP": return .P, true
+	case "KeyQ": return .Q, true
+	case "KeyR": return .R, true
+	case "KeyS": return .S, true
+	case "KeyT": return .T, true
+	case "KeyU": return .U, true
+	case "KeyV": return .V, true
+	case "KeyW": return .W, true
+	case "KeyX": return .X, true
+	case "KeyY": return .Y, true
+	case "KeyZ": return .Z, true
+	case "Digit0", "Numpad0": return .Zero, true
+	case "Digit1", "Numpad1": return .One, true
+	case "Digit2", "Numpad2": return .Two, true
+	case "Digit3", "Numpad3": return .Three, true
+	case "Digit4", "Numpad4": return .Four, true
+	case "Digit5", "Numpad5": return .Five, true
+	case "Digit6", "Numpad6": return .Six, true
+	case "Digit7", "Numpad7": return .Seven, true
+	case "Digit8", "Numpad8": return .Eight, true
+	case "Digit9", "Numpad9": return .Nine, true
+	case "F1": return .F1, true
+	case "F2": return .F2, true
+	case "F3": return .F3, true
+	case "F4": return .F4, true
+	case "F5": return .F5, true
+	case "F6": return .F6, true
+	case "F7": return .F7, true
+	case "F8": return .F8, true
+	case "F9": return .F9, true
+	case "F10": return .F10, true
+	case "F11": return .F11, true
+	case "F12": return .F12, true
+	case "ArrowLeft": return .Left, true
+	case "ArrowRight": return .Right, true
+	case "ArrowUp": return .Up, true
+	case "ArrowDown": return .Down, true
+	case "PageUp": return .Page_Up, true
+	case "PageDown": return .Page_Down, true
+	case "Home": return .Home, true
+	case "End": return .End, true
+	case "Insert": return .Insert, true
+	case "Space": return .Space, true
+	case "Enter", "NumpadEnter": return .Return, true
+	case "Escape": return .Escape, true
+	case "Tab": return .Tab, true
+	case "Backspace": return .Backspace, true
+	case "Delete": return .Delete, true
+	case "Minus", "NumpadSubtract": return .Minus, true
+	case "Equal", "NumpadAdd": return .Equal, true
+	case "BracketLeft": return .Left_Bracket, true
+	case "BracketRight": return .Right_Bracket, true
+	case "Backslash": return .Backslash, true
+	case "Semicolon": return .Semicolon, true
+	case "Quote": return .Apostrophe, true
+	case "Comma": return .Comma, true
+	case "Period": return .Period, true
+	case "Slash": return .Slash, true
+	case "Backquote": return .Grave, true
+	}
+	return .Unknown, false
+}
+
+web_key_modifiers :: proc(event: Browser_Key_Event, platform: Browser_Platform) -> alicorn.Key_Modifiers {
+	modifiers: alicorn.Key_Modifiers
+	if event.shift { modifiers += {.Shift} }
+	if event.alt { modifiers += {.Alt} }
+	if platform == .MacOS {
+		if event.control { modifiers += {.Super} }
+		if event.meta { modifiers += {.Primary} }
+	} else {
+		if event.control { modifiers += {.Primary} }
+		if event.meta { modifiers += {.Super} }
+	}
+	return modifiers
+}
+
+// web_key_event produces the same Key_Event the native host produces. The
+// caller attaches the optional Application_Key bridge after mapping.
+web_key_event :: proc(
+	event: Browser_Key_Event,
+	platform: Browser_Platform,
+	text_input_focused: bool,
+	composition_active: bool,
+	repeat := false,
+) -> alicorn.Key_Event {
+	key, _ := web_key_spec(event.code)
+	modifiers := web_key_modifiers(event, platform)
+	return alicorn.Key_Event{
+		key=key,
+		modifiers=modifiers,
+		repeat=repeat,
+		composition_active=composition_active,
+		text_input_focused=text_input_focused,
+		produces_text=alicorn.key_event_produces_text(key, modifiers) && !composition_active,
+	}
+}
+
 // web_application_key mirrors the native application shortcut vocabulary.
 // A browser host should call it only after giving text composition and focused
 // text editing their normal first-refusal path.

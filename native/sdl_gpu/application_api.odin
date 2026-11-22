@@ -183,6 +183,12 @@ Application :: struct {
 	height:             int,
 	menus:              []Application_Menu,
 	menu_presentation:  Application_Menu_Presentation,
+	// bindings is an optional application-owned keymap. The host reads the
+	// borrowed table on each key-down; mutate the same storage and call the
+	// host's rebind point to update accelerators. An empty table preserves the
+	// ordinary Application_Key path exactly.
+	bindings:           alicorn.Binding_Table,
+	on_command:         alicorn.Hosted_Command_Proc,
 	window_decorations: Window_Decoration_Mode,
 	// Content_Title_Bar is the macOS full-size-content mode. Integrated_Title_Bar
 	// may also opt in to application-authored controls in the Windows native

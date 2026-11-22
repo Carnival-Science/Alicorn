@@ -58,6 +58,8 @@ run :: proc(
 	menus: []alicorn.Menu = nil,
 	menu_presentation: alicorn.Menu_Presentation = .Labels,
 	on_menu_command: proc(^T, ^alicorn.Runtime, alicorn.Action_ID) = nil,
+	bindings: alicorn.Binding_Table = {},
+	on_command: proc(^T, ^alicorn.Runtime, alicorn.Action_ID) = nil,
 	on_close_requested: proc(^T, ^alicorn.Runtime) -> alicorn.Hosted_Close_Result = nil,
 	on_dialog: proc(^T, ^alicorn.Runtime, ^alicorn.File_Dialog_Result) = nil,
 	// The browser host records decoration and chrome policy so hosted
@@ -88,6 +90,8 @@ run :: proc(
 		render_overlays=render_overlays,
 		menus=menus,
 		menu_presentation=menu_presentation,
+		bindings=bindings,
+		on_command=on_command,
 		window_decorations=window_decorations,
 		interaction_update_policy=interaction_update_policy,
 		on_initialize=on_initialize,

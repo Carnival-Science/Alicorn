@@ -4,6 +4,7 @@ import "core:fmt"
 import "core:time"
 import alicorn "../../runtime"
 import "vendor:sdl3"
+import host_bindings "alicorn:host/bindings"
 
 // run_application_loop is the reusable native shell. Application state is
 // borrowed only through callbacks; retained runtime nodes do not store the
@@ -113,6 +114,13 @@ run_application_loop :: proc(
 		cancel=native_application_cancel_scheduled,
 		read_stats=native_application_scheduler_stats,
 	}
+	binding_service: host_bindings.Binding_Service
+	host_bindings.binding_service_init(
+		&binding_service,
+		application_instance.bindings,
+		rawptr(&application_instance),
+		native_binding_dispatch,
+	)
 	text_input_coordinator: Native_Text_Input_Coordinator
 	secondary_windows := Native_Secondary_Window_Manager{
 		device=device, primary_window=window,
@@ -325,6 +333,12 @@ run_application_loop :: proc(
 					wait_timeout_ms, scheduled_timeout_ms, wait_timeout_source_output, .Application_Scheduled,
 				))
 			}
+			if binding_deadline, found := host_bindings.binding_service_deadline(&binding_service); found {
+				binding_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(binding_deadline, current_ns))
+				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(
+					wait_timeout_ms, binding_timeout_ms, wait_timeout_source_output, .Binding_Chord,
+				))
+			}
 			if devtools_hud.visible && devtools_hud_deadline_ns != 0 {
 				hud_timeout_ms := sdl3.Sint32(scheduled_wake_timeout_ms(devtools_hud_deadline_ns, current_ns))
 				wait_timeout_ms = sdl3.Sint32(native_event_wait_timeout_min(
@@ -484,6 +498,10 @@ run_application_loop :: proc(
 			motion_scheduler_state=&motion_scheduler,
 			motion_host_gpu_submissions=timing.gpu_submissions,
 			motion_breadcrumbs=breadcrumbs,
+			bindings=&binding_service,
+		)
+		_ = host_bindings.binding_service_timeout(
+			&binding_service, rt, u64(sdl3.GetTicksNS()),
 		)
 		effect_retry_submission_pending := false
 		retry_now_ns := u64(sdl3.GetTicksNS())

@@ -170,32 +170,24 @@ sdl3_webgpu_application_key_down :: proc(
 	}
 
 	// Control+Tab is application navigation and remains consumed when an app
-	// chooses not to bind document cycling.
+	// chooses not to bind document cycling. Every key-down below uses the one
+	// Key_Event contract so bindings see keys outside the Application_Key
+	// vocabulary; a binding miss falls through to the existing routing.
 	control_tab := event.key == sdl3.K_TAB && input_modifier_is_set(event.mod, sdl3.KMOD_CTRL)
-	if control_tab {
-		key, mapped := application_key_from_sdl(event.key, event.mod, text_focused)
-		if mapped {
-			_, key_status := alicorn.hosted_runtime_application_key(&application.hosted, key, alicorn.Hosted_Key_Event{
-				key_code=u32(key), pressed=true, repeat=event.repeat,
-				modifiers=pointer_modifiers_from_sdl(event.mod),
-				text_input_focused=text_focused,
-				composition_active=composition_active,
-			})
-			if key_status != .Ok { return .Failure }
-		}
-		return .Handled
+	key_event := key_event_from_sdl(event, text_focused, composition_active)
+	if key, mapped := application_key_from_sdl(event.key, event.mod, text_focused); mapped {
+		key_event = key_event_with_application_key(key_event, key)
 	}
 
-	if key, mapped := application_key_from_sdl(event.key, event.mod, text_focused); mapped {
-		key_handled, key_status := alicorn.hosted_runtime_application_key(&application.hosted, key, alicorn.Hosted_Key_Event{
-			key_code=u32(key), pressed=true, repeat=event.repeat,
-			modifiers=pointer_modifiers_from_sdl(event.mod),
-			text_input_focused=text_focused,
-			composition_active=composition_active,
-		})
-		if key_status != .Ok { return .Failure }
+	key_handled, key_status := alicorn.hosted_runtime_key_event(&application.hosted, key_event)
+	if key_status != .Ok { return .Failure }
+	if key_handled {
 		if !sdl3_webgpu_application_sync_text_input(application) { return .Failure }
-		if key_handled { return .Handled }
+		return .Handled
+	}
+	if control_tab {
+		if !sdl3_webgpu_application_sync_text_input(application) { return .Failure }
+		return .Handled
 	}
 
 	if text_focused && !composition_active {
@@ -256,6 +248,7 @@ sdl3_webgpu_application_text_input :: proc(
 ) -> SDL3_WebGPU_Application_Event_Result {
 	if event.text == nil || !application.text_input.active || application.text_input.owner == 0 { return .Ignored }
 	text := string(event.text)
+	_ = alicorn.hosted_runtime_binding_cancel(&application.hosted)
 	rt, status := alicorn.hosted_runtime_borrow(&application.hosted)
 	if status != .Ok { return .Failure }
 	if alicorn.select_wants_text_input(rt) && alicorn.select_typeahead(rt, text) {
@@ -280,6 +273,7 @@ sdl3_webgpu_application_text_editing :: proc(
 	event: sdl3.TextEditingEvent,
 ) -> SDL3_WebGPU_Application_Event_Result {
 	if !application.text_input.active || application.text_input.owner == 0 { return .Ignored }
+	_ = alicorn.hosted_runtime_binding_cancel(&application.hosted)
 	text := ""
 	if event.text != nil { text = string(event.text) }
 	kind := alicorn.Hosted_Text_Input_Kind.Preedit

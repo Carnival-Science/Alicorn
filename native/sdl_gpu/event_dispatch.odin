@@ -4,9 +4,24 @@ import "core:fmt"
 import alicorn "../../runtime"
 import "vendor:sdl3"
 import sdl_host "alicorn:host/sdl3/input"
+import host_bindings "alicorn:host/bindings"
 
 native_scroll_event_from_sdl :: proc(wheel: sdl3.MouseWheelEvent, modifiers: alicorn.Input_Modifiers) -> alicorn.Scroll_Event {
 	return sdl_host.scroll_event_from_sdl(wheel, modifiers)
+}
+
+// native_binding_dispatch delivers one resolved application binding under the
+// same native-command cause and enabled gate as a menu accelerator. Command
+// identity stays application-owned: Action_ID needs no new enum case.
+native_binding_dispatch :: proc(data: rawptr, rt: ^alicorn.Runtime, command: alicorn.Action_ID) -> bool {
+	application := cast(^Application)data
+	if application == nil || application.on_command == nil { return false }
+	if !alicorn.menu_command_enabled(application.menus, rt, command) { return false }
+	cause := alicorn.cause_begin(rt, .Native_Command, "application command binding", command)
+	application.on_command(application.state, rt, command)
+	alicorn.invalidate_root(rt, "application command binding")
+	alicorn.cause_end(rt, cause)
+	return true
 }
 
 native_drag_autoscroll_update :: proc(rt: ^alicorn.Runtime, deadline_ns: ^u64, now_ns: u64) {
@@ -81,6 +96,7 @@ pump_events :: proc(
 	motion_scheduler_state: ^Native_Motion_Scheduler_State = nil,
 	motion_host_gpu_submissions: u64 = 0,
 	motion_breadcrumbs: ^Native_Breadcrumb_Recorder = nil,
+	bindings: ^host_bindings.Binding_Service = nil,
 ) {
 	if replay_secondary_events {
 		defer native_secondary_window_replay_event_clear(secondary_child)
@@ -338,6 +354,7 @@ pump_events :: proc(
 			native_accessibility_focus_changed(accessibility, false)
 			alicorn.context_menu_close(rt)
 			alicorn.tooltip_dismiss(rt)
+			if bindings != nil { _ = host_bindings.binding_service_cancel(bindings) }
 			if text_input_state != nil {
 				text_input_state.window_focused = false
 				native_cancel_current_text_composition(application, rt, text_input_state, "window focus lost")
@@ -388,6 +405,9 @@ pump_events :: proc(
 		callback_blocked_by_context_menu := false
 		callback_blocked_by_drag := false
 		if pointer_ok {
+			if pointer.kind == .Down && bindings != nil {
+				_ = host_bindings.binding_service_cancel(bindings)
+			}
 			pointer_cause := alicorn.pointer_cause_begin(rt, pointer.kind)
 			pointer_cause_id = pointer_cause.cause.id
 			if devtools_last_cause != nil { devtools_last_cause^ = pointer_cause.cause }
@@ -495,7 +515,30 @@ pump_events :: proc(
 				if devtools_hud_redraw_pending != nil { devtools_hud_redraw_pending^ = true }
 				devtools_hotkey_handled = true
 			}
-			runtime_key_handled := context_menu_handled || drag_cancelled || menu_shortcut_handled || devtools_hotkey_handled
+			// Application-owned bindings run after native menu accelerators and
+			// host diagnostics, and before the built-in Application_Key routing.
+			// A miss is additive: the existing path below is unchanged.
+			binding_handled := false
+			if !context_menu_handled && !drag_cancelled && !menu_shortcut_handled &&
+				!devtools_hotkey_handled && bindings != nil &&
+				host_bindings.binding_service_active(bindings) {
+				binding_text_focused := native_current_text_input_owner(rt, text_input_state) != 0
+				binding_composition := false
+				if node, ok := rt.nodes[rt.focused]; ok {
+					binding_composition = node.composition.active
+				}
+				if text_input_state != nil && text_input_state.composition_owner == rt.focused {
+					binding_composition = true
+				}
+				key_event := sdl_host.key_event_from_sdl(
+					event.key, binding_text_focused, binding_composition,
+				)
+				binding_handled = host_bindings.binding_service_resolve(
+					bindings, rt, key_event, u64(sdl3.GetTicksNS()),
+				)
+			}
+			runtime_key_handled := context_menu_handled || drag_cancelled || menu_shortcut_handled ||
+				devtools_hotkey_handled || binding_handled
 			if !runtime_key_handled {
 				runtime_key_handled = native_dispatch_application_tab_navigation(
 					application,
@@ -766,6 +809,7 @@ pump_events :: proc(
 			alicorn.cause_end(rt, host_cause)
 		case .TEXT_INPUT:
 			text_cause := alicorn.cause_begin(rt, .Text_Input, "SDL text input")
+			if bindings != nil { _ = host_bindings.binding_service_cancel(bindings) }
 			if devtools_last_cause != nil { devtools_last_cause^ = text_cause.cause }
 			text_input_events^ += 1
 			if manual_log {
@@ -789,6 +833,7 @@ pump_events :: proc(
 			alicorn.cause_end(rt, text_cause)
 		case .TEXT_EDITING:
 			composition_cause := alicorn.cause_begin(rt, .Text_Composition, "SDL text composition")
+			if bindings != nil { _ = host_bindings.binding_service_cancel(bindings) }
 			if devtools_last_cause != nil { devtools_last_cause^ = composition_cause.cause }
 			composition_events^ += 1
 			if manual_log {

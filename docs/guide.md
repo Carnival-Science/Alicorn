@@ -730,6 +730,45 @@ dismissal. Notices do not take editor focus or move the main layout. See the
 announcements, and the [notice recipe](recipes.md#application-notices) for the
 gallery's `on_after_frame` posting path.
 
+## Configurable command bindings
+
+The built-in `Application_Key` vocabulary is convenient for ordinary apps and
+intentionally small. An application with a large or user-editable command
+surface opts into application-owned bindings instead:
+
+```odin
+shortcuts := alicorn.Binding_Table{
+    bindings = []alicorn.Command_Binding{
+        {
+            command = app_command(.Save),
+            strokes = [][]alicorn.Binding_Key{{{key = .S, modifiers = {.Primary}}}},
+            scope = "Global",
+        },
+    },
+}
+ui.run(&app, render, bindings=shortcuts, on_command=dispatch_command)
+```
+
+`Action_ID` is the only command identity; no new Alicorn enum case is needed.
+Native menu accelerators still resolve first, then the application binding
+resolver, then the existing `Application_Key` and text paths. An unmatched key
+therefore behaves exactly as before, and omitting `bindings` leaves `ui.run`
+unchanged.
+
+A binding can list a multi-stroke chord such as Ctrl+K Ctrl+S. Pending strokes
+are host-owned, cancellable, and complete through a scheduled wake rather than a
+polling loop. While a text field has focus or an IME is composing, bindings
+yield unless they explicitly declare `preempt_text` or
+`allow_during_composition`.
+
+Shortcuts can be changed at runtime by mutating the borrowed binding table. If
+the same shortcut is also shown in a native menu, update the description and
+rebuild or refresh the menu adapter so the visible accelerator follows dispatch.
+Use `alicorn.binding_conflicts` to report duplicate, prefix-ambiguous, or
+cross-scope shortcuts in a keymap editor. Alicorn does not take ownership of
+command names, keymap persistence, or conflict policy; this is the boundary
+Audacity-style applications need.
+
 ## Accessibility status
 
 Alicorn has keyboard-level interaction support: Tab and Shift+Tab traverse
