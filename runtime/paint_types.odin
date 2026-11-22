@@ -29,6 +29,25 @@ Backdrop_Effect_Paint :: struct {
 	fallback: Backdrop_Effect_Fallback,
 }
 
+// Lighting_Group_Paint is an experimental, per-frame boundary marker for the
+// optional scene-local lighting compositor (issue #105). The marker sits at the
+// painter-order position of the declared group's last painted command. A host
+// that understands it captures the preceding paint prefix, shades only the
+// group's rounded-slab surfaces, and re-composites at this position. It never
+// participates in layout, hit testing, focus, or semantics.
+//
+// generation is a hash of the declared light parameters and accessibility
+// presentation only. Captured content and geometry are hashed separately by the
+// compositor, which is the only party that owns the captured prefix.
+Lighting_Group_Paint :: struct {
+	group:      Material_Group_ID,
+	generation: u64,
+}
+
+// The marker is owned by a reserved runtime identity so retained range
+// bookkeeping never mistakes it for a node's own command run.
+LIGHTING_MARKER_OWNER :: Node_ID(0xFFFF_FFFF_FFFF_FFFE)
+
 // Paint_Command is the renderer-facing output of every paint producer:
 // retained widgets, runtime overlays, and host chrome. The owner identifies
 // the producer for diagnostics and sidecar resolution; renderers dispatch on
@@ -54,6 +73,7 @@ Paint_Command :: struct {
 Paint_Payload :: union #no_nil {
 	Surface_Paint,
 	Backdrop_Effect_Paint,
+	Lighting_Group_Paint,
 	Icon_Paint,
 	Image_Paint,
 	Text_Paint,
@@ -500,6 +520,32 @@ paint_command_is_surface :: proc(command: Paint_Command) -> bool {
 paint_command_is_backdrop_effect :: proc(command: Paint_Command) -> bool {
 	_, ok := command.payload.(Backdrop_Effect_Paint)
 	return ok
+}
+
+paint_command_is_lighting_group :: proc(command: Paint_Command) -> bool {
+	_, ok := command.payload.(Lighting_Group_Paint)
+	return ok
+}
+
+// paint_command_is_effects_boundary reports the single-boundary rule shared by
+// the retained compositor and native hosts: a frame may carry one backdrop or
+// one lighting boundary, never both and never nested.
+paint_command_is_effects_boundary :: proc(command: Paint_Command) -> bool {
+	return paint_command_is_backdrop_effect(command) || paint_command_is_lighting_group(command)
+}
+
+paint_lighting_group_command :: proc(
+	owner: Node_ID,
+	bounds, clip: Rect,
+	group: Material_Group_ID,
+	generation: u64,
+) -> Paint_Command {
+	return Paint_Command{
+		owner=owner,
+		bounds=bounds,
+		clip=clip,
+		payload=Lighting_Group_Paint{group, generation},
+	}
 }
 
 paint_command_is_text :: proc(command: Paint_Command) -> bool {

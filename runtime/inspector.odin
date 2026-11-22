@@ -729,6 +729,7 @@ inspector_append_drag :: proc(sb: ^strings.Builder, rt: ^Runtime) {
 		case Geometry_Paint: kind = "geometry"
 		case Surface_Paint: kind = "surface"
 		case Backdrop_Effect_Paint: kind = "effect"
+		case Lighting_Group_Paint: kind = "lighting"
 		}
 		fmt.sbprintf(sb,
 			"  preview[%d] index=%d kind=%s bounds=(%.1f,%.1f %.1fx%.1f) clip=(%.1f,%.1f %.1fx%.1f) translation=(%.1f,%.1f) opacity=%.2f text=%q\n",

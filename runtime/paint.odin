@@ -479,8 +479,9 @@ paint_sparse_finalize_range :: proc(rt: ^Runtime, node: ^Node) -> bool {
 		rt.tooltip.visible { return false }
 	// A backdrop marker anywhere in the retained display captures a prefix for
 	// the effects compositor. Keep the full rebuild until range edits can
-	// update that prefix.
-	if rt.retained_backdrop_effect_nodes != 0 { return false }
+	// update that prefix. A published lighting-group marker owns the same
+	// prefix-capture contract.
+	if rt.retained_backdrop_effect_nodes != 0 || rt.lighting_marker_present { return false }
 	if node.kind == .Scroll_Region { return false }
 	if len(rt.display) != len(rt.display_target) { return false }
 	part_visible := visual_part_is_visible(rt, node.id)
@@ -1173,4 +1174,8 @@ update_paint :: proc(rt: ^Runtime) {
 		rebuild_display(rt)
 		perf_add_mark(rt, .Composition, compose_mark)
 	}
+	// The optional lighting boundary is a paint-stream product: it is placed
+	// after this stage's display list is final. With no declaration (and no
+	// carried marker) this is one boolean test.
+	lighting_publish(rt)
 }

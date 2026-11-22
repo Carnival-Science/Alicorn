@@ -968,6 +968,10 @@ paint_command_hash :: proc(hash: u64, command: alicorn.Paint_Command, include_ow
 		h = hash_u64(h, 5)
 	case alicorn.Image_Paint:
 		h = hash_u64(h, 6)
+	case alicorn.Lighting_Group_Paint:
+		h = hash_u64(h, 7)
+		h = hash_u64(h, u64(payload.group))
+		h = hash_u64(h, payload.generation)
 	}
 	return h
 }

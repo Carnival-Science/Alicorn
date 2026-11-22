@@ -1,0 +1,14 @@
+{
+    "dxc":  "1.9.2609",
+    "glslang":  "16.6.0",
+    "uniform_space":  "fragment uniform buffer b0 space3 / set 3 binding 0",
+    "sampler_space":  "fragment sampled texture t0 space2 / set 2 binding 0",
+    "color_blend":  "disabled (lighting composite replaces captured pixels)",
+    "sha256":  {
+                   "lighting.frag.hlsl":  "2c464ac4a3e3e3ff1823711b274053b07dff8b276af1ba5000d49ab027d6bcb7",
+                   "lighting.frag.glsl":  "da3778b47f69b78b024389f0c698946819f490649628bc4a6bcac1e00756125d",
+                   "lighting.frag.metal":  "4b552466499930909da127476a1303cf8d08ea8f9ba09a7d757d6c45bf7d4d10",
+                   "lighting.frag.dxil":  "08ba339e1920fdff72277eef595f4c4a3f91790c468fa53d931c290052208ff1",
+                   "lighting.frag.spv":  "d3f6dbaa80333fcccd6bfef365ab3ce95a3dc269d486f6a7be9e3b4194a72284"
+               }
+}
