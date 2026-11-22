@@ -26,10 +26,15 @@ test_sdl_key_spec_covers_binding_vocabulary :: proc(t: ^testing.T) {
 
 @(test)
 test_sdl_key_event_normalizes_one_contract :: proc(t: ^testing.T) {
+	// SDL reports Control as KMOD_CTRL and Command as KMOD_GUI. Primary is
+	// Control on Windows/Linux and Command on macOS, matching the binding
+	// vocabulary the host normalizes to.
+	primary_mod := sdl3.KMOD_CTRL
+	when ODIN_OS == .Darwin { primary_mod = sdl3.KMOD_GUI }
 	event := sdl3.KeyboardEvent{
 		scancode=sdl3.Scancode.S,
 		key=sdl3.K_S,
-		mod=sdl3.KMOD_CTRL | sdl3.KMOD_SHIFT,
+		mod=primary_mod | sdl3.KMOD_SHIFT,
 		repeat=true,
 		timestamp=12345,
 	}
