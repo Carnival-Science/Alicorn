@@ -476,6 +476,20 @@ browser_input_key_down :: proc(event: js.Event) {
 		if key_event.code == "Escape" && input.composition_active {
 			input.composition_cancel_on_end = true
 		}
+		if rt, status := alicorn.hosted_runtime_borrow(input.host); status == .Ok {
+			owner := alicorn.focused_node(rt)
+			info, has_focus := alicorn.node_info(rt, owner)
+			text_focused := has_focus && (info.kind == .Text_Field || info.text_input_target)
+			composed := web_key_event(
+				key_event, input.platform, text_focused, true, event.key.repeat,
+			)
+			if handled, key_status := alicorn.hosted_runtime_key_event(input.host, composed);
+				key_status == .Ok && handled {
+				js.event_prevent_default()
+				browser_input_sync_focus_target(input)
+				input.wake(input.wake_data)
+			}
+		}
 		return
 	}
 	rt, status := alicorn.hosted_runtime_borrow(input.host)
@@ -505,16 +519,22 @@ browser_input_key_down :: proc(event: js.Event) {
 		}
 	}
 	app_key, app_mapped := web_application_key(key_event, input.platform, menus_open=alicorn.context_menu_is_open(rt))
-	// Scoped text preemption runs before the ordinary text-editing route so a
-	// scope can keep its declared keys while its search target has focus. Keys
-	// the scope did not declare continue to the text target unchanged.
-	if text_input_focused && app_mapped {
-		if alicorn.interaction_scope_dispatch_key(rt, app_key, composition_active, text_input_focused=true) {
-			js.event_prevent_default()
-			browser_input_sync_focus_target(input)
-			input.wake(input.wake_data)
-			return
-		}
+	// One canonical Key_Event path: the resolver runs before Application_Key
+	// routing, and legacy scoped text preemption was already applied inside it
+	// for keys the application maps. A miss falls through to text editing.
+	app_event := web_key_event(
+		key_event, input.platform, text_input_focused, composition_active, event.key.repeat,
+	)
+	if app_mapped {
+		app_event.application_key = app_key
+		app_event.has_application_key = true
+	}
+	if app_handled, key_status := alicorn.hosted_runtime_key_event(input.host, app_event);
+		key_status == .Ok && app_handled {
+		js.event_prevent_default()
+		browser_input_sync_focus_target(input)
+		input.wake(input.wake_data)
+		return
 	}
 	if text_input_focused && !composition_active {
 		text_key, mapped := web_text_navigation_key(key_event, input.platform)
@@ -540,23 +560,6 @@ browser_input_key_down :: proc(event: js.Event) {
 
 	key, mapped := app_key, app_mapped
 	if !mapped || (text_input_focused && !alicorn.application_key_can_preempt_text_field(key, composition_active)) { return }
-	app_handled, key_status := alicorn.hosted_runtime_key(input.host, alicorn.Hosted_Key_Event{
-		key_code=u32(key),
-		pressed=true,
-		repeat=event.key.repeat,
-		modifiers=alicorn.Input_Modifiers{
-			control=key_event.control,
-			shift=key_event.shift,
-			alt=key_event.alt,
-			super=key_event.meta,
-		},
-	})
-	if key_status == .Ok && app_handled {
-		js.event_prevent_default()
-		browser_input_sync_focus_target(input)
-		input.wake(input.wake_data)
-		return
-	}
 	if alicorn.application_route_focused_control_key(rt, key) {
 		js.event_prevent_default()
 		browser_input_sync_focus_target(input)
