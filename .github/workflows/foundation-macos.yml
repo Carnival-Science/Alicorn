@@ -107,6 +107,29 @@ jobs:
           ./tools/run_example.sh 01_hello --idle-validation-seconds=2
           ./tools/run_example.sh 03_async_list --smoke
 
+      # Issue #146 G9 CI tier: retained motion through the real SDL_GPU host
+      # (Metal) on the CI runner's paravirtual GPU. This is not physical
+      # hardware: the log records the selected driver so the tier stays honest.
+      - name: Validate retained motion on Metal (SDL_GPU native host)
+        shell: bash
+        run: |
+          set -euo pipefail
+          log=out/motion-validation-metal.txt
+          ./tools/run_example.sh --speed 09_retained_motion --motion-validation > "$log" 2>&1
+          cat "$log"
+          grep -Fq 'gpu_driver_selected metal' "$log"
+          grep -Fq 'motion_validation settled_checkpoint active_owners 0' "$log"
+          grep -Fq 'SDL application PASS' "$log"
+
+      - name: Upload retained-motion Metal evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: motion-validation-metal
+          path: out/motion-validation-metal.txt
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Run secondary-window waker teardown under ThreadSanitizer
         shell: bash
         run: |

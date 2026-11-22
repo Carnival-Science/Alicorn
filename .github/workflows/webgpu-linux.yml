@@ -131,6 +131,17 @@ jobs:
       - name: Validate browser host key policy on Linux
         run: mkdir -p out && odin test host/web -collection:alicorn=. -out:out/alicorn_web_host_tests
 
+      # Issue #146 G9 CI tier: the headless runtime acceptance suite includes the
+      # motion contract, composition, shutdown-during-motion, and hosted-motion
+      # tests. It runs cross-platform with no GPU, so it is the Linux tier's
+      # invariant check before the native motion fixture below.
+      - name: Run headless runtime motion acceptance suite on Linux
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          odin test runtime -out:out/alicorn_runtime_tests 2>&1 | tee out/runtime-tests-linux.txt
+
       - name: Install hash-verified wgpu-native for pinned Odin bindings
         shell: sh
         run: sh tools/setup_linux_wgpu_native.sh "$ODIN_ROOT"
@@ -175,6 +186,38 @@ jobs:
           xvfb-run -a -s '-screen 0 1280x800x24' ./examples/15_webgpu_feasibility/out/webgpu_feasibility_resize_smoke 2>&1 | tee "$resize_log"
           grep -Fq 'SurfacePresent submitted at 800x450' "$resize_log"
           grep -Fq 'SurfacePresent submitted at 720x405' "$resize_log"
+
+      # Issue #146 G9 CI tier: the same native SDL_GPU host and motion scheduler
+      # as the Windows runs, on the Linux runner's Mesa lavapipe ICD. The log
+      # records the selected driver; this is virtualized software Vulkan, not
+      # physical hardware.
+      - name: Validate retained motion on Vulkan (lavapipe, SDL_GPU native host)
+        shell: bash
+        run: |
+          set -euo pipefail
+          icd_file=$(find /usr/share/vulkan/icd.d -maxdepth 1 -type f -name 'lvp_icd*.json' -print -quit)
+          if [ -z "$icd_file" ]; then
+            echo 'Mesa lavapipe ICD was not installed.' >&2
+            exit 1
+          fi
+          export VK_ICD_FILENAMES="$icd_file"
+          export SDL_VIDEO_DRIVER=x11
+          log="$RUNNER_TEMP/motion-validation-lavapipe.txt"
+          xvfb-run -a -s '-screen 0 1280x800x24' \
+            ./tools/run_example.sh --speed 09_retained_motion --motion-validation > "$log" 2>&1
+          cat "$log"
+          grep -Fq 'gpu_driver_selected vulkan' "$log"
+          grep -Fq 'motion_validation settled_checkpoint active_owners 0' "$log"
+          grep -Fq 'SDL application PASS' "$log"
+
+      - name: Upload retained-motion lavapipe evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: motion-validation-lavapipe
+          path: ${{ runner.temp }}/motion-validation-lavapipe.txt
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Summarize adapter and retention counters
         if: always()
