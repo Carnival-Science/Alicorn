@@ -28,6 +28,9 @@ The same changelog contains the v0.1.0, v0.2.0, and v0.2.1 history.
   invalidation, semantics, and scheduling.
 - [Host-owned UI loops](hosted-runtime.md) — the `Hosted_Runtime` contract,
   application callbacks, host services, menus, chrome, input, and diagnostics.
+- [Embeddable plugin editors](plugin-host.md) — the Windows Phase B child-HWND
+  adapter for CLAP/VST3-style hosts, scoped input, shared device, optional
+  accessibility, device recovery, and the Wayland floating fallback.
 - [SDL_GPU to WebGPU migration](webgpu-migration.md) — the opt-in renderer,
   phase status, slice records, and evidence.
 - [Durable UI restoration](durable-ui-restoration.md) — persistent identity and

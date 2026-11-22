@@ -54,6 +54,11 @@ widget tree. The API is still evolving, and Alicorn is not production-ready.
 - **Shared hosted API.** `alicorn:runtime`'s `Hosted_Runtime` and
   `alicorn:ui/webgpu` expose the same application callbacks as the reference
   host for applications that own their window and event loop.
+- **Embeddable editor surfaces (Windows PoC).** `alicorn:host/plugin` hosts
+  independent Alicorn scopes in external `WS_CHILD` HWNDs for plugin-style
+  hosts, with scoped input, a shared device, optional per-editor accessibility,
+  and device-loss recovery. macOS/Linux and Wayland currently report typed
+  unsupported results with a floating-editor fallback.
 
 **New to Alicorn?** Follow [Getting Started](docs/getting-started.md) to install
 the prerequisites, build the project, and run an editable native example. Then
@@ -75,6 +80,7 @@ Then explore the [progressive application guide](docs/guide.md),
 [typed themes](docs/themes.md),
 [performance evidence](docs/performance.md), [architecture](docs/architecture.md),
 the [hosted UI loop contract](docs/hosted-runtime.md), the
+[embeddable editor adapter](docs/plugin-host.md), the
 [WebGPU migration plan](docs/webgpu-migration.md),
 or [contributor guide](docs/development.md). The current Linux evidence is
 recorded in the [NixOS/Mango validation report](docs/validation/linux-nixos-mangowc-2026-10-23.md).

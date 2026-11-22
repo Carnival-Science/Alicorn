@@ -7,6 +7,14 @@ the current project status.
 
 ## Current acceptance and platform limits
 
+- [Issue #121 embedded plugin editors — Windows (2026-11-22)](issue-121-plugin-host-2026-11-22.md)
+  — GO for the Phase B gate: a plain Win32 external host creates/attaches/
+  shows/hides/resizes/destroys Alicorn scope editors as `WS_CHILD` HWNDs,
+  including two simultaneous instances, input isolation, repeated open/close,
+  DPI resize, settled/hidden zero-submission checks, and simulated device-loss
+  recovery on real D3D12 and Vulkan; macOS/Linux are compile-checked typed
+  refusals and Wayland documents the floating-editor fallback. IME composition
+  and assistive-technology validation remain open.
 - [v0.3.0 release validation (2026-11-21)](release-v0.3.0-validation.md) — local
   release-profile suite (891 tests across 19 packages, 37 testui, examples,
   native smoke), the two harness deviations, and the remaining CI/platform

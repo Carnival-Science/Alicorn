@@ -21,6 +21,8 @@ host/sdl3/live_resize/  shared modal resize/move dispatch and window-frame geome
 host/sdl3/window_frame/ shared integrated-frame window predicates
 host/web/         browser (`js_wasm32`) host: input, composition, scheduling, DOM/ARIA
 host/presentation shared hosted-surface presenter (WebGPU)
+host/plugin/      embeddable child-HWND editor adapter for external plugin hosts
+host/plugin/accessibility optional per-editor AccessKit bridge (Windows)
 host/diagnostics/ shared, renderer-neutral developer diagnostics
 host/fonts/       shared desktop font seeding
 host/menus/       shared native menu model and platform adapters
@@ -78,6 +80,8 @@ The default checks never compile wgpu-native. WebGPU-specific work adds:
 .\tools\validate_native_webgpu_resize.ps1 -Executable out\examples\16_native_webgpu_ui.exe -Backend d3d12
 .\tools\validate_native_webgpu_dpi.ps1 -Executable out\examples\16_native_webgpu_ui.exe -Backend d3d12
 .\tools\validate_native_webgpu_tab_drag.ps1 -Executable out\examples\16_native_webgpu_ui.exe -Backend d3d12
+# Minimal external Win32 parent hosting embedded editors (issue #121).
+.\tools\validate_plugin_host.ps1 -Backend d3d12 -HoldMs 3500 -Screenshot out\plugin-host.png
 # Test-only wgpu-native export: induce D3D12 backend removal, then recover.
 .\tools\validate_wgpu_native_backend_removal.ps1
 ```
