@@ -2,7 +2,7 @@ param(
     [string]$Odin,
     [int]$Runs = 5,
     [int]$Passes = 24,
-    [int]$IdleHoldMs = 200,
+    [int]$IdleHoldMs = 1200,
     [string[]]$Treatments = @(
         'rect-flat-h0', 'rect-flat-h05', 'rect-relief-h0', 'rect-relief-h05',
         'rounded-flat-h0', 'rounded-flat-h05', 'rounded-relief-h0', 'rounded-relief-h05'
