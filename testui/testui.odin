@@ -65,6 +65,10 @@ Key :: enum {
 	Zoom_In,
 	Zoom_Out,
 	Zoom_Reset,
+	A, B, C, D, E, F, G, H, I, J, K, L, M,
+	N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
+	Digit_0, Digit_1, Digit_2, Digit_3, Digit_4, Digit_5, Digit_6, Digit_7, Digit_8, Digit_9,
+	F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
 }
 
 Input_Kind :: enum {
@@ -128,6 +132,10 @@ Turn_Report :: struct {
 	cause_id: u64,
 	cause_kind: alicorn.Cause_Kind,
 	action_id: alicorn.Action_ID,
+	// binding_command is the Action_ID dispatched by the application binding
+	// resolver during this turn, or zero when no binding fired.
+	binding_command: alicorn.Action_ID,
+	binding_pending: bool,
 	work: Turn_Work,
 	message: string,
 }
@@ -167,6 +175,10 @@ Test_Handle :: struct($T: typeid) {
 	on_pointer: Application_Pointer_Proc,
 	on_scroll_capture: Application_Scroll_Capture_Proc,
 	on_scroll: Application_Scroll_Proc,
+	on_command: proc(^T, ^alicorn.Runtime, alicorn.Action_ID),
+	bindings: alicorn.Binding_Table,
+	binding_state: alicorn.Binding_State,
+	last_binding_command: alicorn.Action_ID,
 	runtime: ^alicorn.Runtime,
 	allocator: mem.Allocator,
 	viewport_width, viewport_height: int,
@@ -254,6 +266,8 @@ open :: proc(
 	on_scroll_capture: Application_Scroll_Capture_Proc = nil,
 	on_scroll: Application_Scroll_Proc = nil,
 	build_application: Application_Build_Proc = nil,
+	bindings: alicorn.Binding_Table = {},
+	on_command: proc(^T, ^alicorn.Runtime, alicorn.Action_ID) = nil,
 ) -> (handle: Test_Handle(T), status: Status) {
 	if state == nil || (render == nil) == (build_application == nil) { return {}, .Invalid_Application }
 	if width <= 0 || height <= 0 || scale <= 0 || !alicorn.number_is_finite(scale) {
@@ -272,6 +286,9 @@ open :: proc(
 	handle.on_pointer = on_pointer
 	handle.on_scroll_capture = on_scroll_capture
 	handle.on_scroll = on_scroll
+	handle.on_command = on_command
+	handle.bindings = bindings
+	alicorn.binding_state_init(&handle.binding_state, bindings)
 	handle.viewport_width = width
 	handle.viewport_height = height
 	handle.scale = scale
@@ -311,6 +328,125 @@ close :: proc(handle: ^Test_Handle($T)) {
 		free(handle.runtime, allocator=handle.allocator)
 	}
 	handle^ = {}
+}
+
+// set_bindings swaps the harness binding table at runtime. The next key turn
+// resolves against the new table and any pending chord is canceled, mirroring a
+// host rebind.
+set_bindings :: proc(handle: ^Test_Handle($T), table: alicorn.Binding_Table) {
+	if handle == nil { return }
+	handle.bindings = table
+	alicorn.binding_state_update(&handle.binding_state, table)
+}
+
+@(private)
+testui_key_spec :: proc(key: Key) -> (spec: alicorn.Key_Spec, mapped: bool) {
+	#partial switch key {
+	case .Tab: return .Tab, true
+	case .Space: return .Space, true
+	case .Return: return .Return, true
+	case .Escape: return .Escape, true
+	case .Left: return .Left, true
+	case .Right: return .Right, true
+	case .Up: return .Up, true
+	case .Down: return .Down, true
+	case .Page_Up: return .Page_Up, true
+	case .Page_Down: return .Page_Down, true
+	case .Home: return .Home, true
+	case .End: return .End, true
+	case .Backspace: return .Backspace, true
+	case .Delete: return .Delete, true
+	case .A: return .A, true
+	case .B: return .B, true
+	case .C: return .C, true
+	case .D: return .D, true
+	case .E: return .E, true
+	case .F: return .F, true
+	case .G: return .G, true
+	case .H: return .H, true
+	case .I: return .I, true
+	case .J: return .J, true
+	case .K: return .K, true
+	case .L: return .L, true
+	case .M: return .M, true
+	case .N: return .N, true
+	case .O: return .O, true
+	case .P: return .P, true
+	case .Q: return .Q, true
+	case .R: return .R, true
+	case .S: return .S, true
+	case .T: return .T, true
+	case .U: return .U, true
+	case .V: return .V, true
+	case .W: return .W, true
+	case .X: return .X, true
+	case .Y: return .Y, true
+	case .Z: return .Z, true
+	case .Digit_0: return .Zero, true
+	case .Digit_1: return .One, true
+	case .Digit_2: return .Two, true
+	case .Digit_3: return .Three, true
+	case .Digit_4: return .Four, true
+	case .Digit_5: return .Five, true
+	case .Digit_6: return .Six, true
+	case .Digit_7: return .Seven, true
+	case .Digit_8: return .Eight, true
+	case .Digit_9: return .Nine, true
+	case .F1: return .F1, true
+	case .F2: return .F2, true
+	case .F3: return .F3, true
+	case .F4: return .F4, true
+	case .F5: return .F5, true
+	case .F6: return .F6, true
+	case .F7: return .F7, true
+	case .F8: return .F8, true
+	case .F9: return .F9, true
+	case .F10: return .F10, true
+	case .F11: return .F11, true
+	case .F12: return .F12, true
+	case:
+		return .Unknown, false
+	}
+}
+
+@(private)
+testui_key_event :: proc(
+	handle: ^Test_Handle($T),
+	input: Input,
+	text_focused, composing: bool,
+) -> alicorn.Key_Event {
+	spec, _ := testui_key_spec(input.key)
+	modifiers: alicorn.Key_Modifiers
+	if input.modifiers.shift { modifiers += {.Shift} }
+	if input.modifiers.alt { modifiers += {.Alt} }
+	when ODIN_OS == .Darwin {
+		if input.modifiers.control { modifiers += {.Super} }
+		if input.modifiers.super { modifiers += {.Primary} }
+	} else {
+		if input.modifiers.control { modifiers += {.Primary} }
+		if input.modifiers.super { modifiers += {.Super} }
+	}
+	return alicorn.Key_Event{
+		key=spec,
+		modifiers=modifiers,
+		repeat=input.repeat,
+		composition_active=composing,
+		text_input_focused=text_focused,
+		produces_text=alicorn.key_event_produces_text(spec, modifiers) && !composing,
+		timestamp_ns=handle.now_ns,
+	}
+}
+
+@(private)
+testui_dispatch_binding_command :: proc(
+	handle: ^Test_Handle($T),
+	rt: ^alicorn.Runtime,
+	command: alicorn.Action_ID,
+) {
+	if command == alicorn.Action_ID(0) { return }
+	handle.last_binding_command = command
+	if handle.on_command != nil { handle.on_command(handle.state, rt, command) }
+	alicorn.invalidate_root(rt, "testui application command binding")
 }
 
 // resize updates the harness viewport and runs the application's normal
@@ -379,6 +515,8 @@ run_descriptions :: proc(
 		key=key,
 		key_valid=input == .Key,
 		pointer_target=pointer_target,
+		binding_command=handle.last_binding_command,
+		binding_pending=len(alicorn.binding_state_pending(&handle.binding_state)) > 0,
 	}
 	for pass := 0; pass < MAX_DESCRIPTIONS_PER_TURN; pass += 1 {
 		if handle.runtime.invalidated {
@@ -478,7 +616,7 @@ application_has_text_focus :: proc(handle: ^Test_Handle($T)) -> (focused, compos
 }
 
 map_application_key :: proc(key: Key) -> (mapped: alicorn.Application_Key, ok: bool) {
-	switch key {
+	#partial switch key {
 	case .Left: return .Left, true
 	case .Right: return .Right, true
 	case .Up: return .Up, true
@@ -600,6 +738,7 @@ step :: proc(handle: ^Test_Handle($T), input: Input) -> Status {
 	}
 	defer if cause_active { alicorn.cause_end(rt, cause_scope) }
 	pointer_target: alicorn.Node_ID
+	handle.last_binding_command = {}
 	#partial switch input.kind {
 	case .Key:
 		context_key := map_context_menu_key(input.key)
@@ -610,24 +749,40 @@ step :: proc(handle: ^Test_Handle($T), input: Input) -> Status {
 			reverse_tab=input.modifiers.shift,
 		) {
 			// Alicorn's Select and context-menu overlays own input first.
-		} else if input.key == .Tab {
-			if input.modifiers.control {
-				_ = alicorn.application_dispatch_tab_navigation(
-					rt, rawptr(handle.state), handle.on_key, true, input.modifiers.shift,
-				)
-			} else {
-				text_event := alicorn.Application_Text_Key_Event{
-					key=.Tab,
-					shift=input.modifiers.shift,
-					control=input.modifiers.control,
-					alt=input.modifiers.alt,
-					super=input.modifiers.super,
-				}
-				if !alicorn.application_dispatch_text_key(rt, rawptr(handle.state), handle.on_text_key, text_event) {
-					_ = alicorn.application_dispatch_tab_focus(rt, input.modifiers.shift)
+		} else {
+			text_focused, composing := application_has_text_focus(handle)
+			binding_consumed := false
+			if len(handle.binding_state.table.bindings) > 0 {
+				key_event := testui_key_event(handle, input, text_focused, composing)
+				result := alicorn.binding_state_resolve(&handle.binding_state, key_event, handle.now_ns)
+				if result.dispatched {
+					testui_dispatch_binding_command(handle, rt, result.command)
+					binding_consumed = true
+				} else if result.consumed {
+					binding_consumed = true
 				}
 			}
-		} else {
+			if binding_consumed {
+				// The binding resolver owns this transition.
+			} else if input.key == .Tab {
+				_ = alicorn.binding_state_cancel(&handle.binding_state)
+				if input.modifiers.control {
+					_ = alicorn.application_dispatch_tab_navigation(
+						rt, rawptr(handle.state), handle.on_key, true, input.modifiers.shift,
+					)
+				} else {
+					text_event := alicorn.Application_Text_Key_Event{
+						key=.Tab,
+						shift=input.modifiers.shift,
+						control=input.modifiers.control,
+						alt=input.modifiers.alt,
+						super=input.modifiers.super,
+					}
+					if !alicorn.application_dispatch_text_key(rt, rawptr(handle.state), handle.on_text_key, text_event) {
+						_ = alicorn.application_dispatch_tab_focus(rt, input.modifiers.shift)
+					}
+				}
+			} else {
 			text_focused, composing := application_has_text_focus(handle)
 			app_key, mapped := map_application_key(input.key)
 			if input.key == .Return && input.modifiers.shift && text_focused {
@@ -689,8 +844,10 @@ step :: proc(handle: ^Test_Handle($T), input: Input) -> Status {
 			if !handled && mapped && !application_key_offered {
 				handled = alicorn.application_dispatch_key(rt, rawptr(handle.state), handle.on_key, app_key)
 			}
+			}
 		}
 	case .Text_Commit:
+		_ = alicorn.binding_state_cancel(&handle.binding_state)
 		if alicorn.select_typeahead(rt, input.text) { break }
 		id := alicorn.focused_node(rt)
 		info, found := alicorn.node_info(rt, id)
@@ -706,6 +863,7 @@ step :: proc(handle: ^Test_Handle($T), input: Input) -> Status {
 			return .Unsupported_Input
 		}
 	case .Text_Preedit:
+		_ = alicorn.binding_state_cancel(&handle.binding_state)
 		id := alicorn.focused_node(rt)
 		info, found := alicorn.node_info(rt, id)
 		if !found { return .No_Focused_Element }
@@ -729,6 +887,7 @@ step :: proc(handle: ^Test_Handle($T), input: Input) -> Status {
 			return .Unsupported_Input
 		}
 	case .Text_Cancel:
+		_ = alicorn.binding_state_cancel(&handle.binding_state)
 		id := alicorn.focused_node(rt)
 		info, found := alicorn.node_info(rt, id)
 		if found && info.kind == .Text_Field {
@@ -742,6 +901,9 @@ step :: proc(handle: ^Test_Handle($T), input: Input) -> Status {
 			handle.application_composition_owner = 0
 		}
 	case .Pointer:
+		if input.pointer.kind == .Down {
+			_ = alicorn.binding_state_cancel(&handle.binding_state)
+		}
 		event := input.pointer
 		event.timestamp_ns = handle.now_ns
 		pointer_target = alicorn.process_pointer(rt, event)
@@ -1000,6 +1162,15 @@ advance_time :: proc(handle: ^Test_Handle($T), delta_ns: u64) -> Status {
 			message=fmt.tprintf("retained motion tick failed: %v", tick.status),
 		}
 		return .Motion_Failure
+	}
+	if deadline, found := alicorn.binding_state_deadline(&handle.binding_state); found &&
+		handle.now_ns >= deadline {
+		result := alicorn.binding_state_timeout(
+			&handle.binding_state, handle.binding_state.epoch, handle.now_ns,
+		)
+		if result.dispatched {
+			testui_dispatch_binding_command(handle, handle.runtime, result.command)
+		}
 	}
 	alicorn.cause_end(handle.runtime, cause_scope)
 	return run_descriptions(handle, .Time_Advance, stats_before=stats_before,
