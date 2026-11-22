@@ -286,7 +286,11 @@ hover is runtime-owned in every mode. It is equally explicit about the
 remaining O(n) stages — application description still scales with tree size
 even in region mode, and layout and display finalization currently rescan the
 full tree for local changes — so developers can judge both the win and the
-cost before adopting region bookkeeping. Raw samples and the fixture source
+cost before adopting region bookkeeping. A later matched Scratchpad A/B
+([keyed-region pilot](benchmarks/scratchpad-region-pilot-windows-2026-11-21.md))
+measures the same trade-off on a real application: about -6% cumulative
+application build during text editing, no reliable gain in a command sequence,
+and an explicit authoring-burden table. Raw samples and the fixture source
 are committed; the measurements are machine-specific by design, not
 cross-framework rankings.
 

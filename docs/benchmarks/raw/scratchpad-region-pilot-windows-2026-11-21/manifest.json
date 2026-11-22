@@ -1,0 +1,572 @@
+{
+  "schema": 1,
+  "recorded_local_date": "2026-11-21",
+  "scenario": "Matched real-Scratchpad A/B for issue #231 sequencing item 2: keyed-region pilot (plain vs pilot on the same Alicorn master)",
+  "alicorn": {
+    "commit": "b1e76191d4d5b19b1bb88744f80d80768e3f5f53",
+    "subject": "benchmarks: record phase 2 description-reuse A/B on real Scratchpad (issue #229)",
+    "worktree": "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot",
+    "instrumentation": "None added to Alicorn. Regions, invalidate_region, monotonic-revision checks, and stage timers are the landed master implementation."
+  },
+  "scratchpad": {
+    "revision": "adb28fc220864e6809c9217e4437af5b92dae57b",
+    "subject": "fix(alikit): anchor the command palette like Quick Open",
+    "plain_clone": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-region-plain",
+    "pilot_clone": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-region-pilot",
+    "same_source": "Both clones are fresh clones of the same commit. Both carry the same benchmark hook patches. They differ only by pilot-region-diff.patch.",
+    "hook_patches": {
+      "scratchpad-perf-sequence-hook.patch": "D35C70165E1A3F45275EC12117792CED27DA984AFCE1C0F09B473F09F63317A3",
+      "scratchpad-perf-typing-hook.patch": "8640D486BDF275CD1E85473796C8E85DA5B4EEA3EDDE46806C93DD9B2834ED86",
+      "scratchpad-perf-sequence-counters-candidate.patch": "08850C54F2F0210E2CA7B5EE77FF3EA8F0B8AA1CF656A4FDBEEAF29C7EF8A17A"
+    },
+    "pilot_diff": {
+      "file": "pilot-region-diff.patch",
+      "sha256": "44E738295963C8501DB03A292547E6EE44819D6F47F4489A6D582F3008C5E8A8",
+      "files": 7,
+      "added": 560,
+      "removed": 31
+    },
+    "placeholder_deps": ".deps/alicorn and .deps/caliber were directory junctions; --alicorn-root and --caliber-root selected the measured revisions."
+  },
+  "caliber_revision": "197cd964cc7265bc60df599a6b8562eac7c75f3a",
+  "toolchain": {
+    "odin": "dev-2026-11-nightly:08539cd",
+    "go": "go1.27.1 windows/amd64",
+    "profile": "Release, Odin -o:speed; --release passed explicitly.",
+    "renderer": "SDL_GPU reference host; no SCRATCHPAD_RENDERER override."
+  },
+  "host": {
+    "os": "Microsoft Windows 10 Home, build 19045",
+    "computer": "SAMAN",
+    "processor": "AMD Ryzen 5 7600X 6-Core Processor",
+    "memory_gib": 15,
+    "gpu": "NVIDIA GeForce RTX 2080 SUPER",
+    "gpu_driver": "32.0.15.9597"
+  },
+  "display": {
+    "scale": 1.0,
+    "note": "Logical window size equals pixel size; no DPI transition or continuous resize."
+  },
+  "theme": "Scratchpad default Warm theme; no appearance fixture or saved preference.",
+  "fixture": {
+    "directories": 8,
+    "small_files": 192,
+    "readme_files": 1,
+    "total_files": 193,
+    "large_document": "application/sample_00.go",
+    "large_document_lines": 5002
+  },
+  "builds": {
+    "plain_sequence": {
+      "path": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-region-plain\\out\\sequence\\scratchpad-alicorn.exe",
+      "sha256": "710C8CF78E61F316C3ABFBF11E7E9637010590A535D6484D50D6BED65381EA1D"
+    },
+    "pilot_sequence": {
+      "path": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-region-pilot\\out\\sequence\\scratchpad-alicorn.exe",
+      "sha256": "1E29DA2FA1FCBB55E7D2127901AC7E1759F8D24B85333CAE5B4554377E5D321D"
+    },
+    "plain_typing": {
+      "path": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-region-plain\\out\\typing\\scratchpad-alicorn.exe",
+      "sha256": "E6981B76B0C220DB57D2CBC58BD04C79A909290326C1215683E757C68CCB2E61"
+    },
+    "pilot_typing": {
+      "path": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-region-pilot\\out\\typing\\scratchpad-alicorn.exe",
+      "sha256": "5A0D1288BB0EB7CAA6F322A1B414166A5CEDBFFD107B6DBF0AE4C09A93A27735"
+    },
+    "plain_sequence_diagnostics": {
+      "sha256": "4B002444D8451CECED8FE1AB73948490E1A383F1F13AEC934F23299149069E43"
+    },
+    "pilot_sequence_diagnostics": {
+      "sha256": "2C603905EB126B7A9F413605748B848F13E04508DF1AEFF4447CB4F2F64A9203"
+    }
+  },
+  "artifacts": {
+    "runners": {
+      "run_windows_ab.ps1": "01C54F0D94217573BDD4C68CFA682D2D209A65999CD78F74F8C195AA87648751",
+      "run_windows_typing.ps1": "394E8DBEF192519E36EE38A31DC0BD1BB57466453645A420C1368F696CC41139"
+    },
+    "analysis": {
+      "analyze.py": "F8D977FAA693A419550F71102CDA6145104107AD7356B0F64A07909992078736",
+      "extract_counters.py": "66A600BE3FA95F8A2A0AE114E5C29B0B72D241F3D2C2A59C4F045A84E7491907"
+    }
+  },
+  "protocol": {
+    "sequence_pairs": 10,
+    "sequence_segments": {
+      "primary": 7,
+      "confirmation": 3
+    },
+    "typing_pairs": 10,
+    "typing_segments": {
+      "primary": 7,
+      "confirmation": 3
+    },
+    "order": "Alternating order each round; one unmeasured warmup per arm for the primary captures.",
+    "sequence_workload": [
+      "open README.md",
+      "open application/sample_00.go",
+      "switch back to README.md",
+      "open Quick Open",
+      "close Quick Open after index ready",
+      "open Settings",
+      "close Settings",
+      "close README.md",
+      "close the remaining Go document"
+    ],
+    "typing_workload": "Open application/sample_00.go (setup, unmeasured), then 24 committed single-character text-input events through editor_text_input at the editor caret; one measured step per character.",
+    "cadence": "First action 500 ms after start; later actions advance after the previous description was built, with a 30 ms floor.",
+    "metrics": [
+      "application_build_ns",
+      "application_build_max_ns",
+      "sequence_build_ns/typing_build_ns",
+      "per-step action_ns/build_ns/builds",
+      "cpu_total_ns",
+      "peak_working_set_bytes",
+      "elapsed_ns",
+      "host_wall_ns",
+      "primary_gpu_submissions"
+    ],
+    "counters": "Diagnostic sequence variant prints Frame_Stats deltas per step; the typing A/B binaries already print per-character counters. Integer counters do not depend on optimization level.",
+    "quick_open_gap": "The reused hooks type only into the editor. There is no Quick Open query-typing step in the phase-2 hook, so the Quick Open result-slot conversion is exercised only by open/close (steps 3-4), not by a filter burst. This is recorded as a measurement gap."
+  },
+  "headline": {
+    "sequence_combined_10_pairs": {
+      "application_build_ns": {
+        "baseline_p50": 30397000.0,
+        "baseline_p95": 31754700.0,
+        "candidate_p50": 30365500.0,
+        "candidate_p95": 33269500.0,
+        "paired_median_percent_change": -0.7332792850047337,
+        "pair_changes": [
+          0.32042635786426293,
+          4.770317464816232,
+          -1.7869849278737304,
+          -16.44122722393576,
+          20.704728918186643,
+          -12.60927185673228,
+          -2.259016521603169,
+          5.085071746014301,
+          -6.555843727607658,
+          15.53866922745049
+        ]
+      },
+      "application_build_max_ns": {
+        "baseline_p50": 7919200.0,
+        "baseline_p95": 9369800.0,
+        "candidate_p50": 7603900.0,
+        "candidate_p95": 9323600.0,
+        "paired_median_percent_change": -1.174358722036962,
+        "pair_changes": [
+          -24.5615779218197,
+          -18.846720314200944,
+          1.899495070930512,
+          -18.05127192874238,
+          26.452833121745215,
+          -4.248212515004436,
+          -19.01388888888889,
+          9.601570166830225,
+          3.2101956014999495,
+          5.799828265481362
+        ]
+      },
+      "sequence_build_ns": {
+        "baseline_p50": 17542900.0,
+        "baseline_p95": 19625800.0,
+        "candidate_p50": 18426900.0,
+        "candidate_p95": 20490200.0,
+        "paired_median_percent_change": 2.659485190101604,
+        "pair_changes": [
+          -0.8480022571594276,
+          2.712403065802467,
+          5.448246041346243,
+          -18.175557151434525,
+          24.975387356133236,
+          -15.18205627286531,
+          2.606567314400741,
+          5.039075637437368,
+          -5.372779787291475,
+          18.481750265542388
+        ]
+      },
+      "first_application_submit_ns": {
+        "baseline_p50": 17632600.0,
+        "baseline_p95": 26810600.0,
+        "candidate_p50": 17654800.0,
+        "candidate_p95": 39059900.0,
+        "paired_median_percent_change": 2.7785375986998155,
+        "pair_changes": [
+          717.0782911011567,
+          -87.33154246002917,
+          22.061131506716723,
+          -2.8592461227016446,
+          2.442261591533649,
+          121.55862866996415,
+          -37.5828963171283,
+          5.810271081777753,
+          2.5946258634574595,
+          2.9624493339421716
+        ]
+      },
+      "cpu_total_ns": {
+        "baseline_p50": 734375000.0,
+        "baseline_p95": 781250000.0,
+        "candidate_p50": 781250000.0,
+        "candidate_p95": 906250000.0,
+        "paired_median_percent_change": 9.574468085106382,
+        "pair_changes": [
+          -6,
+          14.583333333333334,
+          6.382978723404255,
+          -4.3478260869565215,
+          20.930232558139537,
+          -11.764705882352942,
+          20.833333333333332,
+          6.382978723404255,
+          12.76595744680851,
+          29.166666666666668
+        ]
+      },
+      "elapsed_ns": {
+        "baseline_p50": 4531654400.0,
+        "baseline_p95": 5189194400.0,
+        "candidate_p50": 4371717900.0,
+        "candidate_p95": 5195798900.0,
+        "paired_median_percent_change": -3.3056875710277236,
+        "pair_changes": [
+          -5.269433110616905,
+          -1.3419420314385424,
+          -13.088468992412388,
+          19.941522124000535,
+          1.0916415455859807,
+          -12.524255277729127,
+          -13.434153931050744,
+          17.033064840197067,
+          -0.4718519576426658,
+          -13.67471591244733
+        ]
+      },
+      "host_wall_ns": {
+        "baseline_p50": 3202847800.0,
+        "baseline_p95": 3477630200.0,
+        "candidate_p50": 3203717700.0,
+        "candidate_p95": 3538835100.0,
+        "paired_median_percent_change": 0.7718393068317668,
+        "pair_changes": [
+          -1.20291385684952,
+          -8.000836220884645,
+          -4.228811771569402,
+          1.7599599865448603,
+          5.818543508523005,
+          -6.320169154329408,
+          -0.21628137288132673,
+          14.054865885852756,
+          4.412358231790971,
+          3.0779120343073947
+        ]
+      },
+      "peak_working_set_bytes": {
+        "baseline_p50": 325804032.0,
+        "baseline_p95": 327819264.0,
+        "candidate_p50": 325480448.0,
+        "candidate_p95": 326860800.0,
+        "paired_median_percent_change": -0.3426647819611123,
+        "pair_changes": [
+          0.2525157351223005,
+          -2.28045707015097,
+          -0.09931859897915567,
+          -0.6142443778872024,
+          -0.6462419219759753,
+          -0.7944101724789122,
+          -0.3204846230221072,
+          -0.13863158027398642,
+          -0.36484494090011743,
+          0.9174777609989467
+        ]
+      },
+      "gpu_submissions": {
+        "baseline_p50": 19.0,
+        "baseline_p95": 20.0,
+        "candidate_p50": 20.0,
+        "candidate_p95": 20.0,
+        "paired_median_percent_change": 0.0,
+        "pair_changes": [
+          33.333333333333336,
+          0,
+          5.2631578947368425,
+          0,
+          0,
+          -5.2631578947368425,
+          0,
+          -10,
+          11.11111111111111,
+          5.882352941176471
+        ]
+      }
+    },
+    "typing_combined_10_pairs": {
+      "application_build_ns": {
+        "baseline_p50": 59820700.0,
+        "baseline_p95": 61311100.0,
+        "candidate_p50": 56920100.0,
+        "candidate_p95": 58805100.0,
+        "paired_median_percent_change": -6.237868914198662,
+        "pair_changes": [
+          15.752432828563979,
+          -8.27629879176271,
+          -3.764073863626243,
+          -7.182129262947441,
+          -3.8554832330889015,
+          -8.26902389219204,
+          -7.161835295729484,
+          -0.6826630275987049,
+          -9.305288306428263,
+          -5.31390253266784
+        ]
+      },
+      "application_build_max_ns": {
+        "baseline_p50": 8057800.0,
+        "baseline_p95": 8925100.0,
+        "candidate_p50": 8147300.0,
+        "candidate_p95": 9472000.0,
+        "paired_median_percent_change": -2.1397133250849496,
+        "pair_changes": [
+          48.08792194684311,
+          -12.612743834802972,
+          5.602985532436992,
+          5.920513787230723,
+          16.296487286210663,
+          -15.203206381784033,
+          -2.670704162426469,
+          -2.0336028664116594,
+          -3.9475533858992216,
+          -2.24582378375824
+        ]
+      },
+      "typing_build_ns": {
+        "baseline_p50": 19295800.0,
+        "baseline_p95": 20668100.0,
+        "candidate_p50": 19638200.0,
+        "candidate_p95": 25581700.0,
+        "paired_median_percent_change": -0.6643515527183743,
+        "pair_changes": [
+          67.41334724616641,
+          -1.810653379184504,
+          0.4819502737477555,
+          28.499598151496887,
+          -2.3700416365404275,
+          3.186185594792649,
+          -5.143610715696963,
+          9.844874088852997,
+          -4.9830414987347655,
+          -4.270947080801305
+        ]
+      },
+      "typing_setup_ns": {
+        "baseline_p50": 6891100.0,
+        "baseline_p95": 7746100.0,
+        "candidate_p50": 6706500.0,
+        "candidate_p95": 7306000.0,
+        "paired_median_percent_change": -2.7358712638401914,
+        "pair_changes": [
+          -8.112981636156432,
+          -13.52938898284298,
+          3.999820098046565,
+          -94.52887077468523,
+          6.668169458572254,
+          -15.442430515531822,
+          -1.191914429678522,
+          2.607711395858426,
+          -4.279828098001861,
+          1.4778598811045058
+        ]
+      },
+      "typing_startup_ns": {
+        "baseline_p50": 348400.0,
+        "baseline_p95": 402800.0,
+        "candidate_p50": 334300.0,
+        "candidate_p95": 419500.0,
+        "paired_median_percent_change": 1.5664046194646488,
+        "pair_changes": [
+          -35.36996627653243,
+          5.965996908809892,
+          3.697949036668738,
+          12.326337570203961,
+          -4.6785304247990815,
+          -15.166964058118786,
+          8.627752176139273,
+          9.330205890018243,
+          -15.516385302879842,
+          -0.5651397977394408
+        ]
+      },
+      "typing_tail_ns": {
+        "baseline_p50": 4975200.0,
+        "baseline_p95": 5608400.0,
+        "candidate_p50": 5003100.0,
+        "candidate_p95": 5632900.0,
+        "paired_median_percent_change": 0.8741646525839973,
+        "pair_changes": [
+          11.379364891050738,
+          8.919404998313912,
+          1.0586302281566524,
+          0.9748351825052259,
+          0.06034153307721705,
+          -15.842015401233493,
+          -10.792739462235218,
+          -5.267456104532462,
+          0.7734941226627687,
+          12.984091931460352
+        ]
+      },
+      "first_application_submit_ns": {
+        "baseline_p50": 17659200.0,
+        "baseline_p95": 17951700.0,
+        "candidate_p50": 17419300.0,
+        "candidate_p95": 17795700.0,
+        "paired_median_percent_change": -1.04408934818919,
+        "pair_changes": [
+          6.016422468598861,
+          5.5068609079368915,
+          0.4232181553799062,
+          -59.01900446527297,
+          -5.679192715411797,
+          -3.0934220144069546,
+          -5.4774756708278325,
+          6.206843044456513,
+          0.10247301543926766,
+          -2.1906517118176474
+        ]
+      },
+      "cpu_total_ns": {
+        "baseline_p50": 2000000000.0,
+        "baseline_p95": 2156250000.0,
+        "candidate_p50": 1937500000.0,
+        "candidate_p95": 1984375000.0,
+        "paired_median_percent_change": -3.2,
+        "pair_changes": [
+          -5.343511450381679,
+          -1.5625,
+          -0.78125,
+          -14.925373134328359,
+          -11.03448275862069,
+          0.8064516129032258,
+          -1.6,
+          4.545454545454546,
+          -4.8,
+          -8.695652173913043
+        ]
+      },
+      "elapsed_ns": {
+        "baseline_p50": 4298324900.0,
+        "baseline_p95": 5331715700.0,
+        "candidate_p50": 4213221800.0,
+        "candidate_p95": 4694921200.0,
+        "paired_median_percent_change": -1.8052272983698563,
+        "pair_changes": [
+          -7.519648406150039,
+          -20.558431447131472,
+          5.982493735522598,
+          3.4770196175724175,
+          11.980848866341466,
+          14.723356415555058,
+          -8.73851684225723,
+          3.3701047806512543,
+          -6.980559377390967,
+          -15.613368523398854
+        ]
+      },
+      "host_wall_ns": {
+        "baseline_p50": 3291409600.0,
+        "baseline_p95": 3416748000.0,
+        "candidate_p50": 3188346300.0,
+        "candidate_p95": 3328745200.0,
+        "paired_median_percent_change": -0.7157092683711543,
+        "pair_changes": [
+          -7.810865770609948,
+          -4.931317824195151,
+          0.0195235500315731,
+          -3.1798355827202918,
+          3.065851117832291,
+          6.3032055696030165,
+          -2.963844460601747,
+          0.09217130934719167,
+          -0.884462364351068,
+          -0.5469561723912406
+        ]
+      },
+      "peak_working_set_bytes": {
+        "baseline_p50": 339406848.0,
+        "baseline_p95": 339750912.0,
+        "candidate_p50": 339279872.0,
+        "candidate_p95": 339656704.0,
+        "paired_median_percent_change": -0.019911715934530776,
+        "pair_changes": [
+          0.5630101148926423,
+          -0.48503861003861004,
+          -0.002412283346801915,
+          -0.23196530185693057,
+          -0.22740672113198013,
+          0.5687951003577709,
+          0.1756766580241828,
+          -0.03741114852225964,
+          -0.19790749031580726,
+          0.09905415363057632
+        ]
+      },
+      "gpu_submissions": {
+        "baseline_p50": 78.0,
+        "baseline_p95": 79.0,
+        "candidate_p50": 78.0,
+        "candidate_p95": 79.0,
+        "paired_median_percent_change": 0.0,
+        "pair_changes": [
+          0,
+          -2.5641025641025643,
+          1.2820512820512822,
+          -1.2820512820512822,
+          -1.2658227848101267,
+          0,
+          -1.2658227848101267,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "typing_per_character_counters_primary": {
+      "baseline": {
+        "emitted": 858.0,
+        "reused": 855.0,
+        "regions_skipped": 0.0,
+        "stage_description_ns": 1663850.5,
+        "stage_reconcile_ns": 866882.5
+      },
+      "pilot": {
+        "emitted": 741.0,
+        "reused": 738.0,
+        "regions_skipped": 6.0,
+        "stage_description_ns": 1545536.0,
+        "stage_reconcile_ns": 748316.5
+      },
+      "note": "Medians over characters 1-23 and seven primary processes. stage_description_ns is the whole runtime description stage from begin_frame through end_frame; the hook build_ns is the application describe callback only."
+    },
+    "sequence_counter_totals_three_diagnostic_pairs": {
+      "baseline_emitted_sum": 3763,
+      "pilot_emitted_sum": 3516,
+      "baseline_regions_skipped_sum": 0,
+      "pilot_regions_skipped_sum": 36,
+      "note": "Emitted totals are confounded by extra description passes in steps 4 and 7; regions_skipped is the clean activation counter. See diagnostics/counters/reuse-by-step.csv."
+    }
+  },
+  "deviations": [
+    "An earlier pre-fix capture was discarded after the pilot gained a tab-bar layout-settle input in its region signature. That fix is required for correctness: tab_bar sizes tabs from the retained scroll viewport, so a region reused across the first layout settles on provisional tab widths. The discarded run showed the same node-count reduction but its binaries did not contain the fix.",
+    "The pilot adds extra description passes on some structure changes (sequence step 7 candidate builds p50 6 vs baseline 5). That is the measurable cost of the layout-settle guard.",
+    "Quick Open filter typing is not measured because the reused hooks have no query-typing step. Steps 3-4 exercise the result-slot region only on open/close.",
+    "The diagnostic sequence capture has only three pairs per arm; it is used for counters, not for the timing claim.",
+    "Both arms are the same Alicorn master; this A/B isolates the Scratchpad pilot diff, not a runtime change."
+  ],
+  "notes": [
+    "C:\\Users\\saman\\dev\\scratchpad was not modified. Both benchmark clones are disposable.",
+    "Scratchpad frontend tests (odin test, 259 tests) pass on the pilot source, including the new region generation and stale-output guard tests."
+  ]
+}

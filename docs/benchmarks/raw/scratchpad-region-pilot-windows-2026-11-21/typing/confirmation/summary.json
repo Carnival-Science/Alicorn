@@ -1,0 +1,2045 @@
+﻿{
+    "schema":  1,
+    "recorded_local_date":  "2026-11-21",
+    "scenario":  "bounded 24-character text-editing burst in the large fixture document",
+    "host":  {
+                 "os":  "Microsoft Windows 10 Home, build 19045",
+                 "computer":  "SAMAN",
+                 "processor":  "AMD Ryzen 5 7600X 6-Core Processor             ",
+                 "memory_gib":  15,
+                 "gpu":  "NVIDIA GeForce RTX 2080 SUPER",
+                 "gpu_driver":  "32.0.15.9597"
+             },
+    "display":  {
+                    "scale":  1,
+                    "note":  "Logical window size equals pixel size in this capture; no DPI transition was exercised."
+                },
+    "theme":  "Scratchpad default Warm theme; no appearance fixture or preference was set.",
+    "scratchpad_revision":  "adb28fc220864e6809c9217e4437af5b92dae57b",
+    "caliber_revision":  "197cd964cc7265bc60df599a6b8562eac7c75f3a",
+    "odin_path":  "C:\\odin\\odin.exe",
+    "odin_version":  "C:\\odin\\odin.exe version dev-2026-11-nightly:08539cd",
+    "go_version":  "go version go1.27.1 windows/amd64",
+    "workspace":  {
+                      "directories":  8,
+                      "small_files":  192,
+                      "readme_files":  1,
+                      "total_files":  193,
+                      "large_document":  "application/sample_00.go",
+                      "large_document_lines":  5002
+                  },
+    "runs_per_candidate":  3,
+    "warmups_per_candidate":  0,
+    "sequence":  [
+                     "open application/sample_00.go (setup, unmeasured)",
+                     "24 committed character insertions at the editor caret, one per step"
+                 ],
+    "sequence_driver":  "Benchmark-only scheduled hook opens the large fixture document, waits for the bounded source window, then delivers 24 committed text-input events through editor_text_input (the same application path platform text input reaches). It does not synthesize native key or pointer events.",
+    "sequence_cadence":  "Typing starts 500 ms after start once the fixture document window is ready; each character advances after the previous character description was built, with a 30 ms floor. The last character waits for its closing description before completion is declared.",
+    "candidate_revisions":  {
+                                "baseline":  "plain-adb28fc",
+                                "candidate":  "pilot-adb28fc"
+                            },
+    "build_profile":  "Release, Odin -o:speed; Go driver build",
+    "renderer":  "SDL_GPU reference host (build carries both renderers; no SCRATCHPAD_RENDERER override was set)",
+    "smoke_window":  "The reference host exits smoke at its fixed 3 s window; every process completed the 24-character burst inside it.",
+    "artifacts":  {
+                      "baseline":  {
+                                       "binary_sha256":  "E6981B76B0C220DB57D2CBC58BD04C79A909290326C1215683E757C68CCB2E61",
+                                       "path":  "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-region-plain\\out\\typing\\scratchpad-alicorn.exe"
+                                   },
+                      "candidate":  {
+                                        "binary_sha256":  "5A0D1288BB0EB7CAA6F322A1B414166A5CEDBFFD107B6DBF0AE4C09A93A27735",
+                                        "path":  "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-region-pilot\\out\\typing\\scratchpad-alicorn.exe"
+                                    },
+                      "scratchpad_perf_typing_hook_sha256":  "8640D486BDF275CD1E85473796C8E85DA5B4EEA3EDDE46806C93DD9B2834ED86"
+                  },
+    "summaries":  {
+                      "candidate":  {
+                                        "first_application_submit_ns":  {
+                                                                            "count":  3,
+                                                                            "min":  17301300,
+                                                                            "p50":  17583600,
+                                                                            "p95":  17583600,
+                                                                            "max":  17795700
+                                                                        },
+                                        "application_build_ns":  {
+                                                                     "count":  3,
+                                                                     "min":  54816700,
+                                                                     "p50":  57215400,
+                                                                     "p95":  57215400,
+                                                                     "max":  58805100
+                                                                 },
+                                        "typing_build_ns":  {
+                                                                "count":  3,
+                                                                "min":  19549500,
+                                                                "p50":  19638200,
+                                                                "p95":  19638200,
+                                                                "max":  20811100
+                                                            },
+                                        "typing_tail_ns":  {
+                                                               "count":  3,
+                                                               "min":  4963800,
+                                                               "p50":  5104000,
+                                                               "p95":  5104000,
+                                                               "max":  5525600
+                                                           },
+                                        "host_wall_ns":  {
+                                                             "count":  3,
+                                                             "min":  3114420700,
+                                                             "p50":  3135423900,
+                                                             "p95":  3135423900,
+                                                             "max":  3144869800
+                                                         },
+                                        "typing_startup_ns":  {
+                                                                  "count":  3,
+                                                                  "min":  334300,
+                                                                  "p50":  340300,
+                                                                  "p95":  340300,
+                                                                  "max":  419500
+                                                              },
+                                        "gpu_submissions":  {
+                                                                "count":  3,
+                                                                "min":  79,
+                                                                "p50":  79,
+                                                                "p95":  79,
+                                                                "max":  79
+                                                            },
+                                        "peak_working_set_bytes":  {
+                                                                       "count":  3,
+                                                                       "min":  338751488,
+                                                                       "p50":  339279872,
+                                                                       "p95":  339279872,
+                                                                       "max":  339415040
+                                                                   },
+                                        "application_build_max_ns":  {
+                                                                         "count":  3,
+                                                                         "min":  7516200,
+                                                                         "p50":  8093200,
+                                                                         "p95":  8093200,
+                                                                         "max":  8274500
+                                                                     },
+                                        "elapsed_ns":  {
+                                                           "count":  3,
+                                                           "min":  3921249300,
+                                                           "p50":  3926074600,
+                                                           "p95":  3926074600,
+                                                           "max":  3985594200
+                                                       },
+                                        "typing_setup_ns":  {
+                                                                "count":  3,
+                                                                "min":  6481500,
+                                                                "p50":  7070800,
+                                                                "p95":  7070800,
+                                                                "max":  7306000
+                                                            },
+                                        "cpu_total_ns":  {
+                                                             "count":  3,
+                                                             "min":  1796875000,
+                                                             "p50":  1859375000,
+                                                             "p95":  1859375000,
+                                                             "max":  1968750000
+                                                         }
+                                    },
+                      "baseline":  {
+                                       "first_application_submit_ns":  {
+                                                                           "count":  3,
+                                                                           "min":  16755700,
+                                                                           "p50":  17565600,
+                                                                           "p95":  17565600,
+                                                                           "max":  17688800
+                                                                       },
+                                       "application_build_ns":  {
+                                                                    "count":  3,
+                                                                    "min":  59209300,
+                                                                    "p50":  60426400,
+                                                                    "p95":  60426400,
+                                                                    "max":  60440900
+                                                                },
+                                       "typing_build_ns":  {
+                                                               "count":  3,
+                                                               "min":  18945900,
+                                                               "p50":  20421700,
+                                                               "p95":  20421700,
+                                                               "max":  20668100
+                                                           },
+                                       "typing_tail_ns":  {
+                                                              "count":  3,
+                                                              "min":  4890600,
+                                                              "p50":  4925700,
+                                                              "p95":  4925700,
+                                                              "max":  5387800
+                                                          },
+                                       "host_wall_ns":  {
+                                                            "count":  3,
+                                                            "min":  3131548900,
+                                                            "p50":  3132536600,
+                                                            "p95":  3132536600,
+                                                            "max":  3172933200
+                                                        },
+                                       "typing_startup_ns":  {
+                                                                 "count":  3,
+                                                                 "min":  336200,
+                                                                 "p50":  383700,
+                                                                 "p95":  383700,
+                                                                 "max":  402800
+                                                             },
+                                       "gpu_submissions":  {
+                                                               "count":  3,
+                                                               "min":  79,
+                                                               "p50":  79,
+                                                               "p95":  79,
+                                                               "max":  79
+                                                           },
+                                       "peak_working_set_bytes":  {
+                                                                      "count":  3,
+                                                                      "min":  339079168,
+                                                                      "p50":  339406848,
+                                                                      "p95":  339406848,
+                                                                      "max":  339423232
+                                                                  },
+                                       "application_build_max_ns":  {
+                                                                        "count":  3,
+                                                                        "min":  7825100,
+                                                                        "p50":  8261200,
+                                                                        "p95":  8261200,
+                                                                        "max":  8464600
+                                                                    },
+                                       "elapsed_ns":  {
+                                                          "count":  3,
+                                                          "min":  3855654600,
+                                                          "p50":  4220703300,
+                                                          "p95":  4220703300,
+                                                          "max":  4646766000
+                                                      },
+                                       "typing_setup_ns":  {
+                                                               "count":  3,
+                                                               "min":  6771300,
+                                                               "p50":  6891100,
+                                                               "p95":  6891100,
+                                                               "max":  7199600
+                                                           },
+                                       "cpu_total_ns":  {
+                                                            "count":  3,
+                                                            "min":  1718750000,
+                                                            "p50":  1953125000,
+                                                            "p95":  1953125000,
+                                                            "max":  2156250000
+                                                        }
+                                   }
+                  },
+    "paired_comparison":  {
+                              "first_application_submit_ns":  {
+                                                                  "median_percent_change":  0.10247301543926766,
+                                                                  "changes":  [
+                                                                                  6.2068430444565132,
+                                                                                  0.10247301543926766,
+                                                                                  -2.1906517118176474
+                                                                              ]
+                                                              },
+                              "application_build_ns":  {
+                                                           "median_percent_change":  -5.31390253266784,
+                                                           "changes":  [
+                                                                           -0.6826630275987049,
+                                                                           -9.3052883064282632,
+                                                                           -5.31390253266784
+                                                                       ]
+                                                       },
+                              "typing_build_ns":  {
+                                                      "median_percent_change":  -4.2709470808013048,
+                                                      "changes":  [
+                                                                      9.8448740888529969,
+                                                                      -4.9830414987347655,
+                                                                      -4.2709470808013048
+                                                                  ]
+                                                  },
+                              "typing_tail_ns":  {
+                                                     "median_percent_change":  0.77349412266276873,
+                                                     "changes":  [
+                                                                     -5.2674561045324619,
+                                                                     0.77349412266276873,
+                                                                     12.984091931460352
+                                                                 ]
+                                                 },
+                              "host_wall_ns":  {
+                                                   "median_percent_change":  -0.54695617239124061,
+                                                   "changes":  [
+                                                                   0.092171309347191671,
+                                                                   -0.884462364351068,
+                                                                   -0.54695617239124061
+                                                               ]
+                                               },
+                              "typing_startup_ns":  {
+                                                        "median_percent_change":  -0.56513979773944079,
+                                                        "changes":  [
+                                                                        9.3302058900182434,
+                                                                        -15.516385302879842,
+                                                                        -0.56513979773944079
+                                                                    ]
+                                                    },
+                              "gpu_submissions":  {
+                                                      "median_percent_change":  0,
+                                                      "changes":  [
+                                                                      0,
+                                                                      0,
+                                                                      0
+                                                                  ]
+                                                  },
+                              "peak_working_set_bytes":  {
+                                                             "median_percent_change":  -0.037411148522259637,
+                                                             "changes":  [
+                                                                             -0.037411148522259637,
+                                                                             -0.19790749031580726,
+                                                                             0.099054153630576319
+                                                                         ]
+                                                         },
+                              "application_build_max_ns":  {
+                                                               "median_percent_change":  -2.24582378375824,
+                                                               "changes":  [
+                                                                               -2.0336028664116594,
+                                                                               -3.9475533858992216,
+                                                                               -2.24582378375824
+                                                                           ]
+                                                           },
+                              "elapsed_ns":  {
+                                                 "median_percent_change":  -6.9805593773909669,
+                                                 "changes":  [
+                                                                 3.3701047806512543,
+                                                                 -6.9805593773909669,
+                                                                 -15.613368523398854
+                                                             ]
+                                             },
+                              "typing_setup_ns":  {
+                                                      "median_percent_change":  1.4778598811045058,
+                                                      "changes":  [
+                                                                      2.6077113958584262,
+                                                                      -4.279828098001861,
+                                                                      1.4778598811045058
+                                                                  ]
+                                                  },
+                              "cpu_total_ns":  {
+                                                   "median_percent_change":  -4.8,
+                                                   "changes":  [
+                                                                   4.5454545454545459,
+                                                                   -4.8,
+                                                                   -8.695652173913043
+                                                               ]
+                                               }
+                          },
+    "step_summaries":  {
+                           "step_14":  {
+                                           "candidate":  {
+                                                             "builds":  {
+                                                                            "count":  3,
+                                                                            "min":  3,
+                                                                            "p50":  3,
+                                                                            "p95":  3,
+                                                                            "max":  3
+                                                                        },
+                                                             "build_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  832800,
+                                                                              "p50":  878100,
+                                                                              "p95":  878100,
+                                                                              "max":  1181500
+                                                                          },
+                                                             "action_ns":  {
+                                                                               "count":  3,
+                                                                               "min":  260200,
+                                                                               "p50":  276900,
+                                                                               "p95":  276900,
+                                                                               "max":  337300
+                                                                           }
+                                                         },
+                                           "baseline":  {
+                                                            "builds":  {
+                                                                           "count":  3,
+                                                                           "min":  3,
+                                                                           "p50":  3,
+                                                                           "p95":  3,
+                                                                           "max":  3
+                                                                       },
+                                                            "build_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  850600,
+                                                                             "p50":  873800,
+                                                                             "p95":  873800,
+                                                                             "max":  1098200
+                                                                         },
+                                                            "action_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  258300,
+                                                                              "p50":  295100,
+                                                                              "p95":  295100,
+                                                                              "max":  315400
+                                                                          }
+                                                        }
+                                       },
+                           "step_16":  {
+                                           "candidate":  {
+                                                             "builds":  {
+                                                                            "count":  3,
+                                                                            "min":  3,
+                                                                            "p50":  3,
+                                                                            "p95":  3,
+                                                                            "max":  3
+                                                                        },
+                                                             "build_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  827100,
+                                                                              "p50":  832400,
+                                                                              "p95":  832400,
+                                                                              "max":  875000
+                                                                          },
+                                                             "action_ns":  {
+                                                                               "count":  3,
+                                                                               "min":  283500,
+                                                                               "p50":  285000,
+                                                                               "p95":  285000,
+                                                                               "max":  325900
+                                                                           }
+                                                         },
+                                           "baseline":  {
+                                                            "builds":  {
+                                                                           "count":  3,
+                                                                           "min":  3,
+                                                                           "p50":  3,
+                                                                           "p95":  3,
+                                                                           "max":  3
+                                                                       },
+                                                            "build_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  686800,
+                                                                             "p50":  799400,
+                                                                             "p95":  799400,
+                                                                             "max":  862700
+                                                                         },
+                                                            "action_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  262100,
+                                                                              "p50":  333700,
+                                                                              "p95":  333700,
+                                                                              "max":  342400
+                                                                          }
+                                                        }
+                                       },
+                           "step_12":  {
+                                           "candidate":  {
+                                                             "builds":  {
+                                                                            "count":  3,
+                                                                            "min":  3,
+                                                                            "p50":  3,
+                                                                            "p95":  3,
+                                                                            "max":  3
+                                                                        },
+                                                             "build_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  641000,
+                                                                              "p50":  808700,
+                                                                              "p95":  808700,
+                                                                              "max":  848700
+                                                                          },
+                                                             "action_ns":  {
+                                                                               "count":  3,
+                                                                               "min":  259300,
+                                                                               "p50":  294700,
+                                                                               "p95":  294700,
+                                                                               "max":  340700
+                                                                           }
+                                                         },
+                                           "baseline":  {
+                                                            "builds":  {
+                                                                           "count":  3,
+                                                                           "min":  3,
+                                                                           "p50":  3,
+                                                                           "p95":  3,
+                                                                           "max":  3
+                                                                       },
+                                                            "build_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  660900,
+                                                                             "p50":  788900,
+                                                                             "p95":  788900,
+                                                                             "max":  1013900
+                                                                         },
+                                                            "action_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  316500,
+                                                                              "p50":  331700,
+                                                                              "p95":  331700,
+                                                                              "max":  360700
+                                                                          }
+                                                        }
+                                       },
+                           "step_22":  {
+                                           "candidate":  {
+                                                             "builds":  {
+                                                                            "count":  3,
+                                                                            "min":  3,
+                                                                            "p50":  3,
+                                                                            "p95":  3,
+                                                                            "max":  3
+                                                                        },
+                                                             "build_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  688000,
+                                                                              "p50":  732400,
+                                                                              "p95":  732400,
+                                                                              "max":  833900
+                                                                          },
+                                                             "action_ns":  {
+                                                                               "count":  3,
+                                                                               "min":  232500,
+                                                                               "p50":  280700,
+                                                                               "p95":  280700,
+                                                                               "max":  295300
+                                                                           }
+                                                         },
+                                           "baseline":  {
+                                                            "builds":  {
+                                                                           "count":  3,
+                                                                           "min":  3,
+                                                                           "p50":  3,
+                                                                           "p95":  3,
+                                                                           "max":  3
+                                                                       },
+                                                            "build_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  653800,
+                                                                             "p50":  694400,
+                                                                             "p95":  694400,
+                                                                             "max":  899900
+                                                                         },
+                                                            "action_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  268000,
+                                                                              "p50":  284900,
+                                                                              "p95":  284900,
+                                                                              "max":  292500
+                                                                          }
+                                                        }
+                                       },
+                           "step_9":  {
+                                          "candidate":  {
+                                                            "builds":  {
+                                                                           "count":  3,
+                                                                           "min":  3,
+                                                                           "p50":  3,
+                                                                           "p95":  3,
+                                                                           "max":  3
+                                                                       },
+                                                            "build_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  743200,
+                                                                             "p50":  909200,
+                                                                             "p95":  909200,
+                                                                             "max":  986300
+                                                                         },
+                                                            "action_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  295300,
+                                                                              "p50":  337500,
+                                                                              "p95":  337500,
+                                                                              "max":  365500
+                                                                          }
+                                                        },
+                                          "baseline":  {
+                                                           "builds":  {
+                                                                          "count":  3,
+                                                                          "min":  3,
+                                                                          "p50":  3,
+                                                                          "p95":  3,
+                                                                          "max":  3
+                                                                      },
+                                                           "build_ns":  {
+                                                                            "count":  3,
+                                                                            "min":  988000,
+                                                                            "p50":  1019200,
+                                                                            "p95":  1019200,
+                                                                            "max":  1103800
+                                                                        },
+                                                           "action_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  294900,
+                                                                             "p50":  337400,
+                                                                             "p95":  337400,
+                                                                             "max":  338100
+                                                                         }
+                                                       }
+                                      },
+                           "step_3":  {
+                                          "candidate":  {
+                                                            "builds":  {
+                                                                           "count":  3,
+                                                                           "min":  3,
+                                                                           "p50":  3,
+                                                                           "p95":  3,
+                                                                           "max":  3
+                                                                       },
+                                                            "build_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  565300,
+                                                                             "p50":  748000,
+                                                                             "p95":  748000,
+                                                                             "max":  787000
+                                                                         },
+                                                            "action_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  231300,
+                                                                              "p50":  269900,
+                                                                              "p95":  269900,
+                                                                              "max":  344900
+                                                                          }
+                                                        },
+                                          "baseline":  {
+                                                           "builds":  {
+                                                                          "count":  3,
+                                                                          "min":  3,
+                                                                          "p50":  3,
+                                                                          "p95":  3,
+                                                                          "max":  3
+                                                                      },
+                                                           "build_ns":  {
+                                                                            "count":  3,
+                                                                            "min":  656300,
+                                                                            "p50":  715200,
+                                                                            "p95":  715200,
+                                                                            "max":  755400
+                                                                        },
+                                                           "action_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  282600,
+                                                                             "p50":  283700,
+                                                                             "p95":  283700,
+                                                                             "max":  582100
+                                                                         }
+                                                       }
+                                      },
+                           "step_1":  {
+                                          "candidate":  {
+                                                            "builds":  {
+                                                                           "count":  3,
+                                                                           "min":  3,
+                                                                           "p50":  3,
+                                                                           "p95":  3,
+                                                                           "max":  3
+                                                                       },
+                                                            "build_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  703300,
+                                                                             "p50":  791900,
+                                                                             "p95":  791900,
+                                                                             "max":  808900
+                                                                         },
+                                                            "action_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  296100,
+                                                                              "p50":  301300,
+                                                                              "p95":  301300,
+                                                                              "max":  301400
+                                                                          }
+                                                        },
+                                          "baseline":  {
+                                                           "builds":  {
+                                                                          "count":  3,
+                                                                          "min":  3,
+                                                                          "p50":  3,
+                                                                          "p95":  3,
+                                                                          "max":  3
+                                                                      },
+                                                           "build_ns":  {
+                                                                            "count":  3,
+                                                                            "min":  635000,
+                                                                            "p50":  663700,
+                                                                            "p95":  663700,
+                                                                            "max":  831900
+                                                                        },
+                                                           "action_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  304500,
+                                                                             "p50":  310900,
+                                                                             "p95":  310900,
+                                                                             "max":  329000
+                                                                         }
+                                                       }
+                                      },
+                           "step_21":  {
+                                           "candidate":  {
+                                                             "builds":  {
+                                                                            "count":  3,
+                                                                            "min":  3,
+                                                                            "p50":  3,
+                                                                            "p95":  3,
+                                                                            "max":  3
+                                                                        },
+                                                             "build_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  912000,
+                                                                              "p50":  992400,
+                                                                              "p95":  992400,
+                                                                              "max":  1030100
+                                                                          },
+                                                             "action_ns":  {
+                                                                               "count":  3,
+                                                                               "min":  305900,
+                                                                               "p50":  308500,
+                                                                               "p95":  308500,
+                                                                               "max":  320300
+                                                                           }
+                                                         },
+                                           "baseline":  {
+                                                            "builds":  {
+                                                                           "count":  3,
+                                                                           "min":  3,
+                                                                           "p50":  3,
+                                                                           "p95":  3,
+                                                                           "max":  3
+                                                                       },
+                                                            "build_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  622100,
+                                                                             "p50":  843000,
+                                                                             "p95":  843000,
+                                                                             "max":  1024700
+                                                                         },
+                                                            "action_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  248500,
+                                                                              "p50":  273600,
+                                                                              "p95":  273600,
+                                                                              "max":  287400
+                                                                          }
+                                                        }
+                                       },
+                           "step_23":  {
+                                           "candidate":  {
+                                                             "builds":  {
+                                                                            "count":  3,
+                                                                            "min":  3,
+                                                                            "p50":  3,
+                                                                            "p95":  3,
+                                                                            "max":  3
+                                                                        },
+                                                             "build_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  598000,
+                                                                              "p50":  697900,
+                                                                              "p95":  697900,
+                                                                              "max":  813800
+                                                                          },
+                                                             "action_ns":  {
+                                                                               "count":  3,
+                                                                               "min":  286700,
+                                                                               "p50":  286900,
+                                                                               "p95":  286900,
+                                                                               "max":  294600
+                                                                           }
+                                                         },
+                                           "baseline":  {
+                                                            "builds":  {
+                                                                           "count":  3,
+                                                                           "min":  3,
+                                                                           "p50":  3,
+                                                                           "p95":  3,
+                                                                           "max":  3
+                                                                       },
+                                                            "build_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  589400,
+                                                                             "p50":  824400,
+                                                                             "p95":  824400,
+                                                                             "max":  897000
+                                                                         },
+                                                            "action_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  217500,
+                                                                              "p50":  267400,
+                                                                              "p95":  267400,
+                                                                              "max":  292700
+                                                                          }
+                                                        }
+                                       },
+                           "step_15":  {
+                                           "candidate":  {
+                                                             "builds":  {
+                                                                            "count":  3,
+                                                                            "min":  3,
+                                                                            "p50":  3,
+                                                                            "p95":  3,
+                                                                            "max":  3
+                                                                        },
+                                                             "build_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  874100,
+                                                                              "p50":  922300,
+                                                                              "p95":  922300,
+                                                                              "max":  974000
+                                                                          },
+                                                             "action_ns":  {
+                                                                               "count":  3,
+                                                                               "min":  275800,
+                                                                               "p50":  283600,
+                                                                               "p95":  283600,
+                                                                               "max":  350900
+                                                                           }
+                                                         },
+                                           "baseline":  {
+                                                            "builds":  {
+                                                                           "count":  3,
+                                                                           "min":  3,
+                                                                           "p50":  3,
+                                                                           "p95":  3,
+                                                                           "max":  3
+                                                                       },
+                                                            "build_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  698700,
+                                                                             "p50":  837100,
+                                                                             "p95":  837100,
+                                                                             "max":  903500
+                                                                         },
+                                                            "action_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  269700,
+                                                                              "p50":  305800,
+                                                                              "p95":  305800,
+                                                                              "max":  431400
+                                                                          }
+                                                        }
+                                       },
+                           "step_11":  {
+                                           "candidate":  {
+                                                             "builds":  {
+                                                                            "count":  3,
+                                                                            "min":  3,
+                                                                            "p50":  3,
+                                                                            "p95":  3,
+                                                                            "max":  3
+                                                                        },
+                                                             "build_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  778800,
+                                                                              "p50":  838900,
+                                                                              "p95":  838900,
+                                                                              "max":  1215800
+                                                                          },
+                                                             "action_ns":  {
+                                                                               "count":  3,
+                                                                               "min":  267100,
+                                                                               "p50":  271600,
+                                                                               "p95":  271600,
+                                                                               "max":  339200
+                                                                           }
+                                                         },
+                                           "baseline":  {
+                                                            "builds":  {
+                                                                           "count":  3,
+                                                                           "min":  3,
+                                                                           "p50":  3,
+                                                                           "p95":  3,
+                                                                           "max":  3
+                                                                       },
+                                                            "build_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  804100,
+                                                                             "p50":  874000,
+                                                                             "p95":  874000,
+                                                                             "max":  1207700
+                                                                         },
+                                                            "action_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  285800,
+                                                                              "p50":  339600,
+                                                                              "p95":  339600,
+                                                                              "max":  425600
+                                                                          }
+                                                        }
+                                       },
+                           "step_0":  {
+                                          "candidate":  {
+                                                            "builds":  {
+                                                                           "count":  3,
+                                                                           "min":  3,
+                                                                           "p50":  3,
+                                                                           "p95":  3,
+                                                                           "max":  3
+                                                                       },
+                                                            "build_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  845100,
+                                                                             "p50":  878900,
+                                                                             "p95":  878900,
+                                                                             "max":  997000
+                                                                         },
+                                                            "action_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  253300,
+                                                                              "p50":  313600,
+                                                                              "p95":  313600,
+                                                                              "max":  320600
+                                                                          }
+                                                        },
+                                          "baseline":  {
+                                                           "builds":  {
+                                                                          "count":  3,
+                                                                          "min":  3,
+                                                                          "p50":  3,
+                                                                          "p95":  3,
+                                                                          "max":  3
+                                                                      },
+                                                           "build_ns":  {
+                                                                            "count":  3,
+                                                                            "min":  660300,
+                                                                            "p50":  684000,
+                                                                            "p95":  684000,
+                                                                            "max":  844900
+                                                                        },
+                                                           "action_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  268800,
+                                                                             "p50":  283800,
+                                                                             "p95":  283800,
+                                                                             "max":  289300
+                                                                         }
+                                                       }
+                                      },
+                           "step_6":  {
+                                          "candidate":  {
+                                                            "builds":  {
+                                                                           "count":  3,
+                                                                           "min":  3,
+                                                                           "p50":  3,
+                                                                           "p95":  3,
+                                                                           "max":  3
+                                                                       },
+                                                            "build_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  599500,
+                                                                             "p50":  662200,
+                                                                             "p95":  662200,
+                                                                             "max":  887200
+                                                                         },
+                                                            "action_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  256700,
+                                                                              "p50":  268100,
+                                                                              "p95":  268100,
+                                                                              "max":  286300
+                                                                          }
+                                                        },
+                                          "baseline":  {
+                                                           "builds":  {
+                                                                          "count":  3,
+                                                                          "min":  3,
+                                                                          "p50":  3,
+                                                                          "p95":  3,
+                                                                          "max":  3
+                                                                      },
+                                                           "build_ns":  {
+                                                                            "count":  3,
+                                                                            "min":  711900,
+                                                                            "p50":  824800,
+                                                                            "p95":  824800,
+                                                                            "max":  831100
+                                                                        },
+                                                           "action_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  284700,
+                                                                             "p50":  288800,
+                                                                             "p95":  288800,
+                                                                             "max":  306100
+                                                                         }
+                                                       }
+                                      },
+                           "step_17":  {
+                                           "candidate":  {
+                                                             "builds":  {
+                                                                            "count":  3,
+                                                                            "min":  3,
+                                                                            "p50":  3,
+                                                                            "p95":  3,
+                                                                            "max":  3
+                                                                        },
+                                                             "build_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  728100,
+                                                                              "p50":  754000,
+                                                                              "p95":  754000,
+                                                                              "max":  876300
+                                                                          },
+                                                             "action_ns":  {
+                                                                               "count":  3,
+                                                                               "min":  291500,
+                                                                               "p50":  397100,
+                                                                               "p95":  397100,
+                                                                               "max":  454000
+                                                                           }
+                                                         },
+                                           "baseline":  {
+                                                            "builds":  {
+                                                                           "count":  3,
+                                                                           "min":  3,
+                                                                           "p50":  3,
+                                                                           "p95":  3,
+                                                                           "max":  3
+                                                                       },
+                                                            "build_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  596300,
+                                                                             "p50":  680900,
+                                                                             "p95":  680900,
+                                                                             "max":  719200
+                                                                         },
+                                                            "action_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  273200,
+                                                                              "p50":  274100,
+                                                                              "p95":  274100,
+                                                                              "max":  285400
+                                                                          }
+                                                        }
+                                       },
+                           "step_10":  {
+                                           "candidate":  {
+                                                             "builds":  {
+                                                                            "count":  3,
+                                                                            "min":  3,
+                                                                            "p50":  3,
+                                                                            "p95":  3,
+                                                                            "max":  3
+                                                                        },
+                                                             "build_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  837800,
+                                                                              "p50":  946200,
+                                                                              "p95":  946200,
+                                                                              "max":  1020300
+                                                                          },
+                                                             "action_ns":  {
+                                                                               "count":  3,
+                                                                               "min":  254700,
+                                                                               "p50":  255600,
+                                                                               "p95":  255600,
+                                                                               "max":  331900
+                                                                           }
+                                                         },
+                                           "baseline":  {
+                                                            "builds":  {
+                                                                           "count":  3,
+                                                                           "min":  3,
+                                                                           "p50":  3,
+                                                                           "p95":  3,
+                                                                           "max":  3
+                                                                       },
+                                                            "build_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  750000,
+                                                                             "p50":  930700,
+                                                                             "p95":  930700,
+                                                                             "max":  1229800
+                                                                         },
+                                                            "action_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  336600,
+                                                                              "p50":  336900,
+                                                                              "p95":  336900,
+                                                                              "max":  370800
+                                                                          }
+                                                        }
+                                       },
+                           "step_7":  {
+                                          "candidate":  {
+                                                            "builds":  {
+                                                                           "count":  3,
+                                                                           "min":  3,
+                                                                           "p50":  3,
+                                                                           "p95":  3,
+                                                                           "max":  3
+                                                                       },
+                                                            "build_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  669900,
+                                                                             "p50":  682500,
+                                                                             "p95":  682500,
+                                                                             "max":  713400
+                                                                         },
+                                                            "action_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  260800,
+                                                                              "p50":  265800,
+                                                                              "p95":  265800,
+                                                                              "max":  469400
+                                                                          }
+                                                        },
+                                          "baseline":  {
+                                                           "builds":  {
+                                                                          "count":  3,
+                                                                          "min":  3,
+                                                                          "p50":  3,
+                                                                          "p95":  3,
+                                                                          "max":  3
+                                                                      },
+                                                           "build_ns":  {
+                                                                            "count":  3,
+                                                                            "min":  747800,
+                                                                            "p50":  909400,
+                                                                            "p95":  909400,
+                                                                            "max":  1107300
+                                                                        },
+                                                           "action_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  277500,
+                                                                             "p50":  301900,
+                                                                             "p95":  301900,
+                                                                             "max":  340100
+                                                                         }
+                                                       }
+                                      },
+                           "step_5":  {
+                                          "candidate":  {
+                                                            "builds":  {
+                                                                           "count":  3,
+                                                                           "min":  3,
+                                                                           "p50":  3,
+                                                                           "p95":  3,
+                                                                           "max":  3
+                                                                       },
+                                                            "build_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  778700,
+                                                                             "p50":  791400,
+                                                                             "p95":  791400,
+                                                                             "max":  949300
+                                                                         },
+                                                            "action_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  253500,
+                                                                              "p50":  256500,
+                                                                              "p95":  256500,
+                                                                              "max":  261600
+                                                                          }
+                                                        },
+                                          "baseline":  {
+                                                           "builds":  {
+                                                                          "count":  3,
+                                                                          "min":  3,
+                                                                          "p50":  3,
+                                                                          "p95":  3,
+                                                                          "max":  3
+                                                                      },
+                                                           "build_ns":  {
+                                                                            "count":  3,
+                                                                            "min":  763700,
+                                                                            "p50":  926700,
+                                                                            "p95":  926700,
+                                                                            "max":  959900
+                                                                        },
+                                                           "action_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  271900,
+                                                                             "p50":  283800,
+                                                                             "p95":  283800,
+                                                                             "max":  601300
+                                                                         }
+                                                       }
+                                      },
+                           "step_18":  {
+                                           "candidate":  {
+                                                             "builds":  {
+                                                                            "count":  3,
+                                                                            "min":  3,
+                                                                            "p50":  3,
+                                                                            "p95":  3,
+                                                                            "max":  3
+                                                                        },
+                                                             "build_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  767800,
+                                                                              "p50":  779400,
+                                                                              "p95":  779400,
+                                                                              "max":  946500
+                                                                          },
+                                                             "action_ns":  {
+                                                                               "count":  3,
+                                                                               "min":  282300,
+                                                                               "p50":  282400,
+                                                                               "p95":  282400,
+                                                                               "max":  616900
+                                                                           }
+                                                         },
+                                           "baseline":  {
+                                                            "builds":  {
+                                                                           "count":  3,
+                                                                           "min":  3,
+                                                                           "p50":  3,
+                                                                           "p95":  3,
+                                                                           "max":  3
+                                                                       },
+                                                            "build_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  636600,
+                                                                             "p50":  652900,
+                                                                             "p95":  652900,
+                                                                             "max":  990400
+                                                                         },
+                                                            "action_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  254000,
+                                                                              "p50":  280100,
+                                                                              "p95":  280100,
+                                                                              "max":  292400
+                                                                          }
+                                                        }
+                                       },
+                           "step_19":  {
+                                           "candidate":  {
+                                                             "builds":  {
+                                                                            "count":  3,
+                                                                            "min":  3,
+                                                                            "p50":  3,
+                                                                            "p95":  3,
+                                                                            "max":  3
+                                                                        },
+                                                             "build_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  736200,
+                                                                              "p50":  811500,
+                                                                              "p95":  811500,
+                                                                              "max":  920600
+                                                                          },
+                                                             "action_ns":  {
+                                                                               "count":  3,
+                                                                               "min":  257200,
+                                                                               "p50":  281900,
+                                                                               "p95":  281900,
+                                                                               "max":  317100
+                                                                           }
+                                                         },
+                                           "baseline":  {
+                                                            "builds":  {
+                                                                           "count":  3,
+                                                                           "min":  3,
+                                                                           "p50":  3,
+                                                                           "p95":  3,
+                                                                           "max":  3
+                                                                       },
+                                                            "build_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  618800,
+                                                                             "p50":  790400,
+                                                                             "p95":  790400,
+                                                                             "max":  904700
+                                                                         },
+                                                            "action_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  213500,
+                                                                              "p50":  254800,
+                                                                              "p95":  254800,
+                                                                              "max":  329800
+                                                                          }
+                                                        }
+                                       },
+                           "step_13":  {
+                                           "candidate":  {
+                                                             "builds":  {
+                                                                            "count":  3,
+                                                                            "min":  3,
+                                                                            "p50":  3,
+                                                                            "p95":  3,
+                                                                            "max":  3
+                                                                        },
+                                                             "build_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  843900,
+                                                                              "p50":  925500,
+                                                                              "p95":  925500,
+                                                                              "max":  1089600
+                                                                          },
+                                                             "action_ns":  {
+                                                                               "count":  3,
+                                                                               "min":  262000,
+                                                                               "p50":  318900,
+                                                                               "p95":  318900,
+                                                                               "max":  338400
+                                                                           }
+                                                         },
+                                           "baseline":  {
+                                                            "builds":  {
+                                                                           "count":  3,
+                                                                           "min":  3,
+                                                                           "p50":  3,
+                                                                           "p95":  3,
+                                                                           "max":  3
+                                                                       },
+                                                            "build_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  754700,
+                                                                             "p50":  878800,
+                                                                             "p95":  878800,
+                                                                             "max":  930600
+                                                                         },
+                                                            "action_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  298200,
+                                                                              "p50":  310400,
+                                                                              "p95":  310400,
+                                                                              "max":  325200
+                                                                          }
+                                                        }
+                                       },
+                           "step_4":  {
+                                          "candidate":  {
+                                                            "builds":  {
+                                                                           "count":  3,
+                                                                           "min":  3,
+                                                                           "p50":  3,
+                                                                           "p95":  3,
+                                                                           "max":  3
+                                                                       },
+                                                            "build_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  877800,
+                                                                             "p50":  888900,
+                                                                             "p95":  888900,
+                                                                             "max":  949900
+                                                                         },
+                                                            "action_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  259700,
+                                                                              "p50":  293600,
+                                                                              "p95":  293600,
+                                                                              "max":  315300
+                                                                          }
+                                                        },
+                                          "baseline":  {
+                                                           "builds":  {
+                                                                          "count":  3,
+                                                                          "min":  3,
+                                                                          "p50":  3,
+                                                                          "p95":  3,
+                                                                          "max":  3
+                                                                      },
+                                                           "build_ns":  {
+                                                                            "count":  3,
+                                                                            "min":  744300,
+                                                                            "p50":  850000,
+                                                                            "p95":  850000,
+                                                                            "max":  886700
+                                                                        },
+                                                           "action_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  255200,
+                                                                             "p50":  282200,
+                                                                             "p95":  282200,
+                                                                             "max":  285800
+                                                                         }
+                                                       }
+                                      },
+                           "step_20":  {
+                                           "candidate":  {
+                                                             "builds":  {
+                                                                            "count":  3,
+                                                                            "min":  3,
+                                                                            "p50":  3,
+                                                                            "p95":  3,
+                                                                            "max":  3
+                                                                        },
+                                                             "build_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  746700,
+                                                                              "p50":  780600,
+                                                                              "p95":  780600,
+                                                                              "max":  1033600
+                                                                          },
+                                                             "action_ns":  {
+                                                                               "count":  3,
+                                                                               "min":  278700,
+                                                                               "p50":  305900,
+                                                                               "p95":  305900,
+                                                                               "max":  350700
+                                                                           }
+                                                         },
+                                           "baseline":  {
+                                                            "builds":  {
+                                                                           "count":  3,
+                                                                           "min":  3,
+                                                                           "p50":  3,
+                                                                           "p95":  3,
+                                                                           "max":  3
+                                                                       },
+                                                            "build_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  660600,
+                                                                             "p50":  685500,
+                                                                             "p95":  685500,
+                                                                             "max":  1274500
+                                                                         },
+                                                            "action_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  261400,
+                                                                              "p50":  265200,
+                                                                              "p95":  265200,
+                                                                              "max":  289800
+                                                                          }
+                                                        }
+                                       },
+                           "step_8":  {
+                                          "candidate":  {
+                                                            "builds":  {
+                                                                           "count":  3,
+                                                                           "min":  3,
+                                                                           "p50":  3,
+                                                                           "p95":  3,
+                                                                           "max":  3
+                                                                       },
+                                                            "build_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  753700,
+                                                                             "p50":  847100,
+                                                                             "p95":  847100,
+                                                                             "max":  944300
+                                                                         },
+                                                            "action_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  252800,
+                                                                              "p50":  259400,
+                                                                              "p95":  259400,
+                                                                              "max":  342800
+                                                                          }
+                                                        },
+                                          "baseline":  {
+                                                           "builds":  {
+                                                                          "count":  3,
+                                                                          "min":  3,
+                                                                          "p50":  3,
+                                                                          "p95":  3,
+                                                                          "max":  3
+                                                                      },
+                                                           "build_ns":  {
+                                                                            "count":  3,
+                                                                            "min":  826800,
+                                                                            "p50":  1037800,
+                                                                            "p95":  1037800,
+                                                                            "max":  1137200
+                                                                        },
+                                                           "action_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  329500,
+                                                                             "p50":  339300,
+                                                                             "p95":  339300,
+                                                                             "max":  412300
+                                                                         }
+                                                       }
+                                      },
+                           "step_2":  {
+                                          "candidate":  {
+                                                            "builds":  {
+                                                                           "count":  3,
+                                                                           "min":  3,
+                                                                           "p50":  3,
+                                                                           "p95":  3,
+                                                                           "max":  3
+                                                                       },
+                                                            "build_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  659700,
+                                                                             "p50":  699900,
+                                                                             "p95":  699900,
+                                                                             "max":  707000
+                                                                         },
+                                                            "action_ns":  {
+                                                                              "count":  3,
+                                                                              "min":  265700,
+                                                                              "p50":  266700,
+                                                                              "p95":  266700,
+                                                                              "max":  362100
+                                                                          }
+                                                        },
+                                          "baseline":  {
+                                                           "builds":  {
+                                                                          "count":  3,
+                                                                          "min":  3,
+                                                                          "p50":  3,
+                                                                          "p95":  3,
+                                                                          "max":  3
+                                                                      },
+                                                           "build_ns":  {
+                                                                            "count":  3,
+                                                                            "min":  734800,
+                                                                            "p50":  873200,
+                                                                            "p95":  873200,
+                                                                            "max":  910200
+                                                                        },
+                                                           "action_ns":  {
+                                                                             "count":  3,
+                                                                             "min":  277300,
+                                                                             "p50":  345800,
+                                                                             "p95":  345800,
+                                                                             "max":  369600
+                                                                         }
+                                                       }
+                                      }
+                       },
+    "step_paired_comparison":  {
+                                   "step_14":  {
+                                                   "action_ns":  {
+                                                                     "median_percent_change":  0.73557878435927215,
+                                                                     "changes":  [
+                                                                                     6.9435637285986047,
+                                                                                     0.73557878435927215,
+                                                                                     -6.1674008810572687
+                                                                                 ]
+                                                                 },
+                                                   "build_ns":  {
+                                                                    "median_percent_change":  -4.69214923323415,
+                                                                    "changes":  [
+                                                                                    38.901951563602161,
+                                                                                    -4.69214923323415,
+                                                                                    -20.041886723729739
+                                                                                ]
+                                                                }
+                                               },
+                                   "step_16":  {
+                                                   "action_ns":  {
+                                                                     "median_percent_change":  -14.593946658675456,
+                                                                     "changes":  [
+                                                                                     24.341854254101488,
+                                                                                     -14.593946658675456,
+                                                                                     -17.202102803738317
+                                                                                 ]
+                                                                 },
+                                                   "build_ns":  {
+                                                                    "median_percent_change":  4.12809607205404,
+                                                                    "changes":  [
+                                                                                    27.402446126965639,
+                                                                                    4.12809607205404,
+                                                                                    -4.12657934392025
+                                                                                ]
+                                                                }
+                                               },
+                                   "step_12":  {
+                                                   "action_ns":  {
+                                                                     "median_percent_change":  -11.154657823334338,
+                                                                     "changes":  [
+                                                                                     7.6461295418641386,
+                                                                                     -28.112004435819241,
+                                                                                     -11.154657823334338
+                                                                                 ]
+                                                                 },
+                                                   "build_ns":  {
+                                                                    "median_percent_change":  7.5801749271137027,
+                                                                    "changes":  [
+                                                                                    22.363443788772887,
+                                                                                    -36.77877502712299,
+                                                                                    7.5801749271137027
+                                                                                ]
+                                                                }
+                                               },
+                                   "step_22":  {
+                                                   "action_ns":  {
+                                                                     "median_percent_change":  -1.4742014742014742,
+                                                                     "changes":  [
+                                                                                     -13.246268656716419,
+                                                                                     0.95726495726495731,
+                                                                                     -1.4742014742014742
+                                                                                 ]
+                                                                 },
+                                                   "build_ns":  {
+                                                                    "median_percent_change":  -0.92165898617511521,
+                                                                    "changes":  [
+                                                                                    -0.92165898617511521,
+                                                                                    -18.613179242138017,
+                                                                                    27.546650351789538
+                                                                                ]
+                                                                }
+                                               },
+                                   "step_9":  {
+                                                  "action_ns":  {
+                                                                    "median_percent_change":  8.1041112097012711,
+                                                                    "changes":  [
+                                                                                    14.44557477110885,
+                                                                                    -12.477771191464138,
+                                                                                    8.1041112097012711
+                                                                                ]
+                                                                },
+                                                  "build_ns":  {
+                                                                   "median_percent_change":  -7.9757085020242915,
+                                                                   "changes":  [
+                                                                                   -3.2280219780219781,
+                                                                                   -32.668961768436311,
+                                                                                   -7.9757085020242915
+                                                                               ]
+                                                               }
+                                              },
+                                   "step_3":  {
+                                                  "action_ns":  {
+                                                                    "median_percent_change":  -18.470215015861825,
+                                                                    "changes":  [
+                                                                                    -4.4939844302901628,
+                                                                                    -18.470215015861825,
+                                                                                    -40.74901219721697
+                                                                                ]
+                                                                },
+                                                  "build_ns":  {
+                                                                   "median_percent_change":  -0.97961344982790577,
+                                                                   "changes":  [
+                                                                                   -20.959172259507831,
+                                                                                   19.914673167758647,
+                                                                                   -0.97961344982790577
+                                                                               ]
+                                                               }
+                                              },
+                                   "step_1":  {
+                                                  "action_ns":  {
+                                                                    "median_percent_change":  -4.7603731103248634,
+                                                                    "changes":  [
+                                                                                    -8.3890577507598785,
+                                                                                    -4.7603731103248634,
+                                                                                    -1.0509031198686372
+                                                                                ]
+                                                                },
+                                                  "build_ns":  {
+                                                                   "median_percent_change":  10.755905511811024,
+                                                                   "changes":  [
+                                                                                   -2.7647553792523141,
+                                                                                   10.755905511811024,
+                                                                                   19.315956004218773
+                                                                               ]
+                                                               }
+                                              },
+                                   "step_21":  {
+                                                   "action_ns":  {
+                                                                     "median_percent_change":  11.805555555555555,
+                                                                     "changes":  [
+                                                                                     28.893360160965795,
+                                                                                     7.3416840640222683,
+                                                                                     11.805555555555555
+                                                                                 ]
+                                                                 },
+                                                   "build_ns":  {
+                                                                    "median_percent_change":  8.185053380782918,
+                                                                    "changes":  [
+                                                                                    8.185053380782918,
+                                                                                    0.52698350736801014,
+                                                                                    59.524192252049509
+                                                                                ]
+                                                                }
+                                               },
+                                   "step_23":  {
+                                                   "action_ns":  {
+                                                                     "median_percent_change":  10.172026925953627,
+                                                                     "changes":  [
+                                                                                     31.908045977011493,
+                                                                                     -2.0498804236419543,
+                                                                                     10.172026925953627
+                                                                                 ]
+                                                                 },
+                                                   "build_ns":  {
+                                                                    "median_percent_change":  -1.2857836001940806,
+                                                                    "changes":  [
+                                                                                    1.4591109602986088,
+                                                                                    -1.2857836001940806,
+                                                                                    -22.196209587513934
+                                                                                ]
+                                                                }
+                                               },
+                                   "step_15":  {
+                                                   "action_ns":  {
+                                                                     "median_percent_change":  2.2617723396366332,
+                                                                     "changes":  [
+                                                                                     14.748201438848922,
+                                                                                     2.2617723396366332,
+                                                                                     -34.260547056096428
+                                                                                 ]
+                                                                 },
+                                                   "build_ns":  {
+                                                                    "median_percent_change":  16.354079560387049,
+                                                                    "changes":  [
+                                                                                    16.354079560387049,
+                                                                                    32.002289967081722,
+                                                                                    -3.2540121748754842
+                                                                                ]
+                                                                }
+                                               },
+                                   "step_11":  {
+                                                   "action_ns":  {
+                                                                     "median_percent_change":  -6.543037088873338,
+                                                                     "changes":  [
+                                                                                     -0.11778563015312132,
+                                                                                     -6.543037088873338,
+                                                                                     -36.184210526315788
+                                                                                 ]
+                                                                 },
+                                                   "build_ns":  {
+                                                                    "median_percent_change":  -10.892448512585812,
+                                                                    "changes":  [
+                                                                                    51.200099490113168,
+                                                                                    -10.892448512585812,
+                                                                                    -30.537385112196738
+                                                                                ]
+                                                                }
+                                               },
+                                   "step_0":  {
+                                                  "action_ns":  {
+                                                                    "median_percent_change":  8.3995852056688562,
+                                                                    "changes":  [
+                                                                                    8.3995852056688562,
+                                                                                    19.270833333333332,
+                                                                                    -10.747004933051445
+                                                                                ]
+                                                                },
+                                                  "build_ns":  {
+                                                                   "median_percent_change":  23.55263157894737,
+                                                                   "changes":  [
+                                                                                   18.002130429636644,
+                                                                                   33.106163864909888,
+                                                                                   23.55263157894737
+                                                                               ]
+                                                               }
+                                              },
+                                   "step_6":  {
+                                                  "action_ns":  {
+                                                                    "median_percent_change":  -9.8349139445029863,
+                                                                    "changes":  [
+                                                                                    -0.86565096952908582,
+                                                                                    -9.8349139445029863,
+                                                                                    -12.414243711205488
+                                                                                ]
+                                                                },
+                                                  "build_ns":  {
+                                                                   "median_percent_change":  -6.9813176007866273,
+                                                                   "changes":  [
+                                                                                   -6.9813176007866273,
+                                                                                   -27.866682709661895,
+                                                                                   7.5654704170708049
+                                                                               ]
+                                                               }
+                                              },
+                                   "step_17":  {
+                                                   "action_ns":  {
+                                                                     "median_percent_change":  44.874133527909521,
+                                                                     "changes":  [
+                                                                                     6.6983894582723282,
+                                                                                     59.0749824807288,
+                                                                                     44.874133527909521
+                                                                                 ]
+                                                                 },
+                                                   "build_ns":  {
+                                                                    "median_percent_change":  21.843715239154616,
+                                                                    "changes":  [
+                                                                                    22.102968304544692,
+                                                                                    21.843715239154616,
+                                                                                    10.735790865031575
+                                                                                ]
+                                                                }
+                                               },
+                                   "step_10":  {
+                                                   "action_ns":  {
+                                                                     "median_percent_change":  -24.331550802139038,
+                                                                     "changes":  [
+                                                                                     -1.4841199168892847,
+                                                                                     -31.067961165048544,
+                                                                                     -24.331550802139038
+                                                                                 ]
+                                                                 },
+                                                   "build_ns":  {
+                                                                    "median_percent_change":  9.6271623509186632,
+                                                                    "changes":  [
+                                                                                    9.6271623509186632,
+                                                                                    26.16,
+                                                                                    -31.875101642543502
+                                                                                ]
+                                                                }
+                                               },
+                                   "step_7":  {
+                                                  "action_ns":  {
+                                                                    "median_percent_change":  -11.957601854918847,
+                                                                    "changes":  [
+                                                                                    -11.957601854918847,
+                                                                                    69.153153153153156,
+                                                                                    -23.316671567186123
+                                                                                ]
+                                                                },
+                                                  "build_ns":  {
+                                                                   "median_percent_change":  -24.950516824279745,
+                                                                   "changes":  [
+                                                                                   -4.6001604707140951,
+                                                                                   -39.501490111081004,
+                                                                                   -24.950516824279745
+                                                                               ]
+                                                               }
+                                              },
+                                   "step_5":  {
+                                                  "action_ns":  {
+                                                                    "median_percent_change":  -10.676532769556026,
+                                                                    "changes":  [
+                                                                                    -10.676532769556026,
+                                                                                    -3.7881574108127989,
+                                                                                    -57.342424746382839
+                                                                                ]
+                                                                },
+                                                  "build_ns":  {
+                                                                   "median_percent_change":  2.4387611956404447,
+                                                                   "changes":  [
+                                                                                   2.4387611956404447,
+                                                                                   3.6270786958229673,
+                                                                                   -18.876966350661526
+                                                                               ]
+                                                               }
+                                              },
+                                   "step_18":  {
+                                                   "action_ns":  {
+                                                                     "median_percent_change":  11.141732283464567,
+                                                                     "changes":  [
+                                                                                     11.141732283464567,
+                                                                                     110.97811217510259,
+                                                                                     0.82113530881827923
+                                                                                 ]
+                                                                 },
+                                                   "build_ns":  {
+                                                                    "median_percent_change":  17.598407106754479,
+                                                                    "changes":  [
+                                                                                    17.598407106754479,
+                                                                                    -4.4325525040387719,
+                                                                                    22.431668237511783
+                                                                                ]
+                                                                }
+                                               },
+                                   "step_19":  {
+                                                   "action_ns":  {
+                                                                     "median_percent_change":  10.635792778649922,
+                                                                     "changes":  [
+                                                                                     48.524590163934427,
+                                                                                     -22.013341419041843,
+                                                                                     10.635792778649922
+                                                                                 ]
+                                                                 },
+                                                   "build_ns":  {
+                                                                    "median_percent_change":  16.472672064777328,
+                                                                    "changes":  [
+                                                                                    -10.301757488670278,
+                                                                                    16.472672064777328,
+                                                                                    18.972204266321913
+                                                                                ]
+                                                                }
+                                               },
+                                   "step_13":  {
+                                                   "action_ns":  {
+                                                                     "median_percent_change":  4.0590405904059041,
+                                                                     "changes":  [
+                                                                                     4.0590405904059041,
+                                                                                     -15.592783505154639,
+                                                                                     6.9416498993963787
+                                                                                 ]
+                                                                 },
+                                                   "build_ns":  {
+                                                                    "median_percent_change":  11.819265933483504,
+                                                                    "changes":  [
+                                                                                    17.08575112830432,
+                                                                                    11.819265933483504,
+                                                                                    5.3140646335912605
+                                                                                ]
+                                                                }
+                                               },
+                                   "step_4":  {
+                                                  "action_ns":  {
+                                                                    "median_percent_change":  2.7291812456263123,
+                                                                    "changes":  [
+                                                                                    11.729270021261517,
+                                                                                    1.7633228840125392,
+                                                                                    2.7291812456263123
+                                                                                ]
+                                                                },
+                                                  "build_ns":  {
+                                                                   "median_percent_change":  11.752941176470589,
+                                                                   "changes":  [
+                                                                                   17.936316001612251,
+                                                                                   11.752941176470589,
+                                                                                   0.24811097327168152
+                                                                               ]
+                                                               }
+                                              },
+                                   "step_20":  {
+                                                   "action_ns":  {
+                                                                     "median_percent_change":  17.023718439173681,
+                                                                     "changes":  [
+                                                                                     17.023718439173681,
+                                                                                     21.014492753623188,
+                                                                                     5.0904977375565608
+                                                                                 ]
+                                                                 },
+                                                   "build_ns":  {
+                                                                    "median_percent_change":  18.165304268846505,
+                                                                    "changes":  [
+                                                                                    50.780452224653537,
+                                                                                    -41.41231855629659,
+                                                                                    18.165304268846505
+                                                                                ]
+                                                                }
+                                               },
+                                   "step_8":  {
+                                                  "action_ns":  {
+                                                                    "median_percent_change":  -23.548482169171823,
+                                                                    "changes":  [
+                                                                                    4.0364188163884673,
+                                                                                    -23.548482169171823,
+                                                                                    -38.685423235508125
+                                                                                ]
+                                                                },
+                                                  "build_ns":  {
+                                                                   "median_percent_change":  -9.0094430526112923,
+                                                                   "changes":  [
+                                                                                   2.4552491533623608,
+                                                                                   -9.0094430526112923,
+                                                                                   -33.723179739711576
+                                                                               ]
+                                                               }
+                                              },
+                                   "step_2":  {
+                                                  "action_ns":  {
+                                                                    "median_percent_change":  -4.1831950955643711,
+                                                                    "changes":  [
+                                                                                    -4.1831950955643711,
+                                                                                    -27.84090909090909,
+                                                                                    4.7137073452862923
+                                                                                ]
+                                                                },
+                                                  "build_ns":  {
+                                                                   "median_percent_change":  -23.104812129202372,
+                                                                   "changes":  [
+                                                                                   -23.104812129202372,
+                                                                                   -3.7833424060968972,
+                                                                                   -24.4502977553825
+                                                                               ]
+                                                               }
+                                              }
+                               },
+    "samples":  [
+                    {
+                        "candidate":  "baseline",
+                        "run":  "run-01",
+                        "exit_code":  0,
+                        "elapsed_ns":  3855654600,
+                        "cpu_total_ns":  1718750000,
+                        "peak_working_set_bytes":  339406848,
+                        "application_build_ns":  59209300,
+                        "application_build_max_ns":  8261200,
+                        "first_application_submit_ns":  16755700,
+                        "host_wall_ns":  3132536600,
+                        "gpu_submissions":  79,
+                        "typing_build_ns":  18945900,
+                        "typing_setup_ns":  6891100,
+                        "typing_setup_builds":  4,
+                        "typing_startup_ns":  383700,
+                        "typing_startup_builds":  3,
+                        "typing_tail_ns":  5387800,
+                        "typing_tail_builds":  2,
+                        "log":  "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\typing\\confirmation\\logs\\baseline-run-01.log"
+                    },
+                    {
+                        "candidate":  "candidate",
+                        "run":  "run-01",
+                        "exit_code":  0,
+                        "elapsed_ns":  3985594200,
+                        "cpu_total_ns":  1796875000,
+                        "peak_working_set_bytes":  339279872,
+                        "application_build_ns":  58805100,
+                        "application_build_max_ns":  8093200,
+                        "first_application_submit_ns":  17795700,
+                        "host_wall_ns":  3135423900,
+                        "gpu_submissions":  79,
+                        "typing_build_ns":  20811100,
+                        "typing_setup_ns":  7070800,
+                        "typing_setup_builds":  4,
+                        "typing_startup_ns":  419500,
+                        "typing_startup_builds":  3,
+                        "typing_tail_ns":  5104000,
+                        "typing_tail_builds":  2,
+                        "log":  "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\typing\\confirmation\\logs\\candidate-run-01.log"
+                    },
+                    {
+                        "candidate":  "candidate",
+                        "run":  "run-02",
+                        "exit_code":  0,
+                        "elapsed_ns":  3926074600,
+                        "cpu_total_ns":  1859375000,
+                        "peak_working_set_bytes":  338751488,
+                        "application_build_ns":  54816700,
+                        "application_build_max_ns":  7516200,
+                        "first_application_submit_ns":  17583600,
+                        "host_wall_ns":  3144869800,
+                        "gpu_submissions":  79,
+                        "typing_build_ns":  19638200,
+                        "typing_setup_ns":  6481500,
+                        "typing_setup_builds":  4,
+                        "typing_startup_ns":  340300,
+                        "typing_startup_builds":  3,
+                        "typing_tail_ns":  4963800,
+                        "typing_tail_builds":  2,
+                        "log":  "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\typing\\confirmation\\logs\\candidate-run-02.log"
+                    },
+                    {
+                        "candidate":  "baseline",
+                        "run":  "run-02",
+                        "exit_code":  0,
+                        "elapsed_ns":  4220703300,
+                        "cpu_total_ns":  1953125000,
+                        "peak_working_set_bytes":  339423232,
+                        "application_build_ns":  60440900,
+                        "application_build_max_ns":  7825100,
+                        "first_application_submit_ns":  17565600,
+                        "host_wall_ns":  3172933200,
+                        "gpu_submissions":  79,
+                        "typing_build_ns":  20668100,
+                        "typing_setup_ns":  6771300,
+                        "typing_setup_builds":  4,
+                        "typing_startup_ns":  402800,
+                        "typing_startup_builds":  3,
+                        "typing_tail_ns":  4925700,
+                        "typing_tail_builds":  2,
+                        "log":  "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\typing\\confirmation\\logs\\baseline-run-02.log"
+                    },
+                    {
+                        "candidate":  "baseline",
+                        "run":  "run-03",
+                        "exit_code":  0,
+                        "elapsed_ns":  4646766000,
+                        "cpu_total_ns":  2156250000,
+                        "peak_working_set_bytes":  339079168,
+                        "application_build_ns":  60426400,
+                        "application_build_max_ns":  8464600,
+                        "first_application_submit_ns":  17688800,
+                        "host_wall_ns":  3131548900,
+                        "gpu_submissions":  79,
+                        "typing_build_ns":  20421700,
+                        "typing_setup_ns":  7199600,
+                        "typing_setup_builds":  4,
+                        "typing_startup_ns":  336200,
+                        "typing_startup_builds":  3,
+                        "typing_tail_ns":  4890600,
+                        "typing_tail_builds":  2,
+                        "log":  "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\typing\\confirmation\\logs\\baseline-run-03.log"
+                    },
+                    {
+                        "candidate":  "candidate",
+                        "run":  "run-03",
+                        "exit_code":  0,
+                        "elapsed_ns":  3921249300,
+                        "cpu_total_ns":  1968750000,
+                        "peak_working_set_bytes":  339415040,
+                        "application_build_ns":  57215400,
+                        "application_build_max_ns":  8274500,
+                        "first_application_submit_ns":  17301300,
+                        "host_wall_ns":  3114420700,
+                        "gpu_submissions":  79,
+                        "typing_build_ns":  19549500,
+                        "typing_setup_ns":  7306000,
+                        "typing_setup_builds":  4,
+                        "typing_startup_ns":  334300,
+                        "typing_startup_builds":  3,
+                        "typing_tail_ns":  5525600,
+                        "typing_tail_builds":  2,
+                        "log":  "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\typing\\confirmation\\logs\\candidate-run-03.log"
+                    }
+                ]
+}

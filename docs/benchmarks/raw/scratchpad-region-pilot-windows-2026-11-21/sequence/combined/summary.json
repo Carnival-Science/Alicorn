@@ -1,0 +1,1329 @@
+{
+  "schema": 1,
+  "kind": "sequence",
+  "captures": [
+    {
+      "directory": "primary",
+      "pairs": 7
+    },
+    {
+      "directory": "confirmation",
+      "pairs": 3
+    }
+  ],
+  "summaries": {
+    "baseline": {
+      "first_application_submit_ns": {
+        "count": 10,
+        "min": 14463900.0,
+        "p50": 17632600.0,
+        "p95": 26810600.0,
+        "max": 124296900.0
+      },
+      "application_build_ns": {
+        "count": 10,
+        "min": 28640800.0,
+        "p50": 30397000.0,
+        "p95": 31754700.0,
+        "max": 31767100.0
+      },
+      "sequence_build_ns": {
+        "count": 10,
+        "min": 16852300.0,
+        "p50": 17542900.0,
+        "p95": 19625800.0,
+        "max": 19949100.0
+      },
+      "host_wall_ns": {
+        "count": 10,
+        "min": 3052297500.0,
+        "p50": 3202847800.0,
+        "p95": 3477630200.0,
+        "max": 3482333500.0
+      },
+      "gpu_submissions": {
+        "count": 10,
+        "min": 15.0,
+        "p50": 19.0,
+        "p95": 20.0,
+        "max": 20.0
+      },
+      "peak_working_set_bytes": {
+        "count": 10,
+        "min": 322748416.0,
+        "p50": 325804032.0,
+        "p95": 327819264.0,
+        "max": 334798848.0
+      },
+      "application_build_max_ns": {
+        "count": 10,
+        "min": 7642500.0,
+        "p50": 7919200.0,
+        "p95": 9369800.0,
+        "max": 10058800.0
+      },
+      "elapsed_ns": {
+        "count": 10,
+        "min": 4082759600.0,
+        "p50": 4531654400.0,
+        "p95": 5189194400.0,
+        "max": 5266471900.0
+      },
+      "cpu_total_ns": {
+        "count": 10,
+        "min": 671875000.0,
+        "p50": 734375000.0,
+        "p95": 781250000.0,
+        "max": 796875000.0
+      }
+    },
+    "candidate": {
+      "first_application_submit_ns": {
+        "count": 10,
+        "min": 15746500.0,
+        "p50": 17654800.0,
+        "p95": 39059900.0,
+        "max": 122210400.0
+      },
+      "application_build_ns": {
+        "count": 10,
+        "min": 24598700.0,
+        "p50": 30365500.0,
+        "p95": 33269500.0,
+        "max": 34570800.0
+      },
+      "sequence_build_ns": {
+        "count": 10,
+        "min": 13900500.0,
+        "p50": 18426900.0,
+        "p95": 20490200.0,
+        "max": 21326300.0
+      },
+      "host_wall_ns": {
+        "count": 10,
+        "min": 3070170700.0,
+        "p50": 3203717700.0,
+        "p95": 3538835100.0,
+        "max": 3705159000.0
+      },
+      "gpu_submissions": {
+        "count": 10,
+        "min": 18.0,
+        "p50": 20.0,
+        "p95": 20.0,
+        "max": 20.0
+      },
+      "peak_working_set_bytes": {
+        "count": 10,
+        "min": 320765952.0,
+        "p50": 325480448.0,
+        "p95": 326860800.0,
+        "max": 327163904.0
+      },
+      "application_build_max_ns": {
+        "count": 10,
+        "min": 6642600.0,
+        "p50": 7603900.0,
+        "p95": 9323600.0,
+        "max": 9761400.0
+      },
+      "elapsed_ns": {
+        "count": 10,
+        "min": 3864976400.0,
+        "p50": 4371717900.0,
+        "p95": 5195798900.0,
+        "max": 5569238100.0
+      },
+      "cpu_total_ns": {
+        "count": 10,
+        "min": 687500000.0,
+        "p50": 781250000.0,
+        "p95": 906250000.0,
+        "max": 968750000.0
+      }
+    }
+  },
+  "paired_comparison": {
+    "first_application_submit_ns": {
+      "median_percent_change": 2.7785375986998155,
+      "changes": [
+        717.0782911011567,
+        -87.33154246002917,
+        22.061131506716723,
+        -2.8592461227016446,
+        2.442261591533649,
+        121.55862866996415,
+        -37.5828963171283,
+        5.810271081777753,
+        2.5946258634574595,
+        2.9624493339421716
+      ]
+    },
+    "application_build_ns": {
+      "median_percent_change": -0.7332792850047337,
+      "changes": [
+        0.32042635786426293,
+        4.770317464816232,
+        -1.7869849278737304,
+        -16.44122722393576,
+        20.704728918186643,
+        -12.60927185673228,
+        -2.259016521603169,
+        5.085071746014301,
+        -6.555843727607658,
+        15.53866922745049
+      ]
+    },
+    "sequence_build_ns": {
+      "median_percent_change": 2.659485190101604,
+      "changes": [
+        -0.8480022571594276,
+        2.712403065802467,
+        5.448246041346243,
+        -18.175557151434525,
+        24.975387356133236,
+        -15.18205627286531,
+        2.606567314400741,
+        5.039075637437368,
+        -5.372779787291475,
+        18.481750265542388
+      ]
+    },
+    "host_wall_ns": {
+      "median_percent_change": 0.7718393068317668,
+      "changes": [
+        -1.20291385684952,
+        -8.000836220884645,
+        -4.228811771569402,
+        1.7599599865448603,
+        5.818543508523005,
+        -6.320169154329408,
+        -0.21628137288132673,
+        14.054865885852756,
+        4.412358231790971,
+        3.0779120343073947
+      ]
+    },
+    "gpu_submissions": {
+      "median_percent_change": 0.0,
+      "changes": [
+        33.333333333333336,
+        0,
+        5.2631578947368425,
+        0,
+        0,
+        -5.2631578947368425,
+        0,
+        -10,
+        11.11111111111111,
+        5.882352941176471
+      ]
+    },
+    "peak_working_set_bytes": {
+      "median_percent_change": -0.3426647819611123,
+      "changes": [
+        0.2525157351223005,
+        -2.28045707015097,
+        -0.09931859897915567,
+        -0.6142443778872024,
+        -0.6462419219759753,
+        -0.7944101724789122,
+        -0.3204846230221072,
+        -0.13863158027398642,
+        -0.36484494090011743,
+        0.9174777609989467
+      ]
+    },
+    "application_build_max_ns": {
+      "median_percent_change": -1.174358722036962,
+      "changes": [
+        -24.5615779218197,
+        -18.846720314200944,
+        1.899495070930512,
+        -18.05127192874238,
+        26.452833121745215,
+        -4.248212515004436,
+        -19.01388888888889,
+        9.601570166830225,
+        3.2101956014999495,
+        5.799828265481362
+      ]
+    },
+    "elapsed_ns": {
+      "median_percent_change": -3.3056875710277236,
+      "changes": [
+        -5.269433110616905,
+        -1.3419420314385424,
+        -13.088468992412388,
+        19.941522124000535,
+        1.0916415455859807,
+        -12.524255277729127,
+        -13.434153931050744,
+        17.033064840197067,
+        -0.4718519576426658,
+        -13.67471591244733
+      ]
+    },
+    "cpu_total_ns": {
+      "median_percent_change": 9.574468085106382,
+      "changes": [
+        -6,
+        14.583333333333334,
+        6.382978723404255,
+        -4.3478260869565215,
+        20.930232558139537,
+        -11.764705882352942,
+        20.833333333333332,
+        6.382978723404255,
+        12.76595744680851,
+        29.166666666666668
+      ]
+    }
+  },
+  "step_summaries": {
+    "step_0": {
+      "baseline": {
+        "action_ns": {
+          "count": 10,
+          "min": 1674500.0,
+          "p50": 2028800.0,
+          "p95": 2350100.0,
+          "max": 2878300.0
+        },
+        "build_ns": {
+          "count": 10,
+          "min": 478500.0,
+          "p50": 509400.0,
+          "p95": 564500.0,
+          "max": 653500.0
+        },
+        "builds": {
+          "count": 10,
+          "min": 3.0,
+          "p50": 3.0,
+          "p95": 3.0,
+          "max": 3.0
+        }
+      },
+      "candidate": {
+        "action_ns": {
+          "count": 10,
+          "min": 1692400.0,
+          "p50": 2141300.0,
+          "p95": 2590000.0,
+          "max": 29565400.0
+        },
+        "build_ns": {
+          "count": 10,
+          "min": 462500.0,
+          "p50": 523800.0,
+          "p95": 615700.0,
+          "max": 752200.0
+        },
+        "builds": {
+          "count": 10,
+          "min": 3.0,
+          "p50": 3.0,
+          "p95": 3.0,
+          "max": 3.0
+        }
+      }
+    },
+    "step_1": {
+      "baseline": {
+        "action_ns": {
+          "count": 10,
+          "min": 2056800.0,
+          "p50": 2447100.0,
+          "p95": 2915600.0,
+          "max": 141398800.0
+        },
+        "build_ns": {
+          "count": 10,
+          "min": 542100.0,
+          "p50": 6735600.0,
+          "p95": 7201800.0,
+          "max": 8181600.0
+        },
+        "builds": {
+          "count": 10,
+          "min": 3.0,
+          "p50": 5.0,
+          "p95": 5.0,
+          "max": 5.0
+        }
+      },
+      "candidate": {
+        "action_ns": {
+          "count": 10,
+          "min": 2114400.0,
+          "p50": 2608600.0,
+          "p95": 2950800.0,
+          "max": 3059000.0
+        },
+        "build_ns": {
+          "count": 10,
+          "min": 464500.0,
+          "p50": 6646100.0,
+          "p95": 8000600.0,
+          "max": 8599400.0
+        },
+        "builds": {
+          "count": 10,
+          "min": 3.0,
+          "p50": 5.0,
+          "p95": 5.0,
+          "max": 5.0
+        }
+      }
+    },
+    "step_2": {
+      "baseline": {
+        "action_ns": {
+          "count": 10,
+          "min": 694300.0,
+          "p50": 1424500.0,
+          "p95": 1676400.0,
+          "max": 1690800.0
+        },
+        "build_ns": {
+          "count": 10,
+          "min": 249100.0,
+          "p50": 283700.0,
+          "p95": 371800.0,
+          "max": 1769100.0
+        },
+        "builds": {
+          "count": 10,
+          "min": 3.0,
+          "p50": 3.0,
+          "p95": 3.0,
+          "max": 3.0
+        }
+      },
+      "candidate": {
+        "action_ns": {
+          "count": 10,
+          "min": 662200.0,
+          "p50": 1006700.0,
+          "p95": 1470300.0,
+          "max": 1544600.0
+        },
+        "build_ns": {
+          "count": 10,
+          "min": 260200.0,
+          "p50": 285900.0,
+          "p95": 331700.0,
+          "max": 367200.0
+        },
+        "builds": {
+          "count": 10,
+          "min": 3.0,
+          "p50": 3.0,
+          "p95": 3.0,
+          "max": 3.0
+        }
+      }
+    },
+    "step_3": {
+      "baseline": {
+        "action_ns": {
+          "count": 10,
+          "min": 4100.0,
+          "p50": 5700.0,
+          "p95": 9000.0,
+          "max": 9400.0
+        },
+        "build_ns": {
+          "count": 10,
+          "min": 169800.0,
+          "p50": 231400.0,
+          "p95": 395100.0,
+          "max": 404900.0
+        },
+        "builds": {
+          "count": 10,
+          "min": 2.0,
+          "p50": 2.0,
+          "p95": 2.0,
+          "max": 4.0
+        }
+      },
+      "candidate": {
+        "action_ns": {
+          "count": 10,
+          "min": 7100.0,
+          "p50": 10100.0,
+          "p95": 10900.0,
+          "max": 11000.0
+        },
+        "build_ns": {
+          "count": 10,
+          "min": 153300.0,
+          "p50": 194900.0,
+          "p95": 231500.0,
+          "max": 248400.0
+        },
+        "builds": {
+          "count": 10,
+          "min": 2.0,
+          "p50": 2.0,
+          "p95": 2.0,
+          "max": 2.0
+        }
+      }
+    },
+    "step_4": {
+      "baseline": {
+        "action_ns": {
+          "count": 10,
+          "min": 500.0,
+          "p50": 600.0,
+          "p95": 900.0,
+          "max": 5600.0
+        },
+        "build_ns": {
+          "count": 10,
+          "min": 116400.0,
+          "p50": 515700.0,
+          "p95": 595700.0,
+          "max": 637700.0
+        },
+        "builds": {
+          "count": 10,
+          "min": 1.0,
+          "p50": 4.0,
+          "p95": 4.0,
+          "max": 4.0
+        }
+      },
+      "candidate": {
+        "action_ns": {
+          "count": 10,
+          "min": 600.0,
+          "p50": 700.0,
+          "p95": 900.0,
+          "max": 1000.0
+        },
+        "build_ns": {
+          "count": 10,
+          "min": 484600.0,
+          "p50": 507000.0,
+          "p95": 530800.0,
+          "max": 533100.0
+        },
+        "builds": {
+          "count": 10,
+          "min": 4.0,
+          "p50": 4.0,
+          "p95": 4.0,
+          "max": 4.0
+        }
+      }
+    },
+    "step_5": {
+      "baseline": {
+        "action_ns": {
+          "count": 10,
+          "min": 6200.0,
+          "p50": 9000.0,
+          "p95": 21300.0,
+          "max": 25000.0
+        },
+        "build_ns": {
+          "count": 10,
+          "min": 816800.0,
+          "p50": 944300.0,
+          "p95": 971600.0,
+          "max": 2244400.0
+        },
+        "builds": {
+          "count": 10,
+          "min": 2.0,
+          "p50": 2.0,
+          "p95": 2.0,
+          "max": 5.0
+        }
+      },
+      "candidate": {
+        "action_ns": {
+          "count": 10,
+          "min": 5700.0,
+          "p50": 7400.0,
+          "p95": 12100.0,
+          "max": 35600.0
+        },
+        "build_ns": {
+          "count": 10,
+          "min": 790200.0,
+          "p50": 887100.0,
+          "p95": 1003900.0,
+          "max": 1473400.0
+        },
+        "builds": {
+          "count": 10,
+          "min": 2.0,
+          "p50": 2.0,
+          "p95": 2.0,
+          "max": 3.0
+        }
+      }
+    },
+    "step_6": {
+      "baseline": {
+        "action_ns": {
+          "count": 10,
+          "min": 509300.0,
+          "p50": 547900.0,
+          "p95": 665200.0,
+          "max": 801300.0
+        },
+        "build_ns": {
+          "count": 10,
+          "min": 88900.0,
+          "p50": 104800.0,
+          "p95": 133400.0,
+          "max": 138800.0
+        },
+        "builds": {
+          "count": 10,
+          "min": 1.0,
+          "p50": 1.0,
+          "p95": 1.0,
+          "max": 1.0
+        }
+      },
+      "candidate": {
+        "action_ns": {
+          "count": 10,
+          "min": 446400.0,
+          "p50": 522500.0,
+          "p95": 596700.0,
+          "max": 703300.0
+        },
+        "build_ns": {
+          "count": 10,
+          "min": 60100.0,
+          "p50": 81200.0,
+          "p95": 102000.0,
+          "max": 109300.0
+        },
+        "builds": {
+          "count": 10,
+          "min": 1.0,
+          "p50": 1.0,
+          "p95": 1.0,
+          "max": 1.0
+        }
+      }
+    },
+    "step_7": {
+      "baseline": {
+        "action_ns": {
+          "count": 10,
+          "min": 498600.0,
+          "p50": 934800.0,
+          "p95": 1395000.0,
+          "max": 1697900.0
+        },
+        "build_ns": {
+          "count": 10,
+          "min": 7236200.0,
+          "p50": 7954300.0,
+          "p95": 10340200.0,
+          "max": 14413900.0
+        },
+        "builds": {
+          "count": 10,
+          "min": 4.0,
+          "p50": 5.0,
+          "p95": 6.0,
+          "max": 6.0
+        }
+      },
+      "candidate": {
+        "action_ns": {
+          "count": 10,
+          "min": 716200.0,
+          "p50": 1016300.0,
+          "p95": 1529600.0,
+          "max": 1739600.0
+        },
+        "build_ns": {
+          "count": 10,
+          "min": 7874600.0,
+          "p50": 8821900.0,
+          "p95": 10692000.0,
+          "max": 11369500.0
+        },
+        "builds": {
+          "count": 10,
+          "min": 4.0,
+          "p50": 6.0,
+          "p95": 6.0,
+          "max": 6.0
+        }
+      }
+    },
+    "step_8": {
+      "baseline": {
+        "action_ns": {
+          "count": 10,
+          "min": 691700.0,
+          "p50": 9546600.0,
+          "p95": 10443200.0,
+          "max": 12041500.0
+        },
+        "build_ns": {
+          "count": 10,
+          "min": 44100.0,
+          "p50": 116200.0,
+          "p95": 125600.0,
+          "max": 168800.0
+        },
+        "builds": {
+          "count": 10,
+          "min": 1.0,
+          "p50": 1.0,
+          "p95": 1.0,
+          "max": 1.0
+        }
+      },
+      "candidate": {
+        "action_ns": {
+          "count": 10,
+          "min": 867200.0,
+          "p50": 10068100.0,
+          "p95": 10626800.0,
+          "max": 13211400.0
+        },
+        "build_ns": {
+          "count": 10,
+          "min": 60100.0,
+          "p50": 133700.0,
+          "p95": 157700.0,
+          "max": 182500.0
+        },
+        "builds": {
+          "count": 10,
+          "min": 1.0,
+          "p50": 1.0,
+          "p95": 1.0,
+          "max": 1.0
+        }
+      }
+    }
+  },
+  "step_paired_comparison": {
+    "step_0": {
+      "action_ns": {
+        "median_percent_change": 5.903938726209779,
+        "changes": [
+          42.84263959390863,
+          -9.240092240038612,
+          -1.362673786944112,
+          -35.722475072091164,
+          -16.020594868303476,
+          -12.334905660377359,
+          1181.9407709317954,
+          13.17055123936367,
+          27.66167192429022,
+          32.4537281861449
+        ]
+      },
+      "build_ns": {
+        "median_percent_change": 3.9252306163451363,
+        "changes": [
+          -27.94185156847743,
+          -9.206910090302317,
+          -1.2195121951219512,
+          -6.363961387200572,
+          17.77284647972564,
+          36.54020693410782,
+          18.369905956112852,
+          11.615066061920725,
+          -12.495492246664263,
+          9.069973427812224
+        ]
+      }
+    },
+    "step_1": {
+      "action_ns": {
+        "median_percent_change": 3.1337309848071833,
+        "changes": [
+          -98.28746778614811,
+          -13.166605369621184,
+          26.828082458187474,
+          -27.157474075860407,
+          23.803698301416272,
+          5.060163300386764,
+          27.171146296216403,
+          33.44093526435177,
+          -3.6849122287237983,
+          1.2072986692276033
+        ]
+      },
+      "build_ns": {
+        "median_percent_change": 1.769720445160107,
+        "changes": [
+          1080.1881571665745,
+          -18.767722694827416,
+          11.091671526562804,
+          -93.25629001582485,
+          32.172389413175125,
+          -6.202868092471257,
+          -8.956371055647168,
+          1.1179788082488322,
+          2.4214620820713817,
+          9.759424013194412
+        ]
+      }
+    },
+    "step_2": {
+      "action_ns": {
+        "median_percent_change": -18.46016216094956,
+        "changes": [
+          -40.58433877454459,
+          -16.185416185416184,
+          -34.83051442206471,
+          -59.093155423770696,
+          54.50635190557167,
+          -11.643965191070754,
+          -37.78121137206428,
+          3.2151632151632152,
+          -20.73490813648294,
+          50.91459023476883
+        ]
+      },
+      "build_ns": {
+        "median_percent_change": -0.3462976813762153,
+        "changes": [
+          -83.79967214968063,
+          10.678442392613409,
+          -18.34319526627219,
+          -11.711420252345519,
+          14.804370814240395,
+          -10.387157695939566,
+          -2.6925953627524306,
+          25.217063042657607,
+          2,
+          4.994491369812707
+        ]
+      }
+    },
+    "step_3": {
+      "action_ns": {
+        "median_percent_change": 78.29703569267997,
+        "changes": [
+          -11.11111111111111,
+          -14.457831325301205,
+          31.506849315068493,
+          -18.085106382978722,
+          121.73913043478261,
+          82.45614035087719,
+          156.09756097560975,
+          124.48979591836735,
+          74.13793103448276,
+          113.72549019607843
+        ]
+      },
+      "build_ns": {
+        "median_percent_change": -29.25937999170239,
+        "changes": [
+          -48.1042654028436,
+          -33.318928262748486,
+          -59.24919733267473,
+          -25.199831720656288,
+          9.022177419354838,
+          25.201612903225808,
+          -48.29157175398633,
+          36.33686690223793,
+          -33.435792349726775,
+          -4.980511043741879
+        ]
+      }
+    },
+    "step_4": {
+      "action_ns": {
+        "median_percent_change": 7.142857142857143,
+        "changes": [
+          -82.14285714285714,
+          16.666666666666668,
+          50,
+          0,
+          14.285714285714286,
+          -25,
+          60,
+          -22.22222222222222,
+          33.333333333333336,
+          -12.5
+        ]
+      },
+      "build_ns": {
+        "median_percent_change": -7.384374110792409,
+        "changes": [
+          169.394261424017,
+          -5.017640141121129,
+          2.501454333915067,
+          -16.40269719303748,
+          -10.687291263842503,
+          -18.58317945274467,
+          1.4940646745804338,
+          -9.75110808046369,
+          356.01374570446734,
+          -13.793103448275861
+        ]
+      }
+    },
+    "step_5": {
+      "action_ns": {
+        "median_percent_change": -16.68564199873498,
+        "changes": [
+          -38.392857142857146,
+          474.19354838709677,
+          -12.941176470588236,
+          -20.43010752688172,
+          -64,
+          -21.153846153846153,
+          -5.2631578947368425,
+          39.08045977011494,
+          -73.2394366197183,
+          -6.666666666666667
+        ]
+      },
+      "build_ns": {
+        "median_percent_change": 1.9338535284944722,
+        "changes": [
+          -10.915093366346849,
+          5.888834476003917,
+          53.55914538822303,
+          6.089166578417876,
+          0.5432937181663837,
+          -11.482020835667077,
+          -7.929423975090815,
+          16.570257893468305,
+          -61.34378898592051,
+          3.3244133388225605
+        ]
+      }
+    },
+    "step_6": {
+      "action_ns": {
+        "median_percent_change": -3.909939902834136,
+        "changes": [
+          -4.36831611382998,
+          -7.023019898556379,
+          -3.4515636918382913,
+          -21.45219482862297,
+          -1.0995483997643825,
+          -1.9529111151670013,
+          2.8254091971940762,
+          5.982519590114527,
+          -44.29052789217521,
+          -6.838407494145199
+        ]
+      },
+      "build_ns": {
+        "median_percent_change": -29.299314829294524,
+        "changes": [
+          -43.731988472622476,
+          -4.259438528557599,
+          -36.06870229007634,
+          -31.71471927162367,
+          12.148481439820022,
+          -39.130434782608695,
+          -26.883910386965375,
+          16.27659574468085,
+          -50.24834437086093,
+          -19.874312647289866
+        ]
+      }
+    },
+    "step_7": {
+      "action_ns": {
+        "median_percent_change": 9.728062711121424,
+        "changes": [
+          248.896911351785,
+          -14.445462878093492,
+          -22.262021057201782,
+          9.32616487455197,
+          8.649526904329543,
+          -40.143706932092584,
+          19.741574530438257,
+          10.12996054769088,
+          43.121523320496365,
+          63.47119803355776
+        ]
+      },
+      "build_ns": {
+        "median_percent_change": 11.71743066593266,
+        "changes": [
+          -30.193077515453833,
+          23.242604576544935,
+          0.24828608486196035,
+          47.757110085403944,
+          25.555625590923416,
+          -23.844799907158468,
+          17.285985880851403,
+          6.148875451013917,
+          0.250557490416176,
+          30.6772395504808
+        ]
+      }
+    },
+    "step_8": {
+      "action_ns": {
+        "median_percent_change": 1.08143512261294,
+        "changes": [
+          -16.388323713823027,
+          2.583471194764387,
+          6.70763545808732,
+          1401.6191990747434,
+          -1.6157430375190902,
+          -90.91613768252572,
+          -0.4206009495385073,
+          13.067220007644842,
+          -7.6413359889688985,
+          1425.565819861432
+        ]
+      },
+      "build_ns": {
+        "median_percent_change": 6.8604864422561445,
+        "changes": [
+          -6.575829383886256,
+          9.59016393442623,
+          1.2892828364222402,
+          227.89115646258503,
+          36.30393996247655,
+          -52.14968152866242,
+          1.7826825127334465,
+          29.094076655052266,
+          4.130808950086059,
+          271.69042769857435
+        ]
+      }
+    }
+  },
+  "samples": [
+    {
+      "candidate": "baseline",
+      "run": "run-01",
+      "exit_code": 0,
+      "elapsed_ns": 4614896800,
+      "cpu_total_ns": 781250000,
+      "peak_working_set_bytes": 326037504,
+      "application_build_ns": 30397000,
+      "application_build_max_ns": 10058800,
+      "first_application_submit_ns": 14957000,
+      "host_wall_ns": 3202847800,
+      "gpu_submissions": 15,
+      "sequence_build_ns": 19139100,
+      "log": "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\sequence\\primary\\logs\\baseline-run-01.log",
+      "capture": "primary"
+    },
+    {
+      "candidate": "candidate",
+      "run": "run-01",
+      "exit_code": 0,
+      "elapsed_ns": 4371717900,
+      "cpu_total_ns": 734375000,
+      "peak_working_set_bytes": 326860800,
+      "application_build_ns": 30494400,
+      "application_build_max_ns": 7588200,
+      "first_application_submit_ns": 122210400,
+      "host_wall_ns": 3164320300,
+      "gpu_submissions": 20,
+      "sequence_build_ns": 18976800,
+      "log": "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\sequence\\primary\\logs\\candidate-run-01.log",
+      "capture": "primary"
+    },
+    {
+      "candidate": "candidate",
+      "run": "run-02",
+      "exit_code": 0,
+      "elapsed_ns": 5195798900,
+      "cpu_total_ns": 859375000,
+      "peak_working_set_bytes": 327163904,
+      "application_build_ns": 33269500,
+      "application_build_max_ns": 7603900,
+      "first_application_submit_ns": 15746500,
+      "host_wall_ns": 3203717700,
+      "gpu_submissions": 20,
+      "sequence_build_ns": 20490200,
+      "log": "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\sequence\\primary\\logs\\candidate-run-02.log",
+      "capture": "primary"
+    },
+    {
+      "candidate": "baseline",
+      "run": "run-02",
+      "exit_code": 0,
+      "elapsed_ns": 5266471900,
+      "cpu_total_ns": 750000000,
+      "peak_working_set_bytes": 334798848,
+      "application_build_ns": 31754700,
+      "application_build_max_ns": 9369800,
+      "first_application_submit_ns": 124296900,
+      "host_wall_ns": 3482333500,
+      "gpu_submissions": 20,
+      "sequence_build_ns": 19949100,
+      "log": "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\sequence\\primary\\logs\\baseline-run-02.log",
+      "capture": "primary"
+    },
+    {
+      "candidate": "baseline",
+      "run": "run-03",
+      "exit_code": 0,
+      "elapsed_ns": 5189194400,
+      "cpu_total_ns": 734375000,
+      "peak_working_set_bytes": 325804032,
+      "application_build_ns": 30918000,
+      "application_build_max_ns": 9149800,
+      "first_application_submit_ns": 14463900,
+      "host_wall_ns": 3436755000,
+      "gpu_submissions": 19,
+      "sequence_build_ns": 18270100,
+      "log": "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\sequence\\primary\\logs\\baseline-run-03.log",
+      "capture": "primary"
+    },
+    {
+      "candidate": "candidate",
+      "run": "run-03",
+      "exit_code": 0,
+      "elapsed_ns": 4510008300,
+      "cpu_total_ns": 781250000,
+      "peak_working_set_bytes": 325480448,
+      "application_build_ns": 30365500,
+      "application_build_max_ns": 9323600,
+      "first_application_submit_ns": 17654800,
+      "host_wall_ns": 3291421100,
+      "gpu_submissions": 20,
+      "sequence_build_ns": 19265500,
+      "log": "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\sequence\\primary\\logs\\candidate-run-03.log",
+      "capture": "primary"
+    },
+    {
+      "candidate": "candidate",
+      "run": "run-04",
+      "exit_code": 0,
+      "elapsed_ns": 5569238100,
+      "cpu_total_ns": 687500000,
+      "peak_working_set_bytes": 320765952,
+      "application_build_ns": 24598700,
+      "application_build_max_ns": 6642600,
+      "first_application_submit_ns": 17418600,
+      "host_wall_ns": 3538835100,
+      "gpu_submissions": 18,
+      "sequence_build_ns": 13900500,
+      "log": "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\sequence\\primary\\logs\\candidate-run-04.log",
+      "capture": "primary"
+    },
+    {
+      "candidate": "baseline",
+      "run": "run-04",
+      "exit_code": 0,
+      "elapsed_ns": 4643294500,
+      "cpu_total_ns": 718750000,
+      "peak_working_set_bytes": 322748416,
+      "application_build_ns": 29438800,
+      "application_build_max_ns": 8105800,
+      "first_application_submit_ns": 17931300,
+      "host_wall_ns": 3477630200,
+      "gpu_submissions": 18,
+      "sequence_build_ns": 16988200,
+      "log": "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\sequence\\primary\\logs\\baseline-run-04.log",
+      "capture": "primary"
+    },
+    {
+      "candidate": "baseline",
+      "run": "run-05",
+      "exit_code": 0,
+      "elapsed_ns": 4082759600,
+      "cpu_total_ns": 671875000,
+      "peak_working_set_bytes": 327684096,
+      "application_build_ns": 28640800,
+      "application_build_max_ns": 7719400,
+      "first_application_submit_ns": 17103000,
+      "host_wall_ns": 3069627300,
+      "gpu_submissions": 20,
+      "sequence_build_ns": 17064400,
+      "log": "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\sequence\\primary\\logs\\baseline-run-05.log",
+      "capture": "primary"
+    },
+    {
+      "candidate": "candidate",
+      "run": "run-05",
+      "exit_code": 0,
+      "elapsed_ns": 4127328700,
+      "cpu_total_ns": 812500000,
+      "peak_working_set_bytes": 325566464,
+      "application_build_ns": 34570800,
+      "application_build_max_ns": 9761400,
+      "first_application_submit_ns": 17520700,
+      "host_wall_ns": 3248234900,
+      "gpu_submissions": 20,
+      "sequence_build_ns": 21326300,
+      "log": "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\sequence\\primary\\logs\\candidate-run-05.log",
+      "capture": "primary"
+    },
+    {
+      "candidate": "candidate",
+      "run": "run-06",
+      "exit_code": 0,
+      "elapsed_ns": 4076474500,
+      "cpu_total_ns": 703125000,
+      "peak_working_set_bytes": 322760704,
+      "application_build_ns": 27761500,
+      "application_build_max_ns": 7338800,
+      "first_application_submit_ns": 39059900,
+      "host_wall_ns": 3235285700,
+      "gpu_submissions": 18,
+      "sequence_build_ns": 16646200,
+      "log": "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\sequence\\primary\\logs\\candidate-run-06.log",
+      "capture": "primary"
+    },
+    {
+      "candidate": "baseline",
+      "run": "run-06",
+      "exit_code": 0,
+      "elapsed_ns": 4660119800,
+      "cpu_total_ns": 796875000,
+      "peak_working_set_bytes": 325345280,
+      "application_build_ns": 31767100,
+      "application_build_max_ns": 7664400,
+      "first_application_submit_ns": 17629600,
+      "host_wall_ns": 3453556300,
+      "gpu_submissions": 19,
+      "sequence_build_ns": 19625800,
+      "log": "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\sequence\\primary\\logs\\baseline-run-06.log",
+      "capture": "primary"
+    },
+    {
+      "candidate": "baseline",
+      "run": "run-07",
+      "exit_code": 0,
+      "elapsed_ns": 4464782100,
+      "cpu_total_ns": 750000000,
+      "peak_working_set_bytes": 325906432,
+      "application_build_ns": 30699200,
+      "application_build_max_ns": 9360000,
+      "first_application_submit_ns": 26810600,
+      "host_wall_ns": 3076825300,
+      "gpu_submissions": 20,
+      "sequence_build_ns": 17486600,
+      "log": "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\sequence\\primary\\logs\\baseline-run-07.log",
+      "capture": "primary"
+    },
+    {
+      "candidate": "candidate",
+      "run": "run-07",
+      "exit_code": 0,
+      "elapsed_ns": 3864976400,
+      "cpu_total_ns": 906250000,
+      "peak_working_set_bytes": 324861952,
+      "application_build_ns": 30005700,
+      "application_build_max_ns": 7580300,
+      "first_application_submit_ns": 16734400,
+      "host_wall_ns": 3070170700,
+      "gpu_submissions": 20,
+      "sequence_build_ns": 17942400,
+      "log": "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\sequence\\primary\\logs\\candidate-run-07.log",
+      "capture": "primary"
+    },
+    {
+      "candidate": "baseline",
+      "run": "run-01",
+      "exit_code": 0,
+      "elapsed_ns": 4154842400,
+      "cpu_total_ns": 734375000,
+      "peak_working_set_bytes": 325005312,
+      "application_build_ns": 29116600,
+      "application_build_max_ns": 7642500,
+      "first_application_submit_ns": 17651500,
+      "host_wall_ns": 3248576000,
+      "gpu_submissions": 20,
+      "sequence_build_ns": 17542900,
+      "log": "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\sequence\\confirmation\\logs\\baseline-run-01.log",
+      "capture": "confirmation"
+    },
+    {
+      "candidate": "candidate",
+      "run": "run-01",
+      "exit_code": 0,
+      "elapsed_ns": 4862539400,
+      "cpu_total_ns": 781250000,
+      "peak_working_set_bytes": 324554752,
+      "application_build_ns": 30597200,
+      "application_build_max_ns": 8376300,
+      "first_application_submit_ns": 18677100,
+      "host_wall_ns": 3705159000,
+      "gpu_submissions": 18,
+      "sequence_build_ns": 18426900,
+      "log": "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\sequence\\confirmation\\logs\\candidate-run-01.log",
+      "capture": "confirmation"
+    },
+    {
+      "candidate": "candidate",
+      "run": "run-02",
+      "exit_code": 0,
+      "elapsed_ns": 4510271700,
+      "cpu_total_ns": 828125000,
+      "peak_working_set_bytes": 326623232,
+      "application_build_ns": 29472100,
+      "application_build_max_ns": 8147000,
+      "first_application_submit_ns": 18090100,
+      "host_wall_ns": 3186975800,
+      "gpu_submissions": 20,
+      "sequence_build_ns": 17527800,
+      "log": "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\sequence\\confirmation\\logs\\candidate-run-02.log",
+      "capture": "confirmation"
+    },
+    {
+      "candidate": "baseline",
+      "run": "run-02",
+      "exit_code": 0,
+      "elapsed_ns": 4531654400,
+      "cpu_total_ns": 734375000,
+      "peak_working_set_bytes": 327819264,
+      "application_build_ns": 31539800,
+      "application_build_max_ns": 7893600,
+      "first_application_submit_ns": 17632600,
+      "host_wall_ns": 3052297500,
+      "gpu_submissions": 18,
+      "sequence_build_ns": 18523000,
+      "log": "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\sequence\\confirmation\\logs\\baseline-run-02.log",
+      "capture": "confirmation"
+    },
+    {
+      "candidate": "baseline",
+      "run": "run-03",
+      "exit_code": 0,
+      "elapsed_ns": 4528295900,
+      "cpu_total_ns": 750000000,
+      "peak_working_set_bytes": 322777088,
+      "application_build_ns": 28741200,
+      "application_build_max_ns": 7919200,
+      "first_application_submit_ns": 17738700,
+      "host_wall_ns": 3104123800,
+      "gpu_submissions": 17,
+      "sequence_build_ns": 16852300,
+      "log": "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\sequence\\confirmation\\logs\\baseline-run-03.log",
+      "capture": "confirmation"
+    },
+    {
+      "candidate": "candidate",
+      "run": "run-03",
+      "exit_code": 0,
+      "elapsed_ns": 3909064300,
+      "cpu_total_ns": 968750000,
+      "peak_working_set_bytes": 325738496,
+      "application_build_ns": 33207200,
+      "application_build_max_ns": 8378500,
+      "first_application_submit_ns": 18264200,
+      "host_wall_ns": 3199666000,
+      "gpu_submissions": 18,
+      "sequence_build_ns": 19966900,
+      "log": "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-231-description-pilot\\docs\\benchmarks\\raw\\scratchpad-region-pilot-windows-2026-11-21\\sequence\\confirmation\\logs\\candidate-run-03.log",
+      "capture": "confirmation"
+    }
+  ]
+}
