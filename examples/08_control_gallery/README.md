@@ -25,7 +25,7 @@ application code in this directory.
 
 | Section | File | What it demonstrates |
 |---|---|---|
-| Overview | [`showcase.odin`](showcase.odin), [`foundations.odin`](foundations.odin) | A waveform built with retained geometry, a grouped Select, a gradient surface, a keyboard-accessible gain slider, and paint-only playhead motion. Scroll down for typography, built-in icons, buttons, and semantics. |
+| Overview | [`showcase.odin`](showcase.odin), [`foundations.odin`](foundations.odin) | A pixel-adaptive antialiased waveform stroke with exact Pulse steps, retained geometry, a grouped Select, a gradient surface, a keyboard-accessible gain slider, and paint-only playhead motion. Scroll down for typography, built-in icons, buttons, and semantics. |
 | Controls | [`controls.odin`](controls.odin) | `ui.text_field` with app-owned required-field validation and the `.Invalid` state, pointer-bound checkbox and slider, slider value text, `select_control` with a disabled option, and keyboard/focus behavior. |
 | Collections | [`collections.odin`](collections.odin) | A 500-row fixed-height `ui.virtual_list`, connected document tabs with close and dirty states, a drag-reordered list with `Semantic_ID` sources and targets, and an intrinsically measured non-virtualized `scroll_region`. |
 | Layout & surfaces | [`layout_surfaces.odin`](layout_surfaces.odin) | A draggable split with two panes, a shared-track `Grid`, surface-local `positioned_text`, a two-stop gradient, circle and arc surfaces, and a retained geometry surface updated after layout. |

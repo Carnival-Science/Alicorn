@@ -676,6 +676,9 @@ copy_node_description :: proc(
 		if kind_changed || surface_kind_changed {
 			clear(&node.surface_samples)
 			clear(&node.surface_segments)
+			clear(&node.surface_stroke_points)
+			node.surface_stroke_thickness = 0
+			node.surface_stroke_color = {}
 			clear(&node.surface_circles)
 			clear(&node.surface_rectangles)
 			gpu_surface_point_markers_destroy(rt, node.id)
@@ -684,6 +687,9 @@ copy_node_description :: proc(
 	} else {
 		clear(&node.surface_samples)
 		clear(&node.surface_segments)
+		clear(&node.surface_stroke_points)
+		node.surface_stroke_thickness = 0
+		node.surface_stroke_color = {}
 		clear(&node.surface_circles)
 		clear(&node.surface_rectangles)
 		gpu_surface_point_markers_destroy(rt, node.id)
@@ -1144,6 +1150,7 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	grid_tracks_destroy(node)
 	delete(node.surface_samples)
 	delete(node.surface_segments)
+	delete(node.surface_stroke_points)
 	delete(node.surface_circles)
 	delete(node.surface_rectangles)
 	gpu_surface_point_markers_destroy(rt, id)
@@ -1269,6 +1276,7 @@ reconcile :: proc(rt: ^Runtime) {
 			node.paint = make([dynamic]Paint_Command, 0, allocator=rt.persistent_allocator)
 			node.surface_samples = make([dynamic]f32, 0, allocator=rt.persistent_allocator)
 			node.surface_segments = make([dynamic]GPU_Surface_Line_Segment, 0, allocator=rt.persistent_allocator)
+			node.surface_stroke_points = make([dynamic]GPU_Surface_Point, 0, allocator=rt.persistent_allocator)
 			node.surface_circles = make([dynamic]GPU_Surface_Filled_Circle, 0, allocator=rt.persistent_allocator)
 			node.surface_rectangles = make([dynamic]GPU_Surface_Filled_Rectangle, 0, allocator=rt.persistent_allocator)
 			rt.nodes[d.id] = node
@@ -1604,6 +1612,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 		grid_tracks_destroy(node)
 		delete(node.surface_samples)
 		delete(node.surface_segments)
+		delete(node.surface_stroke_points)
 		delete(node.surface_circles)
 		delete(node.surface_rectangles)
 		text_run_destroy(&node.text_run)

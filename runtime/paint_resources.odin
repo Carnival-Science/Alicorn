@@ -81,6 +81,11 @@ gpu_surface_payload_resolve :: proc(rt: ^Runtime, handle: Geometry_Handle) -> (p
 		revision=node.surface_payload_revision,
 		samples=node.surface_samples[:],
 		segments=node.surface_segments[:],
+		stroke_path=GPU_Surface_Stroke_Path{
+			points=node.surface_stroke_points[:],
+			thickness=node.surface_stroke_thickness,
+			color=node.surface_stroke_color,
+		},
 		circles=node.surface_circles[:],
 		point_markers=gpu_surface_point_markers_resolve(rt, node.id),
 		rectangles=node.surface_rectangles[:],

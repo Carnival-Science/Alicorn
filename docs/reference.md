@@ -2307,15 +2307,24 @@ system file drops or arbitrary MIME payloads.
   `gpu_surface_update_geometry_with_markers` and
   `gpu_surface_update_geometry_with_rectangles_and_markers` variants also
   accept compact circular point markers, with or without rectangle fills.
+  `gpu_surface_update_geometry_with_rectangles_and_stroke_path` adds one
+  connected open stroke to a rectangle/segment/circle payload. A stroke path
+  copies its surface-local points into runtime-owned storage, uses bounded
+  miter joins and antialiased butt caps, and contributes its complete expanded
+  mesh to the shared vertex budget. The versioned rectangle-and-stroke-path
+  variant provides the same geometry with latest-wins ordering. Rectangles
+  paint first, then ordinary segments, the connected stroke, circles, and
+  point markers. Use independent line segments for grids and disconnected
+  decorations; use a stroke path when the points describe one continuous line.
   Marker centers and diameters are
   surface-local logical units; native SDL_GPU renders each marker from a
   six-vertex masked quad, while ordinary filled circles retain their existing
   tessellation quality. Rectangles paint in supplied order, before segments,
-  circles, and point markers. All geometry types share the
-  `GPU_SURFACE_MAX_VERTICES` budget. The corresponding versioned rectangle and
-  marker APIs provide latest-wins ordering for asynchronous producers. Invalid
-  or over-budget geometry is rejected atomically, leaving the last accepted
-  payload intact.
+  the connected stroke, circles, and point markers. All geometry types share
+  the `GPU_SURFACE_MAX_VERTICES` budget. The corresponding versioned rectangle,
+  marker, and stroke-path APIs provide latest-wins ordering for asynchronous
+  producers. Invalid or over-budget geometry is rejected atomically, leaving
+  the last accepted payload intact.
 
 For the ownership and lifecycle model behind these calls, see
 [Architecture](architecture.md).

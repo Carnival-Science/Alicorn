@@ -160,6 +160,10 @@ GPU_SURFACE_MAX_VERTICES :: 8192
 GPU_SURFACE_CIRCLE_SEGMENTS :: 16
 GPU_SURFACE_RECTANGLE_VERTICES :: 6
 GPU_SURFACE_POINT_MARKER_VERTICES :: 6
+// A retained stroke path emits a joined core ribbon and two one-pixel coverage
+// fringes per segment, plus antialiased butt caps at its two endpoints.
+GPU_SURFACE_STROKE_PATH_SEGMENT_VERTICES :: 18
+GPU_SURFACE_STROKE_PATH_CAP_VERTICES :: 12
 
 // Waveform surfaces reserve one six-vertex background quad and emit one
 // six-vertex segment for each adjacent sample pair. This is the largest
@@ -185,6 +189,7 @@ GPU_Surface_Payload_View :: struct {
 	revision: GPU_Surface_Update_Revision,
 	samples:  []f32,
 	segments: []GPU_Surface_Line_Segment,
+	stroke_path: GPU_Surface_Stroke_Path,
 	circles:  []GPU_Surface_Filled_Circle,
 	point_markers: []GPU_Surface_Point_Marker,
 	rectangles: []GPU_Surface_Filled_Rectangle,
@@ -430,6 +435,16 @@ GPU_Surface_Point :: struct {
 GPU_Surface_Line_Segment :: struct {
 	start:     GPU_Surface_Point,
 	end:       GPU_Surface_Point,
+	thickness: f32,
+	color:     Color,
+}
+
+// GPU_Surface_Stroke_Path is a retained, connected open stroke. Its points
+// are surface-local logical coordinates. Geometry updates copy the points
+// into runtime-owned storage before returning. Joins use a bounded miter and
+// the open endpoints use antialiased butt caps.
+GPU_Surface_Stroke_Path :: struct {
+	points:    []GPU_Surface_Point,
 	thickness: f32,
 	color:     Color,
 }
@@ -1569,6 +1584,9 @@ Node :: struct {
 	surface_samples: [dynamic]f32,
 	surface_geometry_active: bool,
 	surface_segments: [dynamic]GPU_Surface_Line_Segment,
+	surface_stroke_points: [dynamic]GPU_Surface_Point,
+	surface_stroke_thickness: f32,
+	surface_stroke_color: Color,
 	surface_circles: [dynamic]GPU_Surface_Filled_Circle,
 	surface_rectangles: [dynamic]GPU_Surface_Filled_Rectangle,
 	bounds:      Rect,

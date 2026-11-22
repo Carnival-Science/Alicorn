@@ -161,6 +161,10 @@ submission order. Dense plots can use `gpu_surface_update_geometry_with_markers`
 to draw compact antialiased circular markers without tessellating each point as
 a full circle. Use `gpu_surface_update_geometry_with_rectangles_and_markers`
 when the same payload also needs rectangle fills.
+For a continuous trace, `gpu_surface_update_geometry_with_rectangles_and_stroke_path`
+adds one connected stroke with bounded joins and antialiased edges; keep
+independent grid lines as ordinary segments. The versioned variant supports
+latest-wins updates for asynchronous producers.
 All geometry contributes to one vertex limit.
 The surface API carries typed, bounded presentation data; it does not expose
 SDL command buffers or an application shader API. Keep platform/GPU handles

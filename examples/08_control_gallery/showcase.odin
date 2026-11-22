@@ -8,6 +8,10 @@ import ui "alicorn:ui"
 SIGNAL_CARD_HEIGHT :: f32(394)
 SIGNAL_PLOT_HEIGHT :: f32(244)
 SIGNAL_PLOT_INSET :: f32(14)
+SIGNAL_FILL_BIN_COUNT :: 192
+SIGNAL_MIN_TRACE_POINTS :: 96
+SIGNAL_MAX_TRACE_POINTS :: 360
+SIGNAL_TRACE_SPACING_PIXELS :: f32(3.5)
 SIGNAL_POSITIONS := [3]int{250, 500, 750}
 
 Signal_Preset :: enum u64 { Harmonic = 1, Triangle, Pulse }
@@ -15,6 +19,7 @@ Signal_Preset :: enum u64 { Harmonic = 1, Triangle, Pulse }
 Signal_Plot :: struct {
 	surface:       alicorn.Node_ID,
 	width, height: f32,
+	pixel_width:   int,
 	preset:        Signal_Preset,
 	gain:          f32,
 	show_grid:     bool,
@@ -169,23 +174,44 @@ gallery_signal_sample :: proc(preset: Signal_Preset, t: f32) -> f32 {
 	return 0
 }
 
+gallery_signal_y :: proc(value, gain, height: f32) -> f32 {
+	return height*0.5 - value*gain*height*0.44
+}
+
 gallery_update_signal :: proc(app: ^App, rt: ^alicorn.Runtime) {
 	if app.section != .Overview { return }
 	surface, ok := alicorn.gpu_surface_context(rt, app.signal_surface)
 	if !ok { return }
 	width, height := surface.logical_bounds.w, surface.logical_bounds.h
 	if width <= 2*SIGNAL_PLOT_INSET || height <= 0 { return }
-	plot := Signal_Plot{app.signal_surface, width, height, app.signal_preset, app.gain,
-		app.signal_show_grid, app.signal_accent, app.signal_grid_color}
+	plot := Signal_Plot{
+		surface=app.signal_surface,
+		width=width,
+		height=height,
+		pixel_width=surface.pixel_width,
+		preset=app.signal_preset,
+		gain=app.gain,
+		show_grid=app.signal_show_grid,
+		accent=app.signal_accent,
+		grid=app.signal_grid_color,
+	}
 	if plot == app.signal_plot && surface.payload_revision != 0 { return }
 
-	SAMPLE_COUNT :: 128
-	segments: [2*(SAMPLE_COUNT-1)+10]alicorn.GPU_Surface_Line_Segment
-	shading: [SAMPLE_COUNT]alicorn.GPU_Surface_Filled_Rectangle
+	segments: [8]alicorn.GPU_Surface_Line_Segment
+	shading: [SIGNAL_FILL_BIN_COUNT]alicorn.GPU_Surface_Filled_Rectangle
+	path_points: [SIGNAL_MAX_TRACE_POINTS]alicorn.GPU_Surface_Point
 	count := 0
+	point_count := 0
 	baseline := height/2
 	plot_width := width-2*SIGNAL_PLOT_INSET
-	step := plot_width/(SAMPLE_COUNT-1)
+	pixel_scale_x := f32(surface.pixel_width)/width
+	if surface.pixel_width <= 0 { pixel_scale_x = surface.dpi_scale }
+	pixel_plot_width := plot_width*pixel_scale_x
+	trace_point_count := clamp(
+		int(math.ceil(pixel_plot_width/SIGNAL_TRACE_SPACING_PIXELS))+1,
+		SIGNAL_MIN_TRACE_POINTS,
+		SIGNAL_MAX_TRACE_POINTS,
+	)
 	if plot.show_grid {
 		for i in 0..=4 {
 			x := SIGNAL_PLOT_INSET + f32(i)*plot_width/4
@@ -199,23 +225,67 @@ gallery_update_signal :: proc(app: ^App, rt: ^alicorn.Runtime) {
 		}
 	}
 
-	shade := plot.accent
-	shade.a = 0.20
-	glow := plot.accent
-	glow.a = 0.28
-	previous: alicorn.GPU_Surface_Point
-	for i in 0..<SAMPLE_COUNT {
-		x := SIGNAL_PLOT_INSET + f32(i)*step
-		y := baseline - gallery_signal_sample(plot.preset, f32(i)/(SAMPLE_COUNT-1))*plot.gain*height*0.44
-		shading[i] = {alicorn.Rect{x-step*0.43, min(y, baseline), step*0.86, max(abs(y-baseline), 0.01)}, shade}
-		if i > 0 {
-			segments[count] = {previous, {x, y}, 4, glow}
-			segments[count+1] = {previous, {x, y}, 1.7, plot.accent}
-			count += 2
+	switch plot.preset {
+	case .Harmonic:
+		for i in 0..<trace_point_count {
+			t := f32(i)/f32(trace_point_count-1)
+			x := SIGNAL_PLOT_INSET+t*plot_width
+			y := gallery_signal_y(gallery_signal_sample(plot.preset, t), plot.gain, height)
+			path_points[point_count] = {x, y}
+			point_count += 1
 		}
-		previous = {x, y}
+	case .Triangle:
+		// The triangle wave is linear between these exact corners. Adding the
+		// corners directly avoids moving them to a nearby uniform sample.
+		for i in 0..=7 {
+			t := f32(i)/7
+			x := SIGNAL_PLOT_INSET+t*plot_width
+			y := gallery_signal_y(gallery_signal_sample(plot.preset, t), plot.gain, height)
+			path_points[point_count] = {x, y}
+			point_count += 1
+		}
+	case .Pulse:
+		// Preserve the square edges as vertical joins at their exact duty-cycle
+		// boundaries instead of drawing a diagonal ramp across a sample interval.
+		high_y := gallery_signal_y(0.80, plot.gain, height)
+		low_y := gallery_signal_y(-0.45, plot.gain, height)
+		path_points[point_count] = {SIGNAL_PLOT_INSET, high_y}
+		point_count += 1
+		for cycle in 0..<4 {
+			high_end_t := (f32(cycle)+0.42)/4
+			high_end_x := SIGNAL_PLOT_INSET+high_end_t*plot_width
+			path_points[point_count] = {high_end_x, high_y}
+			path_points[point_count+1] = {high_end_x, low_y}
+			point_count += 2
+			period_end_t := f32(cycle+1)/4
+			period_end_x := SIGNAL_PLOT_INSET+period_end_t*plot_width
+			path_points[point_count] = {period_end_x, low_y}
+			path_points[point_count+1] = {period_end_x, high_y}
+			point_count += 2
+		}
 	}
-	if alicorn.gpu_surface_update_geometry_with_rectangles(rt, plot.surface, shading[:], segments[:count], nil) {
+
+	shade := plot.accent
+	shade.a = 0.10
+	fill_count := SIGNAL_FILL_BIN_COUNT if plot.preset != .Pulse else 0
+	fill_step := plot_width/f32(SIGNAL_FILL_BIN_COUNT)
+	for i in 0..<fill_count {
+		x0 := SIGNAL_PLOT_INSET+f32(i)*fill_step
+		x1 := SIGNAL_PLOT_INSET+f32(i+1)*fill_step
+		t := (f32(i)+0.5)/SIGNAL_FILL_BIN_COUNT
+		y := gallery_signal_y(gallery_signal_sample(plot.preset, t), plot.gain, height)
+		// Bins meet edge-to-edge; the former 14% gaps made the trace read as
+		// a set of disconnected bars. Keep this fill much quieter than the line.
+		shading[i] = {alicorn.Rect{x0, min(y, baseline), x1-x0, max(abs(y-baseline), 0.01)}, shade}
+	}
+	trace := alicorn.GPU_Surface_Stroke_Path{
+		points=path_points[:point_count],
+		thickness=1.8,
+		color=plot.accent,
+	}
+	if alicorn.gpu_surface_update_geometry_with_rectangles_and_stroke_path(
+		rt, plot.surface, shading[:fill_count], segments[:count], nil, trace,
+	) {
 		width_changed := plot.width != app.signal_plot.width
 		app.signal_plot = plot
 		if width_changed { alicorn.invalidate_root(rt, "Place the playhead in the resized plot") }
