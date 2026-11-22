@@ -60,6 +60,10 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin test host\bindings "-collection:alicorn=$RepoRoot" -out:out\alicorn_host_bindings_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $Odin test host\plugin "-collection:alicorn=$RepoRoot" -out:out\alicorn_plugin_host_tests.exe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+& $Odin test host\plugin\accessibility "-collection:alicorn=$RepoRoot" @($AccessKit.CompilerArguments) -out:out\alicorn_plugin_accessibility_tests.exe
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin test host\web "-collection:alicorn=$RepoRoot" -out:out\alicorn_web_host_tests.exe
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 & $Odin test host\diagnostics "-collection:alicorn=$RepoRoot" -out:out\alicorn_diagnostics_tests.exe
