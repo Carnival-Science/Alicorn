@@ -41,6 +41,13 @@ alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
 mkdir -p "$OUT_DIR/fixtures"
 for fixture in tests/fixtures/* tools/runa_text; do
 	[ -f "$fixture/main.odin" ] || continue
+	# The issue #121 plugin host is a Win32 HWND fixture; its acceptance runner
+	# is tools/validate_plugin_host.ps1. Building it on macOS/Linux cannot work
+	# (win package), while the adapter itself still compile-checks its typed
+	# refusal path.
+	case "$fixture" in
+		tests/fixtures/plugin_host) continue ;;
+	esac
 	name=${fixture##*/}
 	alicorn_odin_with_linker_flags "$ODIN" "$ACCESSKIT_LINK_FLAGS" \
 		build "$fixture" "-collection:alicorn=$REPO_ROOT" "-out:$OUT_DIR/fixtures/$name.bin"

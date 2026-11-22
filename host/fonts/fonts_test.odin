@@ -119,7 +119,8 @@ test_deferred_system_fallbacks_load_only_on_first_uncovered_text :: proc(t: ^tes
 			rt.text_engine.system_fallback_ns == 0 && rt.text_engine.system_fallback_fired_at == (time.Tick{}),
 			"Latin text covered by the bundled faces must not trigger the platform loader")
 
-		japanese, japanese_ok := alicorn.text_run_build(&rt.text_engine, "日本語 🎉", 20, allocator=context.allocator)
+		japanese_sample := "日本語 🎉"
+		japanese, japanese_ok := alicorn.text_run_build(&rt.text_engine, japanese_sample, 20, allocator=context.allocator)
 		defer if japanese_ok { alicorn.text_run_destroy(&japanese) }
 		fallback_glyphs := 0
 		if japanese_ok {
@@ -132,8 +133,20 @@ test_deferred_system_fallbacks_load_only_on_first_uncovered_text :: proc(t: ^tes
 		testing.expect(t, rt.text_engine.system_fallback_faces > 0 && rt.text_engine.system_fallback_ns > 0 &&
 			rt.text_engine.system_fallback_fired_at != (time.Tick{}),
 			"the deferred load must record its synchronous cost and fire moment")
-		testing.expect(t, !(japanese.font_generation & alicorn.TEXT_RUN_FALLBACK_GENERATION_MASK != 0),
-			"the reshaped run must not retain unresolved fallback coverage")
+		// A CI host may lack faces for part of the sample text. The contract is
+		// that the run records exactly what the installed face stack resolved:
+		// full coverage means no fallback-generation bit, and partial coverage
+		// must set it. Do not require full CJK/emoji coverage from an arbitrary
+		// machine.
+		non_ascii := 0
+		for r in japanese_sample { if r > 0x7F { non_ascii += 1 } }
+		if fallback_glyphs >= non_ascii {
+			testing.expect(t, japanese.font_generation & alicorn.TEXT_RUN_FALLBACK_GENERATION_MASK == 0,
+				"a fully resolved run must not retain unresolved fallback coverage")
+		} else {
+			testing.expect(t, japanese.font_generation & alicorn.TEXT_RUN_FALLBACK_GENERATION_MASK != 0,
+				"a partially resolved run must record unresolved fallback coverage")
+		}
 
 		before := rt.text_engine.system_fallback_ns
 		chinese, chinese_ok := alicorn.text_run_build(&rt.text_engine, "简体中文", 20, allocator=context.allocator)
