@@ -7,6 +7,13 @@ the current project status.
 
 ## Current acceptance and platform limits
 
+- [Issue #197 configurable command bindings (2026-11-21)](issue-197-command-bindings-2026-11-21.md)
+  - opt-in `Binding_Table`/`on_command` on `ui.run`, one host-neutral
+  `Key_Event` for native and headless input, application-owned `Action_ID`
+  commands without a new enum, deterministic multi-stroke chords with a
+  scheduled-wake timeout and cancellation, conflict reporting, and Windows
+  native menu accelerator refresh/rebuild after a runtime remap; macOS is
+  compile-checked and Linux remains accelerator-metadata-only.
 - [Issue #193 invalidation-frontier diagnostics (2026-11-21)](issue-193-invalidation-frontier-2026-11-21.md)
   — GO: debug-only per-cause capture of the invalidation target, resolved
   subscribers and ancestors, changed outputs vs visits, sampled ring nodes, and

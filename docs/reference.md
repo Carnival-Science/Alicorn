@@ -173,6 +173,7 @@ surface. These callbacks run on the application thread and default to `nil`:
 | `on_text_input` | `proc(app: ^App, rt: ^Runtime, owner: Node_ID, event: alicorn.Hosted_Text_Input_Event)` | Receive text for an application-owned text-input target. Offsets are UTF-8 bytes. |
 | `on_scheduled_wake` | `proc(app: ^App, rt: ^Runtime)` | Service the one-shot application deadline installed by the hosted runtime. |
 | `on_menu_command` | `proc(app: ^App, rt: ^Runtime, command: alicorn.Action_ID)` | Adopt a host-normalized native menu or accelerator command. |
+| `on_command` | `proc(app: ^App, rt: ^Runtime, command: alicorn.Action_ID)` | Adopt a command resolved by the opt-in `bindings` table; shares the menu enabled gate. |
 | `on_close_requested` | `proc(app: ^App, rt: ^Runtime) -> alicorn.Hosted_Close_Result` | Return `.Allow` to close immediately or `.Defer` to finish app-owned save/discard work. |
 | `on_dialog` | `proc(app: ^App, rt: ^Runtime, result: ^alicorn.File_Dialog_Result)` | Adopt one asynchronous file-dialog completion. Result strings are borrowed for the callback. |
 
@@ -186,6 +187,86 @@ The callback names and parameter shapes match `native/sdl_gpu`'s `Application`
 so an application can move handlers between the SDL_GPU and hosted WebGPU paths.
 See [03_async_list](../examples/03_async_list/main.odin) for an app-owned Odin
 thread, mutex-protected completion, typed adoption and explicit shutdown join.
+
+### Application command bindings
+
+Applications that need a configurable keymap opt in by passing a borrowed
+`alicorn.Binding_Table` and an `on_command` callback to `ui.run`,
+`ui/webgpu.run`, or the browser `run`:
+
+```odin
+bindings := alicorn.Binding_Table{
+    bindings = []alicorn.Command_Binding{
+        {
+            command = alicorn.Action_ID(9001), // no Alicorn enum case required
+            strokes = [][]alicorn.Binding_Key{
+                {{key = .S, modifiers = {.Primary}}},
+                {{key = .K, modifiers = {.Primary}}, {key = .S, modifiers = {.Primary}}},
+            },
+            scope = "Global",
+            description = "Save project",
+        },
+    },
+    chord_timeout_ns = 800_000_000,
+}
+ui.run(&app, render, bindings=bindings, on_command=on_command)
+```
+
+**Resolution order.** A key-down first reaches native menu accelerators (the
+existing order), then host diagnostics (the reference SDL_GPU host), then the
+binding resolver, then the built-in `Application_Key` vocabulary, interaction
+scopes, focused controls, and text editing. The resolver is additive: a miss
+falls through to the unchanged path, and an empty table creates no resolver
+state and arms no wake. `ui.run` without bindings is byte-identical to the
+previous behavior.
+
+**One event contract.** Native SDL and headless `testui` input both produce one
+`alicorn.Key_Event`: host `scancode` (diagnostic only), host-neutral
+`Key_Spec`, normalized `Key_Modifiers` (the native-menu vocabulary, so
+`Primary` is Ctrl on Windows/Linux and Command on macOS), repeat, composition
+and text-focus context, `produces_text`, a timestamp, and an optional
+`application_key` bridge for the legacy enum. `host/sdl3/input` owns the SDL
+normalization; the browser host maps `KeyboardEvent.code` into the same struct.
+Unknown logical keys cannot match a binding but still reach the existing host
+policy.
+
+**Text and IME precedence.** Bindings are suppressed while a text-input owner
+has focus or a character is expected, unless the binding sets `preempt_text`.
+Active IME composition suppresses every binding unless it sets
+`allow_during_composition`; composition also cancels a pending chord. Focus
+loss, committed/preedit/canceled text, pointer-down, and a non-continuation key
+cancel pending state.
+
+**Chords.** `Command_Binding.strokes` lists alternative chord sequences; each
+inner sequence is an ordered list of `Binding_Key` strokes. A single-stroke
+binding fires immediately when no longer binding shares its prefix. Otherwise
+the host holds the first stroke pending and reports a deadline through its
+scheduled-wake path (Frequent class); it never polls. A later stroke completes
+a binding or cancels and reprocesses itself from the first stroke. At the
+deadline, a pending sequence that exactly equals a complete binding dispatches
+the shorter exact match; any other pending sequence cancels. `scope` is an
+authoring label only; table order decides dispatch. `alicorn.binding_conflicts`
+reports `Duplicate_Stroke`, `Prefix_Ambiguity`, and `Scope_Overlap` in stable
+table order so a keymap editor can surface overlaps without changing runtime
+precedence.
+
+**Runtime remap.** The table and its strokes are borrowed. Mutating the same
+storage changes dispatch immediately; call
+`hosted_runtime_bindings_update` on a hosted runtime (or the host's rebind
+point) to clear pending state. Native menu presentation follows with
+`host_menus.menu_service_update` plus `native_menu_adapter_rebuild`, or the
+targeted `native_menu_adapter_refresh_accelerators` when only accelerator text
+changed. Windows defers a rebuild while the native menu owns input and drains it
+when the menu loop closes. Execute-bound commands use the same enabled gate as
+menu commands: a command disabled by a borrowed menu item or registered
+`Action_State` is consumed without dispatch.
+
+**Audacity compatibility.** Alicorn contributes only normalization, resolver
+state, text/IME precedence, and menu refresh. The application owns command names,
+descriptions, keymap persistence, conflict policy, localization, and the
+`Action_ID` namespace. Audacity can therefore keep its keymap editor and import
+existing shortcuts into `Binding_Table` without Alicorn enumerating its command
+surface.
 
 ### Scoped component input
 
