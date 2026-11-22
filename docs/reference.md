@@ -1724,7 +1724,7 @@ Offsets are ordinary `Query` filters. Supply an explicit `semantic_id` with
 `semantic_id_valid=true` when the composition owns a deterministic ID, or a
 retained `key` with `key_valid=true` when that is the stable identity. A part
 may be omitted when the consumer does not publish that relationship; optional
-drive phases are then skipped. Two kinds are defined:
+drive phases are then skipped. Seven kinds are defined:
 
 | Kind | Required parts | Drive contract |
 | --- | --- | --- |
@@ -1732,6 +1732,9 @@ drive phases are then skipped. Two kinds are defined:
 | `.Modal_Dialog` | `Trigger`, `Dialog`, `Background_Action` | focus inside the opened dialog, Tab traversal wrap within its bounds, covered pointer and semantic activation rejection, Escape dismissal with opener focus restoration, pointer/keyboard/semantic primary-action parity (`Primary_Action`), mid-dialog focus recovery after a child is removed (`Transient_Action` + `Extra_Action`), and nested overlay ownership (`Nested_Action` + `Nested_Dialog`) |
 | `.Roving_List` | `Container`, optional `Trigger` and `Target_Option` | one Current item, one focus representative (container or item), arrow navigation and disabled skipping, wrap or boundary policy, Home/End scope, reveal, keyboard/pointer activation parity, optional popup close and Escape focus restoration |
 | `.Roving_Grid` | `Container`, optional `Trigger` and `Target_Option` | the same contract with `roving.columns` stride, `row_bounded` Left/Right, and row-scoped Home/End |
+| `.Radio_Group` | `Group`, optional `Target_Option` | at most one Checked/Selected item, Checked/`selected_id` agreement (or initial no selection), disabled radios non-focusable and non-activatable, arrow focus movement with disabled skipping and optional wrap, and Space/Return/pointer/semantic-Press activation parity with the previously checked item cleared |
+| `.Table` | `Table`, optional `Header_Row`, `Row`, `Cell` | the static table contract only: roles, row/cell nesting, unique column coordinates and `size_of_set`, header grouping via `item.parent`, logical counts, optional virtual rows and realized window, and ordinary document Page Down realization. No managed focus or roving requirement |
+| `.Data_Grid` | `Table`, optional `Cell` | the interactive table contract: exactly one focused cell at rest, directional cell/row movement with disabled skipping, Home/End, containment, reveal on move, row/cell selection with `Selected`/`selected_id` agreement, and activation parity |
 
 The roving kinds require every logical item to be realized, because navigation
 between unrealized rows would otherwise look like a missing contract. Supply the
@@ -1758,6 +1761,124 @@ focusable representative; `Containment` covers focus leaving the roving
 container on an arrow key. A popup composition sets `activation_closes=true`;
 the checker then verifies the container is no longer realized and the Trigger
 regains focus, and `expect_escape_restore=true` adds the Escape path.
+
+#### Radio group, static table, and data grid
+
+The compound kinds exist because the authoring obligations differ, not because
+the roles differ. A radio group is a roving set with app-owned mutual exclusion;
+a static table is a document structure; an interactive grid adds managed focus
+and selection on top of the table roles.
+
+Radio groups may legitimately start with **no selection**. The checker enforces
+**at most one** `Checked` (or `Selected`) radio, and when one exists the group's
+`selected_id` must name it. It never requires exactly one unless the consumer
+opts in:
+
+```odin
+report := testui.pattern_check(&h, testui.Pattern_Config{
+    kind=.Radio_Group,
+    parts=parts, // Group, optional Target_Option/Disabled_Option
+    radio=testui.Pattern_Radio_Config{
+        wrap=true,
+        require_initial_selection=false, // the W3C default
+    },
+})
+```
+
+A radio group's enabled items are focused one at a time; arrows move focus with
+disabled skipping and optional wrap. Space, Return, a pointer click, and a
+semantic `Press` each move the one checked radio and clear the previous one.
+
+`Table` and `Data_Grid` are deliberately separate checkers. The founder's
+2026-11-22 revision table is the contract boundary:
+
+| Capability | Table (static) | Data Grid (interactive) |
+| --- | --- | --- |
+| Consumer | Scratchpad Markdown | Punks, Acetate |
+| Cell content | Rich text, inline formatting, custom content | Text, controls, custom renderers |
+| Row height | Intrinsic | Fixed or variable |
+| Keyboard | Ordinary document navigation | Roving cell navigation (managed focus) |
+| Selection | Optional text selection | Row/cell selection |
+| Virtualization | Optional | Essential |
+| Sorting/filtering/editing | Not required | Composable/optional |
+
+The static `Table` checker asserts the `.Table` collection, `.Table_Row` child
+collections at unique row coordinates, and `.Table_Cell`/`.Table_Column_Header`/
+`.Table_Row_Header` cells collected by and parented to their row. Every realized
+row publishes the same contiguous column coordinates, `size_of_set` agrees with
+the row's logical count, and a configured `Header_Row` owns its column headers.
+Optional virtual rows publish their own logical row items plus a realized window;
+`Table_Config.expect_virtual_reveal` presses ordinary Page Down and requires the
+window to advance. There is no managed-focus assertion: the static table may have
+no focusable cell at all.
+
+```odin
+report := testui.pattern_check(&h, testui.Pattern_Config{
+    kind=.Table,
+    parts=parts, // Table, optional Header_Row/Row/Cell
+    table=testui.Pattern_Table_Config{
+        expected_row_count=3,
+        expect_row_count=true,
+        expected_column_count=2,
+        expect_column_count=true,
+        expect_virtual_reveal=false,
+    },
+})
+```
+
+The interactive `Data_Grid` checker reuses the same structural collection
+validation and adds the managed contract:
+
+```odin
+report := testui.pattern_check(&h, testui.Pattern_Config{
+    kind=.Data_Grid,
+    parts=parts, // Table, optional Cell target
+    grid=testui.Pattern_Grid_Config{
+        columns=4,
+        wrap=false,
+        row_bounded=true,
+        home_end_row=true,
+        expect_reveal=true,
+        selection=.Cell, // .None, .Cell, or .Row
+    },
+})
+```
+
+It requires exactly one focused cell (or row) at rest, moves cells on
+Left/Right and rows on Up/Down with disabled cells and rows skipped, uses
+row-scoped or whole-set Home/End, keeps focus inside the grid, and requires the
+focused cell to intersect the grid viewport when `expect_reveal` is set. When
+`selection` is `.Cell` or `.Row`, the activated target carries `Selected` and the
+grid's `selected_id` names the same identity.
+
+`Table` roles are the v1 carrier for both kinds. The interactive grid uses
+`.Table`/`.Table_Row`/`.Table_Cell` (or row-header) roles rather than a new
+grid-only role. That role choice, and the runtime routing findings below, are
+recorded rather than changed in this slice.
+
+#### Action parity
+
+Every action a composition advertises must be performable. The radio and data
+grid checkers perform each advertised `Focus`, `Press`, and `Select`; an
+advertised action the runtime rejects stops the check with
+`Semantic_Action_Parity` and is never treated as a skipped optional phase.
+
+This surfaced two runtime behaviors while the checkers were built:
+
+- `semantic_action_request(.Focus)` rejects a semantic item whose visual node is
+  not focusable. A non-Tab-stop roving row that advertises `Focus` therefore
+  fails action parity. This is the AliKit sidebar finding carried from the
+  #218/AliKit-#3 core asks; the runtime-side fix is not part of this slice.
+- `semantic_action_request(.Press)` routes as control activation only for
+  `Button`, `Checkbox`, and `Radio_Button`. A `Table_Cell` advertising `Press`
+  is queued as a logical `Perform` request instead. A composition that advertises
+  `Press` on table roles must consume that request; otherwise the checker sees an
+  advertised action with no effect.
+
+`semantic_collection_begin` also adds `Focus` to every collection, including a
+non-focusable static table and its rows. The static `Table` kind does not assert
+action parity because it has no activation contract, but that advertised Focus
+is a candidate for the same runtime fix.
 
 The combobox static contract covers the trigger role, `Focus`/`Expand` versus
 `Expanded`/`Collapse`, a realized `List_Box` parented to the trigger, a collection
@@ -1794,10 +1915,10 @@ pointer, type-ahead, disabled, identity, and static checks remain active.
 
 `testui.Element` now exposes relationship snapshots copied from the published
 semantic entity: `parent_semantic_id`, `collection_id`, `position_in_set`,
-`size_of_set`, `logical_count`, `tree_order`, `is_collection`,
-`is_virtual_item`, `collection_selected`, `collection_current`, and the owning
-collection's `collection_selected_id`/`collection_current_id`. These are value
-snapshots like every other `Element` field.
+`size_of_set`, `logical_count`, `realized_first`, `realized_last`, `tree_order`,
+`is_collection`, `is_virtual_item`, `collection_selected`, `collection_current`,
+and the owning collection's `collection_selected_id`/`collection_current_id`.
+These are value snapshots like every other `Element` field.
 
 The checks consume only published semantics and logical input. They do not
 simulate a platform accessibility bridge, OS IME candidate window, native menu
