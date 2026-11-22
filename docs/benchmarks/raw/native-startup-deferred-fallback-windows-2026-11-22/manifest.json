@@ -9,7 +9,8 @@
     "baseline_subject": "perf(startup): add native startup attribution markers and harness",
     "prototype_commit": "the commit that contains this report (parent edd5a1f)",
     "change": "Defer the DirectWrite/optional system fallback stack until the first shaping request with an unresolved cluster; no timers, workers or GPU resources deferred. Measurement-only A/B flag --eager-system-fonts and probe --fallback-probe-after-first-frame.",
-    "branches": "prototype and baseline are the same executable; the baseline arm passes --eager-system-fonts and executes the pre-change startup path"
+    "branches": "prototype and baseline are the same executable; the baseline arm passes --eager-system-fonts and executes the pre-change startup path",
+    "shipped_default_after_verdict": "Eager system fallbacks during startup, as before the prototype. The lazy path is opt-in via --deferred-system-fonts; --fallback-probe-after-first-frame implies it. The capture used the prototype-era inverse switch (prototype default lazy, --eager-system-fonts baseline); code paths are unchanged."
   },
   "apps": {
     "hello": {
@@ -76,7 +77,7 @@
     "idle_suite": "4 paired rounds with --idle-validation-seconds=20 (Hello, Scratchpad)",
     "control": "8 paired rounds with both arms eager (Scratchpad), to separate backend on_start jitter from an arm effect",
     "replicate": "a second independent 12-round Scratchpad series after the first",
-    "markers": "host-tick elapsed nanoseconds from the host startup origin; window_shown after SDL_ShowWindow; first_application_submit is a GPU submission, not a visible pixel; first_input_ready is the first completed event pump",
+    "markers": "host-tick elapsed nanoseconds from the host startup origin; window_shown after SDL_ShowWindow; first_application_submit is a GPU submission, not a visible pixel; first_input_ready is the first completed event pump; deferred_system_fonts_enabled records whether the lazy loader was armed",
     "memory": "working set/private bytes sampled every 10 ms and at the PASS line; GPU Process Memory Dedicated/Shared sampled every 500 ms; runtime requested bytes are allocator requests"
   },
   "counters": {
@@ -86,7 +87,7 @@
   },
   "artifacts": {
     "report": "docs/benchmarks/native-startup-deferred-fallback-windows-2026-11-22.md",
-    "runner_copy": "bench_startup.ps1",
+    "runner_copy": "bench_startup.ps1 (capture-time copy; the current tools/bench_startup.ps1 defaults the paired primary arm to --deferred-system-fonts)",
     "suites": ["hello", "scratchpad", "scratchpad-replicate", "punks", "probe-hello", "probe-scratchpad", "probe-punks", "idle-hello", "idle-scratchpad", "control-scratchpad-eager-vs-eager"],
     "analysis": "analyze_pairs.ps1 -> paired-summary.json",
     "tests": "logs-tests/",

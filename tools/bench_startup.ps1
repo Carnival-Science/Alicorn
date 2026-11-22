@@ -22,8 +22,11 @@
   With -Paired, every measured round launches a primary and a compare arm back
   to back (same executable, different extra arguments) and alternates which arm
   goes first. Use -PrimaryArmArguments / -CompareArmArguments for the per-arm
-  arguments and -PrimaryArmLabel / -CompareArmLabel for the summary keys. The
-  single-arm behaviour is unchanged when -Paired is absent.
+  arguments and -PrimaryArmLabel / -CompareArmLabel for the summary keys. When
+  no arm arguments are supplied, the primary arm defaults to
+  --deferred-system-fonts and the compare arm to the shipped eager default, as
+  used by the issue #172 phase-2 pairing. The single-arm behaviour is unchanged
+  when -Paired is absent.
 
   The process's PASS line is detected while the process is still alive so
   "settle" memory is sampled before the shutdown work (GPU idle wait,
@@ -71,6 +74,19 @@ param(
     [string[]]$PrimaryArmArguments = @(),
     [string[]]$CompareArmArguments = @()
 )
+
+# Paired default arms for the issue #172 deferred-fallback pairing: the compare
+# arm is the shipped default (eager system fallbacks) and the primary arm opts
+# into the deferred stack. Explicit -PrimaryArmArguments/-CompareArmArguments
+# always win.
+if ($Paired) {
+    if (-not $PSBoundParameters.ContainsKey('PrimaryArmArguments')) {
+        $PrimaryArmArguments = @('--deferred-system-fonts')
+    }
+    if (-not $PSBoundParameters.ContainsKey('CompareArmArguments')) {
+        $CompareArmArguments = @()
+    }
+}
 
 $ErrorActionPreference = 'Stop'
 $RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path

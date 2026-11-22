@@ -10,7 +10,8 @@ without crowding the project’s user and contributor guides.
   — paired A/B of deferring the DirectWrite/optional fallback stack to the
   first shaping miss: −117 to −119 ms fonts phase and −69 MiB runtime requested
   in all three apps, with a measured 116–121 ms first-fallback stall.
-  **NO-GO as prototyped** under the issue's interaction-latency rule.
+  **NO-GO as prototyped** under the issue's interaction-latency rule; the
+  shipped default stays eager and the lazy path is opt-in.
 - [Native SDL_GPU startup attribution — Issue #172 phase 1, Windows (2026-11-21)](native-startup-attribution-windows-2026-11-21.md)
   — measurement-only startup markers plus a fresh-process attribution of
   working set, private bytes, GPU process memory, runtime requested bytes and

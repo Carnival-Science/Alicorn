@@ -1246,6 +1246,7 @@ run_application_loop :: proc(
 		"first_input_ready_ns", timing.startup.first_input_ready_ns,
 		"first_diagnostics_ns", timing.startup.first_diagnostics_ns,
 		"deferred_system_font_faces", deferred_font_faces,
+		"deferred_system_fonts_enabled", int(rt != nil && rt.text_engine.system_fallback_armed),
 		"deferred_system_font_ns", deferred_font_ns,
 		"deferred_system_font_at_ns", deferred_font_at_ns,
 		"deferred_system_font_before_first_submit", int(deferred_font_before_first_submit),

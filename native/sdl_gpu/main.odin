@@ -32,14 +32,14 @@ native_run_application :: proc(
 	phase_start := startup_origin_tick
 	input_debug := macos_titlebar_fixture || windows_titlebar_fixture
 	validation_timeout_seconds := 0
-	eager_system_fonts := false
+	deferred_system_fonts := false
 	fallback_probe := false
 	for argument in os.args {
 		if argument == "--input-debug" { input_debug = true }
-		// Measurement-only A/B switch for the deferred system fallback stack.
-		// The default (lazy) is the prototype; --eager-system-fonts reproduces
-		// the pre-change startup path in the same binary.
-		if argument == "--eager-system-fonts" { eager_system_fonts = true }
+		// Shipped default: resolve the system fallback stack during startup,
+		// exactly as before the issue #172 phase-2 prototype. The deferred path
+		// is opt-in for future pairing and per-need face-mapping work.
+		if argument == "--deferred-system-fonts" { deferred_system_fonts = true }
 		if argument == "--fallback-probe-after-first-frame" { fallback_probe = true }
 		prefix := "--idle-validation-seconds="
 		legacy_prefix := "--idle-proof-seconds="
@@ -49,6 +49,10 @@ native_run_application :: proc(
 			if ok && parsed > 0 { validation_timeout_seconds = int(parsed) }
 		}
 	}
+	// The probe is measurement-only and exists to observe the deferred load, so
+	// it enables the deferred path itself. Without the probe the lazy path is
+	// only active when --deferred-system-fonts is passed.
+	if fallback_probe { deferred_system_fonts = true }
 	when ODIN_OS == .Darwin {
 		// SDL disables momentum wheel events by default on macOS. Preserve
 		// the trackpad's native inertial scrolling; environment overrides
@@ -176,15 +180,14 @@ native_run_application :: proc(
 	startup.app_init_ns = native_startup_elapsed_ns(phase_start)
 	phase_start = time.tick_now()
 	live_before = rt.allocation_stats.persistent_requested_bytes_live
-	// Deferred system fallbacks are the phase-2 prototype: the bundled faces
-	// load here, and DirectWrite's fallback stack is resolved on the first
-	// shaping request that no loaded face covers. --eager-system-fonts keeps
-	// the pre-change path for paired measurement.
-	defer_system_fonts := !eager_system_fonts
-	if !native_load_default_fonts(&rt, defer_system_fonts) {
+	// Shipped default: eager system fallbacks, as before the phase-2 prototype.
+	// --deferred-system-fonts (and the measurement-only fallback probe) defers
+	// the DirectWrite/optional stack to the first shaping request that no
+	// loaded face covers.
+	if !native_load_default_fonts(&rt, deferred_system_fonts) {
 		fail("application bundled Runa fonts could not be initialized")
 	}
-	if defer_system_fonts && !native_arm_deferred_system_fonts(&rt) {
+	if deferred_system_fonts && !native_arm_deferred_system_fonts(&rt) {
 		fail("deferred system font fallback loader could not be armed")
 	}
 	startup.fonts_requested_bytes = rt.allocation_stats.persistent_requested_bytes_live - live_before

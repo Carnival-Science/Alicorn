@@ -17,6 +17,46 @@ lands as a synchronous 116–121 ms stall on the first text that needs a system
 face. The startup and memory win is real and measured; the blocker is the
 interaction latency, and this report quantifies both.
 
+## Shipped default
+
+This section records the implementation of the verdict; it was added after the
+measurement and does not change any number above or below.
+
+- **Shipped behavior is unchanged: system fallbacks load eagerly during
+  startup**, exactly as before the prototype. `native/sdl_gpu/main.odin` passes
+  `defer_system_fallbacks=false` by default.
+- The lazy path is **opt-in** with `--deferred-system-fonts`, kept so the
+  per-need face-mapping follow-up in the GO/NO-GO section can be paired against
+  the same baseline without a second build.
+- `--fallback-probe-after-first-frame` is measurement-only and **implies**
+  `--deferred-system-fonts`, because its purpose is to observe the deferred
+  load. Used alone it always exercises the lazy path and reports the deferred
+  face count, duration and fire time.
+- The PASS line gained `deferred_system_fonts_enabled` (1 when the runtime was
+  armed with the lazy loader) so a launch records which path it took.
+- `tools/bench_startup.ps1 -Paired` now defaults its primary arm to
+  `--deferred-system-fonts` and its compare arm to the shipped eager default.
+
+Verification after the inversion (one paired round per app, same binaries; raw
+counts, not the 12-round percentiles above):
+
+| App | Arm | `fonts_ns` | `deferred_system_fonts_enabled` | Deferred load | Probe build |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Hello | baseline (default) | 121.9 ms | 0 | 0 | — |
+| Hello | prototype (`--deferred-system-fonts`) | 0.19 ms | 1 | 0 | — |
+| Scratchpad | baseline (default) | 115.6 ms | 0 | 0 | — |
+| Scratchpad | prototype (`--deferred-system-fonts`) | 0.00 ms | 1 | 0 | — |
+| Hello | prototype + probe | 0.20 ms | 1 | 118.5 ms / 7 faces | 118.6 ms |
+| Scratchpad | probe only | 0.00 ms | 1 | 115.0 ms / 7 faces | 115.0 ms |
+
+The last two rows confirm that the probe still reports the deferred face count,
+duration and fire time, and that it enables the deferred path itself.
+
+At capture time the prototype binary defaulted to lazy and the baseline arm
+passed the inverse `--eager-system-fonts` switch. The code paths are the same;
+only the default and flag name changed. The paired numbers in this report stand
+as measured.
+
 ## What the 66 MiB is
 
 The eager stack is built by `host/fonts/fonts_windows.odin`:
@@ -91,14 +131,15 @@ Smallest defensible change, one deferred unit (the whole platform stack):
   splits the canonical stack into bundled faces (always eager) and
   `load_system_fallback_fonts` (DirectWrite + optional UI/monospace faces); the
   latter is also the armed loader body.
-- `native/sdl_gpu`: `--eager-system-fonts` reproduces the pre-change startup in
-  the same binary for the paired baseline arm; `--fallback-probe-after-first-frame`
-  is a measurement-only probe that shapes `日本語 🎉 →` immediately after the
-  first application submit, on the same `text_run_build` path a first CJK/emoji
-  text entry uses.
+- `native/sdl_gpu`: the prototype binary defaulted to lazy and
+  `--eager-system-fonts` reproduced the pre-change startup in the same binary for
+  the paired baseline arm (the shipped binary now defaults to eager; see
+  “Shipped default”). `--fallback-probe-after-first-frame` is a measurement-only
+  probe that shapes `日本語 🎉 →` immediately after the first application
+  submit, on the same `text_run_build` path a first CJK/emoji text entry uses.
 - Startup markers gained `deferred_system_font_faces`, `..._ns`, `..._at_ns`
-  (from the host origin) and `..._before_first_submit`, plus the probe's
-  `fallback_probe_*` fields.
+  (from the host origin), `..._before_first_submit` and
+  `deferred_system_fonts_enabled`, plus the probe's `fallback_probe_*` fields.
 
 Trigger precision: the decision point is Runa's cluster-atomic
 `unresolved_fallback` result, not a codepoint pre-scan. A run that the loaded
@@ -122,11 +163,12 @@ Builds:
 | Scratchpad | clone at `adb28fc2` | `go run ./cmd/alicorn-dev build --alicorn-root <this worktree> --allow-alicorn-revision --release --renderer=sdl-gpu` |
 | Punks | clone at `0296473`; own pinned `alicorn-kit`; frontend compiled against this worktree with `-collection:alicorn=<this worktree>` | `cargo build -p punks-caliber --release`, then `odin build punks-standalone/odin -o:speed` |
 
-Both arms are the **same executable**; only the extra argument differs
-(`prototype`: none, `baseline`: `--eager-system-fonts`). The baseline branch is
-taken before the first frame and calls the pre-change startup function with the
-pre-change argument order, so it is the master `edd5a1f` path with no other
-difference.
+Both arms are the **same executable**; only the extra argument differed
+(`prototype`: none, `baseline`: `--eager-system-fonts`; the capture-time build
+defaulted to lazy). The baseline branch is taken before the first frame and
+calls the pre-change startup function with the pre-change argument order, so it
+is the master `edd5a1f` path with no other difference. The shipped binary
+inverts the default; see “Shipped default”.
 
 Protocol per app (`tools/bench_startup.ps1 -Paired -Runs 12`):
 
@@ -377,20 +419,23 @@ reload.
 ## Reproduction
 
 ```powershell
-# Paired startup A/B (same binary; baseline adds --eager-system-fonts)
-.\tools\bench_startup.ps1 -App hello -Runs 12 -Paired -HelloExe .\out\hello-lazy.exe `
-  -CompareArmArguments '--eager-system-fonts' `
+# Paired startup A/B. With the shipped default the compare arm needs no flag
+# (eager); the runner's paired mode defaults the primary arm to
+# --deferred-system-fonts.
+.\tools\bench_startup.ps1 -App hello -Runs 12 -Paired -HelloExe .\out\hello.exe `
   -ResultsDirectory docs\benchmarks\raw\native-startup-deferred-fallback-windows-2026-11-22\hello
 
-# Deferred-hitch probe
-.\tools\bench_startup.ps1 -App hello -Runs 6 -Paired -HelloExe .\out\hello-lazy.exe `
-  -PrimaryArmArguments '--fallback-probe-after-first-frame' `
-  -CompareArmArguments '--eager-system-fonts','--fallback-probe-after-first-frame' `
-  -ResultsDirectory docs\benchmarks\raw\native-startup-deferred-fallback-windows-2026-11-22\probe-hello
+# Deferred-hitch probe: the probe implies --deferred-system-fonts and reports
+# deferred_system_font_{faces,ns,at_ns} plus fallback_probe_build_ns.
+.\out\hello.exe --idle-validation-seconds=3 --fallback-probe-after-first-frame
 
-# Paired analysis
+# Paired analysis (capture-time suites)
 .\docs\benchmarks\raw\native-startup-deferred-fallback-windows-2026-11-22\analyze_pairs.ps1
 ```
+
+The capture-time runner copy in the raw directory is the version used for the
+measurements (paired arguments explicit, `--eager-system-fonts` baseline). The
+current runner defaults the paired arms as described under “Shipped default”.
 
 Raw evidence, including per-launch CSV/JSON, logs, the copied runner, the
 A/A control, the paired analysis and the manifest, is in
