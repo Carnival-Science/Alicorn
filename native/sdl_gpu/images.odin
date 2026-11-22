@@ -2,6 +2,7 @@ package alicorn_sdl_gpu
 
 import alicorn "../../runtime"
 import cpu_renderer "../../renderer/cpu"
+import "core:time"
 import "vendor:sdl3"
 
 NATIVE_IMAGE_INITIAL_VERTICES :: 4096
@@ -45,6 +46,7 @@ Native_Image_Renderer :: struct {
 	mesh_fingerprint: u64,
 	vertices_uploaded: u64,
 	vertex_upload_bytes: u64,
+	capacity: Native_Device_Stall_Stats,
 }
 
 native_image_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUTextureFormat, runtime: ^alicorn.Runtime) -> (renderer: Native_Image_Renderer, ok: bool) {
@@ -60,6 +62,7 @@ native_image_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUTex
 	}
 	defer if !ok { native_image_destroy(&renderer) }
 	renderer.vertex_capacity = NATIVE_IMAGE_INITIAL_VERTICES
+	renderer.capacity.peak_capacity = renderer.vertex_capacity
 	renderer.vertices = make([dynamic]Native_Text_Vertex, 0, 4096)
 	renderer.draws = make([dynamic]Native_Image_Draw, 0, 512)
 	renderer.images = make([dynamic]Native_GPU_Image, 0, 16)
@@ -209,13 +212,20 @@ native_image_build :: proc(renderer: ^Native_Image_Renderer, display: []alicorn.
 	new_capacity := native_next_vertex_capacity(renderer.vertex_capacity, needed, maximum)
 	if new_capacity == 0 { return false }
 	if new_capacity != renderer.vertex_capacity {
+		growth_start := time.now()
 		new_buffer := sdl3.CreateGPUBuffer(renderer.device, sdl3.GPUBufferCreateInfo{usage={.VERTEX}, size=sdl3.Uint32(new_capacity*size_of(Native_Text_Vertex))})
 		if new_buffer == nil { return false }
 		new_transfer := sdl3.CreateGPUTransferBuffer(renderer.device, sdl3.GPUTransferBufferCreateInfo{usage=.UPLOAD, size=sdl3.Uint32(new_capacity*size_of(Native_Text_Vertex))})
 		if new_transfer == nil { sdl3.ReleaseGPUBuffer(renderer.device, new_buffer); return false }
+		idle_start := time.now()
 		if !sdl3.WaitForGPUIdle(renderer.device) { sdl3.ReleaseGPUTransferBuffer(renderer.device,new_transfer); sdl3.ReleaseGPUBuffer(renderer.device,new_buffer); return false }
+		renderer.capacity.idle_waits += 1
+		renderer.capacity.idle_wait_ns += u64(time.duration_nanoseconds(time.since(idle_start)))
 		sdl3.ReleaseGPUBuffer(renderer.device, renderer.vertex_buffer); sdl3.ReleaseGPUTransferBuffer(renderer.device, renderer.vertex_transfer)
 		renderer.vertex_buffer, renderer.vertex_transfer, renderer.vertex_capacity = new_buffer, new_transfer, new_capacity
+		renderer.capacity.growth_events += 1
+		renderer.capacity.growth_ns += u64(time.duration_nanoseconds(time.since(growth_start)))
+		if new_capacity > renderer.capacity.peak_capacity { renderer.capacity.peak_capacity = new_capacity }
 	}
 	for command, index in display {
 		if !alicorn.paint_command_is_image(command) { continue }

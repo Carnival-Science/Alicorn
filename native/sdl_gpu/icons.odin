@@ -29,6 +29,7 @@ Native_Icon_Renderer :: struct {
     upload_pending, mesh_valid: bool,
     mesh_fingerprint: u64,
     atlas_uploads, atlas_upload_bytes, vertices_uploaded, vertex_upload_bytes, mesh_rebuilds, mesh_cache_hits: u64,
+    capacity: Native_Device_Stall_Stats,
 }
 
 native_icon_upload_atlases :: proc(renderer: ^Native_Icon_Renderer) -> bool {
@@ -91,6 +92,7 @@ native_icon_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUText
 	if !alicorn.icon_atlas_validate() { return renderer, false }
 	defer if !ok { native_icon_destroy(&renderer) }
 	renderer.vertex_capacity = NATIVE_ICON_INITIAL_VERTICES
+	renderer.capacity.peak_capacity = renderer.vertex_capacity
 	renderer.vertices = make([dynamic]Native_Text_Vertex, 0, 4096)
 	renderer.draws = make([dynamic]Native_Icon_Draw, 0, 1024)
 
@@ -154,7 +156,7 @@ native_icon_build :: proc(renderer: ^Native_Icon_Renderer, display: []alicorn.Pa
     for draw in display { if alicorn.paint_command_is_icon(draw) { required += 6 } }
     if !native_vertex_buffer_ensure_capacity(
 		renderer.device, &renderer.vertex_buffer, &renderer.vertex_transfer,
-		&renderer.vertex_capacity, required,
+		&renderer.vertex_capacity, required, &renderer.capacity,
 	) { return false }
     for draw, index in display {
         if !alicorn.paint_command_is_icon(draw) { continue }

@@ -74,6 +74,8 @@ Native_Text_Renderer :: struct {
 	mesh_text_commands: u64,
 	vertex_uploads: u64,
 	vertex_upload_bytes: u64,
+	// Vertex-buffer growth and the synchronous idle wait that accompanies it.
+	capacity: Native_Device_Stall_Stats,
 }
 
 native_shader_supported :: proc(supported: sdl3.GPUShaderFormat, format: sdl3.GPUShaderFormat) -> bool {
@@ -175,6 +177,7 @@ native_text_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUText
 		max_lod=1,
 	})
 	renderer.vertex_capacity = NATIVE_TEXT_INITIAL_VERTICES
+	renderer.capacity.peak_capacity = renderer.vertex_capacity
 	initial_vertex_bytes := sdl3.Uint32(renderer.vertex_capacity * size_of(Native_Text_Vertex))
 	renderer.vertex_buffer = sdl3.CreateGPUBuffer(device, sdl3.GPUBufferCreateInfo{usage=sdl3.GPUBufferUsageFlags{.VERTEX}, size=initial_vertex_bytes})
 	renderer.vertex_transfer = sdl3.CreateGPUTransferBuffer(device, sdl3.GPUTransferBufferCreateInfo{usage=.UPLOAD, size=initial_vertex_bytes})
@@ -289,6 +292,7 @@ native_text_ensure_vertex_capacity :: proc(renderer: ^Native_Text_Renderer, requ
 	new_capacity := native_next_vertex_capacity(renderer.vertex_capacity, required, maximum)
 	if new_capacity == 0 { return false }
 	if new_capacity == renderer.vertex_capacity { return true }
+	growth_start := time.now()
 	new_size := sdl3.Uint32(new_capacity * size_of(Native_Text_Vertex))
 	new_buffer := sdl3.CreateGPUBuffer(renderer.device, sdl3.GPUBufferCreateInfo{usage=sdl3.GPUBufferUsageFlags{.VERTEX}, size=new_size})
 	if new_buffer == nil { return false }
@@ -299,16 +303,22 @@ native_text_ensure_vertex_capacity :: proc(renderer: ^Native_Text_Renderer, requ
 	}
 	// Replacing the shared buffers is rare. Retire prior submissions before
 	// releasing them so the current larger mesh cannot race an in-flight draw.
+	idle_start := time.now()
 	if !sdl3.WaitForGPUIdle(renderer.device) {
 		sdl3.ReleaseGPUTransferBuffer(renderer.device, new_transfer)
 		sdl3.ReleaseGPUBuffer(renderer.device, new_buffer)
 		return false
 	}
+	renderer.capacity.idle_waits += 1
+	renderer.capacity.idle_wait_ns += u64(time.duration_nanoseconds(time.since(idle_start)))
 	sdl3.ReleaseGPUBuffer(renderer.device, renderer.vertex_buffer)
 	sdl3.ReleaseGPUTransferBuffer(renderer.device, renderer.vertex_transfer)
 	renderer.vertex_buffer = new_buffer
 	renderer.vertex_transfer = new_transfer
 	renderer.vertex_capacity = new_capacity
+	renderer.capacity.growth_events += 1
+	renderer.capacity.growth_ns += u64(time.duration_nanoseconds(time.since(growth_start)))
+	if new_capacity > renderer.capacity.peak_capacity { renderer.capacity.peak_capacity = new_capacity }
 	return true
 }
 

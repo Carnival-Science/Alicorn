@@ -1,6 +1,7 @@
 ﻿package alicorn_sdl_gpu
 
 import "core:c"
+import "core:time"
 import alicorn "../../runtime"
 import cpu_renderer "../../renderer/cpu"
 import "vendor:sdl3"
@@ -10,6 +11,10 @@ import "vendor:sdl3"
 // overwrite a geometry mesh that is still needed later in the display list.
 // Geometry is clipped on the CPU; text and geometry remain ordering barriers.
 NATIVE_SOLID_INITIAL_VERTICES :: 65536
+// The build-sample ring is bounded like the host diagnostics sample windows.
+// It records one pass through native_solid_build per presented application
+// frame so exit reports can print a real distribution instead of a mean.
+NATIVE_SOLID_BUILD_SAMPLES :: 240
 
 Native_Solid_Draw :: struct {
 	first_vertex:  sdl3.Uint32,
@@ -36,6 +41,20 @@ Native_Solid_Renderer :: struct {
 	batches:         u64,
 	vertices_uploaded: u64,
 	vertex_upload_bytes: u64,
+	// Measurement-only attribution. native_solid_build rebuilds the complete
+	// solid stream on every presentation; these counters separate visibility
+	// resolution from vertex expansion and expose draw-call and buffer-growth
+	// pressure without changing the path.
+	capacity:            Native_Device_Stall_Stats,
+	build_calls:         u64,
+	build_ns:            u64,
+	visibility_ns:       u64,
+	expand_ns:           u64,
+	build_samples:       [NATIVE_SOLID_BUILD_SAMPLES]u64,
+	build_sample_count:  int,
+	draw_calls:          u64,
+	commands_considered: u64,
+	commands_visible:    u64,
 }
 
 native_solid_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUTextureFormat, runtime: ^alicorn.Runtime) -> (renderer: Native_Solid_Renderer, ok: bool) {
@@ -43,6 +62,7 @@ native_solid_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUTex
 	renderer.runtime = runtime
 	defer if !ok { native_solid_destroy(&renderer) }
 	renderer.vertex_capacity = NATIVE_SOLID_INITIAL_VERTICES
+	renderer.capacity.peak_capacity = renderer.vertex_capacity
 	renderer.vertices = make([dynamic]Native_Text_Vertex, 0, 4096)
 	renderer.draws = make([dynamic]Native_Solid_Draw, 0, 1024)
 
@@ -118,6 +138,23 @@ native_solid_destroy :: proc(renderer: ^Native_Solid_Renderer) {
 	renderer^ = {}
 }
 
+// native_solid_record_build appends one build duration to the bounded sample
+// ring. The ring keeps exit and diagnostics reports distributional (p50/p95/p99)
+// without allocating a growing log.
+native_solid_record_build :: proc(renderer: ^Native_Solid_Renderer, elapsed_ns: u64) {
+	renderer.build_calls += 1
+	renderer.build_ns += elapsed_ns
+	if renderer.build_sample_count >= NATIVE_SOLID_BUILD_SAMPLES {
+		for index in 1..<NATIVE_SOLID_BUILD_SAMPLES {
+			renderer.build_samples[index-1] = renderer.build_samples[index]
+		}
+		renderer.build_samples[NATIVE_SOLID_BUILD_SAMPLES-1] = elapsed_ns
+	} else {
+		renderer.build_samples[renderer.build_sample_count] = elapsed_ns
+		renderer.build_sample_count += 1
+	}
+}
+
 native_solid_build :: proc(
 	renderer: ^Native_Solid_Renderer,
 	display: []alicorn.Paint_Command,
@@ -126,13 +163,20 @@ native_solid_build :: proc(
 ) -> bool {
 	clear(&renderer.vertices)
 	clear(&renderer.draws)
+	build_start := time.now()
 	required_vertices := 0
+	renderer.commands_considered += u64(len(display))
 	for draw in display {
 		count, visible := cpu_renderer.Solid_Surface_Vertex_Count(
 			renderer.runtime, draw, scale_x, scale_y, int(target_w), int(target_h),
 		)
-		if visible { required_vertices += count }
+		if visible {
+			required_vertices += count
+			renderer.commands_visible += 1
+		}
 	}
+	visibility_done := time.now()
+	renderer.visibility_ns += u64(time.duration_nanoseconds(time.since(build_start)))
 	if required_vertices > cap(renderer.vertices) {
 		reserve(&renderer.vertices, required_vertices)
 	}
@@ -153,12 +197,14 @@ native_solid_build :: proc(
 			has_scissor=mesh.has_scissor,
 		}
 	}
+	renderer.expand_ns += u64(time.duration_nanoseconds(time.since(visibility_done)))
 	if len(renderer.vertices) > renderer.vertex_capacity && !native_vertex_buffer_ensure_capacity(
 		renderer.device, &renderer.vertex_buffer, &renderer.vertex_transfer,
-		&renderer.vertex_capacity, len(renderer.vertices),
+		&renderer.vertex_capacity, len(renderer.vertices), &renderer.capacity,
 	) {
 		return false
 	}
+	native_solid_record_build(renderer, u64(time.duration_nanoseconds(time.since(build_start))))
 	renderer.upload_pending = len(renderer.vertices) > 0
 	return true
 }
@@ -199,6 +245,7 @@ native_solid_render_batch :: proc(
 			if draw.has_scissor { sdl3.SetGPUScissor(pass, draw.scissor) }
 			else { sdl3.SetGPUScissor(pass, sdl3.Rect{0, 0, c.int(target_w), c.int(target_h)}) }
 			sdl3.DrawGPUPrimitives(pass, draw.vertex_count, 1, draw.first_vertex, 0)
+			renderer.draw_calls += 1
 		}
 	}
 	sdl3.EndGPURenderPass(pass)

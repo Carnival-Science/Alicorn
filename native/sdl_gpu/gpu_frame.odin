@@ -123,6 +123,7 @@ draw_display_list :: proc(
 		_ = native_vertex_buffer_ensure_capacity(
 			solid_renderer.device, &solid_renderer.vertex_buffer, &solid_renderer.vertex_transfer,
 			&solid_renderer.vertex_capacity, len(solid_renderer.vertices)+reserve_solid_vertices,
+			&solid_renderer.capacity,
 		)
 	}
 	if len(solid_renderer.vertices) > 0 {
