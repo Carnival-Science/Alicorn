@@ -2,6 +2,7 @@
 
 package host_menus
 
+import "core:c"
 import "core:strings"
 import "core:sync"
 import "core:testing"
@@ -14,6 +15,7 @@ foreign user32 {
 	GetMenuItemCount :: proc "system" (menu: win.HMENU) -> i32 ---
 	GetSubMenu :: proc "system" (menu: win.HMENU, position: i32) -> win.HMENU ---
 	GetMenuState :: proc "system" (menu: win.HMENU, id: win.UINT, flags: win.UINT) -> win.UINT ---
+	GetMenuStringW :: proc "system" (menu: win.HMENU, item: win.UINT, buffer: win.LPWSTR, max: c.int, flags: win.UINT) -> c.int ---
 }
 
 WIN32_MF_GRAYED_MASK :: win.UINT(0x00000001)
@@ -279,4 +281,98 @@ test_win32_adapter_requires_a_live_window :: proc(t: ^testing.T) {
 	adapter: Native_Menu_Adapter
 	testing.expect(t, !native_menu_adapter_prepare(&adapter, nil, &service),
 		"the adapter requires a live SDL window")
+}
+
+win32_menu_item_text :: proc(menu: win.HMENU, position: win.UINT) -> string {
+	buffer: [256]u16
+	length := GetMenuStringW(menu, position, win.LPWSTR(&buffer[0]), c.int(len(buffer)), WIN32_MF_BYPOSITION)
+	if length <= 0 { return "" }
+	value, _ := win.utf16_to_utf8(buffer[:int(length)], context.temp_allocator)
+	return value
+}
+
+@(test)
+test_win32_adapter_rebuild_and_accelerator_refresh_follow_runtime_remap :: proc(t: ^testing.T) {
+	sync.mutex_lock(&win32_menu_test_mutex)
+	defer sync.mutex_unlock(&win32_menu_test_mutex)
+	if !sdl3.Init({.VIDEO}) {
+		testing.expect(t, false, "SDL video should initialize")
+		return
+	}
+	defer sdl3.Quit()
+	title, title_error := strings.clone_to_cstring("alicorn-hosted-rebind-test", context.temp_allocator)
+	if title_error != nil { testing.expect(t, false, "title should allocate"); return }
+	window := sdl3.CreateWindow(title, 320, 200, {.HIDDEN})
+	if window == nil { testing.expect(t, false, "hidden window should be created"); return }
+	defer sdl3.DestroyWindow(window)
+
+	items := [?]alicorn.Menu_Item{
+		{
+			kind=.Command,
+			command=alicorn.Action_ID(1),
+			label="Save",
+			state=alicorn.Action_State{enabled=true},
+			shortcut=alicorn.Menu_Shortcut{'S', {.Primary}},
+		},
+	}
+	menus := [?]alicorn.Menu{{label="File", items=items[:]}}
+	service: Menu_Service
+	menu_service_init(&service, menus[:], .Hidden, nil, nil)
+	adapter: Native_Menu_Adapter
+	if !native_menu_adapter_prepare(&adapter, window, &service) {
+		testing.expect(t, false, "the Win32 adapter should prepare")
+		return
+	}
+	defer native_menu_adapter_destroy(&adapter)
+
+	props := sdl3.GetWindowProperties(window)
+	hwnd := cast(win.HWND)sdl3.GetPointerProperty(props, "SDL.window.win32.hwnd", nil)
+	root := win.GetMenu(hwnd)
+	file_popup := GetSubMenu(root, 0)
+	testing.expect(t, file_popup != nil)
+	testing.expect(t, strings.contains(win32_menu_item_text(file_popup, 0), "Ctrl+S"),
+		"the native label starts with the authored accelerator")
+
+	// A runtime remap mutates the borrowed shortcut and refreshes only the label.
+	items[0].shortcut = alicorn.Menu_Shortcut{'J', {.Primary, .Shift}}
+	testing.expect(t, native_menu_adapter_refresh_accelerators(&adapter))
+	testing.expect(t, strings.contains(win32_menu_item_text(file_popup, 0), "Ctrl+Shift+J"),
+		"targeted accelerator refresh updates the Windows item label")
+	command, found := menu_service_match_shortcut(&service, 'J', {.Primary, .Shift})
+	testing.expect(t, found && command == alicorn.Action_ID(1),
+		"dispatch reads the same borrowed shortcut after the remap")
+
+	// A structure remap rebuilds the native menu from the updated service.
+	items_two := [?]alicorn.Menu_Item{
+		{kind=.Command, command=alicorn.Action_ID(2), label="Close", state=alicorn.Action_State{enabled=true}},
+	}
+	menus_two := [?]alicorn.Menu{
+		{label="File", items=items[:]},
+		{label="Edit", items=items_two[:]},
+	}
+	menu_service_update(&service, menus_two[:], .Hidden)
+	testing.expect(t, native_menu_adapter_rebuild(&adapter))
+	root = win.GetMenu(hwnd)
+	testing.expect_value(t, GetMenuItemCount(root), i32(2))
+
+	// A rebuild requested while the native menu owns input is deferred and
+	// drained when the menu loop closes.
+	items_three := [?]alicorn.Menu_Item{
+		{kind=.Command, command=alicorn.Action_ID(3), label="About", state=alicorn.Action_State{enabled=true}},
+	}
+	menus_three := [?]alicorn.Menu{
+		{label="File", items=items[:]},
+		{label="Edit", items=items_two[:]},
+		{label="Help", items=items_three[:]},
+	}
+	menu_service_update(&service, menus_three[:], .Hidden)
+	_ = win.SendMessageW(hwnd, win.WM_ENTERMENULOOP, 0, 0)
+	testing.expect(t, adapter.menu_open, "WM_ENTERMENULOOP marks the native menu as open")
+	testing.expect(t, native_menu_adapter_rebuild(&adapter) && adapter.rebuild_pending,
+		"a rebuild while the menu is open is deferred")
+	testing.expect_value(t, GetMenuItemCount(win.GetMenu(hwnd)), i32(2))
+	_ = win.SendMessageW(hwnd, win.WM_EXITMENULOOP, 0, 0)
+	testing.expect(t, !adapter.menu_open, "WM_EXITMENULOOP clears the open flag")
+	testing.expect(t, GetMenuItemCount(win.GetMenu(hwnd)) == 3,
+		"closing the menu drains the deferred rebuild")
 }

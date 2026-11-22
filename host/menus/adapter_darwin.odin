@@ -17,10 +17,13 @@ import "vendor:sdl3"
 // whenever AppKit asks a menu to update.
 
 Darwin_Menu_Binding :: struct {
-	menu:        ^NS.Menu,
-	items:       []alicorn.Menu_Item,
-	start_index: int,
-	item_count:  int,
+	menu:          ^NS.Menu,
+	items:         []alicorn.Menu_Item,
+	start_index:   int,
+	item_count:    int,
+	// command_items runs parallel to items; only .Command entries have a
+	// retained NSMenuItem pointer used for targeted accelerator refresh.
+	command_items: []^NS.MenuItem,
 }
 
 Darwin_Menu_State :: struct {
@@ -180,11 +183,14 @@ darwin_menu_build_items :: proc(
 	items: []alicorn.Menu_Item,
 ) -> bool {
 	start_index := int(NS.Menu_numberOfItems(menu))
+	command_items := make([]^NS.MenuItem, len(items))
+	if len(items) > 0 && command_items == nil { return false }
 	append(&state.bindings, Darwin_Menu_Binding{
 		menu=menu, items=items, start_index=start_index, item_count=len(items),
+		command_items=command_items,
 	})
 	NS.Menu_setDelegate(menu, cast(^NS.MenuDelegate)state.application)
-	for description in items {
+	for description, item_index in items {
 		switch description.kind {
 		case .Separator:
 			NS.Menu_addItem(menu, NS.MenuItem_separatorItem())
@@ -218,6 +224,10 @@ darwin_menu_build_items :: proc(
 			NS.MenuItem_setEnabled(item, description.state.enabled)
 			if description.state.checked { darwin_menu_item_set_state(item, 1) }
 			if !darwin_menu_add_item(menu, item) { return false }
+			// darwin_menu_add_item releases the local owner; the menu retains it.
+			// Retain one reference for targeted accelerator refresh.
+			darwin_menu_retain(cast(^NS.Object)item)
+			command_items[item_index] = item
 		}
 	}
 	return true
@@ -365,6 +375,48 @@ native_menu_adapter_refresh :: proc(adapter: ^Native_Menu_Adapter) {
 	darwin_menu_refresh_state(state, state.main_menu)
 }
 
+darwin_menu_item_refresh_accelerator :: proc(
+	item: ^NS.MenuItem,
+	label: string,
+	shortcut: alicorn.Menu_Shortcut,
+) -> bool {
+	title := darwin_menu_string(label)
+	key := darwin_menu_string(darwin_menu_key_string(shortcut.key))
+	if title == nil || key == nil {
+		if title != nil { darwin_menu_release(cast(^NS.Object)title) }
+		return false
+	}
+	NS.MenuItem_setTitle(item, title)
+	NS.MenuItem_setKeyEquivalent(item, key)
+	NS.MenuItem_setKeyEquivalentModifierMask(item, darwin_menu_shortcut_mask(shortcut.modifiers))
+	darwin_menu_release(cast(^NS.Object)title)
+	darwin_menu_release(cast(^NS.Object)key)
+	return true
+}
+
+// native_menu_adapter_refresh_accelerators applies a targeted title and key
+// equivalent update from the borrowed descriptions. AppKit reflects the change
+// immediately, so a runtime rebind does not require rebuilding the NSMenu while
+// it is open.
+native_menu_adapter_refresh_accelerators :: proc(adapter: ^Native_Menu_Adapter) -> bool {
+	if adapter == nil || adapter.platform_data == nil { return false }
+	state := cast(^Darwin_Menu_State)adapter.platform_data
+	ok := true
+	for binding in state.bindings {
+		for item, index in binding.items {
+			if item.kind != .Command { continue }
+			if index >= len(binding.command_items) { continue }
+			native_item := binding.command_items[index]
+			if native_item == nil { continue }
+			if !darwin_menu_item_refresh_accelerator(native_item, item.label, item.shortcut) { ok = false }
+			NS.MenuItem_setEnabled(native_item, item.state.enabled)
+			if item.state.checked { darwin_menu_item_set_state(native_item, 1) }
+			else { darwin_menu_item_set_state(native_item, 0) }
+		}
+	}
+	return ok
+}
+
 native_menu_adapter_destroy :: proc(adapter: ^Native_Menu_Adapter) {
 	if adapter == nil { return }
 	if adapter.platform_data != nil {
@@ -377,6 +429,12 @@ native_menu_adapter_destroy :: proc(adapter: ^Native_Menu_Adapter) {
 			NS.Application_setServicesMenu(state.application, state.previous_services_menu)
 		}
 		if state.main_menu != nil { darwin_menu_release(cast(^NS.Object)state.main_menu) }
+		for binding in state.bindings {
+			for item in binding.command_items {
+				if item != nil { darwin_menu_release(cast(^NS.Object)item) }
+			}
+			if binding.command_items != nil { delete(binding.command_items) }
+		}
 		if len(state.bindings) > 0 { delete(state.bindings) }
 		darwin_menu_release(cast(^NS.Object)state.previous_main_menu)
 		darwin_menu_release(cast(^NS.Object)state.previous_windows_menu)
@@ -388,4 +446,6 @@ native_menu_adapter_destroy :: proc(adapter: ^Native_Menu_Adapter) {
 	adapter.prepared = false
 	adapter.has_pending = false
 	adapter.pending_command = {}
+	adapter.menu_open = false
+	adapter.rebuild_pending = false
 }

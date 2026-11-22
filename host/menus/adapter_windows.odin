@@ -29,6 +29,7 @@ foreign import user32 "system:User32.lib"
 foreign user32 {
 	DrawMenuBar :: proc "system" (hwnd: win.HWND) -> win.BOOL ---
 	CheckMenuItem :: proc "system" (menu: win.HMENU, item: win.UINT, check: win.UINT) -> win.UINT ---
+	ModifyMenuW :: proc "system" (menu: win.HMENU, position: win.UINT, flags: win.UINT, id: win.UINT_PTR, label: win.LPCWSTR) -> win.BOOL ---
 }
 
 MENU_ADAPTER_SUBCLASS_ID :: win.UINT_PTR(0x414C49434D454E55) // "ALICMENU"
@@ -45,6 +46,7 @@ Win32_Menu_Binding :: struct {
 	item:       ^alicorn.Menu_Item,
 	top_menu:   ^alicorn.Menu,
 	is_command: bool,
+	native_id:  win.UINT,
 }
 
 Win32_Menu_State :: struct {
@@ -118,6 +120,7 @@ win32_menu_build_items :: proc(
 			if !ok { return false }
 			append(&state.bindings, Win32_Menu_Binding{
 				menu=menu, position=win.UINT(position), item=item, is_command=true,
+				native_id=native_id,
 			})
 		}
 	}
@@ -140,6 +143,41 @@ win32_menu_refresh_state :: proc(state: ^Win32_Menu_State) {
 	}
 }
 
+win32_menu_item_label :: proc(item: ^alicorn.Menu_Item) -> string {
+	if item == nil { return "" }
+	if item.shortcut.key != 0 {
+		return fmt.tprintf("%s\t%s", item.label, alicorn.menu_shortcut_label(item.shortcut))
+	}
+	return item.label
+}
+
+// win32_menu_refresh_accelerators updates only the label (and therefore the
+// accelerator text) of each command item from the borrowed description. The
+// HMENU structure, command ids, and enabled/checked state are untouched, so a
+// runtime rebind can synchronize the visible accelerator without rebuilding the
+// native menu.
+win32_menu_refresh_accelerators :: proc(state: ^Win32_Menu_State) -> bool {
+	if state == nil { return false }
+	ok := true
+	for binding in state.bindings {
+		if !binding.is_command { continue }
+		label: string
+		if binding.top_menu != nil {
+			label = fmt.tprintf("&%s", binding.top_menu.label)
+		} else {
+			label = win32_menu_item_label(binding.item)
+		}
+		wide := win32_menu_wide(state, label)
+		if wide == nil { ok = false; continue }
+		if !ModifyMenuW(binding.menu, binding.position, WIN32_MF_BYPOSITION, win.UINT_PTR(binding.native_id), win.LPCWSTR(&wide[0])) {
+			ok = false
+		}
+		delete(wide, state.allocator)
+	}
+	if state.hwnd != nil { _ = DrawMenuBar(state.hwnd) }
+	return ok
+}
+
 win32_menu_subclass :: proc "system" (
 	hwnd: win.HWND,
 	message: win.UINT,
@@ -153,6 +191,9 @@ win32_menu_subclass :: proc "system" (
 	if state == nil { return win.DefSubclassProc(hwnd, message, wparam, lparam) }
 	state.hwnd = hwnd
 	state.chrome.hwnd = hwnd
+	if state.adapter != nil && (message == win.WM_ENTERMENULOOP || message == win.WM_INITMENUPOPUP) {
+		state.adapter.menu_open = true
+	}
 	integrated := state.chrome.frame_enabled
 	dwm_result: win.LRESULT
 	dwm_handled := false
@@ -180,6 +221,10 @@ win32_menu_subclass :: proc "system" (
 	if message == win.WM_INITMENUPOPUP { win32_menu_refresh_state(state) }
 	result := win.DefSubclassProc(hwnd, message, wparam, lparam)
 	win32_chrome_post_message(&state.chrome, message, wparam, lparam)
+	if state.adapter != nil && message == win.WM_EXITMENULOOP {
+		state.adapter.menu_open = false
+		native_menu_adapter_drain_rebuild(state.adapter)
+	}
 	return result
 }
 
@@ -306,6 +351,7 @@ native_menu_adapter_prepare :: proc(
 		if description.command != alicorn.Action_ID(0) {
 			append(&state.bindings, Win32_Menu_Binding{
 				menu=state.root, position=win.UINT(index), top_menu=&description, is_command=true,
+				native_id=win.UINT(uintptr(native_id)),
 			})
 		}
 	}
@@ -334,6 +380,11 @@ native_menu_adapter_refresh :: proc(adapter: ^Native_Menu_Adapter) {
 	win32_menu_refresh_state(cast(^Win32_Menu_State)adapter.platform_data)
 }
 
+native_menu_adapter_refresh_accelerators :: proc(adapter: ^Native_Menu_Adapter) -> bool {
+	if adapter == nil || adapter.platform_data == nil { return false }
+	return win32_menu_refresh_accelerators(cast(^Win32_Menu_State)adapter.platform_data)
+}
+
 native_menu_adapter_destroy :: proc(adapter: ^Native_Menu_Adapter) {
 	if adapter == nil { return }
 	if adapter.platform_data != nil {
@@ -344,6 +395,8 @@ native_menu_adapter_destroy :: proc(adapter: ^Native_Menu_Adapter) {
 	adapter.prepared = false
 	adapter.has_pending = false
 	adapter.pending_command = {}
+	adapter.menu_open = false
+	adapter.rebuild_pending = false
 }
 
 native_menu_adapter_activate_chrome :: proc(adapter: ^Native_Menu_Adapter) -> bool {
