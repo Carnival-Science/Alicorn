@@ -3,8 +3,8 @@
 Start with [Getting Started](getting-started.md) to install the toolchain, build
 Alicorn, and run the native starter.
 
-The current release is [Alicorn v0.2.2](../CHANGELOG.md), released 2026-11-20.
-The same changelog contains the v0.1.0, v0.2.0, and v0.2.1 history.
+The current release is [Alicorn v0.2.3](../CHANGELOG.md), released 2026-11-22.
+The same changelog contains the v0.1.0, v0.2.0, v0.2.1, and v0.2.2 history.
 
 ## Use Alicorn
 

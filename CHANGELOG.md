@@ -4,27 +4,60 @@ All notable Alicorn releases are recorded here. The project release notes are
 consolidated in this file; vendored components retain their own upstream
 changelogs.
 
-## [0.3.0] - Unreleased
+## [0.2.3] - 2026-11-22
 
-Alicorn is an experimental native GUI runtime for Odin. This release candidate
-collects the v0.3.0 milestone work after v0.2.2. Release date: pending.
+Alicorn is an experimental native GUI runtime for Odin. This release collects
+the authoring and runtime maturity work after v0.2.2: the retained motion gate,
+a composable authoring surface, measured sparse-update performance, and the
+acceptance records that decide what is ready to ship. SDL_GPU remains the
+default and visual reference; the hosted WebGPU renderer stays opt-in. Release
+date: 2026-11-22.
 
-Compare: [v0.2.2...master](https://github.com/Carnival-Science/Alicorn/compare/v0.2.2...master)
+Compare: [v0.2.2...v0.2.3](https://github.com/Carnival-Science/Alicorn/compare/v0.2.2...v0.2.3)
 
-This draft details the performance and correctness slice that the release
-validation pass measured; the other merged v0.3.0 work (configurable command
-bindings [#197](https://github.com/Carnival-Science/Alicorn/issues/197),
-invalidation-frontier diagnostics
-[#193](https://github.com/Carnival-Science/Alicorn/issues/193), roving focus
-[#225](https://github.com/Carnival-Science/Alicorn/issues/225), reusable
-pattern checks [#217](https://github.com/Carnival-Science/Alicorn/issues/217),
-collection parents [#223](https://github.com/Carnival-Science/Alicorn/issues/223),
-and composable Select parts
-[#218](https://github.com/Carnival-Science/Alicorn/issues/218)) keeps its own
-validation records under [`docs/validation`](docs/validation/README.md).
+The behavioral work and its evidence have separate records under
+[`docs/validation`](docs/validation/README.md) and
+[`docs/research`](docs/research/); this section summarizes them
+without turning research pilots into shipping claims. The dated evidence
+records were written under the v0.3.0 working name; the released version is
+0.2.3.
 
 ### Highlights
 
+- **Retained motion passed its core release gate.** The retained motion system
+  ([#137](https://github.com/Carnival-Science/Alicorn/issues/137)/[#138](https://github.com/Carnival-Science/Alicorn/issues/138))
+  now schedules on the display deadline instead of polling timeouts: one
+  deadline per surface, no deadline while hidden or settled, and a due step
+  samples only when the deadline has actually passed. A 400 ms hover storm fell
+  from 200 to 23 frames with zero descriptor delta, and the
+  [issue #146 acceptance matrix](docs/validation/issue-146-motion-acceptance-matrix-2026-11-21.md)
+  covers all nine required edge cases at the core-invariant level. The
+  [#91](https://github.com/Carnival-Science/Alicorn/issues/91) dogfood closure
+  adds a Quick Open Reveal port, real 60/120/144/165 Hz captures, and a 2.34x
+  authoring reduction (89 motion-API lines against 208 manual-twin lines).
+  Platform and founder-scoped records remain open, and this release does not
+  close #146.
+- **Composable authoring became the tested path.** Applications can route keys
+  through one host-neutral `Key_Event` and application-owned bindings
+  ([#197](https://github.com/Carnival-Science/Alicorn/issues/197)), move focus
+  with a pure roving model
+  ([#225](https://github.com/Carnival-Science/Alicorn/issues/225)), preempt text
+  keys by scope ([#226](https://github.com/Carnival-Science/Alicorn/issues/226)),
+  name a semantic collection's parent
+  ([#223](https://github.com/Carnival-Science/Alicorn/issues/223)), and check
+  composed controls with reusable pattern checks
+  ([#217](https://github.com/Carnival-Science/Alicorn/issues/217)) and
+  invalidation-frontier diagnostics
+  ([#193](https://github.com/Carnival-Science/Alicorn/issues/193)). The Control
+  Gallery and recipes ([#181](https://github.com/Carnival-Science/Alicorn/issues/181)),
+  the component authoring standard
+  ([#214](https://github.com/Carnival-Science/Alicorn/issues/214)), the selected
+  `icon_button` state ([#199](https://github.com/Carnival-Science/Alicorn/issues/199)),
+  grouped Select options ([#198](https://github.com/Carnival-Science/Alicorn/issues/198)),
+  and the composable Select parts pilot
+  ([#218](https://github.com/Carnival-Science/Alicorn/issues/218)) document and
+  exercise that surface; #218 is GO for the copyable recipe and NO-GO for a
+  runtime framework change.
 - **Sparse-update performance, measured per stage.** Region-key resolution is
   indexed ([#227](https://github.com/Carnival-Science/Alicorn/issues/227)),
   display finalization splices the changed range instead of the whole list
@@ -38,30 +71,119 @@ validation records under [`docs/validation`](docs/validation/README.md).
   Scratchpad a 24-character typing burst builds **10.21%** less cumulative
   application time. The measured wins do **not** extend to Scratchpad's
   open/close/switch command sequence, which does not exercise these paths; the
-  [v0.3.0 performance ledger](docs/benchmarks/v030-performance-ledger.md) states
+  [performance ledger](docs/benchmarks/v030-performance-ledger.md) states
   each stage's evidence, limits, and open status.
-- **Keyed regions proved on a real application.** The
-  [#231](https://github.com/Carnival-Science/Alicorn/issues/231) pilot and the
-  adopted tab-strip/workspace-tree regions describe 13.6% fewer nodes per typed
-  character and skip six region bodies per character. The results slot of Quick
-  Open does not benefit, and the command sequence still does not move; the
-  research record keeps regions opt-in and rejects a broad conversion.
+- **Keyed regions remain research, not a production recommendation.** The
+  [#231](https://github.com/Carnival-Science/Alicorn/issues/231) Scratchpad
+  pilot measured 13.6% fewer described nodes and six skipped region bodies per
+  typed character, with 7.1% off the runtime description stage and 6.24% off
+  cumulative application build in a ten-pair typing burst. The command sequence
+  and the Quick Open results slot did not benefit. Production adoption is
+  **ON HOLD** pending
+  [#232](https://github.com/Carnival-Science/Alicorn/issues/232): region
+  signatures do not include every resolved appearance input, so a cached body
+  can paint stale colors after high-contrast, reduce-transparency,
+  differentiate-without-color, or live theme replacement. The two-region review
+  branch is not merged into Scratchpad; the research record keeps regions
+  opt-in and rejects a broad conversion.
+- **Shape and gradient acceptance completed.** The bounded shape primitives
+  ([#110](https://github.com/Carnival-Science/Alicorn/issues/110)) and two-stop
+  semantic gradients ([#119](https://github.com/Carnival-Science/Alicorn/issues/119))
+  that landed before v0.2.2 now have native D3D12 pixel readbacks, CPU-reference
+  comparison, hit-testing, and cost measurements. Curved shapes require flat
+  paint, and a circular pointer target changes targeting without changing
+  layout, focus, semantics, or accessibility bounds.
+- **Plugin embedding passed its Windows Phase B gate.** The
+  [#121](https://github.com/Carnival-Science/Alicorn/issues/121) external Win32
+  host fixture attaches Alicorn scope editors as child windows with no SDL
+  window or event loop, runs two instances, isolates input, survives a simulated
+  device loss, and tears down cleanly. All 18 checks pass on D3D12 and Vulkan.
+  The verdict is **GO** for the Windows Phase B proof of concept, not a
+  CLAP/VST3 wrapper or production plugin contract.
+- **Investigation closures, including two honest NO-GOs.** The
+  [#104](https://github.com/Carnival-Science/Alicorn/issues/104) phase A
+  measurement found no dogfood workload with visible relief surfaces to justify
+  the instanced-SDF prototype, so phase B is **NO-GO**; the narrower native
+  solid-retention follow-up remains justified. The
+  [#105](https://github.com/Carnival-Science/Alicorn/issues/105) scene-local
+  lighting prototype is deterministic, opt-in, bounded, and affordable on the
+  test GPU, but it was not clearly better than the shipped static relief at 1x
+  and lacks older/integrated-GPU evidence, so it is **NO-GO** and the static
+  relief remains the shipped treatment.
+  [#190](https://github.com/Carnival-Science/Alicorn/issues/190) supplied the
+  sparse-update benchmark, [#106](https://github.com/Carnival-Science/Alicorn/issues/106)
+  closed with the seeded coherence oracle and its #193 extensions, and
+  [#120](https://github.com/Carnival-Science/Alicorn/issues/120) closed with the
+  connected-tab visual audit (options A and C accepted, no general shoulder
+  primitive). [#111](https://github.com/Carnival-Science/Alicorn/issues/111)
+  retained effects stay outside this milestone, and the
+  [#172](https://github.com/Carnival-Science/Alicorn/issues/172) deferred
+  system-fallback prototype was rejected so eager fallbacks remain the shipped
+  default.
 - **Paint-only theme replacement is correct again.** A color-only
   `style_theme_replace` now recomputes description-resolved text ink in the same
   per-node walk that advances paint, so a live theme edit no longer leaves
   retained text on the previous theme's color
   ([#219](https://github.com/Carnival-Science/Alicorn/issues/219)).
-- **Investigation closures.** The [#190](https://github.com/Carnival-Science/Alicorn/issues/190)
-  sparse-update benchmark now supplies the slope and stage-attribution evidence
-  the performance issues build on; [#106](https://github.com/Carnival-Science/Alicorn/issues/106)
-  closed with the seeded coherence oracle and its #193 extensions;
-  [#120](https://github.com/Carnival-Science/Alicorn/issues/120) closed with the
-  connected-tab visual audit (options A and C accepted, no general shoulder
-  primitive). [#111](https://github.com/Carnival-Science/Alicorn/issues/111)
-  retained effects stay outside this milestone's scope and evidence.
 
 ### Added
 
+- Added display-deadline motion scheduling. A host arms one deadline from the
+  display interval, samples only when it is due, drops the deadline while a
+  window is hidden or settled, and records scheduler lateness p50/p95/p99.
+  Motion-only frames now classify hit-maintenance work separately through
+  `hit_test_queries`, `hit_test_nodes_examined`, `hit_geometry_updates`, and
+  `hit_index_updates` counters, and the acceptance suite covers direct
+  manipulation, retarget continuity, three-level composition, scrolled clips,
+  tab-close hit geometry, high contrast, 1.25/1.5/1.75 scale, teardown, and
+  induced D3D12 removal.
+- Added one host-neutral `Key_Event` and an application-owned binding service
+  ([#197](https://github.com/Carnival-Science/Alicorn/issues/197)). Native SDL3,
+  the browser host, and headless `testui` produce the same event; the resolver
+  supports chords, a scheduled-wake timeout, explicit cancellation, and rebinding
+  that rebuilds menus and accelerators without arming a wake when idle.
+- Added a pure roving focus model
+  ([#225](https://github.com/Carnival-Science/Alicorn/issues/225)) over a
+  caller-owned item view, with grid/list arithmetic, disabled-item repair,
+  Home/End and page moves, and pattern checks. It retains no runtime state and
+  does not publish semantics; selection, reveal, activation, and focus
+  restoration stay application-owned.
+- Added scope-owned text key preemption
+  ([#226](https://github.com/Carnival-Science/Alicorn/issues/226)), so focused
+  text targets and scoped grids resolve keys before application bindings without
+  introducing a second keyboard contract.
+- Added an optional parent identity to semantic collections
+  ([#223](https://github.com/Carnival-Science/Alicorn/issues/223)) and moved the
+  Select parts example onto the public facility.
+- Added reusable `testui` pattern checks
+  ([#217](https://github.com/Carnival-Science/Alicorn/issues/217)) for
+  single-select list/combobox and modal-dialog composition, with positive and
+  negative controls. They add no runtime metadata or control registry.
+- Added debug invalidation-frontier capture
+  ([#193](https://github.com/Carnival-Science/Alicorn/issues/193)):
+  `frontier_inspect` names the invalidated region, its subscribers and ancestors,
+  and the stage that produced no output, while `frontier_why_touched` answers one
+  node's relationship to the declared edge. `testui` exposes matching frontier
+  checks, and release builds compile the hooks out.
+- Added the component authoring standard and document template
+  ([#214](https://github.com/Carnival-Science/Alicorn/issues/214)), copyable
+  component recipes, and a broadened Control Gallery
+  ([#181](https://github.com/Carnival-Science/Alicorn/issues/181)).
+- Added controlled selected state to `icon_button`
+  ([#199](https://github.com/Carnival-Science/Alicorn/issues/199)) and
+  single-level grouped options to Select
+  ([#198](https://github.com/Carnival-Science/Alicorn/issues/198)); the
+  composable Select parts example
+  ([#218](https://github.com/Carnival-Science/Alicorn/issues/218)) shows the
+  public copyable recipe.
+- Added the embeddable plugin editor adapter and external Win32 acceptance
+  fixture ([#121](https://github.com/Carnival-Science/Alicorn/issues/121)) for
+  own-window hosts, including child-surface input isolation, shared-device
+  recovery, optional accessibility, and the Wayland floating fallback.
+- Added native startup attribution markers and a startup harness
+  ([#172](https://github.com/Carnival-Science/Alicorn/issues/172)), plus the
+  material-stream fixture and solid-attribution counters that produced the
+  [#104](https://github.com/Carnival-Science/Alicorn/issues/104) phase A record.
 - Added the source-visible sparse-update benchmark fixture and runner
   (`benchmarks/diagnostics/issue190_sparse_updates.odin`). It measures root,
   keyed-region, and hand-optimized application paths at 100, 1,000, and 3,000
@@ -93,6 +215,10 @@ validation records under [`docs/validation`](docs/validation/README.md).
   explicit caller colors caller-owned. The #190 theme probe now reports
   `status=updated` rather than the recorded stale color, and
   `runtime/style_theme_replace_test.odin` pins the behavior.
+- Fixed nested percentage widths resolving against an unconstrained parent.
+  Width resolution now runs parent-first through the ancestor chain, and the
+  production record covers split, grid, and scrolled cases
+  ([#158](https://github.com/Carnival-Science/Alicorn/issues/158)).
 
 ### Performance and measurement
 
@@ -150,21 +276,36 @@ validation records under [`docs/validation`](docs/validation/README.md).
   In the Scratchpad pilot, four keyed regions describe 741 instead of 858 nodes
   per typed character (13.6% fewer), skip six bodies per character, and reduce
   the runtime description stage 7.1%; cumulative application build fell 6.24%
-  over ten pairs. The adopted two-region branch reproduces the node reduction
+  over ten pairs. The two-region review branch reproduces the node reduction
   (-13.6%), the six skips, and a 7.0% reconcile reduction, with 4.41% lower
-  cumulative application build on its session. Phase 2's 10.21% and the pilot's
-  6.24% were measured on different sessions and target different parts of the
-  frame; multiplying the two independent reductions gives an indicative ~15.8%
-  combined typing build ceiling, not a single measured A/B. Regions remain
-  opt-in: the pilot cost 560 added / 31 removed lines for four sites, three
-  sticky input classes (polled widget results, retained geometry, and realized
-  scroll windows) must be in each revision, the command sequence did not
-  improve (+2.66% sequence build), and the Quick Open results slot never skipped
-  in 180/180 filter characters.
+  cumulative application build on its session. These are **pilot/research
+  measurements**, not a shipped adoption: the branch is not merged into
+  Scratchpad, and production adoption is on hold pending
+  [#232](https://github.com/Carnival-Science/Alicorn/issues/232).
+  Phase 2's 10.21% and the pilot's 6.24% were measured on different sessions and
+  target different parts of the frame; multiplying the two independent
+  reductions gives an indicative ~15.8% combined typing build ceiling, not a
+  single measured A/B. Regions remain opt-in: the pilot cost 560 added / 31
+  removed lines for four sites, three sticky input classes (polled widget
+  results, retained geometry, and realized scroll windows) must be in each
+  revision, the command sequence did not improve (+2.66% sequence build), and
+  the Quick Open results slot never skipped in 180/180 filter characters.
+- **Material-stream attribution and the instanced-SDF NO-GO
+  ([#104](https://github.com/Carnival-Science/Alicorn/issues/104), phase A).**
+  The 500-card plus 28-row fixture and new solid counters separate visibility and
+  clip resolution from vertex expansion, rebuild, upload, and draw submission.
+  On the offscreen 1x stream a flat surface emits 6 vertices; a rounded relief
+  surface emits 1,404, so the rounded-relief/half-height treatment reaches
+  741,312 vertices and 26.7 MB per pass (build p95 6,981.5 µs) against 3,162
+  vertices and 113.8 KB for flat (build p95 69.1 µs). Scratchpad's dogfood has
+  no visible relief surfaces, so there is no workload on which an instanced-SDF
+  prototype can prove the issue's 2x-or-75%-storage gate; phase B is **NO-GO**.
+  The record recommends the narrower native solid-retention/transform follow-up
+  instead. Counters are measurement-only and do not change the rebuild policy.
 
 ### Validation
 
-- The v0.3.0 local validation pass ran the `tools/test.ps1` stages minus the
+- The local release-profile pass ran the `tools/test.ps1` stages minus the
   external AccessKit interactive UIA check: 891 tests across 19 packages
   (511 runtime, 57 UI, 37 theme, 172 native SDL/GPU, 6 scroll/capture, and the
   host/contract suites), 37/37 `testui`, the foundation executable, theme CLI
@@ -173,15 +314,46 @@ validation records under [`docs/validation`](docs/validation/README.md).
   not run on the local nightly compiler, which compiles `*_test.odin` files and
   therefore pulls `core:testing`/`core:os` into the `js_wasm32` target; the CI
   job on the official `dev-2026-11` release covers that step. See the
-  [v0.3.0 validation record](docs/validation/release-v0.3.0-validation.md) for
-  counts, harness deviations, and the remaining release gates.
+  [line validation record](docs/validation/release-v0.3.0-validation.md) for
+  counts, harness deviations, and stage details.
+- The [issue #146 motion matrix](docs/validation/issue-146-motion-acceptance-matrix-2026-11-21.md)
+  records core evidence for 9 of 9 required edge cases, with documented
+  rejections for predicted-present timestamps, FLIP, and ghost/exit and
+  platform follow-ups for GPU loss, macOS/Linux physical motion, physical
+  refresh capture, and the Scratchpad #60 capture. Linux/Vulkan sampled motion
+  and macOS/Metal host scheduling are complete at CI tier. Physical-Hz and the
+  Scratchpad capture are explicitly scoped to founder-run, and #146 stays open.
+- The [issue #91 dogfood record](docs/validation/issue-91-motion-dogfood-2026-11-22.md)
+  supplies the Reveal port, real 60/120/144/165 Hz captures, motion-only frame
+  counters, and the 89-versus-208-line authoring comparison. It is a dogfood
+  record, not a substitute for the founder's screen recording or a physical
+  macOS/Linux run.
+- A clean Scratchpad hosted-WebGPU smoke against this release candidate passed
+  both the clean-session and recovery-session relaunches on real D3D12 hardware
+  (RTX 2080 SUPER), and the SDL_GPU reference smoke passed the same two legs.
+  The [#231](https://github.com/Carnival-Science/Alicorn/issues/231) review's
+  20 s startup timeout did not reproduce on current master; the review candidate
+  was an earlier commit, and the downstream Scratchpad branch also needed the
+  new `Lighting_Group_Paint` union member added to its trace/test switches before
+  it would compile. That compatibility gap is recorded here so it is not
+  mistaken for the startup timeout.
 - Performance claims above come from the dated reports and raw captures linked
-  from the [v0.3.0 performance ledger](docs/benchmarks/v030-performance-ledger.md);
-  no new benchmark run was performed for the documentation pass, and no number
-  is a cross-machine promise.
-- The hosted checks on the final release SHA are not yet recorded. Windows and
-  macOS foundation jobs, the browser/Linux/macOS WebGPU jobs, native packaging,
-  and icon reproducibility remain release gates.
+  from the [performance ledger](docs/benchmarks/v030-performance-ledger.md); no
+  new benchmark run was performed for the documentation pass, and no number is
+  a cross-machine promise.
+- Release gates are the hosted workflows on the release commit: Windows and
+  macOS foundation, the browser/Linux/macOS WebGPU jobs (including the hosted
+  D3D12 and Vulkan legs), native packaging, and icon reproducibility.
+
+### Dependencies and toolchain
+
+- Odin baseline: `dev-2026-11` in CI; the local captures used
+  `dev-2026-11-nightly:08539cd`. Native WebGPU builds require wgpu-native
+  `v29.0.1.1` matching Odin's `vendor:wgpu` bindings.
+- The native host uses SDL 3.4.20; text shaping remains on vendored Runa 1.5.3;
+  the AccessKit C ABI remains 0.23.1 with the separately pinned Odin binding.
+- Linux font fallback continues to use Fontconfig. Linux still has no AccessKit
+  adapter.
 
 ### Scope and known limitations
 
@@ -196,19 +368,39 @@ validation records under [`docs/validation`](docs/validation/README.md).
   repaints; layout sparsity is milestone 1 and still allocates per-child arrays;
   description reuse cannot help a changed-heavy pass; region adoption has no
   general authoring helper. This release does not claim those issues complete.
+- Keyed regions remain an application-declared research contract, and
+  **production adoption is on hold** pending
+  [#232](https://github.com/Carnival-Science/Alicorn/issues/232). A stale but
+  monotonic revision can still produce stale output, and resolved
+  appearance/theme inputs are not yet part of one revision counter; the runtime
+  cannot observe arbitrary application memory. The #106 oracle and Scratchpad
+  stale-output tests detect the failure class in tests, not in production.
 - The measured wins are concentrated in typing and other interactive churn. The
   nine-action Scratchpad command sequence showed no reliable improvement in any
   capture (and a small, unstable regression for phase 2). The #229 frame-budget
   target still depends on application-side build work.
 - All performance and validation numbers are CPU wall time on one Windows 10
   host (Ryzen 5 7600X, RTX 2080 SUPER), one Odin nightly build, display scale
-  1.0, SDL_GPU reference host. macOS, Linux, hosted WebGPU, GPU execution and
-  scanout, input-to-present latency, IME, and non-1.0 DPI were not measured in
-  these captures.
-- Keyed regions remain an application-declared contract. A stale but monotonic
-  revision can still produce stale output; the runtime cannot observe arbitrary
-  application memory. The #106 oracle and the Scratchpad stale-output guard
-  detect the failure class in tests, not in production.
+  1.0, SDL_GPU reference host unless a hosted leg says otherwise. macOS and
+  Linux have CI-tier evidence, not physical-hardware acceptance. GPU execution
+  timestamps, scanout, input-to-present latency, IME, and non-1.0 DPI were not
+  measured in these captures.
+- The hosted WebGPU renderer remains opt-in and experimental; SDL_GPU remains
+  the default and parity reference. Browser evidence is Chromium-family only;
+  Firefox and Safari are untested. Physical macOS/Linux WebGPU sessions,
+  genuine OS/driver device loss, and WebGPU application packaging remain open.
+- Plugin embedding is a Windows-only Phase B proof of concept. It is not a
+  CLAP/VST3 wrapper, does not cover DAW audio processing, signing, or
+  distribution, and macOS/Linux currently compile-check the typed refusal path
+  only. Wayland is explicitly unsupported; inline IME and assistive-technology
+  validation remain open.
+- The #104 instanced-SDF and #105 scene-local lighting prototypes are recorded
+  as NO-GO research artifacts. The shipped static relief, shape primitives, and
+  two-stop gradients are unchanged by those verdicts. #146's physical refresh
+  and Scratchpad capture records are founder-run and are not claimed as
+  completed by this release.
+- Alicorn remains experimental and API-unstable. This release does not promise
+  production readiness or long-term API compatibility.
 
 ## [0.2.2] - 2026-11-20
 
