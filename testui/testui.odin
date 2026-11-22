@@ -224,6 +224,11 @@ Element :: struct {
 	position_in_set: u64,
 	size_of_set: u64,
 	logical_count: u64,
+	// realized_first/realized_last are the published collection window. They
+	// let static-table and grid checks distinguish a fully realized collection
+	// from a virtualized one without guessing from realization order.
+	realized_first: u64,
+	realized_last: u64,
 	tree_order: u64,
 	is_collection: bool,
 	is_virtual_item: bool,
@@ -1013,6 +1018,8 @@ element_from_semantic :: proc(
 		position_in_set=semantic.position_in_set,
 		size_of_set=semantic.size_of_set,
 		logical_count=semantic.logical_count,
+		realized_first=semantic.realized_first,
+		realized_last=semantic.realized_last,
 		tree_order=semantic.tree_order,
 		is_collection=semantic.is_collection,
 		is_virtual_item=semantic.is_virtual_item,

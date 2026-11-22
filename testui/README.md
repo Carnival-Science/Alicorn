@@ -139,12 +139,13 @@ specific to the backend and display scale. See the
 ## Pattern conformance checks
 
 `pattern_checks.odin` adds opt-in, reusable contract checks for composed
-interaction patterns: a single-select list/combobox, a modal dialog, and roving
-lists and grids. They are assertions over published semantics and normal input,
-not a runtime registry. Resolve the parts by `Query`, an explicit `Semantic_ID`,
-or a stable key, then call `pattern_check`; a failed report carries the failing
-step, expected/actual values, part, semantic/key identity, causal metadata, and
-the bounded turn.
+interaction patterns: a single-select list/combobox, a modal dialog, roving
+lists and grids, radio groups, static tables, and interactive data grids. They
+are assertions over published semantics and normal input, not a runtime
+registry. Resolve the parts by `Query`, an explicit `Semantic_ID`, or a stable
+key, then call `pattern_check`; a failed report carries the failing step,
+expected/actual values, part, semantic/key identity, causal metadata, and the
+bounded turn.
 
 Combobox checks cover the trigger/list/option contract, keyboard and pointer
 open and selection, navigation including disabled skipping and wrap, Escape and
@@ -155,15 +156,25 @@ parity, focus recovery after a child is removed, and nested overlay ownership.
 Roving checks cover one Current item and one focus representative, linear or
 grid-stride navigation, disabled skipping, boundary/wrap policy, Home/End scope,
 reveal, keyboard/pointer activation parity, popup close, and optional Escape
-focus restoration. Optional parts skip phases a composition does not publish.
-See the [reference
+focus restoration. Radio checks cover at-most-one `Checked` (initial no
+selection is permitted), `selected_id` agreement, disabled non-focusability,
+arrow focus movement, and Space/Return/pointer/semantic-Press activation parity.
+Static `Table` checks cover the role/nesting/coordinate/header/logical-count
+contract and optional virtual-row windows without requiring managed focus.
+`Data_Grid` checks add one focused cell, directional navigation, disabled-row and
+disabled-cell skipping, containment, reveal, row/cell selection agreement, and
+activation parity. The two table kinds stay separate: see the [reference
+section](../docs/reference.md#radio-group-static-table-and-data-grid) for the
+Table-versus-Data-Grid distinction and the action-parity rule. Optional parts
+skip phases a composition does not publish. See the [reference
 section](../docs/reference.md#pattern-conformance-checks-testui) for the API,
 the roving configuration, and the negative-control recipe.
 
-`Element` now also snapshots `parent_semantic_id`, `collection_id`,
-`position_in_set`, `size_of_set`, `logical_count`, `tree_order`,
-`is_collection`, `is_virtual_item`, `collection_selected`,
-`collection_current`, `collection_selected_id`, and `collection_current_id`.
+`Element` also snapshots `parent_semantic_id`, `collection_id`,
+`position_in_set`, `size_of_set`, `logical_count`, `realized_first`,
+`realized_last`, `tree_order`, `is_collection`, `is_virtual_item`,
+`collection_selected`, `collection_current`, `collection_selected_id`, and
+`collection_current_id`.
 
 The checks remain subject to the guarantee boundary below: no platform
 accessibility bridge, native IME candidate window, or pixel verification.

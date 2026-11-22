@@ -85,11 +85,18 @@ the current project status.
   `Frame_Stats.stage_timings_ns`; p50/p95/p99, allocation and visit counters;
   real-Scratchpad `--timings` cross-check; measured instrumentation overhead.
 - [Reusable accessibility and interaction pattern checks (2026-11-21)](issue-217-pattern-checks-2026-11-21.md)
-  — test-only `alicorn:testui` conformance checks for a single-select
+  – test-only `alicorn:testui` conformance checks for a single-select
   list/combobox and a composed modal dialog; stock Select, custom userland
   combobox, app-owned modal, six must-fail negative controls, semantic
   relationship snapshots on `Element`, and explicit published-semantics /
   synthetic-input limits.
+- [Radio group, static table, and data-grid pattern checks (2026-11-22)](issue-238-compound-patterns-2026-11-22.md)
+  – three separate `testui` pattern kinds: `.Radio_Group` with at-most-one
+  checked and initial-no-selection support, static `.Table` structure and
+  virtual-window checks, and interactive `.Data_Grid` managed focus,
+  navigation, containment, reveal, selection, and activation parity; positive
+  fixtures and twelve negative controls, plus the advertised-versus-performable
+  runtime findings carried from #218.
 - [Collection parent parameter (2026-11-21)](issue-223-collection-parent-2026-11-21.md)
   — optional `parent` on `semantic_collection_begin`; stock Select, the #218
   pilot package, and the testui custom-combobox fixture now publish their popup
