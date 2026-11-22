@@ -12,6 +12,14 @@ the current project status.
   native smoke), the two harness deviations, and the remaining CI/platform
   gates for an actual cut. The measured performance evidence it consolidates is
   in the [v0.3.0 performance ledger](../benchmarks/v030-performance-ledger.md).
+- [Issue #105 scene-local lighting prototype (2026-11-22)](issue-105-lighting-proto-2026-11-22.md)
+  — **NO-GO** for v0.3.0: an opt-in paint-stream lighting boundary, one cropped
+  capture, and a direct rounded-slab SDF/point-light composite express a true
+  cross-surface shadow with byte-identical replay and 420 KiB/1.43 MiB at
+  1x/2x; on a 2080 SUPER it adds 26–77 us submit-wait p50 over the relief
+  baseline, but the probe is not perceptually clearer than the existing relief
+  and no integrated-GPU-class evidence exists. Research design:
+  [issue-105-lighting](../research/issue-105-lighting.md).
 - [Issue #197 configurable command bindings (2026-11-21)](issue-197-command-bindings-2026-11-21.md)
   - opt-in `Binding_Table`/`on_command` on `ui.run`, one host-neutral
   `Key_Event` for native and headless input, application-owned `Action_ID`

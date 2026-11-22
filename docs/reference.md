@@ -863,6 +863,28 @@ they exceed the resolved bounds. Radius changes invalidate surface paint but
 do not reshape text or rerun layout. General property resolution and
 metric-token dependencies remain outside the current contract.
 
+### Experimental scene-local lighting
+
+A prototype experiment (issue #105) can shade a `material_group`'s non-flat
+surfaces with one declared point-light set. It is **not** part of the v0.3.0
+shipping contract, has no WebGPU/browser host support, and its measured outcome
+is a NO-GO (see the
+[validation record](validation/issue-105-lighting-proto-2026-11-22.md)). The
+API is per frame and paint-stream only:
+
+```odin
+alicorn.lighting_group(&ui, group_id, lights[:], ambient=0.48, shadows=true)
+```
+
+The runtime emits a single `Lighting_Group_Paint` boundary after the group's last
+painted command when the frame has a declaration and at least one non-flat
+surface for that group; a frame with a backdrop boundary emits none. Lighting
+changes pixels only: layout, clips, painter order, hit testing, focus, semantics,
+and input routing never change. One group (8 surfaces, 4 lights) per frame; text
+is never a shadow caster. Hosts that do not understand the marker paint the group
+normally. The full boundary and determinism contract is in
+[the research record](research/issue-105-lighting.md).
+
 The ergonomic `ui.panel` and `ui.box` helpers accept `corner_radii` while
 preserving their existing uniform `radius` argument. A nonzero `corner_radii`
 value takes precedence when both are supplied. Existing named
