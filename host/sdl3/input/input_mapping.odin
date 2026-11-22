@@ -133,6 +133,10 @@ pointer_button_from_sdl :: proc(button: int, modifiers: alicorn.Input_Modifiers)
 			return alicorn.POINTER_BUTTON_SECONDARY
 		}
 	}
+	switch button {
+	case sdl3.BUTTON_X1: return alicorn.POINTER_BUTTON_BACK
+	case sdl3.BUTTON_X2: return alicorn.POINTER_BUTTON_FORWARD
+	}
 	return button
 }
 

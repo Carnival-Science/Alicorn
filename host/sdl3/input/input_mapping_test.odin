@@ -48,6 +48,33 @@ test_sdl_pointer_mapping_preserves_coordinates_modifiers_and_clicks :: proc(t: ^
 }
 
 @(test)
+test_sdl_pointer_back_forward_buttons_are_preserved :: proc(t: ^testing.T) {
+	testing.expect(t, pointer_button_from_sdl(sdl3.BUTTON_LEFT, {}) == alicorn.POINTER_BUTTON_PRIMARY,
+		"the left button remains the primary pointer button")
+	testing.expect(t, pointer_button_from_sdl(sdl3.BUTTON_MIDDLE, {}) == alicorn.POINTER_BUTTON_MIDDLE,
+		"the middle button remains the middle pointer button")
+	testing.expect(t, pointer_button_from_sdl(sdl3.BUTTON_RIGHT, {}) == alicorn.POINTER_BUTTON_SECONDARY,
+		"the right button remains the secondary pointer button")
+	testing.expect(t, pointer_button_from_sdl(sdl3.BUTTON_X1, {}) == alicorn.POINTER_BUTTON_BACK,
+		"SDL X1 is the back navigation button")
+	testing.expect(t, pointer_button_from_sdl(sdl3.BUTTON_X2, {}) == alicorn.POINTER_BUTTON_FORWARD,
+		"SDL X2 is the forward navigation button")
+
+	// Down and up must agree on the logical button even though the host caches
+	// the down-time mapping by physical SDL button.
+	event := sdl3.Event{}
+	event.type = .MOUSE_BUTTON_DOWN
+	event.button.button = sdl3.BUTTON_X1
+	state := Pointer_Button_State{}
+	down, down_ok := pointer_event_from_sdl(event, {}, &state)
+	event.type = .MOUSE_BUTTON_UP
+	up, up_ok := pointer_event_from_sdl(event, {}, &state)
+	testing.expect(t, down_ok && up_ok &&
+		down.button == alicorn.POINTER_BUTTON_BACK && up.button == alicorn.POINTER_BUTTON_BACK,
+		"SDL X1 down/up survive the ordinary pointer mapping unchanged")
+}
+
+@(test)
 test_sdl_scroll_mapping_preserves_content_direction_and_metadata :: proc(t: ^testing.T) {
 	wheel := sdl3.MouseWheelEvent{
 		x=1.5,
