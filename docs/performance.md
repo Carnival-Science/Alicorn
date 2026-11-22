@@ -7,6 +7,10 @@ limitations before using a number.
 
 ## Reports
 
+- [v0.3.0 measured performance ledger — Windows (2026-11-21)](benchmarks/v030-performance-ledger.md):
+  one consolidated stage ledger for the #227/#228/#229/#230/#231 work, with
+  measured results, report and raw links, per-stage limits, the #231
+  localization map, the Scratchpad A/B headline, and which issues remain open.
 - [Issue #229 Phase 2 description reuse — Windows
   (2026-11-21)](validation/issue-229-phase2-description-reuse-2026-11-21.md):
   exact retained-description and structure-sequence gates, field-coverage

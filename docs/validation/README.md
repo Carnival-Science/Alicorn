@@ -7,6 +7,11 @@ the current project status.
 
 ## Current acceptance and platform limits
 
+- [v0.3.0 release validation (2026-11-21)](release-v0.3.0-validation.md) — local
+  release-profile suite (891 tests across 19 packages, 37 testui, examples,
+  native smoke), the two harness deviations, and the remaining CI/platform
+  gates for an actual cut. The measured performance evidence it consolidates is
+  in the [v0.3.0 performance ledger](../benchmarks/v030-performance-ledger.md).
 - [Issue #197 configurable command bindings (2026-11-21)](issue-197-command-bindings-2026-11-21.md)
   - opt-in `Binding_Table`/`on_command` on `ui.run`, one host-neutral
   `Key_Event` for native and headless input, application-owned `Action_ID`

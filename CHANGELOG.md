@@ -4,6 +4,212 @@ All notable Alicorn releases are recorded here. The project release notes are
 consolidated in this file; vendored components retain their own upstream
 changelogs.
 
+## [0.3.0] - Unreleased
+
+Alicorn is an experimental native GUI runtime for Odin. This release candidate
+collects the v0.3.0 milestone work after v0.2.2. Release date: pending.
+
+Compare: [v0.2.2...master](https://github.com/Carnival-Science/Alicorn/compare/v0.2.2...master)
+
+This draft details the performance and correctness slice that the release
+validation pass measured; the other merged v0.3.0 work (configurable command
+bindings [#197](https://github.com/Carnival-Science/Alicorn/issues/197),
+invalidation-frontier diagnostics
+[#193](https://github.com/Carnival-Science/Alicorn/issues/193), roving focus
+[#225](https://github.com/Carnival-Science/Alicorn/issues/225), reusable
+pattern checks [#217](https://github.com/Carnival-Science/Alicorn/issues/217),
+collection parents [#223](https://github.com/Carnival-Science/Alicorn/issues/223),
+and composable Select parts
+[#218](https://github.com/Carnival-Science/Alicorn/issues/218)) keeps its own
+validation records under [`docs/validation`](docs/validation/README.md).
+
+### Highlights
+
+- **Sparse-update performance, measured per stage.** Region-key resolution is
+  indexed ([#227](https://github.com/Carnival-Science/Alicorn/issues/227)),
+  display finalization splices the changed range instead of the whole list
+  ([#228](https://github.com/Carnival-Science/Alicorn/issues/228)), a
+  single-child `Column` placement change no longer visits every sibling
+  ([#230](https://github.com/Carnival-Science/Alicorn/issues/230)), and
+  reconcile reuses an exactly matching retained description
+  ([#229](https://github.com/Carnival-Science/Alicorn/issues/229)). On the
+  synthetic 1,000-row fixture a hover repaint fell from 7,003 to 2 composition
+  visits and a one-row width change from 2,013 to 11 layout visits; on real
+  Scratchpad a 24-character typing burst builds **10.21%** less cumulative
+  application time. The measured wins do **not** extend to Scratchpad's
+  open/close/switch command sequence, which does not exercise these paths; the
+  [v0.3.0 performance ledger](docs/benchmarks/v030-performance-ledger.md) states
+  each stage's evidence, limits, and open status.
+- **Keyed regions proved on a real application.** The
+  [#231](https://github.com/Carnival-Science/Alicorn/issues/231) pilot and the
+  adopted tab-strip/workspace-tree regions describe 13.6% fewer nodes per typed
+  character and skip six region bodies per character. The results slot of Quick
+  Open does not benefit, and the command sequence still does not move; the
+  research record keeps regions opt-in and rejects a broad conversion.
+- **Paint-only theme replacement is correct again.** A color-only
+  `style_theme_replace` now recomputes description-resolved text ink in the same
+  per-node walk that advances paint, so a live theme edit no longer leaves
+  retained text on the previous theme's color
+  ([#219](https://github.com/Carnival-Science/Alicorn/issues/219)).
+- **Investigation closures.** The [#190](https://github.com/Carnival-Science/Alicorn/issues/190)
+  sparse-update benchmark now supplies the slope and stage-attribution evidence
+  the performance issues build on; [#106](https://github.com/Carnival-Science/Alicorn/issues/106)
+  closed with the seeded coherence oracle and its #193 extensions;
+  [#120](https://github.com/Carnival-Science/Alicorn/issues/120) closed with the
+  connected-tab visual audit (options A and C accepted, no general shoulder
+  primitive). [#111](https://github.com/Carnival-Science/Alicorn/issues/111)
+  retained effects stay outside this milestone's scope and evidence.
+
+### Added
+
+- Added the source-visible sparse-update benchmark fixture and runner
+  (`benchmarks/diagnostics/issue190_sparse_updates.odin`). It measures root,
+  keyed-region, and hand-optimized application paths at 100, 1,000, and 3,000
+  live controls plus a 100,000-row virtual leg, and compares every update with a
+  fresh runtime through public node, semantic, text, and paint queries. The
+  capture is [recorded with raw output](docs/benchmarks/issue190-sparse-updates-windows-2026-11-21.md).
+- Added per-stage runtime attribution: `Frame_Stats.stage_timings_ns` splits
+  description, reconcile hash/copy, structure diff, measure, text shaping,
+  layout, semantic sync, paint, composition, and finalize, and `testui` exposes
+  the same buckets through `Turn_Work`. The paired overhead check measured
+  +0.029 ms on the fixture's 0.475 ms typing p95 (about 0.35% of a 120 Hz
+  frame), with no counter or allocation change.
+- Added a Scratchpad-shaped workload scene and `tools/bench_scratchpad_workload.ps1`
+  for typing, scrolling, selection, resize, tabs, and idle across SDL_GPU,
+  hosted D3D12, and hosted Vulkan.
+- Added correctness oracles for the sparse paths: sparse-display output is
+  compared byte-for-byte with a forced full finalization (including every node's
+  `display_index`), and sparse layout is compared with `force_full_layout` for
+  geometry, clips, measure constraints, and sidecar consistency. A maintained
+  region-key index has a bounded randomized consistency check, and
+  `description_hash` now covers region membership, semantic identity, and scroll
+  line metrics.
+
+### Fixed
+
+- Fixed paint-only theme replacement leaving description-resolved text ink
+  stale. A registered theme replacement recomputes the `Text` role's baked color
+  for affected Text, Text_Field, and Text_Composition nodes while keeping
+  explicit caller colors caller-owned. The #190 theme probe now reports
+  `status=updated` rather than the recorded stale color, and
+  `runtime/style_theme_replace_test.odin` pins the behavior.
+
+### Performance and measurement
+
+- **Indexed region lookup ([#227](https://github.com/Carnival-Science/Alicorn/issues/227)).**
+  `invalidate_region` resolves keys through a maintained key-to-live-region
+  index instead of an all-node scan. At 3,000 rows the timed invalidation block
+  fell from 595.2 µs to 3.4 µs for one region label change (175x), from 968.9 µs
+  to 5.6 µs for a two-row selection (173x), and from 2,782.4 µs to 7.9 µs for
+  the four-key application path (352x). The index adds about 192-237 bytes and
+  two allocations per live key (0.36% of tracked live bytes for 3,000 region
+  rows). The end-to-end update remains dominated by the O(all live)
+  description/reconcile header walk that #227 does not change, and Scratchpad
+  declares no regions, so this is not an application-visible win there.
+- **Sparse display finalization ([#228](https://github.com/Carnival-Science/Alicorn/issues/228)).**
+  Per-subtree display-range splices finalize only the repainted run. At 1,000
+  rows a hover went from 7,003 composition visits and multiple full passes to 2
+  visits, 4 finalized commands, and no full pass (wall p50 1.73 → 1.03 ms); at
+  3,000 rows from 21,003 visits to 2 (8.41 → 3.04 ms). A two-row selection fell
+  from 7,004-7,006 visits to 4-8. Count-changing repaints splice while the moved
+  tail is at most `max(256, 8 × |delta|)` commands; focusing the last of 400
+  buttons costs 10.0 µs instead of a 528.0 µs full rebuild. Structure, overlays,
+  motion frames, backdrop boundaries, scrolling regions, clipping nodes,
+  inherited-presentation changes, scale changes, and broad repaints over the
+  policy still take a full pass by design. On Scratchpad the path engaged at
+  most once per process (0.4 µs) and did not reduce full-pass counts.
+- **Sparse column placement ([#230](https://github.com/Carnival-Science/Alicorn/issues/230),
+  milestone 1).** A single child's changed size in a non-scrolling
+  `.Start` Column now places only the affected suffix. The #190 one-row width
+  leg fell from 213/2,013/6,013 layout visits at 100/1,000/3,000 rows to 11 at
+  every size in all three authoring modes; the layout stage itself fell roughly
+  a third to a half. The path is deliberately bounded: grow/compress,
+  positioned children, scrolling/virtual parents, alignment, gap, padding,
+  root-viewport, grid/split/adaptive, and cross-axis propagation keep the
+  reference path, which also remains the test oracle. Scratchpad's command
+  sequence never activates it.
+- **Exact description reuse ([#229](https://github.com/Carnival-Science/Alicorn/issues/229),
+  phases 1 and 2).** Phase 1 added the stage ledger. Phase 2 compares each
+  pending description with the retained node and skips the hash, copy, dirty
+  marking, measure observation, layout propagation, paint queueing, text-run
+  decision, and structure diff when they are exactly equal. On the 156-node
+  Scratchpad-shaped fixture, typing description p95 fell 0.504 → 0.401 ms on
+  SDL_GPU (-20.3%), 0.519 → 0.363 ms on D3D12 (-30.1%), and 0.500 → 0.380 ms on
+  Vulkan (-24.0%); the copy bucket fell 0.122 → 0.009 ms and the structure diff
+  0.018 → 0.000 ms. Scroll, selection, tabs, and idle improved by 12-36%; resize,
+  which is layout-dominated, improved only 3-9%. A high-churn arm shows no
+  regression. On real Scratchpad the 393-node frame sees 82.4% exact matches
+  over the command sequence and 99.65% per typing character; the typing burst's
+  cumulative application build fell **10.21%** over ten matched pairs
+  (76.67 → 66.68 ms), while per-character describe windows were flat. The
+  command sequence was +3.28% cumulative build / +8.31% sequence build across
+  thirteen pairs with unstable sign; it is not claimed as an improvement. The
+  honest scaled expectation for the real frame is 0.25-0.40 ms per description
+  pass, about 3-4.5% of the 8.4-9.1 ms step.
+- **Description locality and keyed regions ([#231](https://github.com/Carnival-Science/Alicorn/issues/231)).**
+  In the Scratchpad pilot, four keyed regions describe 741 instead of 858 nodes
+  per typed character (13.6% fewer), skip six bodies per character, and reduce
+  the runtime description stage 7.1%; cumulative application build fell 6.24%
+  over ten pairs. The adopted two-region branch reproduces the node reduction
+  (-13.6%), the six skips, and a 7.0% reconcile reduction, with 4.41% lower
+  cumulative application build on its session. Phase 2's 10.21% and the pilot's
+  6.24% were measured on different sessions and target different parts of the
+  frame; multiplying the two independent reductions gives an indicative ~15.8%
+  combined typing build ceiling, not a single measured A/B. Regions remain
+  opt-in: the pilot cost 560 added / 31 removed lines for four sites, three
+  sticky input classes (polled widget results, retained geometry, and realized
+  scroll windows) must be in each revision, the command sequence did not
+  improve (+2.66% sequence build), and the Quick Open results slot never skipped
+  in 180/180 filter characters.
+
+### Validation
+
+- The v0.3.0 local validation pass ran the `tools/test.ps1` stages minus the
+  external AccessKit interactive UIA check: 891 tests across 19 packages
+  (511 runtime, 57 UI, 37 theme, 172 native SDL/GPU, 6 scroll/capture, and the
+  host/contract suites), 37/37 `testui`, the foundation executable, theme CLI
+  checks, and the native text-input contract. All 19 examples built, and the
+  release-profile native smoke passed. The browser package-boundary build could
+  not run on the local nightly compiler, which compiles `*_test.odin` files and
+  therefore pulls `core:testing`/`core:os` into the `js_wasm32` target; the CI
+  job on the official `dev-2026-11` release covers that step. See the
+  [v0.3.0 validation record](docs/validation/release-v0.3.0-validation.md) for
+  counts, harness deviations, and the remaining release gates.
+- Performance claims above come from the dated reports and raw captures linked
+  from the [v0.3.0 performance ledger](docs/benchmarks/v030-performance-ledger.md);
+  no new benchmark run was performed for the documentation pass, and no number
+  is a cross-machine promise.
+- The hosted checks on the final release SHA are not yet recorded. Windows and
+  macOS foundation jobs, the browser/Linux/macOS WebGPU jobs, native packaging,
+  and icon reproducibility remain release gates.
+
+### Scope and known limitations
+
+- [#227](https://github.com/Carnival-Science/Alicorn/issues/227) is closed.
+  [#228](https://github.com/Carnival-Science/Alicorn/issues/228),
+  [#229](https://github.com/Carnival-Science/Alicorn/issues/229),
+  [#230](https://github.com/Carnival-Science/Alicorn/issues/230), and
+  [#231](https://github.com/Carnival-Science/Alicorn/issues/231) remain open.
+  Display finalization still takes a full pass for structure and order changes,
+  command-count changes outside the tail policy, ancestor presentation changes,
+  motion frames, backdrop boundaries, overlays, scroll regions, and broad
+  repaints; layout sparsity is milestone 1 and still allocates per-child arrays;
+  description reuse cannot help a changed-heavy pass; region adoption has no
+  general authoring helper. This release does not claim those issues complete.
+- The measured wins are concentrated in typing and other interactive churn. The
+  nine-action Scratchpad command sequence showed no reliable improvement in any
+  capture (and a small, unstable regression for phase 2). The #229 frame-budget
+  target still depends on application-side build work.
+- All performance and validation numbers are CPU wall time on one Windows 10
+  host (Ryzen 5 7600X, RTX 2080 SUPER), one Odin nightly build, display scale
+  1.0, SDL_GPU reference host. macOS, Linux, hosted WebGPU, GPU execution and
+  scanout, input-to-present latency, IME, and non-1.0 DPI were not measured in
+  these captures.
+- Keyed regions remain an application-declared contract. A stale but monotonic
+  revision can still produce stale output; the runtime cannot observe arbitrary
+  application memory. The #106 oracle and the Scratchpad stale-output guard
+  detect the failure class in tests, not in production.
+
 ## [0.2.2] - 2026-11-20
 
 Alicorn is an experimental native GUI runtime for Odin. This release collects
