@@ -47,6 +47,13 @@ the current project status.
   ten new runtime tests including per-field fresh-runtime equivalence, paired
   before/after across SDL_GPU/D3D12/Vulkan plus a high-churn scenario, and the
   scaled expectation for the real 393-node Scratchpad frame.
+- [Issue #104 phase A material-stream bottleneck (2026-11-22)](issue-104-phase-a-2026-11-22.md)
+  — same 500-card + 28-row stream across flat/rounded/relief treatments,
+  eight conditions, and 1x/1.25x/1.5x/2x offscreen scales; native solid
+  build/visibility/expansion, draw-call, upload, capacity-growth, and
+  device-idle counters; the CPU-expansion-versus-retained-mesh verdict,
+  the Scratchpad/Acetate dogfood answer, and the Phase B
+  instanced-SDF/retention disposition.
 - [Issue #229 Phase 1 performance harness and baseline (2026-11-21)](issue-229-phase1-baseline-2026-11-21.md)
   — Scratchpad-shaped workload matrix (dense virtual editor, 1k-node tree, tabs,
   pinned gradient panel, focused field) across SDL_GPU, hosted D3D12, and hosted
