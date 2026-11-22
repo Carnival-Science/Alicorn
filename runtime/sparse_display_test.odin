@@ -963,8 +963,14 @@ test_sparse_display_count_change_splice_cost_bounded :: proc(t: ^testing.T) {
 		internal_ns/u64(iterations), bytes_moved/u64(iterations),
 		tail_nodes/u64(iterations), tail_commands/u64(iterations))
 	testing.expect(t, internal_ns > 0, "splice timing must be recorded")
-	testing.expect(t, splice_p50 < full_p50,
-		"the bounded-tail splice should be cheaper than a full rebuild of the same change")
+	// The deterministic splice counters above are host-independent. This
+	// wall-clock ordering is only a release gate on the Windows reference host:
+	// paravirtual macOS CI timing is too noisy to prove it (and is not the
+	// platform the #228 capture measured).
+	when ODIN_OS == .Windows {
+		testing.expect(t, splice_p50 < full_p50,
+			"the bounded-tail splice should be cheaper than a full rebuild of the same change")
+	}
 
 	// Late-node leg: the changed node is last, so the moved tail is empty at
 	// every display size. This isolates fixup cost from display length.
@@ -1010,6 +1016,8 @@ test_sparse_display_count_change_splice_cost_bounded :: proc(t: ^testing.T) {
 	late_full_p50 := sparse_display_percentile_i64(late_full_ns[:], 50)
 	fmt.printf("SPARSE_M2_BENCH_LATE fixture=buttons%d updates=%d splice_update_p50_ns=%d full_update_p50_ns=%d tail_nodes=%d\n",
 		late_count, iterations, late_splice_p50, late_full_p50, late_tail_nodes)
-	testing.expect(t, late_splice_p50 < late_full_p50,
-		"a late-node splice should be cheaper than a full rebuild of the same change")
+	when ODIN_OS == .Windows {
+		testing.expect(t, late_splice_p50 < late_full_p50,
+			"a late-node splice should be cheaper than a full rebuild of the same change")
+	}
 }
