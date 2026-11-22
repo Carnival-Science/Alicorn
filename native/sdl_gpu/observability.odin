@@ -241,11 +241,36 @@ native_renderer_counters :: proc(
 	if solid_renderer != nil {
 		counters.solid_batches = solid_renderer.batches
 		counters.solid_vertices_uploaded = solid_renderer.vertices_uploaded
+		counters.solid_draw_calls = solid_renderer.draw_calls
+		counters.solid_build_calls = solid_renderer.build_calls
+		counters.solid_build_ns = solid_renderer.build_ns
+		counters.solid_build_p50_ns = diag.timing_percentile(solid_renderer.build_samples[:solid_renderer.build_sample_count], 0.50)
+		counters.solid_build_p95_ns = diag.timing_percentile(solid_renderer.build_samples[:solid_renderer.build_sample_count], 0.95)
+		counters.solid_build_p99_ns = diag.timing_percentile(solid_renderer.build_samples[:solid_renderer.build_sample_count], 0.99)
+		counters.solid_visibility_ns = solid_renderer.visibility_ns
+		counters.solid_expand_ns = solid_renderer.expand_ns
+		counters.solid_vertex_capacity = u64(solid_renderer.vertex_capacity)
+		counters.solid_vertex_capacity_peak = u64(solid_renderer.capacity.peak_capacity)
+		counters.solid_vertex_growth_events = solid_renderer.capacity.growth_events
+		counters.solid_vertex_growth_ns = solid_renderer.capacity.growth_ns
+		counters.solid_device_idle_waits = solid_renderer.capacity.idle_waits
+		counters.solid_device_idle_ns = solid_renderer.capacity.idle_wait_ns
+		counters.icon_vertex_growth_events = solid_renderer.icons.capacity.growth_events
+		counters.icon_device_idle_waits = solid_renderer.icons.capacity.idle_waits
+		counters.image_vertex_growth_events = solid_renderer.images.capacity.growth_events
+		counters.image_device_idle_waits = solid_renderer.images.capacity.idle_waits
 		counters.icon_atlas_uploads = solid_renderer.icons.atlas_uploads
 		counters.icon_atlas_upload_bytes = solid_renderer.icons.atlas_upload_bytes
 		counters.icon_mesh_rebuilds = solid_renderer.icons.mesh_rebuilds
 		counters.icon_mesh_cache_hits = solid_renderer.icons.mesh_cache_hits
 		counters.icon_vertex_uploads = solid_renderer.icons.vertices_uploaded
+	}
+	if text_renderer != nil {
+		counters.text_vertex_capacity_peak = u64(text_renderer.capacity.peak_capacity)
+		counters.text_vertex_growth_events = text_renderer.capacity.growth_events
+		counters.text_vertex_growth_ns = text_renderer.capacity.growth_ns
+		counters.text_device_idle_waits = text_renderer.capacity.idle_waits
+		counters.text_device_idle_ns = text_renderer.capacity.idle_wait_ns
 	}
 	return counters
 }

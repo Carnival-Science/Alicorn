@@ -12,6 +12,10 @@ without crowding the project’s user and contributor guides.
   in all three apps, with a measured 116–121 ms first-fallback stall.
   **NO-GO as prototyped** under the issue's interaction-latency rule; the
   shipped default stays eager and the lazy path is opt-in.
+- [Issue #104 phase A material-stream bottleneck — Windows (2026-11-22)](../validation/issue-104-phase-a-2026-11-22.md)
+  — same-stream flat/rounded/relief expansion at 1x-2x, the per-frame native
+  solid rebuild that dominates pack time, the hosted-WebGPU retention
+  comparison, and the phase B disposition.
 - [Native SDL_GPU startup attribution — Issue #172 phase 1, Windows (2026-11-21)](native-startup-attribution-windows-2026-11-21.md)
   — measurement-only startup markers plus a fresh-process attribution of
   working set, private bytes, GPU process memory, runtime requested bytes and

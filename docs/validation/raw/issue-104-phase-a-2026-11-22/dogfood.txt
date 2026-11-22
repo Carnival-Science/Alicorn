@@ -1,0 +1,3 @@
+﻿[alicorn-material-dogfood] scene=scratchpad_scene surfaces=78 rounded=59 flat=78 relief=0 heights_nonzero=0 other_commands=40 note=scratchpad_scene_representative
+[alicorn-material-dogfood] scene=dogfood_flat_control surfaces=248 rounded=6 flat=248 relief=0 heights_nonzero=0 other_commands=0 note=acetate_style_flat_control
+
