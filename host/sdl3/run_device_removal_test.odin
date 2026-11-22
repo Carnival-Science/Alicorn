@@ -7,6 +7,7 @@ import "core:fmt"
 import "core:os"
 import "vendor:sdl3"
 import "vendor:wgpu"
+import alicorn "alicorn:runtime"
 
 // ALICORN_WEBGPU_TEST_D3D12_REMOVE_DEVICE enables the induced-backend-removal
 // rung of the device-loss ladder. It is a validation build define, never a
@@ -92,6 +93,30 @@ when ALICORN_WEBGPU_TEST_D3D12_REMOVE_DEVICE {
 		)
 	}
 
+	// The motion trace records retained owner counts at the induced loss and
+	// after reattachment, so a validation run can prove motion was live through
+	// the loss rather than inferring it from adjacent fixture prints.
+	@(private)
+	sdl3_webgpu_run_test_trace_motion :: proc(application: ^SDL3_WebGPU_Application, label: string) {
+		if device_removal_request_ns == 0 { return }
+		active_owners := 0
+		active_properties := 0
+		if application != nil {
+			if rt, status := alicorn.hosted_runtime_borrow(&application.hosted); status == .Ok && rt != nil {
+				activity := alicorn.motion_activity(rt)
+				active_owners = activity.active_owners
+				active_properties = activity.active_properties
+			}
+		}
+		fmt.printf(
+			"[alicorn-webgpu] test removal trace: motion %s active_owners=%d active_properties=%d elapsed_ns=%d\n",
+			label,
+			active_owners,
+			active_properties,
+			u64(sdl3.GetTicksNS())-device_removal_request_ns,
+		)
+	}
+
 	@(private)
 	sdl3_webgpu_run_test_trace_loss :: proc(
 		reason: wgpu.DeviceLostReason,
@@ -119,6 +144,9 @@ when ALICORN_WEBGPU_TEST_D3D12_REMOVE_DEVICE {
 
 	@(private)
 	sdl3_webgpu_run_test_trace :: proc(_: string) {}
+
+	@(private)
+	sdl3_webgpu_run_test_trace_motion :: proc(_: ^SDL3_WebGPU_Application, _: string) {}
 
 	@(private)
 	sdl3_webgpu_run_test_trace_loss :: proc(

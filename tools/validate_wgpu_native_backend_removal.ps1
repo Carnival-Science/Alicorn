@@ -67,7 +67,8 @@ try {
     $cases = @(
         @{ Name = 'ordinary-smoke'; Arguments = @('--smoke', "--backend=$Backend"); ExpectRecovery = $false },
         @{ Name = 'synthetic-callback'; Arguments = @('--smoke', '--test-simulate-unexpected-device-loss', "--backend=$Backend"); ExpectRecovery = $true },
-        @{ Name = 'primary-removal'; Arguments = @('--smoke', '--test-remove-d3d12-device', "--backend=$Backend"); ExpectRecovery = $true }
+        @{ Name = 'primary-removal'; Arguments = @('--smoke', '--test-remove-d3d12-device', "--backend=$Backend"); ExpectRecovery = $true },
+        @{ Name = 'removal-during-motion'; Arguments = @('--removal-motion-probe', '--test-remove-d3d12-device', "--backend=$Backend"); ExpectRecovery = $true; ExpectMotion = $true }
     )
     for ($i = 1; $i -le $RemovalRepetitions; $i += 1) {
         $cases += @{
@@ -95,16 +96,36 @@ try {
         $callbackFired = [bool]($lines | Select-String -SimpleMatch 'device-lost callback fired reason=Unknown' | Select-Object -First 1)
         $recovered = [bool]($lines | Select-String -SimpleMatch 'WebGPU device recovered' | Select-Object -First 1)
         $postFrame = [bool]($lines | Select-String -SimpleMatch 'post-recovery frame presented' | Select-Object -First 1)
+        $motionAtLoss = $false
+        $motionAfterRecovery = $false
+        $motionSmokePass = $false
+        $motionAfterPostFrame = $false
+        if ($case.ExpectMotion) {
+            $motionAtLoss = [bool]($lines | Select-String -Pattern 'motion before-removal active_owners=[1-9]' | Select-Object -First 1)
+            $motionAfterRecovery = [bool]($lines | Select-String -Pattern 'motion after-recovery-reattach active_owners=[1-9]' | Select-Object -First 1)
+            $motionSmokePass = [bool]($lines | Select-String -SimpleMatch 'motion_removal_smoke PASS' | Select-Object -First 1)
+            $postFrameIndex = -1
+            $lastMotionActiveIndex = -1
+            for ($lineIndex = 0; $lineIndex -lt $lines.Count; $lineIndex += 1) {
+                if ($lines[$lineIndex] -match 'post-recovery frame presented') { $postFrameIndex = $lineIndex }
+                if ($lines[$lineIndex] -match 'motion_probe tick \d+ active_owners=[1-9]') { $lastMotionActiveIndex = $lineIndex }
+            }
+            $motionAfterPostFrame = $postFrameIndex -ge 0 -and $lastMotionActiveIndex -gt $postFrameIndex
+        }
 
         $ok = $exitCode -eq 0
         if ($case.Name -like '*removal*') {
             $ok = $ok -and $removalIssued -and $callbackFired -and $recovered -and $postFrame
         }
         if ($case.ExpectRecovery) { $ok = $ok -and $recovered }
+        if ($case.ExpectMotion) {
+            $ok = $ok -and $motionAtLoss -and $motionAfterRecovery -and $motionSmokePass -and $motionAfterPostFrame
+        }
         if (-not $ok) { $failures += 1 }
-        Write-Host ("{0}: {1} (exit={2} removal={3} callback={4} recovered={5} post_frame={6})" -f
+        Write-Host ("{0}: {1} (exit={2} removal={3} callback={4} recovered={5} post_frame={6} motion_at_loss={7} motion_after_recovery={8} motion_after_post_frame={9} motion_smoke={10})" -f
             $case.Name, $(if ($ok) { 'PASS' } else { 'FAIL' }), $exitCode,
-            $removalIssued, $callbackFired, $recovered, $postFrame)
+            $removalIssued, $callbackFired, $recovered, $postFrame,
+            $motionAtLoss, $motionAfterRecovery, $motionAfterPostFrame, $motionSmokePass)
     }
 
     if ($failures -ne 0) { throw "$failures induced-device-removal case(s) failed; see $outputPath" }

@@ -621,6 +621,7 @@ sdl3_webgpu_run_recovery_step :: proc(
 		state.device_lost = false
 		presentation_host.webgpu_recovery_succeed(&state.recovery_policy)
 		sdl3_webgpu_run_test_trace("replacement device and presenters reattached")
+		sdl3_webgpu_run_test_trace_motion(application, "after-recovery-reattach")
 		fmt.println("[alicorn-webgpu] WebGPU device recovered; retained application state preserved")
 		return false
 	}
@@ -1003,6 +1004,7 @@ sdl3_webgpu_run :: proc(
 					"[alicorn-webgpu] test injection: removing the live D3D12 backend device with ID3D12Device5::RemoveDevice; harness-induced backend removal, not an OS or driver-initiated loss",
 				)
 				sdl3_webgpu_run_test_mark_removal_request()
+				sdl3_webgpu_run_test_trace_motion(&application, "before-removal")
 				if !sdl3_webgpu_run_remove_d3d12_device_for_testing(&state) {
 					fmt.eprintln("[alicorn-webgpu] test injection: backend device removal failed")
 					return .Device_Lost

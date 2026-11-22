@@ -69,6 +69,16 @@ App :: struct {
 	waker: ui.Application_Waker,
 	name: ui.Text_Buffer,
 	timing_motion: bool,
+	// --removal-motion-probe pairs a continuously re-armed retained motion with
+	// the induced D3D12 backend-removal harness. Builds that do not define
+	// ALICORN_WEBGPU_TEST_D3D12_REMOVE_DEVICE can still select the flag, but no
+	// removal hook exists there; the matrix record only uses the validation
+	// build. The host logs motion owner counts at removal and after recovery.
+	removal_motion_probe: bool,
+	removal_motion_phase: bool,
+	removal_motion_ticks: int,
+	removal_motion_active_ticks: int,
+	removal_motion_settled_after_stop: bool,
 	windows: ui.UI_Window_Service,
 	dialogs: ui.UI_Dialog_Service,
 	quit: alicorn.Hosted_Quit_Service,
@@ -243,6 +253,15 @@ render :: proc(app: ^App, ctx: ^ui.UI) {
 		}
 		if app.timing_motion {
 			if ui.row(ctx, height=24, label="timing-motion-probe") {
+				// The removal probe ping-pongs the target so a live motion owner
+				// spans the induced loss and recovery window. The ordinary
+				// --timing-motion probe keeps its fixed 180 -> -180 reveal.
+				target_x := f64(180)
+				from_x := f64(-180)
+				if app.removal_motion_probe && app.removal_motion_phase {
+					target_x = -180
+					from_x = 180
+				}
 				marker := alicorn.container_begin(
 					ctx,
 					.Container,
@@ -254,9 +273,9 @@ render :: proc(app: ^App, ctx: ^ui.UI) {
 				_ = ui.motion(
 					ctx,
 					marker,
-					ui.Motion_Target{translation=ui.Motion_Vector2{180, 0}, has_translation=true},
+					ui.Motion_Target{translation=ui.Motion_Vector2{target_x, 0}, has_translation=true},
 					.Reveal,
-					ui.Motion_Vector2{-180, 0},
+					ui.Motion_Vector2{from_x, 0},
 				)
 				alicorn.container_end(ctx)
 			}
@@ -323,6 +342,50 @@ live_resize_after_frame :: proc(app: ^App, rt: ^alicorn.Runtime) {
 	if alicorn.motion_activity(rt).active_owners > 0 { return }
 	app.live_motion_phase = !app.live_motion_phase
 	alicorn.invalidate_root(rt, "live-resize smoke motion ping-pong")
+}
+
+// REMOVAL_MOTION_STOP_TICK bounds the removal probe so the bounded --smoke exit
+// can observe settlement after recovery. At 60 Hz it holds motion across roughly
+// four seconds, well past the induced removal and recovery window.
+REMOVAL_MOTION_STOP_TICK :: 240
+
+// removal_motion_tick logs the retained owner count every host turn. The log
+// order around the host's removal/recovery traces is the evidence that a motion
+// owner was live at the loss and that motion continued after reattachment.
+removal_motion_tick :: proc(app: ^App, rt: ^alicorn.Runtime) {
+	if app == nil || rt == nil || !app.removal_motion_probe { return }
+	app.removal_motion_ticks += 1
+	activity := alicorn.motion_activity(rt)
+	if activity.active_owners > 0 { app.removal_motion_active_ticks += 1 }
+	fmt.println(
+		"motion_probe",
+		"tick", app.removal_motion_ticks,
+		"active_owners", activity.active_owners,
+		"active_properties", activity.active_properties,
+	)
+	if app.removal_motion_ticks > REMOVAL_MOTION_STOP_TICK && activity.active_owners == 0 {
+		app.removal_motion_settled_after_stop = true
+	}
+}
+
+removal_motion_after_frame :: proc(app: ^App, rt: ^alicorn.Runtime) {
+	if app == nil || rt == nil || !app.removal_motion_probe { return }
+	if app.removal_motion_ticks >= REMOVAL_MOTION_STOP_TICK { return }
+	if alicorn.motion_activity(rt).active_owners > 0 { return }
+	app.removal_motion_phase = !app.removal_motion_phase
+	alicorn.invalidate_root(rt, "removal motion probe ping-pong")
+}
+
+removal_motion_report :: proc(app: ^App) -> bool {
+	if app == nil || !app.removal_motion_probe { return true }
+	ok := app.removal_motion_active_ticks >= 30 && app.removal_motion_settled_after_stop
+	fmt.println(
+		"motion_removal_smoke", "PASS" if ok else "FAIL",
+		"ticks", app.removal_motion_ticks,
+		"active_ticks", app.removal_motion_active_ticks,
+		"settled_after_stop", app.removal_motion_settled_after_stop,
+	)
+	return ok
 }
 
 workbench_render :: proc(app: ^App, ctx: ^ui.UI) {
@@ -1088,6 +1151,12 @@ main :: proc() {
 		if argument == "--smoke" { smoke = true }
 		if argument == "--backend=sdl-gpu" { sdl_gpu_reference = true }
 		if argument == "--timing-motion" { app.timing_motion = true }
+		if argument == "--removal-motion-probe" {
+			// Paired with --test-remove-d3d12-device in the validation build.
+			app.removal_motion_probe = true
+			app.timing_motion = true
+			smoke = true
+		}
 		if argument == "--defer-close" { app.defer_close_once = true }
 		if argument == "--child-smoke" {
 			smoke = true
@@ -1268,6 +1337,10 @@ main :: proc() {
 	if app.live_resize_smoke {
 		after_frame_proc = live_resize_after_frame
 	}
+	if app.removal_motion_probe {
+		tick_proc = removal_motion_tick
+		after_frame_proc = removal_motion_after_frame
+	}
 	if app.tab_drag_smoke {
 		after_frame_proc = tab_drag_drive
 	}
@@ -1365,5 +1438,8 @@ main :: proc() {
 	}
 	if app.tab_drag_smoke {
 		if !tab_drag_report(&app) { os.exit(1) }
+	}
+	if app.removal_motion_probe {
+		if !removal_motion_report(&app) { os.exit(1) }
 	}
 }
