@@ -132,6 +132,8 @@ frontier_scene_hash :: proc(rt: ^alicorn.Runtime) -> u64 {
 			hash = frontier_hash_text(hash, "surface")
 		case alicorn.Backdrop_Effect_Paint:
 			hash = frontier_hash_text(hash, "effect")
+		case alicorn.Lighting_Group_Paint:
+			hash = frontier_hash_text(hash, "lighting")
 		}
 	}
 	return hash

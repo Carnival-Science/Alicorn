@@ -155,6 +155,9 @@ sparse_display_commands_match :: proc(a, b: Paint_Command) -> bool {
 	case Backdrop_Effect_Paint:
 		b_payload, ok := b.payload.(Backdrop_Effect_Paint)
 		return ok && a_payload == b_payload
+	case Lighting_Group_Paint:
+		b_payload, ok := b.payload.(Lighting_Group_Paint)
+		return ok && a_payload == b_payload
 	}
 	return false
 }

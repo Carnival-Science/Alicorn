@@ -655,6 +655,10 @@ begin_frame :: proc(rt: ^Runtime) -> (ui: UI, should_build: bool) {
 	// then represents new work and must remain pending after reconciliation.
 	rt.invalidated = false
 	rt.frame_open = true
+	// A lighting declaration belongs to one application description. A frame
+	// that does not re-declare it keeps the last painted pixels; the marker is
+	// removed by the next paint stage.
+	rt.lighting_declared = false
 	rt.context_menu.described = false
 	layout_percent_width_pending_clear(rt)
 	clear(&rt.pending_scroll_focus_visuals)

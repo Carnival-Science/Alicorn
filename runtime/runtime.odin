@@ -2302,6 +2302,16 @@ Runtime :: struct {
 	// boundary exists; the effects compositor captures a prefix of the display
 	// list that this milestone does not update incrementally.
 	retained_backdrop_effect_nodes: int,
+	// Experimental per-frame lighting declaration (issue #105). The
+	// declaration lives for one application description; the published marker
+	// is the only retained product, and it is removed/re-emitted by
+	// lighting_publish at the end of each paint stage.
+	lighting_declared: bool,
+	lighting_declaration: Lighting_Group,
+	lighting_marker_present: bool,
+	lighting_marker_index: int,
+	lighting_publishes: u64,
+	lighting_emits: u64,
 	host_text_runs: [dynamic]Host_Text_Run,
 	paint_resource_generation: u64,
 	images: map[u64]Image_Resource,

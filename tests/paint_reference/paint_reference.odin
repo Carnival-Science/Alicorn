@@ -186,7 +186,7 @@ paint_reference_validate_command :: proc(
 			}
 		}
 	case alicorn.Icon_Paint, alicorn.Image_Paint, alicorn.Text_Paint, alicorn.Geometry_Paint,
-		alicorn.Backdrop_Effect_Paint:
+		alicorn.Backdrop_Effect_Paint, alicorn.Lighting_Group_Paint:
 		return paint_reference_error(.Unsupported_Payload, index, command.owner)
 	}
 	return Paint_Reference_Error{}

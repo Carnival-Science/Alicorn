@@ -42,6 +42,19 @@ Backdrop_Effect_Prefix_Before_First_Marker :: proc(
 	return nil, {}, -1, false
 }
 
+// Effects_Prefix_Before_First_Boundary finds the frame's single effects
+// boundary, whichever kind it is. Callers enforce the one-boundary rule.
+Effects_Prefix_Before_First_Boundary :: proc(
+	display: []alicorn.Paint_Command,
+) -> (prefix: []alicorn.Paint_Command, marker: alicorn.Paint_Command, marker_index: int, found: bool) {
+	for draw, index in display {
+		if alicorn.paint_command_is_effects_boundary(draw) {
+			return display[:index], draw, index, true
+		}
+	}
+	return nil, {}, -1, false
+}
+
 // Localized prefix copies keep source paints intact while shifting geometry
 // and clips into the offscreen capture's logical origin.
 Backdrop_Effect_Local_Prefix :: proc(
@@ -120,6 +133,10 @@ backdrop_effect_hash_command :: proc(hash: u64, draw: alicorn.Paint_Command, rt:
 		result = alicorn.hash_mix(result, 2)
 		result = backdrop_effect_hash_f32(result, payload.sigma)
 		result = alicorn.hash_mix(result, u64(payload.fallback))
+	case alicorn.Lighting_Group_Paint:
+		result = alicorn.hash_mix(result, 7)
+		result = alicorn.hash_mix(result, u64(payload.group))
+		result = alicorn.hash_mix(result, payload.generation)
 	case alicorn.Icon_Paint:
 		result = alicorn.hash_mix(result, 3)
 		result = alicorn.hash_mix(result, u64(payload.id))

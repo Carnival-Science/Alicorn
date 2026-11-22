@@ -358,6 +358,7 @@ drag_preview_signature :: proc(rt: ^Runtime, builder: ^strings.Builder) {
 		case Geometry_Paint: kind = "geometry"
 		case Surface_Paint: kind = "surface"
 		case Backdrop_Effect_Paint: kind = "effect"
+		case Lighting_Group_Paint: kind = "lighting"
 		}
 		label := ""
 		if text, is_text := command.payload.(Text_Paint); is_text {
