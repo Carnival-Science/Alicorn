@@ -1,0 +1,10 @@
+{
+  "caliber_commit": "197cd964cc7265bc60df599a6b8562eac7c75f3a",
+  "alicorn_commit": "bd81fe5b0eaef1996e241f22a23b712823c11926",
+  "abi_version": 1,
+  "artifacts": [
+    "scratchpad_backend.dll",
+    "caliber_ffi.dll",
+    "scratchpad-alicorn.exe"
+  ]
+}

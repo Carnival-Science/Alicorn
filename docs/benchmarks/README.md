@@ -6,6 +6,7 @@ without crowding the project’s user and contributor guides.
 
 ## Reports
 
+- [Matched Scratchpad adoption + three-arm Quick Open — keyed regions, Windows (2026-11-21)](scratchpad-region-adoption-windows-2026-11-21.md)
 - [Matched Scratchpad A/B — keyed-region pilot, Windows (2026-11-21)](scratchpad-region-pilot-windows-2026-11-21.md)
 - [Matched Scratchpad A/B — phase 2 description reuse, Windows (2026-11-21)](scratchpad-ab-phase2-windows-2026-11-21.md)
 - [Matched Scratchpad A/B — Windows (2026-11-21)](scratchpad-ab-windows-2026-11-21.md)

@@ -1,0 +1,160 @@
+diff --git a/frontends/alicorn/main.odin b/frontends/alicorn/main.odin
+index 7d4af69..426bcd6 100644
+--- a/frontends/alicorn/main.odin
++++ b/frontends/alicorn/main.odin
+@@ -278,6 +278,7 @@ App :: struct {
+ 	// inputs.
+ 	document_tabs_region: Region_Generation,
+ 	workspace_tree_region: Region_Generation,
++	quick_open_results_region: Region_Generation,
+ 	// The selected tab is produced while the tab strip is described. On a
+ 	// reused region the body is skipped, so the last value is restored outside
+ 	// the region instead of being reset with the frame-local node caches.
+diff --git a/frontends/alicorn/quick_open.odin b/frontends/alicorn/quick_open.odin
+index aa54de5..1a4ddd6 100644
+--- a/frontends/alicorn/quick_open.odin
++++ b/frontends/alicorn/quick_open.odin
+@@ -285,7 +285,7 @@ quick_open_move_selection :: proc(app: ^App, rt: ^alicorn.Runtime, direction: in
+ 			_ = alicorn.virtual_list_ensure_visible(rt, app.quick_open_results_scroll_node, app.quick_open_selected_index, "Scratchpad Quick Open selection visibility")
+ 		}
+ 	}
+-	alicorn.invalidate_root(rt, "Scratchpad Quick Open selection moved")
++	quick_open_results_invalidate(app, rt, "Scratchpad Quick Open selection moved")
+ 	return true
+ }
+ 
+@@ -302,7 +302,7 @@ quick_open_text_change :: proc(state: rawptr, rt: ^alicorn.Runtime, change: alic
+ 	if app == nil || rt == nil || !app.quick_open_open || change.node != app.quick_open_node || !change.changed { return }
+ 	find_set_message(&app.quick_open_query, change.text)
+ 	app.quick_open_selected_index = 0
+-	alicorn.invalidate_root(rt, "Scratchpad Quick Open query changed")
++	quick_open_results_invalidate(app, rt, "Scratchpad Quick Open query changed")
+ }
+ 
+ quick_open_build :: proc(app: ^App, ui: ^alicorn.UI, rt: ^alicorn.Runtime) {
+@@ -337,33 +337,48 @@ quick_open_build :: proc(app: ^App, ui: ^alicorn.UI, rt: ^alicorn.Runtime) {
+ 	gui.text(ui, "Quick Open", style=alicorn.layout_style(.Row, height=22, grow=1))
+ 	alicorn.container_end(ui)
+ 	app.quick_open_node = alicorn.text_field(ui, app.quick_open_query, key=alicorn.key_string("scratchpad-quick-open-query"), style=alicorn.layout_style(.Row, height=40), text_style=SCRATCHPAD_PROMINENT_INPUT_TEXT_STYLE)
+-	alicorn.container_begin(ui, .Container, label="quick-open-result-slot", key=alicorn.key_string("quick-open-result-slot"), style=alicorn.layout_style(.Column, height=QUICK_OPEN_RESULTS_HEIGHT, clip=true))
+-	if app.quick_open_error != "" {
+-		gui.text(ui, app.quick_open_error, style=alicorn.layout_style(.Row, height=22))
+-	} else if app.quick_open_loading && !app.quick_open_ready {
+-		gui.text(ui, "Indexing workspace paths…", style=alicorn.layout_style(.Row, height=22))
+-	} else if len(results) == 0 {
+-		gui.text(ui, "No matching files", style=alicorn.layout_style(.Row, height=22))
+-	} else {
+-		list := alicorn.virtual_list_begin(
+-			ui,
+-			len(results),
+-			QUICK_OPEN_ROW_HEIGHT,
+-			key=alicorn.key_string("scratchpad-quick-open-results"),
+-			style=alicorn.layout_style(height=-1, max_height=QUICK_OPEN_RESULTS_HEIGHT, grow=1, clip=true),
+-			label="scratchpad-quick-open-results",
+-		)
+-		app.quick_open_results_scroll_node = list.scroll.id
+-		for index := list.first; index < list.last; index += 1 {
+-			result := results[index]
+-			if gui.button(ui, result.path, key=result.path, height=QUICK_OPEN_ROW_HEIGHT, state=alicorn.Button_State{selected=index == app.quick_open_selected_index}, variant=.Quiet, text_style=alicorn.Text_Style{overflow=.Ellipsis}, content_style=alicorn.button_content_style(.Start, padding_x=9, padding_y=4)) {
+-				app.quick_open_selected_index = index
+-				_ = quick_open_execute(app, rt, result.path, true)
++	// Issue #231 pilot: only the result slot is a region. The query text field
++	// stays outside it, so typing is described every frame and the revision
++	// below is the complete input set for the slot's output.
++	results_revision := region_generation_next(
++		&app.quick_open_results_region,
++		quick_open_results_region_signature(app, rt),
++	)
++	results_region, results_reused := alicorn.region_begin(
++		ui, "scratchpad-quick-open-results", results_revision,
++		style=alicorn.layout_style(.Column, height=QUICK_OPEN_RESULTS_HEIGHT, clip=true),
++	)
++	if !results_reused {
++		if app.quick_open_error != "" {
++			app.quick_open_results_scroll_node = 0
++			gui.text(ui, app.quick_open_error, style=alicorn.layout_style(.Row, height=22))
++		} else if app.quick_open_loading && !app.quick_open_ready {
++			app.quick_open_results_scroll_node = 0
++			gui.text(ui, "Indexing workspace paths…", style=alicorn.layout_style(.Row, height=22))
++		} else if len(results) == 0 {
++			app.quick_open_results_scroll_node = 0
++			gui.text(ui, "No matching files", style=alicorn.layout_style(.Row, height=22))
++		} else {
++			list := alicorn.virtual_list_begin(
++				ui,
++				len(results),
++				QUICK_OPEN_ROW_HEIGHT,
++				key=alicorn.key_string("scratchpad-quick-open-results"),
++				style=alicorn.layout_style(height=-1, max_height=QUICK_OPEN_RESULTS_HEIGHT, grow=1, clip=true),
++				label="scratchpad-quick-open-results",
++			)
++			app.quick_open_results_scroll_node = list.scroll.id
++			for index := list.first; index < list.last; index += 1 {
++				result := results[index]
++				if gui.button(ui, result.path, key=result.path, height=QUICK_OPEN_ROW_HEIGHT, state=alicorn.Button_State{selected=index == app.quick_open_selected_index}, variant=.Quiet, text_style=alicorn.Text_Style{overflow=.Ellipsis}, content_style=alicorn.button_content_style(.Start, padding_x=9, padding_y=4)) {
++					app.quick_open_selected_index = index
++					_ = quick_open_execute(app, rt, result.path, true)
++				}
+ 			}
++			alicorn.virtual_list_end(ui, list)
+ 		}
+-		alicorn.virtual_list_end(ui, list)
++		alicorn.region_end(ui, results_region, false, 0)
+ 	}
+-	alicorn.container_end(ui)
+ 	footer := fmt.tprintf("%d files  ·  ↑/↓ navigate  ·  Enter open  ·  Esc close", len(results))
+ 	if app.quick_open_truncated { footer = fmt.tprintf("%s  ·  index capped at 5,000 files", footer) }
+ 	gui.text(ui, footer, style=alicorn.layout_style(.Row, height=20))
+@@ -371,6 +386,52 @@ quick_open_build :: proc(app: ^App, ui: ^alicorn.UI, rt: ^alicorn.Runtime) {
+ 	alicorn.modal_overlay_end(ui)
+ }
+ 
++// quick_open_results_region_signature is the complete input set for the
++// result slot. Query text and index generation are the data identity; the
++// realized scroll window, selection highlight, and pending interaction are
++// application-polled inputs the slot's output depends on. Theme and
++// accessibility affect button colors/underlines resolved during description.
++quick_open_results_region_signature :: proc(app: ^App, rt: ^alicorn.Runtime) -> u64 {
++	hash := REGION_HASH_OFFSET
++	hash = region_hash_string(hash, app.quick_open_query)
++	hash = region_hash_mix(hash, app.quick_open_generation)
++	hash = region_hash_bool(hash, app.quick_open_loading)
++	hash = region_hash_bool(hash, app.quick_open_ready)
++	hash = region_hash_string(hash, app.quick_open_error)
++	hash = region_hash_bool(hash, app.quick_open_truncated)
++	// The retained path array is the filter input. Generation normally covers
++	// replacement; the length also catches a same-generation resize and keeps
++	// the result-slot revision tied to the actual source set.
++	hash = region_hash_mix(hash, u64(len(app.quick_open_paths)))
++	hash = region_hash_mix(hash, u64(max(app.quick_open_selected_index, 0)))
++	hash = region_hash_mix(hash, u64(app.editor_theme))
++	hash = region_hash_mix(hash, u64(app.workbench_theme))
++	if rt != nil {
++		hash = region_hash_mix(hash, u64(rt.activation_node))
++		hash = region_hash_mix(hash, u64(rt.activation_sequence))
++		hash = region_hash_mix(hash, u64(rt.focused))
++		hash = region_hash_bool(hash, rt.focus_visible)
++		preferences := alicorn.style_root_accessibility_observation_get(rt).preferences
++		hash = region_hash_bool(hash, preferences.differentiate_without_color)
++	}
++	if scroll_node := app.quick_open_results_scroll_node; scroll_node != 0 {
++		if info, found := alicorn.node_info(rt, scroll_node); found {
++			hash = region_hash_f32(hash, info.scroll_offset_y)
++			hash = region_hash_f32(hash, info.scroll_viewport_height)
++		}
++	}
++	return hash
++}
++
++// quick_open_results_invalidate advances the slot generation *before* the
++// next description, so the cached node is uncached with the same revision the
++// describe will compute. It never re-enters the application.
++quick_open_results_invalidate :: proc(app: ^App, rt: ^alicorn.Runtime, reason: string) {
++	if app == nil || rt == nil { return }
++	revision := region_generation_next(&app.quick_open_results_region, quick_open_results_region_signature(app, rt))
++	alicorn.invalidate_region(rt, "scratchpad-quick-open-results", revision, reason)
++}
++
+ quick_open_pointer :: proc(app: ^App, rt: ^alicorn.Runtime, event: alicorn.Pointer_Event, target: alicorn.Node_ID) -> bool {
+ 	if app == nil || rt == nil || !app.quick_open_open { return false }
+ 	if event.kind == .Down && event.button == alicorn.POINTER_BUTTON_PRIMARY && target == app.quick_open_overlay_node {

@@ -1,0 +1,71 @@
+diff --git a/frontends/alicorn/main.odin b/frontends/alicorn/main.odin
+--- a/frontends/alicorn/main.odin
++++ b/frontends/alicorn/main.odin
+@@ -527,6 +527,11 @@
+ 	performance_sequence_action_ns:  [9]u64,
+ 	performance_sequence_build_ns:   [9]u64,
+ 	performance_sequence_builds:     [9]u64,
++	// Diagnostic-only: per-step Frame_Stats deltas. Only the diagnostic
++	// sequence binaries carry these fields; the measured A/B binaries do not.
++	performance_sequence_reported:   [9]bool,
++	performance_sequence_stats_mark:  alicorn.Frame_Stats,
++	performance_sequence_stats_valid: bool,
+ 	// Benchmark-only bounded typing burst (SCRATCHPAD_ALICORN_PERF_TYPING=1).
+ 	// It delivers committed text-input events through the editor's ordinary
+ 	// application text-input path; it does not synthesize native key events.
+@@ -1353,6 +1358,29 @@
+ 	app.performance_sequence_builds[index] += 1
+ }
+ 
++scratchpad_performance_sequence_report_counters :: proc(app: ^App, rt: ^alicorn.Runtime, step: int) {
++	if app == nil || rt == nil { return }
++	now := alicorn.frame_stats_snapshot(rt)
++	if app.performance_sequence_stats_valid {
++		before := app.performance_sequence_stats_mark
++		fmt.println(
++			"alicorn-performance-sequence-counters",
++			"step", step,
++			"emitted", now.descriptions_emitted-before.descriptions_emitted,
++			"reused", now.descriptions_reused-before.descriptions_reused,
++			"regions_skipped", now.regions_skipped-before.regions_skipped,
++			"retained_reused", now.retained_subtrees_reused-before.retained_subtrees_reused,
++			"reconcile_nodes", now.reconcile_nodes_visited-before.reconcile_nodes_visited,
++			"layout_nodes", now.layout_nodes_visited-before.layout_nodes_visited,
++			"paint_nodes", now.paint_nodes_visited-before.paint_nodes_visited,
++			"composition_nodes", now.composition_nodes_visited-before.composition_nodes_visited,
++			"text_shapes", now.text_shape_requests-before.text_shape_requests,
++		)
++	}
++	app.performance_sequence_stats_mark = now
++	app.performance_sequence_stats_valid = true
++}
++
+ scratchpad_performance_sequence_open :: proc(app: ^App, rt: ^alicorn.Runtime, relative_path: string) -> bool {
+ 	if app == nil || rt == nil || !app.backend.state.has_workspace { return false }
+ 	path := fmt.tprintf("%s/%s", app.backend.state.workspace_root, relative_path)
+@@ -1384,6 +1412,10 @@
+ 			scratchpad_performance_sequence_schedule(app)
+ 			return
+ 		}
++		if !app.performance_sequence_reported[8] {
++			scratchpad_performance_sequence_report_counters(app, rt, 8)
++			app.performance_sequence_reported[8] = true
++		}
+ 		app.performance_sequence_attribution = -1
+ 		app.performance_sequence_complete = true
+ 		return
+@@ -1393,6 +1425,14 @@
+ 	if step > 0 && app.performance_sequence_builds[step-1] == 0 {
+ 		scratchpad_performance_sequence_schedule(app)
+ 		return
++	}
++	if step > 0 && !app.performance_sequence_reported[step-1] {
++		scratchpad_performance_sequence_report_counters(app, rt, step-1)
++		app.performance_sequence_reported[step-1] = true
++	}
++	if step == 0 && !app.performance_sequence_stats_valid {
++		app.performance_sequence_stats_mark = alicorn.frame_stats_snapshot(rt)
++		app.performance_sequence_stats_valid = true
+ 	}
+ 	app.performance_sequence_attribution = step
+ 	action_start := time.tick_now()

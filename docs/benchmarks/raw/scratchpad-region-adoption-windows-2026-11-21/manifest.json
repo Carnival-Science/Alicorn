@@ -1,0 +1,189 @@
+{
+  "schema": 1,
+  "recorded_local_date": "2026-11-21",
+  "issue": "Carnival-Science/Alicorn#231",
+  "scenario": "Issue #231 adoption and Quick Open measurement: tab-strip and workspace-tree keyed regions adopted from the pilot; three-arm matched comparison plain vs adopted vs adopted+QuickOpen-results on the same Alicorn master, with a new env-gated Quick Open filter-typing step.",
+  "alicorn": {
+    "commit": "bd81fe5b0eaef1996e241f22a23b712823c11926",
+    "subject": "research(231): pilot keyed regions in Scratchpad and measure the burden",
+    "worktree": "C:\\Users\\saman\\.local\\share\\opencode\\worktree\\191a98\\finish-scratchpad-adoption",
+    "instrumentation": "None added to Alicorn. Regions, invalidate_region, monotonic-revision checks, and stage timers are the landed master implementation. Alicorn runtime suite: 497/497 green (dev-2026-11-nightly:08539cd)."
+  },
+  "scratchpad": {
+    "base_revision": "adb28fc220864e6809c9217e4437af5b92dae57b",
+    "base_subject": "fix(alikit): anchor the command palette like Quick Open",
+    "plain_clone": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-adopt-plain",
+    "adopted_clone": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-adopt",
+    "quickopen_clone": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-adopt-quickopen",
+    "same_source": "All three are fresh clones of the same base commit. All three carry the same env-gated benchmark hook (adoption-harness.patch). Plain differs by no product change; adopted differs by adoption-tabstrip-tree.patch; quickopen differs from adopted by quickopen-results.patch.",
+    "adoption": {
+      "branch": "pilot/keyed-regions-tabstrip-tree",
+      "commit": "256628cc37c481b04c69c58dde21d38d960a89ff",
+      "origin": "https://github.com/samanshaiza004/scratchpad.git (branch pushed; the clone's default origin is the local source checkout, to which the branch was also pushed)",
+      "files": 5,
+      "added": 381,
+      "removed": 3,
+      "per_site_lines": {
+        "document_tab_strip": 135,
+        "workspace_tree": 68,
+        "region_revision_helper": 67,
+        "helper_tests": 101,
+        "app_state_fields": 10
+      },
+      "converted_invalidate_sites": "None. The pilot's only two invalidate_region conversions (quick_open_text_change, quick_open_move_selection) feed the Quick Open results slot, which is not adopted. The tab strip and tree rebuild through their revision signatures on the ordinary root invalidation path.",
+      "frontend_suite": "259/259 green (go test + odin check + bridge tests + frontend tests, release-independent test build)"
+    },
+    "plain_revision": "adb28fc220864e6809c9217e4437af5b92dae57b",
+    "adopted_revision": "256628cc37c481b04c69c58dde21d38d960a89ff",
+    "quickopen_revision": "256628c + quickopen-results.patch (uncommitted working tree)",
+    "hook_patches": {
+      "adoption-harness.patch": {
+        "sha256": "FCBBAE0855F2984F95D1D62C77E14B2319FBDB2AE4F4FFF56C5F53B82976F9C2",
+        "provenance": "Reuses the phase-2 24-character editor typing hook patch byte-for-byte as its base (scratchpad-perf-typing-hook.patch, SHA-256 8640D486BDF275CD1E85473796C8E85DA5B4EEA3EDDE46806C93DD9B2834ED86, itself the nine-action sequence hook plus the typing burst). The delta adds the new env-gated SCRATCHPAD_ALICORN_PERF_QUICKOPEN filter burst and reorders the phases (sequence, editor typing, Quick Open) so each measured phase runs in its own process."
+      },
+      "sequence-counters-diagnostic.patch": {
+        "sha256": "BC048AE4131E3921BB3CB5FDA0F38F5E7BB12BB606286145B5500CC3742E170A",
+        "provenance": "Diagnostic-only variant of the harness that prints Frame_Stats deltas per nine-action step. Built into separate out/diag binaries; the A/B binaries are unchanged. Counters are integer totals and do not depend on optimization level."
+      },
+      "adoption-tabstrip-tree.patch": "F63D631008EC9B2540FB9E856B09E3F81CCF250C4C64C3F44C41BABC0C891D73",
+      "quickopen-results.patch": "08BC776589E9257EF112D96CE2A6E5C2F6B6020CF23C2831223A2CB459F01D2B"
+    },
+    "placeholder_deps": ".deps/alicorn and .deps/caliber are directory junctions in each clone; --alicorn-root selected this Alicorn worktree for every build. caliber.ps1 sync is skipped because Caliber rejects junctions outside .deps; builds invoke go run ./cmd/alicorn-dev directly with the pinned Caliber checkout.",
+    "quickopen_query": "\"application/sample_\" (19 characters) delivered one commit per step through alicorn.process_text_input on the Quick Open query text-field node, then dispatched through the application's normal Text_Change callback (command_palette_text_change). The query field is outside the measured results-slot region."
+  },
+  "caliber_revision": "197cd964cc7265bc60df599a6b8562eac7c75f3a",
+  "toolchain": {
+    "odin": "dev-2026-11-nightly:08539cd",
+    "go": "go1.27.1 windows/amd64",
+    "profile": "Release, Odin -o:speed; --release passed explicitly.",
+    "renderer": "SDL_GPU reference host; no SCRATCHPAD_RENDERER override."
+  },
+  "host": {
+    "os": "Microsoft Windows 10 Home, build 19045",
+    "computer": "SAMAN",
+    "processor": "AMD Ryzen 5 7600X 6-Core Processor",
+    "memory_gib": 15,
+    "gpu": "NVIDIA GeForce RTX 2080 SUPER",
+    "gpu_driver": "32.0.15.9597"
+  },
+  "display": {
+    "scale": 1.0,
+    "note": "Logical window size equals pixel size; no DPI transition or continuous resize."
+  },
+  "theme": "Scratchpad default Warm theme; no appearance fixture or saved preference.",
+  "fixture": {
+    "directories": 8,
+    "small_files": 192,
+    "readme_files": 1,
+    "total_files": 193,
+    "large_document": "application/sample_00.go",
+    "large_document_lines": 5002
+  },
+  "builds": {
+    "plain": {
+      "path": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-adopt-plain\\out\\diag\\scratchpad-alicorn.exe (diagnostic); A/B binary: scratchpad-adopt/out/plain",
+      "sha256_ab": "943BBA26406B87BA1716ACEED0C1CCD0E8D9BAA2C477B83A4B448EF2F953D8E0",
+      "size_ab_bytes": 9784832
+    },
+    "adopted": {
+      "path": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-adopt\\out\\regions\\scratchpad-alicorn.exe",
+      "sha256_ab": "F718CBDC332A285345AF3B9CFC73CEE8CBF10A7956895445074D843BCF398820",
+      "size_ab_bytes": 9799168
+    },
+    "quickopen": {
+      "path": "C:\\Users\\saman\\AppData\\Local\\Temp\\opencode\\scratchpad-adopt-quickopen\\out\\quickopen\\scratchpad-alicorn.exe",
+      "sha256_ab": "654B079F27BDAF0F18336FF11B72FE45F8043798D2A20C3A381469B778952B86",
+      "size_ab_bytes": 9805824
+    },
+    "artifact_manifests": "logs/artifact-manifest-{plain,adopted,quickopen}.json all pin Alicorn bd81fe5... and Caliber 197cd96..."
+  },
+  "artifacts": {
+    "runners": {
+      "run_windows_adoption.ps1": "E2CB89BB548F78B5DE2CD181C8B0B2F00D75C01111E10401F09EAC9B41CC11C2",
+      "analyze_adoption.py": "91A2A5FC046A58A3A3C796A1E46B9C901157CD12DBF8A3F99CF2270F06A35C6B"
+    },
+    "test_logs": {
+      "logs/frontend-test.log": "259/259 frontend tests green",
+      "logs/alicorn-runtime-test.log": "497/497 Alicorn runtime tests green"
+    }
+  },
+  "protocol": {
+    "pairs_per_scenario": 10,
+    "segments": {
+      "primary": 7,
+      "confirmation": 3
+    },
+    "requested_minimum": "5 primary + 2 confirmation pairs per arm comparison. The capture kept the phase-2/pilot precedent of 7+3 because the first seven pairs showed stall-driven spread above 25% in every scenario (one 800 ms adopted sequence process, 367/154 ms plain typing processes, a 557 ms plain Quick Open process). No sample was discarded.",
+    "order": "Six balanced arm orders (every arm occupies each position twice); order alternates across the ten rounds. One unmeasured warmup per arm per scenario before the primary rounds.",
+    "retries": "An acceptance failure is retried up to three times with the failed log preserved. One typing sample required a second attempt (quickopen arm, primary run-03). All 90 measured samples and 9 warmups passed smoke and scenario acceptance.",
+    "scenarios": {
+      "sequence": "Nine actions: open README, open the 5,002-line Go document, switch back to README, open Quick Open, close it after the index is ready, open Settings, close Settings, close README, close the remaining Go document.",
+      "typing": "Open the 5,002-line fixture document (setup, unmeasured), then 24 committed single-character text-input events through editor_text_input, one measured step per character.",
+      "quickopen": "Open Quick Open and wait for the path index and query focus (setup, unmeasured), then 19 committed query characters through process_text_input + the application Text_Change callback, one measured step per character; close Quick Open in the measured tail."
+    },
+    "cadence": "First action 500 ms after start; later actions advance after the previous description was built, with a 30 ms floor.",
+    "metrics": [
+      "application_build_ns (host cumulative application build)",
+      "application_build_max_ns",
+      "scenario_build_ns (sum of measured application describe windows)",
+      "per-step action_ns/build_ns/builds",
+      "per-step or per-character emitted/reused/regions_skipped",
+      "cpu_total_ns",
+      "peak_working_set_bytes",
+      "elapsed_ns",
+      "host_wall_ns",
+      "primary_gpu_submissions"
+    ],
+    "percentile": "Nearest-rank p50/p95 (floor index), matching the prior captures."
+  },
+  "headline": {
+    "typing_plain_to_adopted": {
+      "pairs": 10,
+      "application_build_ns_p50_percent": -4.41,
+      "application_build_ns_pair_changes": [-3.1, -63.5, -7.0, -0.7, -4.1, 7.0, -7.9, -84.2, -4.4, -1.8],
+      "scenario_build_ns_p50_percent": -2.69,
+      "emitted_per_character": {"plain": 858, "adopted": 741, "quickopen": 741},
+      "regions_skipped_per_character": {"plain": 0, "adopted": 6, "quickopen": 6},
+      "stage_description_ns_per_character": {"plain": 1564163, "adopted": 1531645},
+      "stage_reconcile_ns_per_character": {"plain": 832294, "adopted": 754615},
+      "stalls": "Two plain-arm processes contain startup stalls (63.5% and 84.2% paired differences); the remaining eight pairs are negative."
+    },
+    "quickopen_plain_to_adopted": {
+      "pairs": 10,
+      "application_build_ns_p50_percent": -8.66,
+      "scenario_build_ns_p50_percent": -10.51,
+      "emitted_per_character": {"plain": 76, "adopted": 47, "quickopen": 47},
+      "regions_skipped_per_character": {"plain": 0, "adopted": 1, "quickopen": 1},
+      "note": "The one skip is the workspace tree (no document is open, so the tab strip builds no region). The 29-node difference is the cached tree body."
+    },
+    "quickopen_adopted_to_quickopen": {
+      "pairs": 10,
+      "application_build_ns_p50_percent": -2.40,
+      "application_build_ns_pair_changes": [4.4, -2.5, -11.1, -1.4, -16.5, 7.2, -1.4, -2.4, -4.8, 10.1],
+      "scenario_build_ns_p50_percent": -7.92,
+      "results_region_skipped_during_filter_typing": false,
+      "per_character_samples": 180,
+      "per_character_regions_skipped_always": 1,
+      "per_character_emitted_always": 47,
+      "conclusion": "The results-slot region never skips while the query changes: emitted counts and skip counts are identical to the adopted arm in all 180 filter-character samples. The measured describe-window difference has no counter counterpart and is not claimed as a region benefit."
+    },
+    "sequence": {
+      "plain_to_adopted_application_build_ns_p50_percent": -2.07,
+      "adopted_to_quickopen_application_build_ns_p50_percent": -6.48,
+      "plain_to_quickopen_application_build_ns_p50_percent": -7.81,
+      "diagnostic_step_counters": "Adopted arm skips the tab strip and tree on every step (2-7 skips per step depending on description passes); quickopen arm reports exactly the same skips as adopted in all nine steps, so the results region adds no skip to open/close either.",
+      "conclusion": "No reliable sequence signal. One adopted process stalled (800 ms, +2415% pair), step 7 changes pass count 5 vs 4 in the quickopen arm, and steps outside Quick Open are a null control that shows build-layout noise up to -19.7%. Do not read the sequence medians as a region effect."
+    }
+  },
+  "limitations": [
+    "The measured hooks invoke application/backend command paths and committed text changes on a schedule; they are not native keyboard/pointer input and do not measure input latency.",
+    "The runner generates workspace/ and per-run profile-* directories inside each results directory; they are reproducible from the runner and are not committed. Process logs, CSVs, and build/test logs are committed.",
+    "Startup stalls occurred in all three arms (one per scenario at 99-800 ms). They inflate p95 and are retained in the raw samples; medians are used for the headline.",
+    "The reference host exits smoke at 3 s after startup. Slow first submissions (up to 1.3 s cold) can consume the window; one sample needed a retry. The retry policy is recorded and the failed log is kept.",
+    "The nine-action diagnostic counter variant uses separate binaries built from the same sources plus the counter-print block; its timings are not used.",
+    "The Quick Open burst types an ASCII path query into the query field; it does not exercise IME composition, selection moves, scrolling, or result-row activation.",
+    "The sequence has no per-step counters outside the diagnostic variant; the A/B sequence capture has build windows and pass counts only.",
+    "One host, one Odin build, display scale 1.0, SDL_GPU reference host. Do not compare across machines.",
+    "Region revisions remain application-declared; the two mechanism tests cover stale-output detection, not input completeness for future edits."
+  ]
+}
