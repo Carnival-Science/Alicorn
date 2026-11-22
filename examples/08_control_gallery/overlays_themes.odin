@@ -66,32 +66,33 @@ gallery_motion_demo :: proc(app: ^App, ctx: ^ui.UI) {
 
 gallery_theme_picker :: proc(app: ^App, ctx: ^ui.UI) {
 	if ui.row(ctx, gap=8, align=.Center) {
-		if ui.button(ctx, "Default", key="theme-default", width=100, height=30,
-			state=alicorn.Button_State{selected=app.theme_choice == .Default}) {
-			app.theme_choice = .Default
-			app.theme_choice_explicit = true
+		if ui.button(ctx, "Ember", key="theme-ember", width=72, height=30,
+			state=alicorn.Button_State{selected=app.theme_choice == .Ember}) {
+			gallery_choose_theme(app, ctx, .Ember)
 		}
-		if ui.button(ctx, "Light", key="theme-light", width=100, height=30,
+		if ui.button(ctx, "Default", key="theme-default", width=74, height=30,
+			state=alicorn.Button_State{selected=app.theme_choice == .Default}) {
+			gallery_choose_theme(app, ctx, .Default)
+		}
+		if ui.button(ctx, "Paper", key="theme-light", width=72, height=30,
 			state=alicorn.Button_State{
 				selected=app.theme_choice == .Light,
 				disabled=app.light_theme == 0,
 			}) {
-			app.theme_choice = .Light
-			app.theme_choice_explicit = true
+			gallery_choose_theme(app, ctx, .Light)
 		}
-		if ui.button(ctx, "Custom JSON", key="theme-custom", width=120, height=30,
+		if ui.button(ctx, "Custom JSON", key="theme-custom", width=108, height=30,
 			state=alicorn.Button_State{
 				selected=app.theme_choice == .Custom,
 				disabled=app.registered_theme == 0,
 			}) {
-			app.theme_choice = .Custom
-			app.theme_choice_explicit = true
+			gallery_choose_theme(app, ctx, .Custom)
 		}
-		if ui.button(ctx, "Reload theme.json", key="theme-reload", width=150, height=30,
-			state=alicorn.Button_State{disabled=app.compiling}, variant=.Primary) {
-			app.theme_choice_explicit = false
-			gallery_start_compile(app)
-		}
+	}
+	if ui.button(ctx, "Reload theme.json", key="theme-reload", width=150, height=30,
+		state=alicorn.Button_State{disabled=app.compiling}, variant=.Primary) {
+		app.theme_choice_explicit = false
+		gallery_start_compile(app)
 	}
 	status := gallery_theme_status_text(app)
 	if len(status) == 0 { status = "Custom theme is loading." }
@@ -119,7 +120,7 @@ gallery_overlays_section :: proc(app: ^App, ctx: ^ui.UI) {
 		"Application-owned modal state, delayed tooltips, notices, a context menu, and native View/Help menu integration.",
 	)
 
-	if ui.row(ctx, gap=12, align=.Start) {
+	if gallery_section_columns(ctx) {
 		if ui.column(ctx, grow=1, gap=12) {
 			if ui.panel(ctx, key=alicorn.key_string("overlays-modal"), padding=12, gap=8, stroke=ui.border(1, alicorn.style_color(ctx, .Border)), radius=8, label="Modal surface") {
 				gallery_card_title(ctx, "Modal surface")
@@ -208,10 +209,10 @@ gallery_motion_themes :: proc(app: ^App, ctx: ^ui.UI) {
 	gallery_section_intro(
 		ctx,
 		"Motion & themes",
-		"Paint-only retained motion, three scoped theme variants, a live-reloaded JSON theme, and the complete semantic color palette.",
+		"Try retained motion, switch palettes, and preview changes to the JSON theme.",
 	)
 
-	if ui.row(ctx, gap=12, align=.Start) {
+	if gallery_section_columns(ctx) {
 		if ui.column(ctx, grow=1, gap=12) {
 			if ui.panel(ctx, key=alicorn.key_string("themes-motion"), padding=12, gap=8, stroke=ui.border(1, alicorn.style_color(ctx, .Border)), radius=8, label="Retained motion") {
 				gallery_card_title(ctx, "Retained motion · decorative indicator")
@@ -225,7 +226,7 @@ gallery_motion_themes :: proc(app: ^App, ctx: ^ui.UI) {
 			if ui.panel(ctx, key=alicorn.key_string("themes-choice"), padding=12, gap=8, stroke=ui.border(1, alicorn.style_color(ctx, .Border)), radius=8, label="Theme variants") {
 				gallery_card_title(ctx, "Theme variants · scoped Style_Environment")
 				gallery_theme_picker(app, ctx)
-				ui.text(ctx, "Light is built and registered in code; Custom is compiled from theme.json by a worker thread and replaced in place.",
+				ui.text(ctx, "Ember and Paper are registered in code. A worker compiles the Custom JSON palette.",
 					size=11, color=alicorn.style_color(ctx, .Muted_Text))
 				ui.text(ctx, "Theme changes invalidate paint only when colors change; metric changes request a new description.",
 					size=11, color=alicorn.style_color(ctx, .Muted_Text))

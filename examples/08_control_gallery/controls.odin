@@ -15,7 +15,7 @@ gallery_controls :: proc(app: ^App, ctx: ^ui.UI) {
 		"A controlled text field with application validation, pointer-bound checkbox and slider, and a select popup with a disabled option.",
 	)
 
-	if ui.row(ctx, gap=12, align=.Start) {
+	if gallery_section_columns(ctx) {
 		if ui.column(ctx, grow=1, gap=12) {
 			if ui.panel(ctx, key=alicorn.key_string("controls-profile"), padding=12, gap=8, stroke=ui.border(1, alicorn.style_color(ctx, .Border)), radius=8, label="Profile form") {
 				gallery_card_title(ctx, "Profile form")

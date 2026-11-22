@@ -21,6 +21,17 @@ gallery_card_title :: proc(ctx: ^ui.UI, title: string) {
 	})
 }
 
+gallery_section_columns_end :: proc(ctx: ^ui.UI, opened: bool) {
+	if opened { alicorn.container_end(ctx) }
+}
+
+@(deferred_in_out=gallery_section_columns_end)
+gallery_section_columns :: proc(ctx: ^ui.UI) -> bool {
+	direction := alicorn.Layout_Direction.Row if ctx.runtime.viewport.w >= GALLERY_TWO_COLUMN_WIDTH else .Column
+	return alicorn.container_begin(ctx, .Container, key="gallery-demo-columns",
+		style=ui.layout_style(direction, height=alicorn.LAYOUT_SIZE_FIT_CONTENT, gap=12, align=.Start)) != 0
+}
+
 gallery_icon_caption_row :: proc(ctx: ^ui.UI, captions: []Icon_Caption) {
 	row_key := (u64(captions[0].id)+7000) if len(captions) > 0 else u64(7000)
 	if ui.row(ctx, key=ui.key_u64(row_key), gap=6, align=.Center) {
@@ -42,7 +53,7 @@ gallery_foundations :: proc(app: ^App, ctx: ^ui.UI) {
 		"Text roles, all 15 built-in icon masks, Button intent variants, ordinary control states, and accessible naming.",
 	)
 
-	if ui.row(ctx, gap=12, align=.Start) {
+	if gallery_section_columns(ctx) {
 		if ui.column(ctx, grow=1, gap=12) {
 			if ui.panel(ctx, key=alicorn.key_string("foundation-buttons"), padding=12, gap=8, stroke=ui.border(1, alicorn.style_color(ctx, .Border)), radius=8, label="Button variants") {
 				gallery_card_title(ctx, "Button variants")
@@ -81,15 +92,16 @@ gallery_foundations :: proc(app: ^App, ctx: ^ui.UI) {
 						style=ui.layout_style(width=32, height=32)) {
 						app.icon_clicks += 1
 					}
-					if ui.icon_button(ctx, "Search", .Search, key="icon-search",
-						style=ui.layout_style(width=32, height=32)) {
+					if ui.icon_button(ctx, "Search", .Search, key="icon-search", selected=app.search_selected,
+						style=ui.layout_style(width=32, height=32), variant=.Toolbar) {
+						app.search_selected = !app.search_selected
 						app.icon_clicks += 1
 					}
 					ui.text(ctx, fmt.tprintf("Icon activations: %d", app.icon_clicks), size=12)
 				}
 				ui.text(
 					ctx,
-					"icon_button carries an explicit accessible name. v0.2.2 has no selected icon-button state; issue #199 tracks it, so use a normal Button for selection today.",
+					"Icon buttons have accessible names. Toggle Search to see the selected state.",
 					size=11,
 					color=alicorn.style_color(ctx, .Muted_Text),
 				)

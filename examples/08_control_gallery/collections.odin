@@ -63,13 +63,21 @@ gallery_document_tabs :: proc(app: ^App, ctx: ^ui.UI) {
 		}
 		count += 1
 	}
-	if count > 0 {
+	if count == 0 {
+		ui.text(ctx, "All documents are closed.", size=12, color=alicorn.style_color(ctx, .Muted_Text))
+	} else if ui.column(ctx, key="gallery-document-preview") {
+		paper := alicorn.style_color(ctx, .Editor_Background)
 		result := alicorn.tab_bar(
 			ctx,
 			"gallery-document-tabs",
 			items[:count],
-			options=alicorn.Tab_Bar_Options{min_tab_width=104, max_tab_width=150, height=32, gap=2},
-			style=ui.layout_style(.Row, height=36, clip=true),
+			options=alicorn.Tab_Bar_Options{
+				min_tab_width=128, max_tab_width=174, height=34, gap=2, presentation=.Compact,
+				appearance=.Connected, close_policy=.Selected_Or_Hover,
+				selected_fill=paper,
+				selected_text=alicorn.style_color(ctx, .Text), selected_fill_set=true,
+			},
+			style=ui.layout_style(.Row, height=34, clip=true),
 		)
 		if result.action == .Select {
 			doc_index := gallery_doc_at_open_position(app, result.item_index)
@@ -78,8 +86,17 @@ gallery_document_tabs :: proc(app: ^App, ctx: ^ui.UI) {
 			doc_index := gallery_doc_at_open_position(app, result.item_index)
 			gallery_close_doc(app, doc_index)
 		}
-	} else {
-		ui.text(ctx, "All documents are closed.", size=12, color=alicorn.style_color(ctx, .Muted_Text))
+		if app.active_doc >= 0 {
+			snippets := [3]string{
+				`ui.run(&app, render, title="Control Gallery")`,
+				`"extends": "alicorn.base"`,
+				`# Alicorn Control Gallery`,
+			}
+			if ui.panel(ctx, padding=12, fill=paper,
+				corner_radii={top_right=8, bottom_right=8, bottom_left=8}, label="Selected document preview") {
+				ui.text(ctx, snippets[app.active_doc], font=.Monospace, size=12)
+			}
+		}
 	}
 	if ui.row(ctx, gap=6, align=.Center) {
 		if ui.button(ctx, "Toggle dirty", key="doc-toggle-dirty", height=26, width=106, variant=.Quiet) {
@@ -184,7 +201,7 @@ gallery_collections :: proc(app: ^App, ctx: ^ui.UI) {
 		"Virtualization with stable row identity, closable and dirty document tabs, local drag reordering, and a plain scroll region.",
 	)
 
-	if ui.row(ctx, gap=12, align=.Start) {
+	if gallery_section_columns(ctx) {
 		if ui.column(ctx, grow=1, gap=12) {
 			if ui.panel(ctx, key=alicorn.key_string("collections-records"), padding=12, gap=8, stroke=ui.border(1, alicorn.style_color(ctx, .Border)), radius=8, label="Virtual list") {
 				gallery_card_title(ctx, fmt.tprintf("Virtual list · %d fixed-height rows", GALLERY_RECORD_COUNT))

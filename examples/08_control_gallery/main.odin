@@ -1,10 +1,10 @@
 package main
 
-// 08 · Control Gallery is the single-file-compatible tour of Alicorn's public
-// authoring surface. It uses only the default `alicorn:ui` + `alicorn:runtime`
-// SDL_GPU path; no WebGPU package or third-party dependency is involved.
+// The Control Gallery uses the default SDL_GPU host. Application state, view
+// composition, and the signal workbench all use Alicorn's public APIs.
 //
 // Sections live beside this file:
+//   showcase.odin         interactive signal chart and playhead motion
 //   foundations.odin      text, fonts, buttons, icon inventory, groups
 //   controls.odin         text field, validation, checkbox, slider, select
 //   collections.odin      virtual list, document tabs, drag reorder, scroll
@@ -32,12 +32,13 @@ GALLERY_THEME_PATH :: "examples/08_control_gallery/theme.json"
 GALLERY_SECTION_COUNT :: 6
 GALLERY_RECORD_COUNT :: 500
 GALLERY_ROW_HEIGHT :: 28
+GALLERY_TWO_COLUMN_WIDTH :: f32(1000)
 GALLERY_DRAG_TYPE :: alicorn.Drag_Type(0x181001)
 GALLERY_DRAG_NAMESPACE :: u64(0x47414C4C45525901)
 GALLERY_SURFACE_NAMESPACE :: u64(0x47414C4C45525902)
 
 // Native menu and context-menu commands share one Action_ID registry.
-GALLERY_ACTION_FOUNDATIONS :: alicorn.Action_ID(0x181101)
+GALLERY_ACTION_OVERVIEW :: alicorn.Action_ID(0x181101)
 GALLERY_ACTION_CONTROLS :: alicorn.Action_ID(0x181102)
 GALLERY_ACTION_COLLECTIONS :: alicorn.Action_ID(0x181103)
 GALLERY_ACTION_LAYOUT :: alicorn.Action_ID(0x181104)
@@ -50,7 +51,7 @@ GALLERY_ACTION_DUPLICATE :: alicorn.Action_ID(0x181302)
 GALLERY_ACTION_DELETE :: alicorn.Action_ID(0x181303)
 
 Section :: enum u8 {
-	Foundations,
+	Overview,
 	Controls,
 	Collections,
 	Layout,
@@ -59,7 +60,7 @@ Section :: enum u8 {
 	Count,
 }
 
-Theme_Choice :: enum u8 { Default, Light, Custom }
+Theme_Choice :: enum u8 { Ember, Light, Default, Custom }
 
 Doc_Tab :: struct {
 	title: string,
@@ -83,18 +84,17 @@ Icon_Caption :: struct {
 }
 
 GALLERY_SECTION_TITLES := [GALLERY_SECTION_COUNT]string{
-	"Foundations",
+	"Overview",
 	"Controls",
 	"Collections",
 	"Layout & surfaces",
-	"Overlays & commands",
+	"Overlays",
 	"Motion & themes",
 }
 
-// Content extents are logical upper bounds. The page scrolls on compact
-// windows; ordinary descriptions do not over-scroll on the default window.
+// Allow room for each section's reference controls below the fold.
 GALLERY_SECTION_HEIGHTS := [GALLERY_SECTION_COUNT]f32{
-	720,
+	1080,
 	700,
 	700,
 	720,
@@ -153,6 +153,7 @@ App :: struct {
 	density_key:   u64,
 	button_clicks: int,
 	icon_clicks:   int,
+	search_selected: bool,
 
 	selected_record: int,
 	renamed_record:  bool,
@@ -172,9 +173,17 @@ App :: struct {
 	pending_notice_dismiss: bool,
 
 	motion_choice: int,
+	signal_preset:     Signal_Preset,
+	signal_position:   int,
+	signal_show_grid:  bool,
+	signal_surface:    alicorn.Node_ID,
+	signal_accent:     ui.Color,
+	signal_grid_color: ui.Color,
+	signal_plot:      Signal_Plot,
 
 	theme_choice:          Theme_Choice,
 	theme_choice_explicit: bool,
+	ember_theme:           alicorn.Style_Theme_ID,
 	light_theme:           alicorn.Style_Theme_ID,
 	surface_theme:   alicorn.Style_Theme_ID,
 	registered_theme: alicorn.Style_Theme_ID,
@@ -244,6 +253,8 @@ gallery_drag_status_text :: proc(app: ^App) -> string {
 
 gallery_active_theme :: proc(app: ^App) -> alicorn.Style_Theme_ID {
 	switch app.theme_choice {
+	case .Ember:
+		return app.ember_theme
 	case .Default:
 		return 0
 	case .Light:
@@ -252,6 +263,13 @@ gallery_active_theme :: proc(app: ^App) -> alicorn.Style_Theme_ID {
 		return app.registered_theme
 	}
 	return 0
+}
+
+gallery_choose_theme :: proc(app: ^App, ctx: ^ui.UI, choice: Theme_Choice) {
+	app.theme_choice_explicit = true
+	if app.theme_choice == choice { return }
+	app.theme_choice = choice
+	alicorn.invalidate_root(ctx.runtime, "Gallery theme changed")
 }
 
 gallery_set_section :: proc(app: ^App, rt: ^alicorn.Runtime, section: Section) {
@@ -404,6 +422,7 @@ gallery_generate_geometry :: proc(app: ^App, rt: ^alicorn.Runtime) {
 
 gallery_after_frame :: proc(app: ^App, rt: ^alicorn.Runtime) {
 	gallery_generate_geometry(app, rt)
+	gallery_update_signal(app, rt)
 
 	if app.pending_notice {
 		app.pending_notice = false
@@ -473,7 +492,7 @@ gallery_drag :: proc(app: ^App, rt: ^alicorn.Runtime, event: alicorn.Drag_Event)
 
 gallery_menu_command :: proc(app: ^App, rt: ^alicorn.Runtime, command: alicorn.Action_ID) {
 	switch command {
-	case GALLERY_ACTION_FOUNDATIONS: gallery_set_section(app, rt, .Foundations)
+	case GALLERY_ACTION_OVERVIEW: gallery_set_section(app, rt, .Overview)
 	case GALLERY_ACTION_CONTROLS: gallery_set_section(app, rt, .Controls)
 	case GALLERY_ACTION_COLLECTIONS: gallery_set_section(app, rt, .Collections)
 	case GALLERY_ACTION_LAYOUT: gallery_set_section(app, rt, .Layout)
@@ -515,7 +534,7 @@ gallery_record_label :: proc(app: ^App, position: int) -> string {
 gallery_section_content :: proc(app: ^App, ctx: ^ui.UI) {
 	if ui.key_scope(ctx, u64(int(app.section)+1)) {
 		switch app.section {
-		case .Foundations: gallery_foundations(app, ctx)
+		case .Overview: gallery_showcase(app, ctx)
 		case .Controls: gallery_controls(app, ctx)
 		case .Collections: gallery_collections(app, ctx)
 		case .Layout: gallery_layout(app, ctx)
@@ -540,7 +559,11 @@ gallery_navigation :: proc(app: ^App, ctx: ^ui.UI) {
 		ctx,
 		"gallery-sections",
 		items[:],
-		options=alicorn.Tab_Bar_Options{min_tab_width=122, max_tab_width=200, height=36, gap=4},
+		options=alicorn.Tab_Bar_Options{
+			min_tab_width=126, max_tab_width=182, height=40, gap=2, presentation=.Compact, appearance=.Connected,
+			selected_fill=alicorn.style_color(ctx, .Surface),
+			selected_text=alicorn.style_color(ctx, .Text), selected_fill_set=true,
+		},
 		style=ui.layout_style(.Row, height=40, clip=true),
 	)
 	if result.action == .Select && result.item_index >= 0 && result.item_index < GALLERY_SECTION_COUNT {
@@ -549,39 +572,39 @@ gallery_navigation :: proc(app: ^App, ctx: ^ui.UI) {
 }
 
 gallery_header :: proc(app: ^App, ctx: ^ui.UI) {
-	if ui.row(ctx, height=56, gap=14, align=.Center) {
-		if ui.column(ctx, grow=1, gap=2) {
-			ui.text(ctx, "Alicorn · Control Gallery", size=25, text_style=alicorn.Text_Style{
-				font_weight=alicorn.FONT_WEIGHT_SEMIBOLD,
-			})
-			ui.text(ctx, "One native SDL_GPU example for every public authoring surface in v0.2.2.")
-		}
-		if ui.column(ctx, width=190, gap=4, align=.End) {
-			name := "Default"
-			switch app.theme_choice {
-			case .Default: name = "Default"
-			case .Light: name = "Light"
-			case .Custom: name = fmt.tprintf("Custom #%d", app.theme_generation)
+	if ui.row(ctx, height=62, gap=13, align=.Center) {
+		if ctx.runtime.viewport.w >= 460 {
+			if ui.panel(ctx, width=42, height=42, radius=10, align=.Center, justify=.Center,
+				fill=alicorn.style_color(ctx, .Subtle_Surface), label="Alicorn") {
+				_ = ui.icon(ctx, .Terminal, size=23, color_role=.Accent)
 			}
-			ui.text(ctx, fmt.tprintf("Theme · %s", name), size=12, color=alicorn.style_color(ctx, .Muted_Text))
-			_ = ui.box(ctx, key="gallery-accent-swatch", width=120, height=10,
-				fill=alicorn.style_color(ctx, .Accent), radius=5)
+		}
+		if ui.column(ctx, grow=1, gap=1) {
+			ui.text(ctx, "Alicorn", size=12, color=alicorn.style_color(ctx, .Accent),
+				text_style=alicorn.Text_Style{font_weight=alicorn.FONT_WEIGHT_SEMIBOLD, overflow=.Ellipsis})
+			ui.text(ctx, "Control Gallery", size=26,
+				text_style=alicorn.Text_Style{font_weight=alicorn.FONT_WEIGHT_BOLD, overflow=.Ellipsis})
+		}
+		if ui.row(ctx, width=174, height=36, gap=6, align=.Center, label="Gallery palette") {
+			if ui.button(ctx, "Ember", key="header-ember", width=84, height=34, variant=.Toolbar,
+				state=ui.Button_State{selected=app.theme_choice == .Ember}) {
+				gallery_choose_theme(app, ctx, .Ember)
+			}
+			if ui.button(ctx, "Paper", key="header-paper", width=84, height=34, variant=.Toolbar,
+				state=ui.Button_State{selected=app.theme_choice == .Light}) {
+				gallery_choose_theme(app, ctx, .Light)
+			}
 		}
 	}
 }
 
-gallery_footer :: proc(app: ^App, ctx: ^ui.UI) {
-	if ui.row(ctx, height=24, gap=12, align=.Center) {
-		ui.text(
-			ctx,
-			fmt.tprintf("%s · Tab / Shift+Tab moves focus · View menu switches sections", GALLERY_SECTION_TITLES[int(app.section)]),
-			size=11,
-			color=alicorn.style_color(ctx, .Muted_Text),
-			style=ui.layout_style(.Row, grow=1, height=20),
-		)
-		if app.smoke {
-			ui.text(ctx, "smoke", size=11, color=alicorn.style_color(ctx, .Danger))
-		}
+gallery_footer :: proc(ctx: ^ui.UI) {
+	if ui.row(ctx, height=20, gap=12, align=.Center) {
+		muted := alicorn.style_color(ctx, .Muted_Text)
+		shortcut :: "⌘1–6" when ODIN_OS == .Darwin else "Ctrl+1–6"
+		ui.text(ctx, shortcut + "  Switch sections", size=11, color=muted,
+			style=ui.layout_style(.Row, grow=1), text_style=alicorn.Text_Style{overflow=.Ellipsis})
+		ui.text(ctx, "SDL_GPU", size=11, font=.Monospace, color=muted)
 	}
 }
 
@@ -592,59 +615,78 @@ render :: proc(app: ^App, ctx: ^ui.UI) {
 		scope = alicorn.style_environment_push(ctx, alicorn.Style_Environment{theme=theme_id})
 	}
 
-	if ui.panel(ctx, grow=1, padding=18, gap=10, clip=false, label="gallery-root") {
+	compact := ctx.runtime.viewport.w < 820
+	if ui.panel(ctx, grow=1, padding=12 if compact else 22, gap=9, clip=true,
+		fill=alicorn.style_color(ctx, .Window_Background), label="Control Gallery") {
 		gallery_header(app, ctx)
-		gallery_navigation(app, ctx)
-		height := GALLERY_SECTION_HEIGHTS[int(app.section)]
-		region := alicorn.scroll_region_begin(
-			ctx,
-			key="gallery-page",
-			content_height=height,
-			line_height=28,
-			style=ui.layout_style(.Column, grow=1, clip=true),
-			label="Gallery section content",
-			axes=.Vertical,
-		)
-		if region.id != 0 {
-			if ui.column(ctx, gap=12, padding=4, label="gallery-section") {
-				gallery_section_content(app, ctx)
+		if ui.column(ctx, grow=1, clip=true) {
+			gallery_navigation(app, ctx)
+			if ui.panel(ctx, key="gallery-workspace", grow=1, clip=true,
+				corner_radii={top_right=14, bottom_right=14, bottom_left=14}, label="Gallery workspace") {
+				height := GALLERY_SECTION_HEIGHTS[int(app.section)]
+				if ctx.runtime.viewport.w < GALLERY_TWO_COLUMN_WIDTH { height += 440 }
+				if compact && app.section == .Overview { height += 330 }
+				region := alicorn.scroll_region_begin(ctx, key=ui.key_u64(u64(int(app.section)+1)),
+					content_height=height, line_height=28,
+					style=ui.layout_style(.Column, grow=1, clip=true),
+					label="Gallery section content", axes=.Vertical)
+				if region.id != 0 {
+					if ui.column(ctx, gap=16, padding=12 if compact else 18, label="gallery-section") {
+						gallery_section_content(app, ctx)
+					}
+					alicorn.scroll_region_end(ctx)
+				}
 			}
-			alicorn.scroll_region_end(ctx)
 		}
-		gallery_footer(app, ctx)
+		gallery_footer(ctx)
 	}
 
 	if scope.active { alicorn.style_environment_pop(ctx, scope) }
+}
+
+gallery_window_appearance :: proc(state: rawptr, rt: ^alicorn.Runtime) -> alicorn.Window_Chrome_Appearance {
+	app := cast(^App)state
+	environment := rt.style_environment
+	if theme_id := gallery_active_theme(app); theme_id != 0 { environment.theme = theme_id }
+	return alicorn.Window_Chrome_Appearance{
+		defined=true,
+		background=alicorn.style_environment_color(rt, environment, .Window_Background),
+		foreground=alicorn.style_environment_color(rt, environment, .Text),
+	}
+}
+
+gallery_palette :: proc(hex_colors: [alicorn.STYLE_COLOR_ROLE_COUNT]u32) -> alicorn.Style_Theme {
+	palette := alicorn.DEFAULT_STYLE_THEME
+	for hex, role in hex_colors { palette.colors[role] = ui.rgb(hex) }
+	variants := [4]alicorn.Button_Variant{.Default, .Primary, .Toolbar, .Danger}
+	for variant in variants {
+		recipe := &palette.button_recipes.recipes[int(variant)]
+		recipe.shape = alicorn.surface_shape_uniform_corner_radius(6)
+		recipe.hover_fill_transition = alicorn.Style_Transition{duration=120*time.Millisecond, easing=.Ease}
+	}
+	return palette
 }
 
 gallery_initialize :: proc(app: ^App, rt: ^alicorn.Runtime) {
 	if app == nil || rt == nil { return }
 	app.allocator = context.allocator
 
-	// A light variant is ordinary application data: copy the built-in typed
-	// theme, replace semantic colors, and register it once.
-	light := alicorn.DEFAULT_STYLE_THEME
-	light.colors = [alicorn.STYLE_COLOR_ROLE_COUNT]ui.Color{
-		{0.93, 0.95, 0.98, 1},
-		{0.99, 0.995, 1, 1},
-		{0.90, 0.92, 0.95, 1},
-		{0.97, 0.98, 1, 1},
-		{0.07, 0.09, 0.14, 1},
-		{0.28, 0.33, 0.41, 1},
-		{0.07, 0.34, 0.72, 1},
-		{0.05, 0.27, 0.60, 1},
-		{0.04, 0.21, 0.49, 1},
-		{1, 1, 1, 1},
-		{0.54, 0.68, 0.88, 0.45},
-		{0.05, 0.30, 0.78, 1},
-		{0.41, 0.17, 0.64, 1},
-		{0.40, 0.46, 0.55, 1},
-		{0.70, 0.13, 0.12, 1},
-		{0.05, 0.39, 0.20, 1},
-		{0.88, 0.90, 0.93, 1},
-		{0.48, 0.54, 0.61, 1},
+	// Register two palettes over the built-in component recipes.
+	ember_colors := [alicorn.STYLE_COLOR_ROLE_COUNT]u32{
+		0x191615, 0x272220, 0x352B26, 0x1D1918, // window, surface, subtle, editor
+		0xFAEEE1, 0xC2B1A4, 0xF0B681, 0xF8C69A, 0xDDA26E, 0x261711, // text and accent
+		0x785034, 0xFAD69F, 0xFAD69F, 0x58473D, 0x994542, 0x87B397,
+		0x272220, 0x746257,
 	}
-	app.light_theme = alicorn.style_theme_register(rt, light)
+	app.ember_theme = alicorn.style_theme_register(rt, gallery_palette(ember_colors))
+
+	light_colors := [alicorn.STYLE_COLOR_ROLE_COUNT]u32{
+		0xEBE2D6, 0xFAF5EC, 0xF1E3D2, 0xFFF9F1,
+		0x2B201B, 0x6B554B, 0x9A481E, 0x813713, 0x682B12, 0xFFFFFF,
+		0xDFC3A8, 0x883F20, 0x704026, 0xC8AE9A, 0x9C3434, 0x366B52,
+		0xEFE4D8, 0xA99282,
+	}
+	app.light_theme = alicorn.style_theme_register(rt, gallery_palette(light_colors))
 
 	// One scoped theme carries namespaced extension colors for gradient and
 	// shape demos. The runtime copies tokens and bindings on registration.
@@ -715,7 +757,7 @@ gallery_stop :: proc(app: ^App) {
 
 gallery_install_menus :: proc(app: ^App) {
 	app.menu_view_items = [8]alicorn.Menu_Item{
-		{kind=.Command, command=GALLERY_ACTION_FOUNDATIONS, label="Foundations", state=alicorn.Action_State{enabled=true}, shortcut=alicorn.Menu_Shortcut{'1', {.Primary}}},
+		{kind=.Command, command=GALLERY_ACTION_OVERVIEW, label="Overview", state=alicorn.Action_State{enabled=true}, shortcut=alicorn.Menu_Shortcut{'1', {.Primary}}},
 		{kind=.Command, command=GALLERY_ACTION_CONTROLS, label="Controls", state=alicorn.Action_State{enabled=true}, shortcut=alicorn.Menu_Shortcut{'2', {.Primary}}},
 		{kind=.Command, command=GALLERY_ACTION_COLLECTIONS, label="Collections", state=alicorn.Action_State{enabled=true}, shortcut=alicorn.Menu_Shortcut{'3', {.Primary}}},
 		{kind=.Command, command=GALLERY_ACTION_LAYOUT, label="Layout & surfaces", state=alicorn.Action_State{enabled=true}, shortcut=alicorn.Menu_Shortcut{'4', {.Primary}}},
@@ -742,7 +784,11 @@ main :: proc() {
 		selected_order=0,
 		active_doc=0,
 		motion_choice=0,
-		theme_choice=.Default,
+		theme_choice=.Ember,
+		theme_choice_explicit=true,
+		signal_preset=.Harmonic,
+		signal_position=1,
+		signal_show_grid=true,
 		docs={
 			{title="main.odin", open=true, dirty=true},
 			{title="theme.json", open=true, dirty=false},
@@ -775,8 +821,11 @@ main :: proc() {
 			case "custom":
 				app.theme_choice = .Custom
 				app.theme_choice_explicit = false
-			case:
+			case "default":
 				app.theme_choice = .Default
+				app.theme_choice_explicit = true
+			case:
+				app.theme_choice = .Ember
 				app.theme_choice_explicit = true
 			}
 		}
@@ -789,7 +838,7 @@ main :: proc() {
 		render,
 		title="Alicorn · Control Gallery",
 		width=1180,
-		height=900,
+		height=756,
 		render_overlays=gallery_render_overlays,
 		on_initialize=gallery_initialize,
 		on_start=gallery_start,
@@ -799,5 +848,7 @@ main :: proc() {
 		on_drag=gallery_drag,
 		on_menu_command=gallery_menu_command,
 		menus=app.menus[:],
+		window_decorations=.Integrated_Title_Bar,
+		window_chrome_appearance=gallery_window_appearance,
 	)
 }
