@@ -4,10 +4,3 @@ assets/icons/reicon/*.svg text eol=lf
 assets/icons/reicon/sources.json text eol=lf
 assets/icons/generated/manifest.json text eol=lf
 runtime/icon_atlas_generated.odin text eol=lf
-# The AliKit catalog sync compares generated pages byte for byte.
-website/src/content/docs/components/*.mdx text eol=lf
-website/src/content/docs/components.mdx text eol=lf
-website/src/content/docs/docs/reference/manifest.mdx text eol=lf
-website/src/content/docs/docs/reference/compatibility.md text eol=lf
-website/public/components.json text eol=lf
-website/src/data/alikit-components.json text eol=lf
