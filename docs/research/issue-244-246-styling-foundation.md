@@ -90,6 +90,58 @@ checking the emitted text paint for all three treatments.
   `Node` measured 2,096 bytes against its 2,048-byte limit.
   [Size tripwire](../../runtime/size_tripwire_test.odin)
 
+## Scratchpad follow-up
+
+Scratchpad's wide Settings sidebar now uses the same typed property and
+named visual part approach on its category Buttons. Standard uses a bar,
+Flat an underline, and Workbench Relief a dot on a raised face. The app's
+existing Surface treatment preference chooses the presentation. Category
+owners retain their names, focus and selection behavior across treatments.
+The optical preference also keeps its existing logical target geometry.
+[Scratchpad implementation and validation](https://github.com/samanshaiza004/scratchpad/blob/5d40e33a0e08131d1dfd09dea96191f9f995bb1f/docs/validation/settings-navigation-styles.md)
+
+Scratchpad's Metal readback recorded all three treatments at 1×, 1.25×,
+1.5× and 2× pixel density. The capture caught clipping from using uniform
+padding for a horizontal label inset and an opaque fill covering focused
+text. The final captures show each mark, intact labels and a separate
+keyboard focus outline. They use a fixed logical viewport and text scale.
+[DPI comparison](https://github.com/samanshaiza004/scratchpad/blob/5d40e33a0e08131d1dfd09dea96191f9f995bb1f/docs/validation/settings-navigation-styles/dpi-comparison.png)
+
+| Change to the settled Settings scene | Layout visits | Shaping requests | Paint visits |
+| --- | ---: | ---: | ---: |
+| Idle or force the same description | 0 | 0 | 0 |
+| Selected fill | 0 | 0 | 3 |
+| Font size for four labels | 42 | 4 | 4 |
+| Height for four rows | 42 | 0 | 21 |
+| Selected material | 0 | 0 | 1 |
+| Standard to Workbench Relief | 21 | 1 | 45 |
+
+These counts match across densities on Scratchpad's Alicorn v0.2.3 pin
+`28cc7f92`. Both fill and material still finalize 40 display commands.
+Forced re-description of equal values visits reconciliation and allocates,
+even though it schedules no layout, shaping or paint. The raw data includes
+persistent and scratch allocation calls.
+[28 measured samples](https://github.com/samanshaiza004/scratchpad/blob/5d40e33a0e08131d1dfd09dea96191f9f995bb1f/docs/validation/settings-navigation-styles/runtime-work.csv)
+
+The fresh-runtime oracle exposed stale positioned decoration bounds after
+in-place extent changes on the pin. A focus outline kept its old 44-unit
+height after a 50-unit description, and the relief dot inherited the old
+bar extent. Scratchpad now recreates each affected decoration when its
+geometry changes. The exact comparison of navigation bounds, surface paint,
+text ink and glyph placement then passed. The Button keys and named part
+IDs stay stable. This result identifies a limit of reusing positioned visual
+nodes on the tested revision.
+
+A Scratchpad theme switch also retained the focused category and selection
+at 150% text scale with Increased Contrast, Differentiate Without Color and
+Reduce Transparency. Named parts received the resolved ink on description.
+The same-ID paint-only replacement case remains open for app-authored colors
+copied into retained nodes, especially in keyed regions. The Node size-budget
+failure remains separate. These results support continuing the pilot before
+generalizing the API, with independent component anatomy such as Progress
+still to validate. The styling language remains in wave 3.
+[Appearance revision tracking in #232](https://github.com/Carnival-Science/Alicorn/issues/232)
+
 ## Typed properties and their effects
 
 | Candidate | Existing application path | Expected work and precedence |
