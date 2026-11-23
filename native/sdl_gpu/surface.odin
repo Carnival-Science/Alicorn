@@ -234,8 +234,31 @@ native_surface_geometry_self_test :: proc() -> Native_Validation_Result {
 		color, color_ok := alicorn.paint_surface_color(command)
 		if color_ok && color == (alicorn.Color{0.08, 0.14, 0.24, 1}) { background_found = true }
 	}
-	if len(renderer.vertices) == 6 && background_found { return Native_Validation_Result{ok=true} }
-	return native_validation_failed()
+	if len(renderer.vertices) != 6 || !background_found { return native_validation_failed() }
+
+	// The gallery's adaptive waveform produces a few hundred retained points.
+	// Keep this high-water fixture here so native validation catches accidental
+	// per-frame scratch growth or vertex-budget regressions in the shared path.
+	stroke_points: [360]alicorn.GPU_Surface_Point
+	for index in 0..<len(stroke_points) {
+		stroke_points[index] = {f32(index)*80/f32(len(stroke_points)-1), 24+f32(index%7)}
+	}
+	stroke_path := alicorn.GPU_Surface_Stroke_Path{
+		points=stroke_points[:],
+		thickness=1.8,
+		color={1, 0, 0, 1},
+	}
+	if !alicorn.gpu_surface_update_geometry_with_rectangles_and_stroke_path(
+		&rt, surface, nil, nil, nil, stroke_path,
+	) {
+		return native_validation_failed()
+	}
+	stroke_command, stroke_found := native_surface_test_geometry_command(&rt, surface)
+	if !stroke_found || !native_surface_rebuild_mesh(&renderer, stroke_command, 2, 2) { return native_validation_failed() }
+	if len(renderer.vertices) != alicorn.GPU_Surface_Stroke_Path_Vertex_Count(len(stroke_points)) {
+		return native_validation_failed()
+	}
+	return Native_Validation_Result{ok=true}
 }
 
 native_surface_make :: proc(device: ^sdl3.GPUDevice, swapchain_format: sdl3.GPUTextureFormat, runtime: ^alicorn.Runtime) -> (renderer: Native_Surface_Renderer, ok: bool) {

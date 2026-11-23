@@ -5,6 +5,9 @@ import alicorn "../../runtime"
 
 GPU_SURFACE_MARKER_MASK_SIZE :: 32
 GPU_SURFACE_MARKER_MASK_SAMPLES :: 8
+GPU_SURFACE_STROKE_PATH_MAX_POINTS ::
+	(alicorn.GPU_SURFACE_MAX_VERTICES-alicorn.GPU_SURFACE_STROKE_PATH_CAP_VERTICES)/
+	alicorn.GPU_SURFACE_STROKE_PATH_SEGMENT_VERTICES + 1
 
 // GPU_Surface_Marker_Mask_Alpha returns the same deterministic supersampled
 // circle coverage used by the native renderer. Both GPU backends upload this
@@ -96,22 +99,21 @@ GPU_Surface_Append_Stroke_Path :: proc(
 	point_count := len(path.points)
 	vertex_count := alicorn.GPU_Surface_Stroke_Path_Vertex_Count(point_count)
 	if vertex_count == 0 { return true }
-	if vertex_count < 0 || len(vertices^) > alicorn.GPU_SURFACE_MAX_VERTICES-vertex_count { return false }
+	if vertex_count < 0 || point_count > GPU_SURFACE_STROKE_PATH_MAX_POINTS ||
+		len(vertices^) > alicorn.GPU_SURFACE_MAX_VERTICES-vertex_count {
+		return false
+	}
 
-	pixel_points := make([][2]f32, point_count, allocator=context.temp_allocator)
-	directions := make([][2]f32, point_count-1, allocator=context.temp_allocator)
-	normals := make([][2]f32, point_count-1, allocator=context.temp_allocator)
-	left := make([][2]f32, point_count, allocator=context.temp_allocator)
-	right := make([][2]f32, point_count, allocator=context.temp_allocator)
-	left_outer := make([][2]f32, point_count, allocator=context.temp_allocator)
-	right_outer := make([][2]f32, point_count, allocator=context.temp_allocator)
-	defer delete(pixel_points)
-	defer delete(directions)
-	defer delete(normals)
-	defer delete(left)
-	defer delete(right)
-	defer delete(left_outer)
-	defer delete(right_outer)
+	// The runtime caps this path so its worst-case tessellation fits the
+	// retained surface vertex budget. Keep the bounded scratch on the stack:
+	// rendering must not depend on a host thread's temporary allocator capacity.
+	pixel_points: [GPU_SURFACE_STROKE_PATH_MAX_POINTS][2]f32
+	directions: [GPU_SURFACE_STROKE_PATH_MAX_POINTS-1][2]f32
+	normals: [GPU_SURFACE_STROKE_PATH_MAX_POINTS-1][2]f32
+	left: [GPU_SURFACE_STROKE_PATH_MAX_POINTS][2]f32
+	right: [GPU_SURFACE_STROKE_PATH_MAX_POINTS][2]f32
+	left_outer: [GPU_SURFACE_STROKE_PATH_MAX_POINTS][2]f32
+	right_outer: [GPU_SURFACE_STROKE_PATH_MAX_POINTS][2]f32
 
 	for index in 0..<point_count {
 		point := path.points[index]
