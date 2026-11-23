@@ -1,10 +1,13 @@
 # Documentation
 
 The published documentation site is
-<https://carnival-science.github.io/Alicorn/>. It includes the guide, the
-reference, the research records, and the AliKit component catalog. Component
-pages are authored in `alicorn-kit` and synced into `website/` at a pinned
-revision; see [website/README.md](../website/README.md).
+<https://carnival-science.github.io/alicorn-website/>. It includes the guide,
+the reference, the research records, and the AliKit component catalog. The site
+is maintained in the private
+[Carnival-Science/alicorn-website](https://github.com/Carnival-Science/alicorn-website)
+repository; component pages are authored in `alicorn-kit` and synced there at a
+pinned revision. This repository keeps the former `/Alicorn/` Pages URL as a
+redirect.
 
 Start with [Getting Started](getting-started.md) to install the toolchain, build
 Alicorn, and run the native starter.

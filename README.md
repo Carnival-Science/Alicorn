@@ -74,6 +74,8 @@ For the reusable native distribution path, see
 [Native application packaging](docs/packaging.md).
 
 Browse the [documentation index](docs/README.md) for the complete guide map.
+The published site is
+<https://carnival-science.github.io/alicorn-website/>.
 Then explore the [progressive application guide](docs/guide.md),
 [API reference](docs/reference.md),
 [Choosing Alicorn](docs/choosing-alicorn.md), [examples](examples/README.md),
