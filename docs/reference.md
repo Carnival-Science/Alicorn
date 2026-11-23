@@ -533,6 +533,33 @@ host.Run(host.Application{
 See [native menus and integrated titlebar](native-menus-and-integrated-titlebar.md)
 for the callback contract and native fixture.
 
+### Primary-window options
+
+`Application.always_on_top` asks the reference SDL_GPU host to create the
+primary window with `.ALWAYS_ON_TOP`. The generic host arguments
+`--always-on-top` and `--no-always-on-top` set or clear the option for any
+application; the last argument wins, so a launch script can override an
+application default. `ui.run(..., always_on_top=true)` is the beginner-facing
+form. Other hosts may ignore the field; it is window policy, not application
+state.
+
+`Application.on_renderable_changed` (and `ui.run(...,
+on_renderable_changed=...)`) reports transitions between a drawable primary
+window and one that is hidden, minimized, or occluded. The callback receives the
+`Runtime` so a restored application can invalidate once and describe from its
+latest state. The host calls it on the UI thread after input for the iteration
+and before the build/paint gate, only when the state changes. Event-driven
+applications can use it to stop scheduling presentation work while they cannot
+be seen; native events and worker wakes may still arrive. This mirrors
+`hosted_runtime_set_renderable` on the hosted path.
+
+```odin
+on_renderable_changed :: proc(app: ^App, rt: ^alicorn.Runtime, renderable: bool) {
+    app.renderable = renderable
+    if renderable { ui.invalidate(ui.Application_Context(rt), "window restored") }
+}
+```
+
 For an application that owns its event loop, see
 [host-owned UI loops](hosted-runtime.md) for the nonblocking retained Runtime
 session, UI-thread event ingress, wake/deadline handling, resize/DPI, close

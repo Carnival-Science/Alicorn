@@ -23,6 +23,11 @@ Hosted_Run_State :: struct($T: typeid) {
 	bindings: alicorn.Binding_Table,
 	on_command: proc(^T, ^alicorn.Runtime, alicorn.Action_ID),
 	window_decorations: alicorn.Window_Decoration_Mode,
+	// always_on_top is a generic primary-window option. It reaches the native
+	// host's Application.always_on_top; hosts without a topmost window concept
+	// ignore it.
+	always_on_top: bool,
+	on_renderable_changed: proc(^T, ^alicorn.Runtime, bool),
 	window_chrome_height: f32,
 	window_chrome_metrics: alicorn.Window_Chrome_Metrics_Proc,
 	window_chrome_layout: alicorn.Window_Chrome_Layout_Proc,

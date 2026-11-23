@@ -264,6 +264,9 @@ run_application_loop :: proc(
 	drag_autoscroll_deadline_ns: u64 = 0
 	swapchain_retry_pending := false
 	primary_drawable_unavailable := false
+	// The host shows the primary window before entering the loop, so the
+	// application-visible baseline is renderable. Only transitions are reported.
+	primary_renderable := true
 	last_user_interaction_ns: u64 = 0
 	devtools_last_cause: alicorn.Cause_Context
 	event_waits: u64 = 0
@@ -524,6 +527,19 @@ run_application_loop :: proc(
 		// does not wait for a user input event and is not an input-latency claim.
 		if timing.startup.first_input_ready_ns == 0 {
 			timing.startup.first_input_ready_ns = native_startup_elapsed_ns(startup_origin)
+		}
+		// Visibility is a window-management signal, separate from analysis or
+		// application state. Report only transitions, after this iteration's
+		// input was drained, so a hidden application can stop scheduling
+		// presentation work and a restored one can invalidate once with its
+		// latest state. The predicate matches the host's own paint gate.
+		renderable_now := native_motion_window_renderable_for_window(window, sdl3.GetWindowFlags(window))
+		if renderable_now != primary_renderable {
+			primary_renderable = renderable_now
+			native_breadcrumb_event(breadcrumbs, "alicorn", "application.renderable.changed")
+			if application_instance.on_renderable_changed != nil {
+				application_instance.on_renderable_changed(application_instance.state, rt, renderable_now)
+			}
 		}
 		_ = host_bindings.binding_service_timeout(
 			&binding_service, rt, u64(sdl3.GetTicksNS()),

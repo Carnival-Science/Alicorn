@@ -558,6 +558,12 @@ run_application :: proc(
 		state := cast(^Hosted_Run_State(T))data
 		if state.on_dialog != nil { state.on_dialog(state.app, rt, result) }
 	}
+	on_renderable :: proc(data: rawptr, rt: ^alicorn.Runtime, renderable: bool) {
+		state := cast(^Hosted_Run_State(T))data
+		if state.on_renderable_changed != nil {
+			state.on_renderable_changed(state.app, rt, renderable)
+		}
+	}
 	chrome_metrics :: proc(data: rawptr, rt: ^alicorn.Runtime, metrics: alicorn.Window_Chrome_Metrics) {
 		state := cast(^Hosted_Run_State(T))data
 		if state.window_chrome_metrics != nil { state.window_chrome_metrics(state.app, rt, metrics) }
@@ -582,6 +588,7 @@ run_application :: proc(
 		menu_presentation=host.Application_Menu_Presentation(run_state.menu_presentation),
 		bindings=run_state.bindings,
 		window_decorations=host.Window_Decoration_Mode(run_state.window_decorations),
+		always_on_top=run_state.always_on_top,
 		window_chrome_height=run_state.window_chrome_height,
 		build=build,
 		interaction_update_policy=host.Application_Interaction_Update_Policy(run_state.interaction_update_policy),
@@ -613,6 +620,7 @@ run_application :: proc(
 	if run_state.on_command != nil { application.on_command = on_command }
 	if run_state.on_close_requested != nil { application.on_close_requested = on_close_requested }
 	if run_state.on_dialog != nil { application.on_dialog = on_dialog }
+	if run_state.on_renderable_changed != nil { application.on_renderable_changed = on_renderable }
 	return application
 }
 
@@ -657,6 +665,8 @@ run :: proc(
 	on_close_requested: proc(^T, ^alicorn.Runtime) -> alicorn.Hosted_Close_Result = nil,
 	on_dialog: proc(^T, ^alicorn.Runtime, ^alicorn.File_Dialog_Result) = nil,
 	window_decorations: alicorn.Window_Decoration_Mode = .System,
+	always_on_top: bool = false,
+	on_renderable_changed: proc(^T, ^alicorn.Runtime, bool) = nil,
 	window_chrome_height: f32 = 0,
 	window_chrome_metrics: alicorn.Window_Chrome_Metrics_Proc = nil,
 	window_chrome_layout: alicorn.Window_Chrome_Layout_Proc = nil,
@@ -668,6 +678,8 @@ run :: proc(
 		menus=menus, menu_presentation=menu_presentation,
 		bindings=bindings, on_command=on_command,
 		window_decorations=window_decorations,
+		always_on_top=always_on_top,
+		on_renderable_changed=on_renderable_changed,
 		window_chrome_height=window_chrome_height,
 		window_chrome_metrics=window_chrome_metrics,
 		window_chrome_layout=window_chrome_layout,

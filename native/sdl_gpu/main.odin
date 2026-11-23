@@ -17,6 +17,24 @@ Run :: proc(application: Application, smoke := false) {
 	native_run_application(application, smoke)
 }
 
+// native_always_on_top_requested resolves the generic primary-window topmost
+// option. The application's `always_on_top` field is the default; the host
+// arguments override it in order, so a user can enable the option for an
+// application that did not ask for it or opt out for one run. This is a
+// window-management flag, not application policy.
+native_always_on_top_requested :: proc(args: []string, default_value: bool) -> bool {
+	requested := default_value
+	for argument in args {
+		switch argument {
+		case "--always-on-top":
+			requested = true
+		case "--no-always-on-top":
+			requested = false
+		}
+	}
+	return requested
+}
+
 native_run_application :: proc(
 	application: Application,
 	smoke := false,
@@ -95,10 +113,19 @@ native_run_application :: proc(
 	// the HWND is first shown or focused. run_application_loop builds the initial
 	// semantic snapshot and installs the adapter before showing this window.
 	phase_start = time.tick_now()
-	window := sdl3.CreateWindow(title_cstring, c.int(width), c.int(height), sdl3.WindowFlags{.HIDDEN, .RESIZABLE, .HIGH_PIXEL_DENSITY})
+	window_flags := sdl3.WindowFlags{.HIDDEN, .RESIZABLE, .HIGH_PIXEL_DENSITY}
+	always_on_top := native_always_on_top_requested(os.args, application.always_on_top)
+	if always_on_top { window_flags += {.ALWAYS_ON_TOP} }
+	window := sdl3.CreateWindow(title_cstring, c.int(width), c.int(height), window_flags)
 	startup.window_create_ns = native_startup_elapsed_ns(phase_start)
 	if window == nil { fail("SDL_CreateWindow failed") }
 	defer sdl3.DestroyWindow(window)
+	// Keep the explicit SDL call after creation as well: creation flags are
+	// reported by GetWindowFlags, while SetWindowAlwaysOnTop is the documented
+	// runtime transition and the same call secondary windows use.
+	if always_on_top && !sdl3.SetWindowAlwaysOnTop(window, true) {
+		fail("SDL_SetWindowAlwaysOnTop failed")
+	}
 	menu_application := application
 	native_menu := Native_Menu_Runtime{window=window, application=&menu_application}
 	defer native_menu_destroy(&native_menu)

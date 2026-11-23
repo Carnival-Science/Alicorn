@@ -112,6 +112,17 @@ Application_Start_Proc :: proc(state: rawptr, waker: Application_Waker)
 
 Application_Services_Proc :: proc(state: rawptr, services: Application_Services)
 
+// Application_Renderable_Proc reports that the primary window changed between
+// a drawable and a non-drawable state. "Renderable" means the window is shown,
+// not minimized and not occluded; it is the same predicate the host uses
+// before sampling motion or submitting a frame. The callback runs on the
+// application thread inside the event loop, after input for the iteration has
+// been drained and before the host builds or submits a frame, and only on a
+// transition. Event-driven applications can use it to stop producing
+// presentation work while hidden and to invalidate once with the latest state
+// when the window is restored.
+Application_Renderable_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime, renderable: bool)
+
 Application_Wake_Proc :: proc(state: rawptr, rt: ^alicorn.Runtime)
 
 Application_Scheduled_Wake_Proc :: alicorn.Application_Scheduled_Wake_Proc
@@ -190,6 +201,15 @@ Application :: struct {
 	bindings:           alicorn.Binding_Table,
 	on_command:         alicorn.Hosted_Command_Proc,
 	window_decorations: Window_Decoration_Mode,
+	// always_on_top requests the primary window's ALWAYS_ON_TOP window flag at
+	// creation. The `--always-on-top` host argument enables the same option for
+	// any application; `--no-always-on-top` clears it. This is generic window
+	// management only: the host does not infer which applications want it.
+	always_on_top: bool,
+	// on_renderable_changed is optional. It observes primary-window visibility
+	// transitions (shown vs hidden/minimized/occluded) so event-driven
+	// applications can elide presentation work while they cannot be seen.
+	on_renderable_changed: Application_Renderable_Proc,
 	// Content_Title_Bar is the macOS full-size-content mode. Integrated_Title_Bar
 	// may also opt in to application-authored controls in the Windows native
 	// titlebar band while the host retains its menu and caption buttons. In both
