@@ -1023,12 +1023,14 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 	if free_units < 0 { free_units = 0 }
 	main_leading := layout_distribution_leading(Layout_Unit(free_units), count, distribution)
 	main_offset_units := main_leading
-	// A fixed-height virtual list realizes only the visible rows. Its first
-	// realized row may begin above the viewport when the scroll position is
-	// between row boundaries; the retained clip protects surrounding UI.
+	// Scroll regions move ordinary retained children through the layout offset.
+	// A direct Virtual_List child owns that translation itself: its realized rows
+	// are positioned from the same retained offset, so translating its viewport
+	// here would move the content twice. Virtual lists also apply their own
+	// fractional leading-row offset below.
 	main_scroll_offset: f32 = 0
 	cross_offset: f32 = 0
-	if parent.kind == .Virtual_List {
+	if parent.kind == .Scroll_Region || parent.kind == .Virtual_List {
 		if parent.style.direction == .Column {
 			main_scroll_offset = -parent.layout_scroll_offset_y
 			cross_offset = -parent.layout_scroll_offset_x
@@ -1069,23 +1071,29 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 		old_bounds := child.bounds
 		main := main_sizes[index]
 		main_units := layout_unit_extent(main)
-		main_offset := layout_unit_to_f32(main_offset_units)
+		child_main_offset_units := main_offset_units
+		child_cross_offset := cross_offset
+		if parent.kind == .Scroll_Region && child.kind == .Virtual_List {
+			child_main_offset_units += layout_unit_position(-main_scroll_offset)
+			child_cross_offset -= cross_offset
+		}
+		main_offset := layout_unit_to_f32(child_main_offset_units)
 		cross: f32
 		next_bounds: Rect
 		if parent.style.direction == .Row {
 			cross = layout_child_cross_size(rt, parent, child, cross_size)
-			cross_pos := inner.y + cross_offset
+			cross_pos := inner.y + child_cross_offset
 			if parent.style.align == .Center { cross_pos += (cross_size-cross)/2 }
 			if parent.style.align == .End { cross_pos += cross_size-cross }
 			if parent.style.align == .Baseline {
-				cross_pos = inner.y + cross_offset + baseline_target-layout_child_baseline(rt, child, cross)
+				cross_pos = inner.y + child_cross_offset + baseline_target-layout_child_baseline(rt, child, cross)
 			}
 			main_pos := inner.x+main_offset
 			if row_rtl { main_pos = inner.x+inner.w-main_offset-main }
 			next_bounds = Rect{main_pos, cross_pos, clampf(main, child.style.min_width, child.style.max_width), cross}
 		} else {
 			cross = layout_child_cross_size(rt, parent, child, cross_size)
-			cross_pos := inner.x + cross_offset
+			cross_pos := inner.x + child_cross_offset
 			cross_is_reversed := layout_effective_writing_direction(rt, parent) == .Right_To_Left
 			if parent.style.align == .Center { cross_pos += (cross_size-cross)/2 }
 			if parent.style.align == .End && !cross_is_reversed || parent.style.align == .Start && cross_is_reversed { cross_pos += cross_size-cross }
@@ -1107,7 +1115,7 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 			rect_equal(sparse_plan.entries[index].clip, next_clip) {
 			if _, finalized_ok := rt.finalized_geometry[id]; finalized_ok {
 				rt.stats.layout_sparse_unchanged_skips += 1
-				layout_sparse_record(&sparse_plan, index, id, main, cross, main_offset_units, next_bounds, next_clip)
+				layout_sparse_record(&sparse_plan, index, id, main, cross, child_main_offset_units, next_bounds, next_clip)
 				main_offset_units += main_units + gap_units + layout_distribution_gap(Layout_Unit(free_units), count, index, distribution)
 				continue
 			}
@@ -1115,7 +1123,7 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 		layout_note_node_visit(rt, child)
 		child.bounds = next_bounds
 		child.clip = next_clip
-		layout_sparse_record(&sparse_plan, index, id, main, cross, main_offset_units, next_bounds, next_clip)
+		layout_sparse_record(&sparse_plan, index, id, main, cross, child_main_offset_units, next_bounds, next_clip)
 		layout_finalize_node_geometry_for_node(rt, child)
 		semantic_sync_bounds(rt, child)
 		if bounds_changed && child.kind == .Custom_Surface && child.surface_kind == .Geometry &&

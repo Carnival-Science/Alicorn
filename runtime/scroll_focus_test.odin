@@ -194,6 +194,64 @@ scroll_auto_extent_test_render :: proc(rt: ^Runtime, rows: int) -> Node_ID {
 	return region.id
 }
 
+scroll_nested_test_render :: proc(rt: ^Runtime) -> (outer, inner: Node_ID) {
+	invalidate_root(rt, "nested scroll chaining fixture")
+	ui, build := begin_frame(rt)
+	if !build { return }
+	container_begin(&ui, .Root, key=key_string("nested-scroll-root"),
+		style=layout_style(.Column, width=320, height=220))
+	outer_handle := scroll_region_begin(&ui, key=key_string("nested-scroll-outer"),
+		viewport_height=180, content_height=600, line_height=20,
+		style=layout_style(.Column, width=300, height=180, clip=true),
+		axes=.Vertical)
+	outer = outer_handle.id
+	inner_handle := scroll_region_begin(&ui, key=key_string("nested-scroll-inner"),
+		viewport_height=60, content_height=200, line_height=24,
+		style=layout_style(.Column, width=240, height=60, clip=true),
+		axes=.Vertical)
+	inner = inner_handle.id
+	scroll_region_end(&ui)
+	text(&ui, "Remaining outer page content", key=key_string("nested-scroll-tail"),
+		style=layout_style(height=500))
+	scroll_region_end(&ui)
+	container_end(&ui)
+	end_frame(&ui)
+	return
+}
+
+@(test)
+test_scroll_wheel_chains_from_nested_edges :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 320, 220})
+	defer destroy_runtime(&rt)
+	outer, inner := scroll_nested_test_render(&rt)
+	if !testing.expect(t, outer != 0 && inner != 0,
+		"both nested and containing scroll regions should be retained") { return }
+	inner_node := rt.nodes[inner]
+	x, y := inner_node.bounds.x+20, inner_node.bounds.y+20
+	if !testing.expect(t, scroll_region_hit_test(&rt, x, y) == inner,
+		"wheel input over nested content should initially target the deepest region") { return }
+
+	inner_max := maxf(inner_node.scroll_content_height-inner_node.scroll_viewport_height, 0)
+	_ = scroll_region_set_offset(&rt, inner, inner_max)
+	handled := process_scroll(&rt, Scroll_Event{delta_y=-1, x=x, y=y})
+	if !testing.expect(t, handled && scroll_region_offset(&rt, inner) == inner_max &&
+		scroll_region_offset(&rt, outer) == 20,
+		"at the nested region's end, the remaining wheel motion should scroll its containing page") { return }
+
+	_ = scroll_region_set_offset(&rt, outer, 0)
+	_ = scroll_region_set_offset(&rt, inner, inner_max-12)
+	_ = process_scroll(&rt, Scroll_Event{delta_y=-1, x=x, y=y})
+	if !testing.expect(t, scroll_region_offset(&rt, inner) == inner_max &&
+		scroll_region_offset(&rt, outer) == 10,
+		"partial motion at the nested edge should be split proportionally between child and parent") { return }
+
+	_ = scroll_region_set_offset(&rt, outer, 20)
+	_ = scroll_region_set_offset(&rt, inner, 0)
+	_ = process_scroll(&rt, Scroll_Event{delta_y=1, x=x, y=y})
+	testing.expect(t, scroll_region_offset(&rt, inner) == 0 && scroll_region_offset(&rt, outer) == 0,
+		"reverse wheel motion at the nested start should return the containing page to its start")
+}
+
 @(test)
 test_scroll_region_measures_realized_content_and_keeps_input :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 320, 160})
@@ -251,6 +309,51 @@ test_scroll_region_measures_realized_content_and_keeps_input :: proc(t: ^testing
 	testing.expect(t, node.scroll_content_height >= 320 &&
 		scroll_region_offset(&rt, region_id) <= node.scroll_content_height-node.scroll_viewport_height,
 		"a re-described scroll region should update its extent and clamp retained offset safely")
+}
+
+@(test)
+test_scroll_region_offset_moves_retained_children :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 320, 160})
+	defer destroy_runtime(&rt)
+	region := scroll_auto_extent_test_render(&rt, 12)
+	first_id, found := node_by_key(&rt, key_u64(1), .Text)
+	if !testing.expect(t, region != 0 && found,
+		"the scroll region and its first retained child should be present") { return }
+	first_y := rt.nodes[first_id].bounds.y
+	viewport := rt.nodes[region].scroll_viewport_bounds
+	if !testing.expect(t, process_scroll(&rt, Scroll_Event{
+		delta_y=-1,
+		x=viewport.x+viewport.w*0.5,
+		y=viewport.y+viewport.h*0.5,
+	}), "wheel input over the scroll region should be consumed") { return }
+	_ = scroll_auto_extent_test_render(&rt, 12)
+	first := rt.nodes[first_id]
+	owner := rt.nodes[region]
+	testing.expect(t, first.bounds.y == first_y-20,
+		"wheel input should translate ordinary scroll-region content by its retained offset")
+	testing.expect(t, first.clip.y == viewport.y && first.clip.h == viewport.h,
+		"translated scroll-region content should remain clipped to the viewport")
+	if !testing.expect(t, owner.scroll_offset_y > 0,
+		"the retained scroll offset should survive a description rebuild") { return }
+	thumb := owner.scrollbar_vertical_thumb
+	track := owner.scrollbar_vertical_track
+	_ = process_pointer(&rt, Pointer_Event{
+		kind=.Down, x=thumb.x+thumb.w*0.5, y=thumb.y+thumb.h*0.5,
+		button=POINTER_BUTTON_PRIMARY,
+	})
+	_ = process_pointer(&rt, Pointer_Event{
+		kind=.Move, x=thumb.x+thumb.w*0.5, y=track.y+track.h-1,
+	})
+	_ = process_pointer(&rt, Pointer_Event{
+		kind=.Up, x=thumb.x+thumb.w*0.5, y=track.y+track.h-1,
+		button=POINTER_BUTTON_PRIMARY,
+	})
+	_ = scroll_auto_extent_test_render(&rt, 12)
+	owner = rt.nodes[region]
+	first = rt.nodes[first_id]
+	testing.expect(t, owner.scroll_offset_y >= owner.scroll_content_height-owner.scroll_viewport_height-1 &&
+		first.bounds.y <= first_y-(owner.scroll_content_height-owner.scroll_viewport_height)+1,
+		"dragging the scrollbar thumb should move the ordinary scroll-region content to its end")
 }
 
 @(test)

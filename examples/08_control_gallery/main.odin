@@ -623,7 +623,7 @@ render :: proc(app: ^App, ctx: ^ui.UI) {
 				region := alicorn.scroll_region_begin(ctx, key=ui.key_u64(u64(int(app.section)+1)),
 					content_height_auto=true, line_height=28,
 					style=ui.layout_style(.Column, grow=1, clip=true),
-					label="Gallery section content", axes=.Vertical)
+					label="Gallery section content", axes=.Vertical, focusable=true)
 				if region.id != 0 {
 					if ui.column(ctx, gap=16, padding=12 if compact else 18, label="gallery-section") {
 						gallery_section_content(app, ctx)

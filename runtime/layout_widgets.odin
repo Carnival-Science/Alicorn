@@ -281,10 +281,10 @@ scroll_region_begin :: proc(
 	if last >= 0 && rt.pending[last].kind == .Description && rt.pending[last].description.id == id {
 		rt.pending[last].description.scroll_offset_y = offset_y
 		rt.pending[last].description.scroll_viewport_height = resolved_viewport
-		rt.pending[last].description.layout_scroll_offset_y = 0
+		rt.pending[last].description.layout_scroll_offset_y = offset_y
 		rt.pending[last].description.scroll_offset_x = offset_x
 		rt.pending[last].description.scroll_viewport_width = resolved_width
-		rt.pending[last].description.layout_scroll_offset_x = 0
+		rt.pending[last].description.layout_scroll_offset_x = offset_x
 	}
 	append(&rt.stack, id)
 	push_identity_scope(rt, id, "", 0)
@@ -354,6 +354,8 @@ scroll_region_set_offset :: proc(rt: ^Runtime, id: Node_ID, offset_y: f32, reaso
 	next := clampf(offset_y, 0, max_scroll)
 	if next == node.scroll_offset_y { return false }
 	node.scroll_offset_y = next
+	node.layout_scroll_offset_y = next
+	mark_layout_ancestors(rt, id, {.Height})
 	invalidate_root(rt, reason)
 	return true
 }
@@ -369,6 +371,7 @@ scroll_region_set_offset_x :: proc(rt: ^Runtime, id: Node_ID, offset_x: f32, rea
 	if next == node.scroll_offset_x { return false }
 	node.scroll_offset_x = next
 	node.layout_scroll_offset_x = next
+	mark_layout_ancestors(rt, id, {.Width})
 	invalidate_root(rt, reason)
 	return true
 }

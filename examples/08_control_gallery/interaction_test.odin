@@ -88,6 +88,10 @@ test_gallery_narrow_layout_and_scroll_interactions :: proc(t: ^testing.T) {
 	inner := handle.runtime.nodes[inner_id]
 	if !testing.expect(t, inner.scroll_content_height >= 22*22 && inner.scrollbar_vertical_visible,
 		"the gallery's fully described scroll example should derive a usable extent") { return }
+	first_line_id, first_line_found := alicorn.node_by_key(handle.runtime, alicorn.key_u64(900), .Text)
+	if !testing.expect(t, first_line_found,
+		"the first real gallery scroll row should have retained geometry") { return }
+	first_line_y := handle.runtime.nodes[first_line_id].bounds.y
 	if !testing.expect(t, alicorn.focus(handle.runtime, inner_id),
 		"the gallery scroll region should accept keyboard focus") { return }
 	status = testui.step(&handle, testui.Input{kind=.Key, key=.Down})
@@ -111,6 +115,10 @@ test_gallery_narrow_layout_and_scroll_interactions :: proc(t: ^testing.T) {
 	if !testing.expect(t, status == .Ok && alicorn.scroll_region_offset(handle.runtime, inner_id) > 0,
 		"wheel input should move the gallery's nested scroll region") { return }
 	inner = handle.runtime.nodes[inner_id]
+	first_line := handle.runtime.nodes[first_line_id]
+	if !testing.expect(t, first_line.bounds.y < first_line_y &&
+		first_line.clip == inner.scroll_viewport_bounds,
+		"wheel input should move the gallery's actual retained rows while its viewport stays fixed") { return }
 	inner_thumb := inner.scrollbar_vertical_thumb
 	inner_track := inner.scrollbar_vertical_track
 	status = testui.step(&handle, testui.Input{kind=.Pointer, pointer=alicorn.Pointer_Event{
@@ -125,16 +133,20 @@ test_gallery_narrow_layout_and_scroll_interactions :: proc(t: ^testing.T) {
 		x=inner_thumb.x+inner_thumb.w*0.5,
 		y=inner_track.y+inner_track.h-1,
 	}})
+	inner = handle.runtime.nodes[inner_id]
+	first_line = handle.runtime.nodes[first_line_id]
 	if !testing.expect(t, status == .Ok &&
 		alicorn.scroll_region_offset(handle.runtime, inner_id) >= inner.scroll_content_height-inner.scroll_viewport_height-1,
 		"dragging the actual gallery thumb should reach the final scroll rows") { return }
+	if !testing.expect(t, first_line.bounds.y < first_line_y-(inner.scroll_content_height-inner.scroll_viewport_height)+1 &&
+		first_line.clip == inner.scroll_viewport_bounds,
+		"dragging the actual gallery thumb should move its retained rows to the end without moving the viewport") { return }
 	_ = testui.step(&handle, testui.Input{kind=.Pointer, pointer=alicorn.Pointer_Event{
 		kind=.Up,
 		x=inner_thumb.x+inner_thumb.w*0.5,
 		y=inner_track.y+inner_track.h-1,
 		button=alicorn.POINTER_BUTTON_PRIMARY,
 	}})
-
 	outer_id, outer_found := alicorn.node_by_key(
 		handle.runtime,
 		alicorn.key_u64(u64(int(Section.Collections)+1)),
@@ -144,6 +156,17 @@ test_gallery_narrow_layout_and_scroll_interactions :: proc(t: ^testing.T) {
 	if !testing.expect(t, outer_found && outer_node_found &&
 		outer.scroll_content_height > outer.scroll_viewport_height,
 		"the whole gallery section should be measured beyond its viewport") { return }
+	outer_offset_before_nested_edge := alicorn.scroll_region_offset(handle.runtime, outer_id)
+	status = testui.step(&handle, testui.Input{kind=.Scroll, scroll=alicorn.Scroll_Event{
+		delta_y=-1,
+		x=inner_viewport.x+inner_viewport.w*0.5,
+		y=inner_viewport.y+inner_viewport.h*0.5,
+	}})
+	if !testing.expect(t, status == .Ok &&
+		alicorn.scroll_region_offset(handle.runtime, inner_id) >= inner.scroll_content_height-inner.scroll_viewport_height-1 &&
+		alicorn.scroll_region_offset(handle.runtime, outer_id) > outer_offset_before_nested_edge,
+		"wheel input at the nested region's end should continue scrolling the gallery page") { return }
+
 	outer_viewport := outer.scroll_viewport_bounds
 	status = testui.step(&handle, testui.Input{
 		kind=.Scroll,

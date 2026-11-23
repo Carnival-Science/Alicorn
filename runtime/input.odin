@@ -308,33 +308,54 @@ scroll_region_hit_test :: proc(rt: ^Runtime, x, y: f32) -> Node_ID {
 process_scroll :: proc(rt: ^Runtime, event: Scroll_Event) -> bool {
 	id := scroll_region_hit_test(rt, event.x, event.y)
 	if id == 0 { return modal_overlay_root(rt) != 0 }
-	node, ok := rt.nodes[id]
-	if !ok { return false }
 	// SDL's floating-point values carry precise trackpad motion. The integer
 	// fields are accumulated whole ticks, not a higher-quality replacement;
 	// using them here creates large discontinuities on precise devices.
-	delta_y := event.delta_y
-	delta_x := event.delta_x
-	if node.scroll_axes == .Vertical {
-		delta_x = 0
-	} else if node.scroll_axes == .Horizontal {
-		delta_y = 0
-	} else if node.scroll_axis_behavior == .Auto_Lock && delta_x != 0 && delta_y != 0 {
-		if abs(delta_x) > abs(delta_y) {
-			delta_y = 0
-		} else {
-			delta_x = 0
+	remaining_x, remaining_y := event.delta_x, event.delta_y
+	modal_root := modal_overlay_root(rt)
+	// A nested region owns input while it can move. Once it reaches an edge,
+	// pass the unconsumed motion to scrollable ancestors under the same pointer
+	// so the containing page can continue scrolling naturally.
+	for current := id; current != 0 && (remaining_x != 0 || remaining_y != 0); {
+		node, ok := rt.nodes[current]
+		if !ok { break }
+		if node.kind == .Scroll_Region && node_is_presentation_active(rt, current) &&
+			node_is_in_modal_overlay(rt, current, modal_root) {
+			geometry := layout_node_finalized_geometry(rt, current)
+			if rect_contains(geometry.bounds, event.x, event.y) && rect_contains(geometry.clip, event.x, event.y) {
+				delta_x, delta_y := remaining_x, remaining_y
+				if node.scroll_axes == .Vertical {
+					delta_x = 0
+				} else if node.scroll_axes == .Horizontal {
+					delta_y = 0
+				} else if node.scroll_axis_behavior == .Auto_Lock && delta_x != 0 && delta_y != 0 {
+					// Preserve the established axis-lock behavior: suppress the
+					// minor axis for this gesture instead of unexpectedly handing it
+					// to a differently oriented ancestor.
+					if abs(delta_x) > abs(delta_y) { delta_y = 0 }
+					else { delta_x = 0 }
+					if delta_x == 0 { remaining_x = 0 }
+					if delta_y == 0 { remaining_y = 0 }
+				}
+				line_height := node.scroll_line_height
+				if line_height <= 0 { line_height = 24 }
+				line_width := node.scroll_line_width
+				if line_width <= 0 { line_width = 24 }
+				if delta_y != 0 {
+					before := node.scroll_offset_y
+					_ = scroll_region_set_offset(rt, current, before-delta_y*line_height, "scroll region wheel")
+					after := scroll_region_offset(rt, current)
+					remaining_y -= (before-after)/line_height
+				}
+				if delta_x != 0 {
+					before := node.scroll_offset_x
+					_ = scroll_region_set_offset_x(rt, current, before-delta_x*line_width, "horizontal scroll region wheel")
+					after := scroll_region_offset_x(rt, current)
+					remaining_x -= (before-after)/line_width
+				}
+			}
 		}
-	}
-	line_height := node.scroll_line_height
-	if line_height <= 0 { line_height = 24 }
-	line_width := node.scroll_line_width
-	if line_width <= 0 { line_width = 24 }
-	if delta_y != 0 {
-		_ = scroll_region_set_offset(rt, id, node.scroll_offset_y-delta_y*line_height, "scroll region wheel")
-	}
-	if delta_x != 0 {
-		_ = scroll_region_set_offset_x(rt, id, node.scroll_offset_x-delta_x*line_width, "horizontal scroll region wheel")
+		current = node.parent
 	}
 	return true
 }
