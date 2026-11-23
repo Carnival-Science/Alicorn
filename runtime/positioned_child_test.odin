@@ -57,6 +57,182 @@ positioned_test_anchor :: proc(owner: ^Node, x, y: f32) -> (f32, f32) {
 		layout_unit_to_f32(layout_unit_position(inner_y)+layout_unit_position(y))
 }
 
+positioned_test_render_decoration :: proc(
+	rt: ^Runtime,
+	width, height: f32,
+	shape: Surface_Shape,
+	stroke_width: f32 = 0,
+) -> (owner, decoration: Node_ID) {
+	invalidate_root(rt, "positioned decoration extent fixture")
+	ui, build := begin_frame(rt)
+	if !build { return }
+	container_begin(&ui, .Root, key=key_string("positioned-decoration-root"), style=layout_style(.Column, width=400, height=200))
+	owner, _ = button_begin(&ui, "Owner", key=key_string("positioned-decoration-owner"),
+		style=layout_style(.Row, width=200, height=64), presentation=.Custom)
+	decoration = surface_begin(
+		&ui,
+		surface_core_color_role(.Accent),
+		key=key_string("positioned-decoration"),
+		style=layout_style(.Row, width=width, height=height),
+		shape=shape,
+		fill=Color{0.2, 0.3, 0.4, 1},
+		stroke=Paint_Stroke{color=Color{0.9, 0.9, 0.9, 1}, width=stroke_width},
+		stroke_placement=.Inside,
+	)
+	surface_end(&ui)
+	_ = position_child(&ui, decoration, positioned(0, 0))
+	_ = visual_part_attach(&ui, decoration, owner,
+		visual_part_extension_id("alicorn.test", "positioned-decoration"))
+	button_end(&ui)
+	container_end(&ui)
+	end_frame(&ui)
+	return
+}
+
+positioned_test_surface_command :: proc(rt: ^Runtime, node_id: Node_ID) -> (command: Paint_Command, surface: Surface_Paint, found: bool) {
+	for candidate in rt.display {
+		if candidate.owner != node_id { continue }
+		if payload, is_surface := candidate.payload.(Surface_Paint); is_surface { return candidate, payload, true }
+	}
+	return
+}
+
+@(test)
+test_positioned_decoration_extent_updates_with_stable_identity :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 400, 200})
+	defer destroy_runtime(&rt)
+	bar_shape := surface_shape_uniform_corner_radius(1)
+	dot_shape := surface_shape_uniform_corner_radius(3)
+	owner, decoration := positioned_test_render_decoration(&rt, 3, 16, bar_shape)
+	if !testing.expect(t, owner != 0 && decoration != 0, "the positioned visual part should be retained") { return }
+	first_bounds := rt.nodes[decoration].bounds
+	first_finalized, first_finalized_ok := rt.finalized_geometry[decoration]
+	first_command, first_surface, first_command_ok := positioned_test_surface_command(&rt, decoration)
+	if !testing.expect(t, first_finalized_ok && first_command_ok &&
+		positioned_test_close(first_bounds.w, 3) && positioned_test_close(first_bounds.h, 16) &&
+		positioned_test_close(first_finalized.bounds.w, 3) && positioned_test_close(first_finalized.bounds.h, 16) &&
+		positioned_test_close(first_command.bounds.w, 3) && positioned_test_close(first_command.bounds.h, 16) &&
+		first_surface.shape.corner_radius == 1,
+		"the initial bar should have 3-by-16 retained, finalized and painted bounds") {
+		return
+	}
+
+	before_measurements := rt.stats.measure_nodes_executed
+	owner_after, decoration_after := positioned_test_render_decoration(&rt, 6, 6, dot_shape)
+	retained := rt.nodes[decoration_after]
+	finalized, finalized_ok := rt.finalized_geometry[decoration_after]
+	dot_command, dot_surface, dot_command_ok := positioned_test_surface_command(&rt, decoration_after)
+	testing.expect(t, owner_after == owner && decoration_after == decoration,
+		"changing a bar into a dot should preserve the Button owner and positioned visual-part identity")
+	final_part, part_found := rt.visual_parts[decoration_after]
+	testing.expect(t, final_part.owner == owner && part_found,
+		"the positioned decoration should remain attached to its original Button owner")
+	testing.expect(t, retained != nil && positioned_test_close(retained.bounds.w, 6) && positioned_test_close(retained.bounds.h, 6) &&
+		finalized_ok && positioned_test_close(finalized.bounds.w, 6) && positioned_test_close(finalized.bounds.h, 6) &&
+		dot_command_ok && positioned_test_close(dot_command.bounds.w, 6) && positioned_test_close(dot_command.bounds.h, 6) &&
+		dot_surface.shape.corner_radius == 3 && rt.stats.measure_nodes_executed > before_measurements,
+		"bar-to-dot sizing should refresh retained, finalized and painted bounds without replacing the node")
+
+	layout_visits := rt.stats.layout_nodes_visited
+	owner_after, decoration_after = positioned_test_render_decoration(&rt, 6, 6, surface_shape_uniform_corner_radius(5))
+	_, radius_surface, radius_command_ok := positioned_test_surface_command(&rt, decoration_after)
+	testing.expect(t, owner_after == owner && decoration_after == decoration && radius_command_ok &&
+		radius_surface.shape.corner_radius == 5 && rt.stats.layout_nodes_visited == layout_visits,
+		"changing only the radius should repaint the same node without layout work")
+
+	owner_after, decoration_after = positioned_test_render_decoration(&rt, 6, 6,
+		surface_shape_uniform_corner_radius(5), stroke_width=2)
+	stroke_command, stroke_surface, stroke_command_ok := positioned_test_surface_command(&rt, decoration_after)
+	owner_clip := rt.nodes[owner].clip
+	testing.expect(t, owner_after == owner && decoration_after == decoration && stroke_command_ok &&
+		stroke_surface.stroke.width == 2 && stroke_command.stroke_placement == .Inside &&
+		stroke_command.bounds.w == 6 && stroke_command.bounds.h == 6 && stroke_command.clip == owner_clip,
+		"a stroke-width change should update paint while retaining the owner's clipping bounds")
+
+	owner_after, decoration_after = positioned_test_render_decoration(&rt, 3, 16, bar_shape)
+	returned, returned_surface, returned_ok := positioned_test_surface_command(&rt, decoration_after)
+	returned_geometry, returned_geometry_ok := rt.finalized_geometry[decoration_after]
+	fresh := new_runtime(Rect{0, 0, 400, 200})
+	defer destroy_runtime(&fresh)
+	fresh_owner, fresh_decoration := positioned_test_render_decoration(&fresh, 3, 16, bar_shape)
+	fresh_command, fresh_surface, fresh_ok := positioned_test_surface_command(&fresh, fresh_decoration)
+	fresh_geometry, fresh_geometry_ok := fresh.finalized_geometry[fresh_decoration]
+	testing.expect(t, owner_after == owner && decoration_after == decoration && returned_ok && fresh_owner != 0 && fresh_ok &&
+		returned.bounds == fresh_command.bounds && returned.clip == fresh_command.clip &&
+		returned_surface == fresh_surface && returned_geometry_ok && fresh_geometry_ok &&
+		returned_geometry.bounds == fresh_geometry.bounds && returned_geometry.clip == fresh_geometry.clip,
+		"changing back to the original bar should match a fresh runtime's paint and finalized geometry")
+
+	_ = motion_clock_set_time(&rt, Motion_Time(0))
+	handle, handle_status := motion_owner_begin(&rt, decoration)
+	motion_status := motion_apply_intent(&rt, decoration,
+		Motion_Target{translation=Motion_Vector2{12, 0}, has_translation=true}, .Settle)
+	_ = motion_tick(&rt, Motion_Time(50_000_000))
+	ui, ready := begin_presentation_frame(&rt)
+	if ready { end_presentation_frame(&ui) }
+	active_motion := motion_presentation(&rt, handle)
+	owner_after, decoration_after = positioned_test_render_decoration(&rt, 6, 6, dot_shape)
+	animated_command, animated_surface, animated_command_ok := positioned_test_surface_command(&rt, decoration_after)
+	active_after_shape_change := motion_presentation(&rt, handle)
+	testing.expect(t, handle_status == .Ok && motion_status == .Ok && ready && active_motion.active &&
+		owner_after == owner && decoration_after == decoration && active_after_shape_change.active &&
+		positioned_test_close(rt.nodes[decoration].bounds.w, 6) && positioned_test_close(rt.nodes[decoration].bounds.h, 6) &&
+		animated_command_ok && animated_surface.shape.corner_radius == 3 && animated_command.translation[0] > 0,
+		"a shape and extent change during motion should preserve motion state and publish the new geometry")
+}
+
+positioned_test_render_content_height :: proc(rt: ^Runtime, height: f32) -> (decoration: Node_ID) {
+	invalidate_root(rt, "positioned content-height fixture")
+	ui, build := begin_frame(rt)
+	if !build { return }
+	container_begin(&ui, .Root, key=key_string("positioned-content-height-root"), style=layout_style(.Column, width=400, height=200))
+	container_begin(&ui, .Container, key=key_string("positioned-content-height-owner"), style=layout_style(.Column, width=200, height=100))
+	decoration = container_begin(&ui, .Container, key=key_string("positioned-content-height-decoration"),
+		style=layout_style(.Column, width=80, height=height))
+	container_begin(&ui, .Container, key=key_string("positioned-content-height-child"),
+		style=layout_style(.Column, width=80, height=40))
+	container_end(&ui)
+	container_end(&ui)
+	_ = position_child(&ui, decoration, positioned(0, 0))
+	container_end(&ui)
+	container_end(&ui)
+	end_frame(&ui)
+	return
+}
+
+@(test)
+test_positioned_child_height_change_updates_same_decoration_bounds :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 400, 200})
+	defer destroy_runtime(&rt)
+	shape := surface_shape_uniform_corner_radius(4)
+	owner, decoration := positioned_test_render_decoration(&rt, 120, 44, shape)
+	if !testing.expect(t, owner != 0 && decoration != 0, "the positioned outline should be retained") { return }
+	before_measurements := rt.stats.measure_nodes_executed
+	owner_after, decoration_after := positioned_test_render_decoration(&rt, 120, 50, shape)
+	command, _, command_ok := positioned_test_surface_command(&rt, decoration_after)
+	finalized, finalized_ok := rt.finalized_geometry[decoration_after]
+	testing.expect(t, owner_after == owner && decoration_after == decoration &&
+		positioned_test_close(rt.nodes[decoration].bounds.h, 50) &&
+		finalized_ok && positioned_test_close(finalized.bounds.h, 50) &&
+		command_ok && positioned_test_close(command.bounds.h, 50) &&
+		rt.stats.measure_nodes_executed > before_measurements,
+		"a 44-to-50 height edit should update the same retained decoration and its paint bounds")
+}
+
+@(test)
+test_positioned_child_content_height_mode_invalidates_measurement :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 400, 200})
+	defer destroy_runtime(&rt)
+	decoration := positioned_test_render_content_height(&rt, -1)
+	if !testing.expect(t, decoration != 0 && positioned_test_close(rt.nodes[decoration].bounds.h, 24),
+		"an unconstrained positioned container should begin with its intrinsic 24-unit height") {
+		return
+	}
+	updated := positioned_test_render_content_height(&rt, LAYOUT_SIZE_FIT_CONTENT)
+	testing.expect(t, updated == decoration && positioned_test_close(rt.nodes[updated].bounds.h, 40),
+		"changing the same positioned container to fit-content should measure its 40-unit child")
+}
+
 @(test)
 test_positioned_child_horizontal_and_vertical_alignment :: proc(t: ^testing.T) {
 	for horizontal in Positioned_Horizontal {

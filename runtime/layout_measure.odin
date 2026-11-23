@@ -264,11 +264,11 @@ layout_content_child_constraints :: proc(
 	return Layout_Constraints{width=width, height=height}
 }
 
-// A Row's natural main-axis widths must be known before its shared allocator
-// can assign constrained widths. Shape those children at their authored width
-// when present, otherwise at their intrinsic width; the second pass below
-// remeasures them at the allocator's exact width.
-layout_content_row_natural_child_constraints :: proc(rt: ^Runtime, child: ^Node) -> Layout_Constraints {
+// Measure a child before its parent assigns a flow size, while preserving the
+// child's authored dimensions and min/max constraints. Unspecified axes stay
+// open for intrinsic measurement. A Row later remeasures at its assigned
+// width; positioned children use these constraints for their retained extent.
+layout_authored_child_constraints :: proc(rt: ^Runtime, child: ^Node) -> Layout_Constraints {
 	if child == nil { return {} }
 	width := layout_axis_constraint_normalize(child.style.min_width, child.style.max_width)
 	if child.style.width >= 0 {
@@ -363,7 +363,7 @@ layout_measure_content_height :: proc(rt: ^Runtime, node: ^Node, constraints: La
 			// Resolve an intrinsic main-axis ideal first. This pass deliberately
 			// leaves non-explicit widths unbounded so a wrapped label does not
 			// mistake the full Row proposal for its natural width.
-			_ = layout_measure_node(rt, child, layout_content_row_natural_child_constraints(rt, child))
+			_ = layout_measure_node(rt, child, layout_authored_child_constraints(rt, child))
 		}
 		realized_children = len(children)
 		max_child_height: Layout_Unit = 0

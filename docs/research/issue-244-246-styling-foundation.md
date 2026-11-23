@@ -132,6 +132,29 @@ text ink and glyph placement then passed. The Button keys and named part
 IDs stay stable. This result identifies a limit of reusing positioned visual
 nodes on the tested revision.
 
+### Positioned decoration extent follow-up
+
+Reproducing the case against Alicorn master `4182ae1c` on 2026-11-23 confirmed
+the stale bounds were a core measurement-cache bug, not a Scratchpad-only
+limitation. Positioned children were measured with unconstrained dimensions,
+so changing an authored surface width or height did not change the cached
+measurement inputs. The layout pass ran but reused the previous extent.
+
+Positioned children now use their authored width, height and min/max constraints
+as measurement inputs. The same retained node updates its bounds and paint when
+its extent changes; radius-only edits remain paint-only. Regression coverage
+checks 44-to-50 height changes, bar-to-dot replacement, stroke clipping,
+fresh-runtime parity, geometry edits during motion and fit-content measurement.
+This is a core correctness fix, with no new styling API. It removes the need to
+recommend key-changing as a workaround for extent changes.
+
+The focused regressions passed 3/3. The full runtime suite passed 525/526; the
+sole failure is the existing `Node` size tripwire (`2,096` bytes against a
+`2,048`-byte budget), which also fails on untouched `4182ae1c`. The documented
+`./tools/check.sh` could not fetch its pinned AccessKit dependency because
+network DNS was unavailable. This follow-up has headless geometry coverage but
+does not add native GPU pixel or DPI captures.
+
 A Scratchpad theme switch also retained the focused category and selection
 at 150% text scale with Increased Contrast, Differentiate Without Color and
 Reduce Transparency. Named parts received the resolved ink on description.

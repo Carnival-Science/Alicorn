@@ -184,13 +184,12 @@ layout_positioned_children :: proc(rt: ^Runtime, parent: ^Node, inner: Rect, chi
 		placement := child.placement
 		layout_note_node_visit(rt, child)
 
-		// A label is measured at its natural width unless its own Layout_Style
-		// supplies a hard box, wrap limit, or ellipsis constraint. The existing
-		// measure path already reads those inputs.
-		constraints := Layout_Constraints{
-			width=layout_axis_constraint_normalize(0, -1),
-			height=layout_axis_constraint_normalize(0, -1),
-		}
+		// Positioned children do not receive a flow allocation from their
+		// parent. Measure against their authored size constraints so a changed
+		// width/height changes the measure-cache key instead of reusing an old
+		// positioned extent. An unconstrained label still shapes naturally;
+		// explicit width and wrap limits are carried by these constraints.
+		constraints := layout_authored_child_constraints(rt, child)
 		// An unconstrained label must shape at its natural width even if an
 		// earlier explicit box produced a wrapped run.
 		measured := layout_measure_node(rt, child, constraints, force_unbounded_text_shape=true)
