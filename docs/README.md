@@ -54,6 +54,8 @@ The same changelog contains the v0.1.0, v0.2.0, v0.2.1, and v0.2.2 history.
 
 ## Active research
 
+- [#244 and #246 styling foundation](research/issue-244-246-styling-foundation.md) —
+  typed properties and named visual parts in AliKit Radio Group and Segmented Control.
 - [#162 host-owned presentation](research/issue-162-host-owned-presentation.md) —
   the bounded SDL_GPU presenter boundary is complete; the WebGPU renderer
   consumes the same borrowed paint list and caller-owned submission rules.
