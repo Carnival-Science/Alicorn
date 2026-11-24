@@ -1094,6 +1094,7 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	node, ok := rt.nodes[id]
 	if !ok { return }
 	if node.region { region_index_remove(rt, id, node.label) }
+	delete_key(&rt.region_appearance_revisions, id)
 	motion_retire_owner(rt, id)
 	if rt.style_transition_owners != nil { delete_key(&rt.style_transition_owners, id) }
 	restore_release_node(rt, id)
@@ -1383,7 +1384,13 @@ reconcile :: proc(rt: ^Runtime) {
 		}
 		node.active = true
 		node.present = adaptive_default_presentation(rt, node.id)
-		if d.region { node.region_cached = true } else { node.region_cached = false }
+		if d.region {
+			node.region_cached = true
+			rt.region_appearance_revisions[d.id] = item.region_appearance_revision
+		} else {
+			node.region_cached = false
+			delete_key(&rt.region_appearance_revisions, d.id)
+		}
 	}
 	if desired != nil { layout_percent_width_prune_explicit(rt, desired) }
 	layout_percent_width_update_retained(rt)
@@ -1615,6 +1622,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 		free(node, allocator=rt.persistent_allocator)
 	}
 	delete(rt.nodes)
+	delete(rt.region_appearance_revisions)
 	for _, entry in rt.region_nodes {
 		delete(entry.nodes)
 		if len(entry.label) > 0 { delete(entry.label, rt.persistent_allocator) }
@@ -1687,6 +1695,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 		style_theme_owned_destroy(&theme, rt.persistent_allocator)
 	}
 	delete(rt.style_themes)
+	delete(rt.style_theme_appearance_generations)
 	delete(rt.style_materials)
 	delete(rt.style_scope_stack)
 	delete(rt.adaptive_description_scopes)

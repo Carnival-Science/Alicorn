@@ -607,6 +607,7 @@ checker verifies only the mutation scopes the application explicitly reports.
 | `LAYOUT_SIZE_FIT_CONTENT` | Opt a Row or Column `Container` into measured height, or a `Scroll_Region` into a content-sized, max-capped viewport. |
 | `button_content_style` | Set label alignment and padding inside a button. |
 | `Text_Style` | Select weight, overflow behavior, and text presentation options. `font_size` is a logical-unit override; the active text scale still applies. |
+| `Style_Appearance_Revision` / `style_appearance_revision` | Read an exact equality snapshot of the active resolved style environment for application-owned appearance caches; it is not an ordered revision counter. |
 | `Style_Theme` / `style_theme_register` / `style_theme_replace` | Register a typed theme, then replace a non-default runtime theme between frames; changed style domains determine paint, layout, and description invalidation. |
 | `style_theme_replace_prepare` / `style_theme_replace_commit` / `style_theme_replace_abort` | Stage fallible theme snapshots across runtimes before committing each between frames; abort prepared snapshots if any target rejects its candidate. |
 | `Style_Control_State` / `Style_Control_States` | Shared selected, hovered, pressed, and disabled recipe-transform vocabulary. |
@@ -850,10 +851,26 @@ system below. The scope container must keep parent-assigned bounds stable while
 its contents reflow. Theme IDs are immutable and local to a runtime; do not
 reuse IDs across runtimes.
 
+`style_appearance_revision(rt)` returns a Runtime-local equality snapshot of
+the resolved theme ID and content generation, density, text scale, accent, and
+accessibility appearance preferences. Compare it only within that Runtime when an
+application caches values it resolved from the active style scope.
+`region_begin`
+records this snapshot in sparse region side storage and reuses a cached region
+only when both its logical content revision and appearance snapshot match.
+Changing a host preference or scoped style input therefore rebuilds only the
+affected region. Same-ID theme replacement advances that theme's appearance
+generation; if a cached region was described under the replaced theme, Alicorn
+requests a root description so application-resolved values can be refreshed,
+while unaffected regions remain reusable. The snapshot map is keyed by region
+ID and does not add storage to every retained node.
+
 `style_theme_replace` updates a registered non-default theme in place between
 frames. A replacement that changes only color roles is Paint-only: retained
 control recipes, semantic surfaces, and description-resolved text colors are
-recomputed for affected nodes without a description rebuild or layout. Text,
+recomputed for affected nodes without layout. A root description is also
+requested when a cached keyed region was described under that theme, so
+application-owned values captured inside it can be recomputed. Text,
 Text_Field, and Text_Composition ink that defaulted to the theme's `Text` role
 is recomputed by the replacement walk; an explicit caller color is never
 modified. Metric changes still invalidate the root so application-authored
@@ -870,7 +887,10 @@ top-left, top-right, bottom-right, and bottom-left radii with flat or analytic-
 relief materials. Opposing radii are proportionally reduced together when
 they exceed the resolved bounds. Radius changes invalidate surface paint but
 do not reshape text or rerun layout. General property resolution and
-metric-token dependencies remain outside the current contract.
+metric-token dependencies remain outside the current contract. Composable
+recipe, fragment, and explicit-context styling remains a private prototype;
+see the [#245 research record](research/issue-245-composable-styles.md) for its
+precedence model and the decision gate before a public API.
 
 ### Experimental scene-local lighting
 

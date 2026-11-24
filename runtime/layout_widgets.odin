@@ -819,6 +819,8 @@ region_begin :: proc(ui: ^UI, key: string, revision: u64, source := Source_Site{
 	if id == 0 {
 		return 0, false
 	}
+	appearance_revision := style_appearance_revision(rt)
+	rt.pending[len(rt.pending)-1].region_appearance_revision = appearance_revision
 	// Expose the explicit string key to queries while preserving the legacy ID encoding.
 	rt.pending[len(rt.pending)-1].description.identity_key_kind = 1
 	effective_revision := revision
@@ -829,7 +831,12 @@ region_begin :: proc(ui: ^UI, key: string, revision: u64, source := Source_Site{
 		effective_revision = old.region_revision
 		rt.pending[len(rt.pending)-1].description.region_revision = effective_revision
 	}
-	if old, ok := rt.nodes[id]; ok && old.region && old.region_cached && old.region_revision == effective_revision {
+	appearance_matches := false
+	if retained_appearance, found := rt.region_appearance_revisions[id]; found {
+		appearance_matches = retained_appearance == appearance_revision
+	}
+	if old, ok := rt.nodes[id]; ok && old.region && old.region_cached &&
+		old.region_revision == effective_revision && appearance_matches {
 		rt.stats.regions_skipped += 1
 		rt.stats.retained_subtrees_reused += 1
 		// The cached retained hierarchy is already authoritative. A marker is

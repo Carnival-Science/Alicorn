@@ -47,6 +47,24 @@ describing a frame.
   source spans and parser structures remain compiler-only. These names are
   diagnostic metadata, not runtime lookup keys.
 
+Application-owned caches that store resolved appearance values can compare
+`style_appearance_revision(rt)` for equality within that Runtime. The token
+includes the current theme's content generation and resolved style environment,
+and remains stable while those inputs remain unchanged. Keyed regions retain this snapshot in
+sparse runtime storage: a changed snapshot re-describes that region, while an
+unchanged logical and appearance revision preserves subtree reuse. A same-ID
+theme replacement advances the selected theme generation so cached region
+values can be recomputed without laying out unrelated retained content. This
+is an equality token, not an ordered clock or a replacement for the application's
+own content revision.
+
+Recipe inheritance, typed fragments, and explicit style contexts remain a
+private Button prototype rather than part of the theme contract. Its current
+theme-snapshot adapter is useful evidence but does not yet provide an ergonomic
+runtime context scope or a second consumer. See the
+[#245 composition record](research/issue-245-composable-styles.md) for the
+precedence model and public-API decision.
+
 ## Third-party component roles
 
 Reusable components should use namespaced extension roles and state their

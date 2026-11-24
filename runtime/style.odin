@@ -117,6 +117,57 @@ style_root_accessibility_observation_get :: proc(rt: ^Runtime) -> Accessibility_
 	}
 }
 
+// style_appearance_revision returns an exact equality token for the resolved
+// style inputs in the current description scope. Call it while the desired
+// style_environment is active. Outside a frame it describes the host root
+// accessibility/text-scale inputs and the default environment. Same-ID theme
+// replacement advances the selected theme generation, so application-owned
+// caches can distinguish new theme contents without inspecting theme fields.
+style_appearance_revision :: proc(rt: ^Runtime) -> Style_Appearance_Revision {
+	if rt == nil { return {} }
+	environment := rt.style_environment
+	if !rt.frame_open {
+		environment = DEFAULT_STYLE_ENVIRONMENT
+		environment.text_scale = rt.root_text_scale
+		environment.accessibility = rt.root_accessibility_appearance
+		environment.accessibility_set = true
+	}
+	return Style_Appearance_Revision{
+		theme=environment.theme,
+		theme_generation=style_theme_appearance_generation(rt, environment.theme),
+		density=environment.density,
+		text_scale=environment.text_scale,
+		accent=environment.accent,
+		accessibility=environment.accessibility,
+	}
+}
+
+@(private)
+style_theme_appearance_generation :: proc(rt: ^Runtime, id: Style_Theme_ID) -> u64 {
+	if rt == nil || id == 0 { return 0 }
+	index := int(u32(id))-1
+	if index < 0 || index >= len(rt.style_theme_appearance_generations) { return 0 }
+	return rt.style_theme_appearance_generations[index]
+}
+
+@(private)
+style_theme_appearance_generation_advance :: proc(rt: ^Runtime, id: Style_Theme_ID) -> bool {
+	if rt == nil || id == 0 { return false }
+	index := int(u32(id))-1
+	if index < 0 || index >= len(rt.style_theme_appearance_generations) { return false }
+	if rt.style_theme_appearance_generations[index] == 0xFFFFFFFFFFFFFFFF {
+		// A wrapped generation could alias an ancient snapshot. Clearing this
+		// sparse map makes every keyed region rebuild when the caller invalidates
+		// the root below.
+		clear(&rt.region_appearance_revisions)
+		rt.style_theme_appearance_generations[index] = 1
+		return true
+	} else {
+		rt.style_theme_appearance_generations[index] += 1
+	}
+	return false
+}
+
 style_generation_value :: proc(generations: Style_Generations, domain: Style_Domain) -> u32 {
 	switch domain {
 	case .Metrics: return generations.metrics
@@ -502,6 +553,7 @@ style_theme_register :: proc(rt: ^Runtime, theme: Style_Theme) -> Style_Theme_ID
 		return 0
 	}
 	append(&rt.style_themes, registered)
+	append(&rt.style_theme_appearance_generations, 1)
 	return Style_Theme_ID(u32(len(rt.style_themes)))
 }
 
@@ -509,8 +561,12 @@ style_theme_register :: proc(rt: ^Runtime, theme: Style_Theme) -> Style_Theme_ID
 // Stage on the owning thread and call only between description/presentation
 // frames. The candidate is validated and deep-copied before the old snapshot
 // is released. Paint-only replacements repaint retained nodes without a
-// description rebuild or layout; metric replacements invalidate the root so
-// application-authored token-to-layout calculations can be recomputed.
+// description rebuild or layout unless an already-cached keyed region was
+// described under that theme. Such a region may contain application-owned
+// values that need recomputation, so it requests one root description and
+// unaffected regions can still reuse; metric replacements always invalidate
+// the root so application-authored token-to-layout calculations can be
+// recomputed.
 Style_Theme_Replace_Result :: enum u8 { Rejected, Unchanged, Replaced }
 
 Style_Theme_Replace_Prepare_Result :: enum u8 { Rejected, Unchanged, Prepared }
@@ -578,9 +634,17 @@ style_theme_replace_commit :: proc(
 	// requests are reconciled from the next complete description.
 	motion_policy_changed := previous.motion_policy != prepared.replacement.motion_policy
 	rt.style_themes[index] = prepared.replacement
+	appearance_generation_wrapped := style_theme_appearance_generation_advance(rt, id)
 	prepared.replacement = {}
 	prepared^ = {}
 	style_theme_owned_destroy(&previous, rt.persistent_allocator)
+	region_was_described_under_theme := false
+	for _, appearance_revision in rt.region_appearance_revisions {
+		if appearance_revision.theme == id {
+			region_was_described_under_theme = true
+			break
+		}
+	}
 	for node_id, node in rt.nodes {
 		if node == nil || node.style_environment.theme != id { continue }
 		style_generations_advance(&node.style_generations, domains)
@@ -599,8 +663,12 @@ style_theme_replace_commit :: proc(
 		if Style_Domain.Metrics in domains { mark_layout_ancestors(rt, node_id) }
 		if node.active && node.present { queue_paint(rt, node_id) }
 	}
-	if Style_Domain.Metrics in domains || motion_policy_changed {
-		invalidate_root(rt, "live style theme replacement requires application description")
+	if Style_Domain.Metrics in domains || motion_policy_changed || region_was_described_under_theme || appearance_generation_wrapped {
+		reason := "live style theme replacement requires application description"
+		if region_was_described_under_theme && Style_Domain.Metrics not_in domains && !motion_policy_changed {
+			reason = "live style theme replacement may affect a cached region described under this theme"
+		}
+		invalidate_root(rt, reason)
 	} else {
 		request_presentation(rt, "live style theme paint changed")
 	}

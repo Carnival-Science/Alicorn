@@ -1081,6 +1081,21 @@ Style_Environment :: struct {
 	accessibility_set: bool,
 }
 
+// Style_Appearance_Revision is an exact snapshot of the resolved style inputs
+// that can change visual output. It is stable while those inputs and the
+// selected theme contents are unchanged. Applications can compare it for
+// equality in their own appearance-dependent caches; it is not an ordered
+// counter, is local to one Runtime, and must not replace a keyed region's
+// logical content revision.
+Style_Appearance_Revision :: struct {
+	theme: Style_Theme_ID,
+	theme_generation: u64,
+	density: f32,
+	text_scale: f32,
+	accent: Style_Accent,
+	accessibility: Accessibility_Appearance_Preferences,
+}
+
 // Description keeps only the compact, frequently hashed style values here;
 // accessibility preferences travel beside it in Pending_Item and are retained
 // on Node so the per-description size budget remains stable.
@@ -1415,6 +1430,7 @@ Pending_Item :: struct {
 	kind:        Pending_Kind,
 	description: Description,
 	subtree:     Node_ID,
+	region_appearance_revision: Style_Appearance_Revision,
 	semantic_surface_style: Semantic_Surface_Style,
 	pointer_hit_shape: Pointer_Hit_Shape,
 	visual_part: Visual_Part_Style,
@@ -2125,6 +2141,10 @@ Runtime :: struct {
 	// retirement maintain this index so invalidate_region resolves a key in
 	// O(changed keys) instead of scanning every retained node.
 	region_nodes: map[string]Region_Index_Entry,
+	// Region appearance snapshots are sparse side storage: cached regions need
+	// to re-describe when the resolved style environment or selected theme
+	// contents change, without adding fields to every retained Node.
+	region_appearance_revisions: map[Node_ID]Style_Appearance_Revision,
 	// Retained motion is an opt-in sparse sidecar. Its generation counter is
 	// runtime-local, while handles also carry a process-unique runtime lifetime
 	// identity to prevent cross-runtime aliasing. Records leave with their owner.
@@ -2228,6 +2248,7 @@ Runtime :: struct {
 	root_text_scale: f32,
 	root_text_scale_known: bool,
 	style_themes: [dynamic]Style_Theme,
+	style_theme_appearance_generations: [dynamic]u64,
 	style_materials: [dynamic]Style_Material,
 	style_scope_stack: [dynamic]Style_Environment_Scope,
 	adaptive_description_scopes: [dynamic]Adaptive_Description_Scope,

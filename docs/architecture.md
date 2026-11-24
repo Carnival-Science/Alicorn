@@ -199,9 +199,12 @@ activation and state. TabBar is the first built-in consumer; its close child
 is independently actionable and its paint uses the same generic primitive
 stream as other controls.
 
-Theme/accent changes are Paint-only today because current recipes consume color
-roles only. No theme length token drives recipe metrics, typography, or material
-selection. An affected Text node's description-resolved ink records that it came
+Theme/accent changes are Paint-only for retained recipes because current
+recipes consume color roles only. No theme length token drives recipe metrics,
+typography, or material selection. Same-ID theme replacement also requests a
+description when a cached keyed region was described under that theme, since
+application code inside the region may have resolved and retained theme values.
+An affected Text node's description-resolved ink records that it came
 from the theme's Text role, so a color-only `style_theme_replace` recomputes that
 baked color in the same per-node walk that advances paint generations; explicit
 caller colors stay caller-owned. A text-scale scope advances Metrics and

@@ -1,6 +1,6 @@
 # Styling foundation: typed properties and visual parts
 
-November 22, 2026 · Initial research for [#244](https://github.com/Carnival-Science/Alicorn/issues/244) and [#246](https://github.com/Carnival-Science/Alicorn/issues/246).
+November 22, 2026 · Updated November 24 for [#232](https://github.com/Carnival-Science/Alicorn/issues/232), [#244](https://github.com/Carnival-Science/Alicorn/issues/244), and [#246](https://github.com/Carnival-Science/Alicorn/issues/246).
 
 Radio Group and Segmented Control already share selection policy in AliKit.
 The experiment is whether ordinary Odin style values can change their anatomy
@@ -10,6 +10,57 @@ and the current Alicorn renderer. Keep the style values local to the pilot
 until evidence supports a public vocabulary. [Styling roadmap](https://github.com/Carnival-Science/Alicorn/issues/243) · [Component standard](../component-authoring.md)
 
 ## What is already available
+
+### November 24 foundation update
+
+Keyed regions now retain an exact `Style_Appearance_Revision` snapshot in
+sparse runtime storage. The snapshot covers the resolved theme ID and its
+same-ID content generation, density, text scale, accent, and accessibility
+appearance preferences. A region is reused only when both its logical content
+revision and this equality token match. Same-ID theme replacement requests a
+root description when a cached region was described under that theme; region
+bodies can then recompute application-resolved values while unaffected cached
+regions still reuse. This closes the stale app-authored appearance path without
+adding fields to `Node`. See [`style_appearance_revision`](../reference.md#scoped-style-environment)
+and the focused regression in
+[`region_appearance_revision_test.odin`](../../runtime/region_appearance_revision_test.odin).
+
+The new test covers each host accessibility appearance channel, an explicit
+subtree override, same-ID palette replacement, no-op equality, fresh-runtime
+color parity, scoped and cross-theme reuse, and #193 frontier attribution when
+capture is enabled. Both new focused tests pass on Windows. The full runtime
+runner completed 525 tests with one failure: the existing retained-record
+tripwire measures `Node` at 2,096 bytes against its 2,048-byte limit. This
+change adds its snapshots to sparse side storage and does not add fields to
+`Node`. The standard `tools/test.ps1` stopped earlier in the AccessKit Windows
+UIA smoke because it could not find the expected Accessible Button; the ABI
+contract, eight AccessKit tests, and consumer smoke passed before that check.
+
+### Progress vocabulary and part anatomy
+
+AliKit's Progress component supplies a useful independent-anatomy consumer.
+At Alicorn-Kit `4a15b5b7622c6a297fa92d6e70d707be5f50727c`, its nine Progress
+tests pass against this Alicorn checkout. The public parts render the same
+determinate value as a linear track or a ring, and can omit the visual label
+and value while preserving the stable `Progress` semantic identity, role,
+accessible label, numeric range, and current value. A custom-width track also
+uses the same normalized value and fill geometry.
+
+This validates the useful shared vocabulary at the primitive boundary:
+`Layout_Style` dimensions and padding, `Text_Style` for text nodes, semantic
+color roles, `Surface_Shape`, and retained semantic-surface paint can be
+combined without giving Progress ownership of Alicorn's input or semantics.
+The ring's radius, indeterminate phase, and range are component behavior and
+remain Progress-specific typed options; they should not be forced into a
+universal style-property union. The tests are headless; native pixel, DPI,
+high-contrast, and WebGPU comparisons remain unverified for these Progress
+treatments.
+
+The result supports #246's named-part boundary: visual anatomy can vary
+substantially while the same semantic owner remains stable. It does not yet
+show that a generic recipe language reduces authoring effort for Progress.
+Progress still uses its public component options and Alicorn's ordinary typed
+paint/layout primitives.
 
 | Control or layer | Existing styling surface | Limit relevant to this study |
 | --- | --- | --- |
@@ -158,12 +209,11 @@ does not add native GPU pixel or DPI captures.
 A Scratchpad theme switch also retained the focused category and selection
 at 150% text scale with Increased Contrast, Differentiate Without Color and
 Reduce Transparency. Named parts received the resolved ink on description.
-The same-ID paint-only replacement case remains open for app-authored colors
-copied into retained nodes, especially in keyed regions. The Node size-budget
-failure remains separate. These results support continuing the pilot before
-generalizing the API, with independent component anatomy such as Progress
-still to validate. The styling language remains in wave 3.
-[Appearance revision tracking in #232](https://github.com/Carnival-Science/Alicorn/issues/232)
+The same-ID paint-only replacement gap for cached application-owned values is
+now covered by the #232 snapshot work above. The Node size-budget failure
+remains separate. Progress now supplies independent anatomy evidence, though
+native visual acceptance and a second consumer of shared style composition
+remain open.
 
 ## Typed properties and their effects
 
@@ -223,7 +273,12 @@ needed to start this experiment. [Control metrics and precedence](../themes.md#c
    Generalize only the fields or seams used in both controls. Before calling
    #244 complete, check built-in default and legacy-theme parity, intrinsic
    and virtualized layout, and one additional product use such as Scratchpad
-   chrome or a Punks control. Leave the recipe-composition and styling
-   language decisions until their requirements are evident.
+   chrome or a Punks control. Keep range, phase, and visual-part structure in
+   Progress's typed component contract where they express behavior rather
+   than generic appearance.
+5. Require a real second consumer of the same recipe fragments and explicit
+   context contract before extracting a public #245 API. The private Button
+   prototype and its current limitations are recorded in
+   [`issue-245-composable-styles.md`](issue-245-composable-styles.md).
 
-Sources: [#106 fresh-runtime oracle](../validation/issue-106-invalidation-oracle.md) · [AliKit external consumer evidence](https://github.com/samanshaiza004/alicorn-kit/blob/fded57a94e6a2c5bf44d8b980befe5a260ff5ed5/docs/research/issue-006-phase-6-external-consumers.md) · [#245 recipe composition](https://github.com/Carnival-Science/Alicorn/issues/245).
+Sources: [#106 fresh-runtime oracle](../validation/issue-106-invalidation-oracle.md) · [AliKit external consumer evidence](https://github.com/samanshaiza004/alicorn-kit/blob/fded57a94e6a2c5bf44d8b980befe5a260ff5ed5/docs/research/issue-006-phase-6-external-consumers.md) · [AliKit Progress revision](https://github.com/samanshaiza004/alicorn-kit/commit/4a15b5b7622c6a297fa92d6e70d707be5f50727c) · [#245 recipe composition](https://github.com/Carnival-Science/Alicorn/issues/245).
