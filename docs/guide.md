@@ -59,6 +59,11 @@ action to application state, and release each event with
 Use `host.Run` for runtime/font initialization and additional native events
 or host services.
 
+Basic key handling can stay in `alicorn:ui`: callbacks use `^ui.Runtime` and
+`ui.Application_Key`, and `ui.key_string` constructs an explicit string
+identity. Import `alicorn:runtime` when the application uses runtime APIs that
+do not have a `ui` wrapper.
+
 Convenience sizing is local to `ui`: the application root fills the viewport;
 rows and columns use their allocated width and fit their children's height;
 text uses normal text measurement; buttons keep their existing intrinsic

@@ -8,6 +8,8 @@ import odin_runtime "base:runtime"
 // UI is the ordinary authoring context. It is the same context used by the
 // lower-level runtime API; these helpers do not create another UI tree.
 UI :: alicorn.UI
+Runtime :: alicorn.Runtime
+Application_Key :: alicorn.Application_Key
 Node_ID :: alicorn.Node_ID
 Color :: alicorn.Color
 Paint_Stroke :: alicorn.Paint_Stroke
@@ -62,6 +64,7 @@ DEFAULT_CHECKBOX_STYLE :: Layout_Style{
 	options=alicorn.Layout_Options(0),
 }
 
+key_string :: proc(value: string) -> UI_Key { return alicorn.key_string(value) }
 key_u64 :: proc(value: u64) -> UI_Key { return alicorn.key_u64(value) }
 key_pair :: proc(first, second: u64) -> UI_Key { return alicorn.key_pair(first, second) }
 

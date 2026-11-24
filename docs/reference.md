@@ -1167,8 +1167,10 @@ Identity keys accept common Odin values directly:
 - a `u64` such as `key=item.id` for a numeric item identity;
 - `key_pair(first, second)` when identity depends on two numeric values.
 
-The `key_string` and `key_u64` constructors remain available when an explicit
-`UI_Key` value is useful.
+`ui.key_string`, `ui.key_u64`, and `ui.key_pair` construct explicit `UI_Key`
+values when a public API asks for one. `ui.Runtime` and `ui.Application_Key`
+are aliases for the types used by `ui.run` callbacks; they do not create a
+second runtime or input model.
 
 Use `if ui.key_scope(ctx, item.id) { ... }` to identify a reusable component
 and all its children. Its required `UI_Key` accepts strings, `u64` values and
