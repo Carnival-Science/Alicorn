@@ -91,6 +91,50 @@ test_interaction_scope_routes_pointer_and_drops_events_for_retired_scope :: proc
 		"events owned by a scope omitted from the next description should be discarded")
 }
 
+Interaction_Scroll_Scope_Test_Result :: struct {
+	owner: Node_ID,
+	event: Interaction_Event,
+	found: bool,
+}
+
+interaction_scroll_scope_test_describe :: proc(rt: ^Runtime, consume_owner: Node_ID = 0) -> Interaction_Scroll_Scope_Test_Result {
+	result := Interaction_Scroll_Scope_Test_Result{}
+	ui, should_build := begin_frame(rt)
+	if !should_build { return result }
+	container_begin_simple(&ui, .Root, label="interaction-scroll-scope-root",
+		key="interaction-scroll-scope-root", style=layout_style(.Column, width=240, height=120))
+	region := scroll_region_begin(&ui, key=key_string("interaction-scroll-scope-region"),
+		viewport_height=48, content_height=240,
+		style=layout_style(.Column, width=180, height=48), scrollbars=.Hidden, focusable=true)
+	result.owner = region.id
+	_ = interaction_scope_register(rt, region.id, nil,
+		Interaction_Scope_Options{keys={.Down}, composition_yield_keys={.Down}})
+	scroll_region_end(&ui)
+	container_end(&ui)
+	if consume_owner != 0 {
+		result.event, result.found = interaction_event_next(rt, consume_owner)
+	}
+	end_frame(&ui)
+	return result
+}
+
+@(test)
+test_focused_scroll_region_routes_component_scope_before_default_scroll :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 240, 120})
+	defer destroy_runtime(&rt)
+	nodes := interaction_scroll_scope_test_describe(&rt)
+	if !testing.expect(t, nodes.owner != 0, "the focusable scroll region should be retained") { return }
+	if !testing.expect(t, focus(&rt, nodes.owner), "the component's scroll owner should accept focus") { return }
+	if !testing.expect(t, application_route_focused_control_key(&rt, .Down),
+		"a key declared by the focused component scope should be consumed") { return }
+	if !testing.expect(t, scroll_region_offset(&rt, nodes.owner) == 0,
+		"the default scroll behavior should not steal a component navigation key") { return }
+
+	nodes = interaction_scroll_scope_test_describe(&rt, nodes.owner)
+	testing.expect(t, nodes.found && nodes.event.kind == .Key && nodes.event.key == .Down,
+		"the component should receive its key during the next description")
+}
+
 // ---------------------------------------------------------------------------
 // Text-target key preemption policy
 // ---------------------------------------------------------------------------

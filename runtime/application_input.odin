@@ -281,6 +281,10 @@ focused_scroll_region_key :: proc(rt: ^Runtime, key: Application_Key) -> bool {
 // application_route_focused_control_key is shared by native and headless
 // hosts after text and transient overlay routing has declined the key.
 application_route_focused_control_key :: proc(rt: ^Runtime, key: Application_Key) -> bool {
+	// Give retained component scopes first refusal before default behavior on
+	// focused controls. A focusable virtual list is also a Scroll_Region, but
+	// its owning component may use the same arrows for roving selection.
+	if interaction_scope_dispatch_key(rt, key) { return true }
 	if focused_scroll_region_key(rt, key) { return true }
 	#partial switch key {
 	case .Toggle: return activate_focused(rt, .Space)
