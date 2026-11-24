@@ -23,6 +23,7 @@ const markers = [
   ['readback-compositor', 'async RGBA8 readback compositor PASS'],
   ['readback-effects', 'async RGBA8 readback effects PASS'],
   ['readback-material', 'rounded accessibility-material readback PASS'],
+  ['controlled-text-readback', 'controlled text field GPU readback PASS'],
 ];
 
 function chromiumDir() {

@@ -752,6 +752,7 @@ start_offscreen_readback :: proc() {
 		composite_icon_uploads, composite_icon_atlas_uploads, state.compositor.icons.atlas_upload_bytes,
 		composite_image_meshes, composite_image_uploads, composite_image_texture_uploads, composite_image_texture_bytes,
 		composite_surface_meshes, composite_surface_uploads, surface_vertices, composite_surface_instance_uploads)
+	controlled_text_readback_encode(encoder)
 	// 63 RGBA8 texels use 252 bytes; the 256-byte row pitch exercises the
 	// required four-byte per-row padding in both native and browser readback.
 	layout:=wgpu.TexelCopyBufferLayout{bytesPerRow=READBACK_BYTES_PER_ROW,rowsPerImage=READBACK_HEIGHT}
@@ -773,6 +774,14 @@ start_offscreen_readback :: proc() {
 	composite_source := wgpu.TexelCopyTextureInfo{texture=state.composite_offscreen_texture,aspect=.All}
 	composite_destination := wgpu.TexelCopyBufferInfo{layout=composite_layout,buffer=state.readback_buffer}
 	wgpu.CommandEncoderCopyTextureToBuffer(encoder,&composite_source,&composite_destination,&wgpu.Extent3D{width=READBACK_WIDTH,height=READBACK_HEIGHT,depthOrArrayLayers=1})
+	controlled_text_layout := layout
+	controlled_text_layout.offset = 16*READBACK_BUFFER_BYTES
+	controlled_text_source := wgpu.TexelCopyTextureInfo{texture=state.controlled_text_readback.texture,aspect=.All}
+	controlled_text_destination := wgpu.TexelCopyBufferInfo{layout=controlled_text_layout,buffer=state.readback_buffer}
+	wgpu.CommandEncoderCopyTextureToBuffer(
+		encoder, &controlled_text_source, &controlled_text_destination,
+		&wgpu.Extent3D{width=READBACK_WIDTH, height=READBACK_HEIGHT, depthOrArrayLayers=1},
+	)
 	command:=wgpu.CommandEncoderFinish(encoder); wgpu.CommandEncoderRelease(encoder)
 	wgpu.QueueSubmit(state.queue,{command}); wgpu.CommandBufferRelease(command)
 	when FEASIBILITY_TEST_WEBGPU_PRESENTER {
@@ -783,6 +792,9 @@ start_offscreen_readback :: proc() {
 			state.presenter_submission.serial, state.presenter_submission.display_revision)
 	}
 	webgpu_renderer.Text_Commit_Submission(&state.text_renderer, &state.text_runtime)
+	webgpu_renderer.Text_Commit_Submission(
+		&state.controlled_text_readback.renderer, &state.controlled_text_readback.runtime,
+	)
 	state.compositor_completion_serial = webgpu_renderer.Compositor_Commit_Submission(&state.compositor, &state.text_runtime)
 	if state.compositor_completion_serial == 0 { fmt.panicf("mixed compositor submission did not receive a completion serial") }
 	if result := webgpu_renderer.Solid_Prepare(
@@ -1542,6 +1554,101 @@ build_text_runtime :: proc() {
 	}
 }
 
+controlled_text_readback_describe :: proc() -> alicorn.Node_ID {
+	fixture := &state.controlled_text_readback
+	ui, should_build := alicorn.begin_frame(&fixture.runtime)
+	if !should_build { fmt.panicf("controlled WebGPU text fixture did not accept its description") }
+	alicorn.container_begin(
+		&ui, .Root, label="controlled-webgpu-text-root",
+		key=alicorn.key_string("controlled-webgpu-text-root"),
+		style=alicorn.layout_style(.Column, width=50, height=48, clip=true),
+	)
+	field := alicorn.text_field_controlled(
+		&ui, &fixture.query,
+		key=alicorn.key_string("controlled-webgpu-text-field"),
+		style=alicorn.layout_style(.Row, width=50, height=32),
+		text_style=alicorn.Text_Style{font_size=14, overflow=.Clip},
+	)
+	alicorn.container_end(&ui)
+	alicorn.end_frame(&ui)
+	return field.node
+}
+
+// This is an end-to-end regression for the retained controlled-field path:
+// start empty, commit text through Runtime input, let the public controlled
+// API adopt it on the next description, then render its real text paint to
+// WebGPU at 1.25x for asynchronous pixel readback.
+build_controlled_text_readback :: proc() {
+	fixture := &state.controlled_text_readback
+	fixture.runtime = alicorn.new_runtime(alicorn.Rect{0, 0, 50, 48})
+	fixture.runtime_ready = true
+	if !alicorn.text_engine_load_font_role(&fixture.runtime.text_engine, .UI, FONT_DATA) {
+		fmt.panicf("controlled WebGPU text fixture could not load the bundled UI font")
+	}
+	query, query_ok := alicorn.text_field_buffer_init("", context.allocator)
+	if !query_ok { fmt.panicf("controlled WebGPU text fixture could not initialize its query buffer") }
+	fixture.query = query
+	renderer, renderer_ok := webgpu_renderer.Text_Create(state.device, state.queue, .RGBA8Unorm)
+	if !renderer_ok { fmt.panicf("controlled WebGPU text renderer initialization failed") }
+	fixture.renderer = renderer
+	alicorn.invalidate_root(&fixture.runtime, "controlled WebGPU query field initial description")
+	fixture.field = controlled_text_readback_describe()
+	if fixture.field == 0 { fmt.panicf("controlled WebGPU text fixture did not retain its field") }
+	if !alicorn.focus(&fixture.runtime, fixture.field) {
+		fmt.panicf("controlled WebGPU text fixture could not focus its field")
+	}
+	change := alicorn.process_text_input(&fixture.runtime, fixture.field, "browse")
+	alicorn.text_change_destroy(&fixture.runtime, &change)
+	alicorn.invalidate_root(&fixture.runtime, "controlled WebGPU query committed input")
+	updated_field := controlled_text_readback_describe()
+	value, value_ok := alicorn.text_field_value(&fixture.runtime, updated_field)
+	retained, retained_ok := fixture.runtime.nodes[updated_field]
+	if updated_field != fixture.field || !value_ok || value != "browse" || fixture.query.text != value ||
+	   !retained_ok || !retained.text_run_valid || retained.text_run.value != value {
+		fmt.panicf("controlled WebGPU committed text did not reach a current retained glyph run")
+	}
+	fixture.texture = wgpu.DeviceCreateTexture(state.device, &wgpu.TextureDescriptor{
+		label="controlled text field 1.25x RGBA8 readback target",
+		usage={.RenderAttachment, .CopySrc}, dimension=._2D,
+		size={width=READBACK_WIDTH, height=READBACK_HEIGHT, depthOrArrayLayers=1},
+		format=.RGBA8Unorm, mipLevelCount=1, sampleCount=1,
+	})
+	fixture.view = wgpu.TextureCreateView(fixture.texture)
+	if fixture.texture == nil || fixture.view == nil {
+		fmt.panicf("controlled WebGPU text field readback target creation failed")
+	}
+}
+
+controlled_text_readback_encode :: proc(encoder: wgpu.CommandEncoder) {
+	fixture := &state.controlled_text_readback
+	display, display_ok := alicorn.paint_display_list(&fixture.runtime)
+	if !display_ok { fmt.panicf("controlled WebGPU query display list is unavailable") }
+	if result := webgpu_renderer.Text_Prepare(
+		&fixture.renderer, &fixture.runtime, display,
+		READBACK_WIDTH, READBACK_HEIGHT, 1.25, 1.25,
+	); result != .Ok {
+		fmt.panicf("controlled WebGPU query text preparation failed: %v", result)
+	}
+	attachment := wgpu.RenderPassColorAttachment{
+		view=fixture.view, depthSlice=wgpu.DEPTH_SLICE_UNDEFINED,
+		loadOp=.Clear, storeOp=.Store, clearValue={0.04, 0.08, 0.12, 1},
+	}
+	pass := wgpu.CommandEncoderBeginRenderPass(encoder, &wgpu.RenderPassDescriptor{
+		colorAttachmentCount=1, colorAttachments=&attachment,
+	})
+	if pass == nil { fmt.panicf("controlled WebGPU query text pass is unavailable") }
+	for command, command_index in display.commands {
+		if result := webgpu_renderer.Text_Draw_Command(
+			&fixture.renderer, pass, command_index, command,
+			READBACK_WIDTH, READBACK_HEIGHT, 1.25, 1.25,
+		); result != .Ok {
+			fmt.panicf("controlled WebGPU query text command encoding failed: %v", result)
+		}
+	}
+	wgpu.RenderPassEncoderEnd(pass)
+	wgpu.RenderPassEncoderRelease(pass)
+}
+
 build_surface_runtime :: proc() {
 	state.surface_runtime = alicorn.new_runtime(alicorn.Rect{
 		0, 0, f32(SURFACE_PRESENTER_LOGICAL_WIDTH), f32(SURFACE_PRESENTER_LOGICAL_HEIGHT),
@@ -2034,6 +2141,24 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 			}
 			if text_visible { break }
 		}
+		controlled_text_visible_pixels := 0
+		controlled_field, controlled_field_ok := alicorn.node_info(
+			&state.controlled_text_readback.runtime, state.controlled_text_readback.field,
+		)
+		if controlled_field_ok {
+			x0 := clamp(int((controlled_field.bounds.x+5)*1.25), 0, READBACK_WIDTH)
+			y0 := clamp(int((controlled_field.bounds.y+3)*1.25), 0, READBACK_HEIGHT)
+			x1 := clamp(int((controlled_field.bounds.x+controlled_field.bounds.w-5)*1.25), x0, READBACK_WIDTH)
+			y1 := clamp(int((controlled_field.bounds.y+controlled_field.bounds.h-3)*1.25), y0, READBACK_HEIGHT)
+			for y in y0..<y1 {
+				for x in x0..<x1 {
+					pixel := offscreen_pixel(pixels, x, y, 16*READBACK_BUFFER_BYTES)
+					if pixel[0] > 120 && pixel[1] > 120 && pixel[2] > 120 { controlled_text_visible_pixels += 1 }
+				}
+			}
+		}
+		controlled_text_readback_ok := controlled_field_ok &&
+			state.controlled_text_readback.query.text == "browse" && controlled_text_visible_pixels >= 24
 		composite_overlay_pixel := offscreen_pixel(pixels, 2, 2, 3*READBACK_BUFFER_BYTES)
 		composite_image_red_pixel := offscreen_pixel(pixels, 3, 52, 3*READBACK_BUFFER_BYTES)
 		composite_image_blend_pixel := offscreen_pixel(pixels, 8, 52, 3*READBACK_BUFFER_BYTES)
@@ -2294,7 +2419,7 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 			state.multiple_backdrop_pixel_passed && custom_geometry_rectangle_ok && custom_geometry_segment_ok &&
 			custom_geometry_circle_ok && custom_geometry_marker_ok && custom_geometry_clip_ok && custom_waveform_ok &&
 			motion_geometry_ok && material_ok
-		ok=core_readback_ok && compositor_readback_ok && effects_readback_ok
+		ok=core_readback_ok && compositor_readback_ok && effects_readback_ok && controlled_text_readback_ok
 		fmt.printf("[webgpu-feasibility] async RGBA8 readback core %s texture=%dx%d row_pitch=%d padding_per_row=%d bytes=%d clear=%v solid=%v checker=%v partial_texture=%v partial_buffer=%v uniform=%v blend=%v glyph=%v clip=%v outside_clip=%v rounded=%v rounded_corner=%v last_row=%v\n",
 			"PASS" if core_readback_ok else "FAIL", READBACK_WIDTH, READBACK_HEIGHT, READBACK_BYTES_PER_ROW,
 			READBACK_BYTES_PER_ROW-READBACK_WIDTH*READBACK_BYTES_PER_PIXEL, len(pixels),
@@ -2316,6 +2441,9 @@ on_readback :: proc "c" (status:wgpu.MapAsyncStatus,message:string,userdata1,use
 			"PASS" if material_accessibility_ok else "FAIL", state.material_accessibility_variant_passed,
 			material_accessibility_interior_ok, material_accessibility_bevel_ok,
 			material_accessibility_corner_ok, material_accessibility_shadow_suppressed)
+		fmt.printf("[webgpu-feasibility] controlled text field GPU readback %s query=%s scale=1.25 visible_glyph_pixels=%d\n",
+			"PASS" if controlled_text_readback_ok else "FAIL",
+			state.controlled_text_readback.query.text, controlled_text_visible_pixels)
 		fmt.printf("[webgpu-feasibility] custom geometry translation/opacity pixel %s moved_pixel=%v original_pixel=%v\n",
 			"PASS" if motion_geometry_ok else "FAIL", motion_geometry_moved_pixel, motion_geometry_origin_pixel)
 	} else {

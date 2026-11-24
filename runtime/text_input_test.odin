@@ -150,6 +150,213 @@ test_controlled_text_field_adopts_commits_but_not_ime_preedit :: proc(t: ^testin
 	testing.expect(t, !state.result.submitted, "a consumed submit must not replay on later descriptions")
 }
 
+controlled_text_field_visual_test_render :: proc(
+	rt: ^Runtime,
+	state: ^Controlled_Text_Field_Test_State,
+	show_overlay := true,
+) -> Node_ID {
+	state.result = {}
+	ui, build := begin_frame(rt)
+	if !build { return 0 }
+	container_begin(&ui, .Root, key=key_string("controlled-field-visual-root"), style=layout_style(.Column, grow=1))
+	container_end(&ui)
+	if show_overlay {
+		modal_overlay_begin(
+			&ui,
+			key_string("controlled-field-visual-overlay"),
+			style=layout_style(.Column, grow=1, padding=12, align=.Center, justify=.Center, clip=true),
+		)
+		if surface_begin(
+			&ui,
+			surface_core_color_role(.Surface),
+			key=key_string("controlled-field-visual-panel"),
+			style=layout_style(.Column, width=280, height=88, padding=12, gap=8, clip=true),
+		) != 0 {
+			_ = text(&ui, "Search", key=key_string("controlled-field-visual-title"))
+			if container_begin(&ui, .Container,
+				key=key_string("controlled-field-visual-row"),
+				style=layout_style(.Row, grow=1, height=40, align=.Center),
+			) != 0 {
+				state.result = text_field_controlled(
+					&ui,
+					&state.value,
+					key=key_string("controlled-field-visual-input"),
+					style=layout_style(.Row, grow=1, height=40),
+				)
+				_ = semantic_text_field_label(&ui, "Search commands")
+				container_end(&ui)
+			}
+			surface_end(&ui)
+		}
+		modal_overlay_end(&ui)
+	}
+	end_frame(&ui)
+	return state.result.node
+}
+
+controlled_text_field_visual_expect_visible_value :: proc(
+	t: ^testing.T,
+	rt: ^Runtime,
+	field: Node_ID,
+	expected: string,
+) {
+	retained, retained_found := rt.nodes[field]
+	testing.expect(t, retained_found, "the controlled modal field should remain retained")
+	if !retained_found { return }
+	testing.expect(t, retained.text == expected,
+		"the retained value should match the committed query")
+	testing.expect(t, retained.active && retained.present && retained.text_run_valid,
+		"the visible modal field should have a current shaped text run")
+	if !retained.text_run_valid { return }
+	testing.expect(t, retained.text_run.value == expected,
+		"the shaped text run should match the committed query")
+	visible_glyphs := 0
+	for glyph in retained.text_run.glyphs {
+		if !glyph.control_advance { visible_glyphs += 1 }
+	}
+	paint_found := false
+	for command in rt.display {
+		if command.owner != field { continue }
+		paint, is_text := command.payload.(Text_Paint)
+		if !is_text { continue }
+		run, run_found := paint_text_run_resolve(rt, paint.run)
+		bounds_visible := rect_intersection(command.bounds, command.clip)
+		paint_found = run_found && run != nil && run.value == expected &&
+			visible_glyphs > 0 && paint.color.a > 0 && bounds_visible.w > 0 && bounds_visible.h > 0
+		break
+	}
+	testing.expect(t, visible_glyphs > 0 && paint_found,
+		"the final display list should resolve drawable query glyphs inside the clipped field")
+}
+
+@(test)
+test_controlled_text_field_committed_input_keeps_visible_text_paint :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 320, 180})
+	defer destroy_runtime(&rt)
+	if !text_engine_load_font(&rt.text_engine, TEXT_INPUT_ALLOCATOR_TEST_FONT) {
+		testing.expect(t, false, "the controlled-field visual fixture should load the UI font")
+		return
+	}
+	state: Controlled_Text_Field_Test_State
+	value, value_ok := text_field_buffer_init("", context.allocator)
+	if !value_ok {
+		testing.expect(t, false, "the controlled field should initialize an empty app-owned query")
+		return
+	}
+	state.value = value
+	defer text_field_buffer_destroy(&state.value)
+
+	invalidate_root(&rt, "controlled field visual fixture initial description")
+	field := controlled_text_field_visual_test_render(&rt, &state)
+	if field == 0 {
+		testing.expect(t, false, "the modal fixture should retain its controlled query field")
+		return
+	}
+	shape_calls_before_edit := rt.text_engine.shape_calls
+	measure_requests_before_edit := rt.stats.measure_requests
+	_ = focus(&rt, field)
+	change := process_text_input(&rt, field, "browse")
+	if len(change.text) > 0 { delete(change.text, rt.persistent_allocator) }
+	invalidate_root(&rt, "controlled field visual fixture committed edit")
+	updated_field := controlled_text_field_visual_test_render(&rt, &state)
+	testing.expect(t, updated_field == field && state.value.text == "browse",
+		"committing an empty-field edit should preserve its retained identity and adopt the visible query")
+	testing.expect(t, focused_node(&rt) == field,
+		"committing visible text should preserve controlled-field focus")
+	retained, retained_found := rt.nodes[field]
+	testing.expect(t, retained_found, "the controlled field should remain retained after the committed edit")
+	if !retained_found { return }
+	testing.expect(t, retained.text == "browse", "the retained field should adopt the committed query")
+	testing.expect(t, retained.active && retained.present,
+		"the described modal query field should remain active and present after editing")
+	testing.expect(t, retained.bounds.w > 0 && retained.bounds.h > 0 &&
+		rect_intersection(retained.bounds, retained.clip).w > 0 && rect_intersection(retained.bounds, retained.clip).h > 0,
+		"the modal query field should have nonempty clipped layout bounds")
+	_, ui_font_loaded := text_engine_font(&rt.text_engine, retained.font)
+	testing.expect(t, ui_font_loaded, "the field's resolved font role should remain loaded")
+	testing.expect(t, rt.text_engine.shape_calls > 0,
+		"the runtime should have invoked text shaping for visible modal text")
+	testing.expect(t, rt.text_engine.shape_calls > shape_calls_before_edit,
+		"the edited modal field should be reshaped after committed text invalidation")
+	testing.expect(t, rt.stats.measure_requests > measure_requests_before_edit,
+		"the edited modal field should pass through retained measurement after committed text invalidation")
+	controlled_text_field_visual_expect_visible_value(t, &rt, field, "browse")
+
+	change = process_text_input(&rt, field, " palette")
+	if len(change.text) > 0 { delete(change.text, rt.persistent_allocator) }
+	invalidate_root(&rt, "controlled field repeated typing")
+	updated_field = controlled_text_field_visual_test_render(&rt, &state)
+	testing.expect(t, updated_field == field && state.value.text == "browse palette",
+		"repeated typing should preserve identity and update the controlled query")
+	controlled_text_field_visual_expect_visible_value(t, &rt, field, "browse palette")
+
+	// A paste delivered as committed platform text uses the same runtime edit
+	// path as typed characters and must refresh the visible product as well.
+	change = process_text_input(&rt, field, " pasted")
+	if len(change.text) > 0 { delete(change.text, rt.persistent_allocator) }
+	invalidate_root(&rt, "controlled field committed paste")
+	updated_field = controlled_text_field_visual_test_render(&rt, &state)
+	testing.expect(t, updated_field == field && state.value.text == "browse palette pasted",
+		"pasted committed text should preserve identity and appear in the controlled query")
+	controlled_text_field_visual_expect_visible_value(t, &rt, field, "browse palette pasted")
+
+	change = process_text_edit(&rt, field, Text_Edit{.Backspace, ""})
+	if len(change.text) > 0 { delete(change.text, rt.persistent_allocator) }
+	invalidate_root(&rt, "controlled field backspace")
+	updated_field = controlled_text_field_visual_test_render(&rt, &state)
+	testing.expect(t, updated_field == field && state.value.text == "browse palette paste",
+		"backspace should preserve identity and display the shortened query")
+	controlled_text_field_visual_expect_visible_value(t, &rt, field, "browse palette paste")
+
+	_ = set_text_selection(&rt, field, 7, 14)
+	change = process_text_edit(&rt, field, Text_Edit{.Insert, "commands"})
+	if len(change.text) > 0 { delete(change.text, rt.persistent_allocator) }
+	invalidate_root(&rt, "controlled field selection replacement")
+	updated_field = controlled_text_field_visual_test_render(&rt, &state)
+	testing.expect(t, updated_field == field && state.value.text == "browse commands paste",
+		"selection replacement should preserve identity and display only the replacement value")
+	controlled_text_field_visual_expect_visible_value(t, &rt, field, "browse commands paste")
+
+	_ = set_text_caret(&rt, field, len(state.value.text))
+	testing.expect(t, process_text_editing(&rt, field, "pre", 0, 0),
+		"the field should accept transient IME preedit without replacing committed text")
+	_ = controlled_text_field_visual_test_render(&rt, &state)
+	retained = rt.nodes[field]
+	testing.expect(t, state.value.text == "browse commands paste" && retained.text_run_valid &&
+		retained.composition_run_valid && retained.composition_run.value == "browse commands pastepre",
+		"IME preedit should keep committed text and produce a separate projected composition run")
+	change = process_text_input(&rt, field, "!")
+	if len(change.text) > 0 { delete(change.text, rt.persistent_allocator) }
+	invalidate_root(&rt, "controlled field IME commit")
+	updated_field = controlled_text_field_visual_test_render(&rt, &state)
+	testing.expect(t, updated_field == field && state.value.text == "browse commands paste!",
+		"IME commit should become visible controlled text under the same field identity")
+	controlled_text_field_visual_expect_visible_value(t, &rt, field, "browse commands paste!")
+
+	testing.expect(t, text_field_buffer_set(&state.value, "programmatic"),
+		"the app should be able to replace the query programmatically")
+	invalidate_root(&rt, "controlled field programmatic replacement")
+	updated_field = controlled_text_field_visual_test_render(&rt, &state)
+	testing.expect(t, updated_field == field, "programmatic replacement should preserve field identity")
+	controlled_text_field_visual_expect_visible_value(t, &rt, field, "programmatic")
+
+	testing.expect(t, runtime_set_viewport(&rt, Rect{0, 0, 480, 240}),
+		"the modal fixture should accept a host resize")
+	updated_field = controlled_text_field_visual_test_render(&rt, &state)
+	testing.expect(t, updated_field == field, "resizing the modal should preserve the query field identity")
+	controlled_text_field_visual_expect_visible_value(t, &rt, field, "programmatic")
+
+	invalidate_root(&rt, "controlled field modal close")
+	closed_field := controlled_text_field_visual_test_render(&rt, &state, show_overlay=false)
+	testing.expect(t, closed_field == 0 && !node_is_presentation_active(&rt, field),
+		"closing the modal should retire its field without losing the app-owned query")
+	invalidate_root(&rt, "controlled field modal reopen")
+	reopened_field := controlled_text_field_visual_test_render(&rt, &state)
+	testing.expect(t, reopened_field != 0 && state.value.text == "programmatic",
+		"reopening the modal should restore a field initialized from the current app-owned query")
+	controlled_text_field_visual_expect_visible_value(t, &rt, reopened_field, "programmatic")
+}
+
 @(test)
 test_controlled_text_field_runtime_snapshot_released_on_destroy :: proc(t: ^testing.T) {
 	tracking: mem.Tracking_Allocator

@@ -17,8 +17,7 @@ PRESENTATION_VALIDATION_COST_SAMPLES :: 64
 PRESENTATION_VALIDATION_LIFETIME_FRAMES :: 8
 
 Presentation_Validation_App :: struct {
-	value: [128]u8,
-	value_length: int,
+	query: alicorn.Text_Field_Buffer,
 	field, button: alicorn.Node_ID,
 	activations: int,
 }
@@ -40,13 +39,14 @@ presentation_validation_fail_204 :: proc(message: string) -> ! {
 }
 
 presentation_validation_value :: proc(app: ^Presentation_Validation_App) -> string {
-	return string(app.value[:app.value_length])
+	if app == nil { return "" }
+	return app.query.text
 }
 
 presentation_validation_set_value :: proc(app: ^Presentation_Validation_App, value: string) {
-	if app == nil || len(value) > len(app.value) { presentation_validation_fail("fixture text exceeded its bounded buffer") }
-	copy(app.value[:len(value)], value)
-	app.value_length = len(value)
+	if app == nil || !alicorn.text_field_buffer_set(&app.query, value) {
+		presentation_validation_fail("fixture controlled query could not be updated")
+	}
 }
 
 presentation_validation_render :: proc(app: ^Presentation_Validation_App, ui: ^alicorn.UI) {
@@ -55,7 +55,11 @@ presentation_validation_render :: proc(app: ^Presentation_Validation_App, ui: ^a
 		color=alicorn.Color{0.12, 0.15, 0.20, 1})
 	alicorn.text(ui, "Host-owned SDL_GPU frame boundary", key=alicorn.key_string("issue-162.title"), style=alicorn.layout_style(height=28))
 	alicorn.text(ui, "Flat surface, retained text, pointer focus, and text input.", key=alicorn.key_string("issue-162.description"), style=alicorn.layout_style(height=24))
-	app.field = alicorn.text_field(ui, presentation_validation_value(app), key=alicorn.key_string("issue-162.field"), style=alicorn.layout_style(height=38))
+	app.field = alicorn.text_field_controlled(
+		ui, &app.query,
+		key=alicorn.key_string("issue-162.field"),
+		style=alicorn.layout_style(height=38),
+	).node
 	if alicorn.button(ui, "Click to verify host input", key=alicorn.key_string("issue-162.button"), style=alicorn.layout_style(width=220, height=40)) {
 		app.activations += 1
 	}
@@ -109,6 +113,51 @@ presentation_validation_compare :: proc(a, b: []u8) -> (different, max_delta: in
 	return different, max_delta
 }
 
+presentation_validation_bright_text_pixels :: proc(
+	pixels: []u8,
+	width, height: int,
+	bounds: alicorn.Rect,
+	scale: f32,
+) -> int {
+	if len(pixels) < width*height*4 || width <= 0 || height <= 0 || scale <= 0 { return 0 }
+	x0 := clamp(int(bounds.x*scale), 0, width)
+	y0 := clamp(int(bounds.y*scale), 0, height)
+	x1 := clamp(int((bounds.x+bounds.w)*scale+1), x0, width)
+	y1 := clamp(int((bounds.y+bounds.h)*scale+1), y0, height)
+	count := 0
+	for y in y0..<y1 {
+		for x in x0..<x1 {
+			i := (y*width+x)*4
+			if pixels[i] > 120 && pixels[i+1] > 120 && pixels[i+2] > 120 { count += 1 }
+		}
+	}
+	return count
+}
+
+presentation_validation_changed_pixels_in_rect :: proc(
+	before, after: []u8,
+	width, height: int,
+	bounds: alicorn.Rect,
+	scale: f32,
+) -> int {
+	if len(before) < width*height*4 || len(after) < width*height*4 || width <= 0 || height <= 0 || scale <= 0 { return 0 }
+	x0 := clamp(int(bounds.x*scale), 0, width)
+	y0 := clamp(int(bounds.y*scale), 0, height)
+	x1 := clamp(int((bounds.x+bounds.w)*scale+1), x0, width)
+	y1 := clamp(int((bounds.y+bounds.h)*scale+1), y0, height)
+	count := 0
+	for y in y0..<y1 {
+		for x in x0..<x1 {
+			i := (y*width+x)*4
+			if before[i] != after[i] || before[i+1] != after[i+1] ||
+			   before[i+2] != after[i+2] || before[i+3] != after[i+3] {
+				count += 1
+			}
+		}
+	}
+	return count
+}
+
 presentation_validation_frame :: proc(
 	rt: ^alicorn.Runtime,
 	r: ^Presentation_Validation_Renderers,
@@ -118,6 +167,8 @@ presentation_validation_frame :: proc(
 	width, height: sdl3.Uint32,
 	download: ^sdl3.GPUTransferBuffer = nil,
 	pixels: []u8 = nil,
+	scale_x: f32 = 1,
+	scale_y: f32 = 1,
 ) -> (encode_ns: i64, ok: bool) {
 	command := sdl3.AcquireGPUCommandBuffer(device)
 	if command == nil { return 0, false }
@@ -128,10 +179,10 @@ presentation_validation_frame :: proc(
 	}
 	started := time.now()
 	if presenter != nil {
-		if !Sdl_GPU_Presenter_Encode(presenter, command, target, width, height, 1, 1, clear_background=true) { return 0, false }
+		if !Sdl_GPU_Presenter_Encode(presenter, command, target, width, height, scale_x, scale_y, clear_background=true) { return 0, false }
 	} else {
 		view, view_ok := alicorn.paint_display_list(rt)
-		if !view_ok || r == nil || !draw_display_list(command, target, width, height, &r.text, &r.surface, &r.solid, view.commands, 1, 1, clear_background=true) {
+		if !view_ok || r == nil || !draw_display_list(command, target, width, height, &r.text, &r.surface, &r.solid, view.commands, scale_x, scale_y, clear_background=true) {
 			return 0, false
 		}
 	}
@@ -408,15 +459,28 @@ RunPresentationBoundaryValidation :: proc() {
 	host_target := sdl3.CreateGPUTexture(device, sdl3.GPUTextureCreateInfo{type=.D2, format=format, usage={.COLOR_TARGET}, width=w, height=h, layer_count_or_depth=1, num_levels=1, sample_count=._1})
 	if host_target == nil { presentation_validation_fail("host-owned target creation failed") }
 	defer sdl3.ReleaseGPUTexture(device, host_target)
-	download_size := max(u32(w*h*4), u32(window_width*window_height*4))
+	scaled_width, scaled_height := sdl3.Uint32(w*5/4), sdl3.Uint32(h*5/4)
+	scaled_target := sdl3.CreateGPUTexture(device, sdl3.GPUTextureCreateInfo{type=.D2, format=format, usage={.COLOR_TARGET}, width=scaled_width, height=scaled_height, layer_count_or_depth=1, num_levels=1, sample_count=._1})
+	if scaled_target == nil { presentation_validation_fail("fractional-scale standalone target creation failed") }
+	defer sdl3.ReleaseGPUTexture(device, scaled_target)
+	scaled_host_target := sdl3.CreateGPUTexture(device, sdl3.GPUTextureCreateInfo{type=.D2, format=format, usage={.COLOR_TARGET}, width=scaled_width, height=scaled_height, layer_count_or_depth=1, num_levels=1, sample_count=._1})
+	if scaled_host_target == nil { presentation_validation_fail("fractional-scale host-owned target creation failed") }
+	defer sdl3.ReleaseGPUTexture(device, scaled_host_target)
+	download_size := max(u32(scaled_width*scaled_height*4), u32(window_width*window_height*4))
 	download := sdl3.CreateGPUTransferBuffer(device, sdl3.GPUTransferBufferCreateInfo{usage=.DOWNLOAD, size=download_size})
 	if download == nil { presentation_validation_fail("pixel readback buffer creation failed") }
 	defer sdl3.ReleaseGPUTransferBuffer(device, download)
 
 	app := Presentation_Validation_App{}
-	presentation_validation_set_value(&app, "editable input")
+	app_query, app_query_ok := alicorn.text_field_buffer_init("editable input", context.allocator)
+	if !app_query_ok { presentation_validation_fail("standalone controlled query initialization failed") }
+	app.query = app_query
+	defer alicorn.text_field_buffer_destroy(&app.query)
 	host_app := Presentation_Validation_App{}
-	presentation_validation_set_value(&host_app, "editable input")
+	host_query, host_query_ok := alicorn.text_field_buffer_init("editable input", context.allocator)
+	if !host_query_ok { presentation_validation_fail("host-owned controlled query initialization failed") }
+	host_app.query = host_query
+	defer alicorn.text_field_buffer_destroy(&host_app.query)
 	allocations := alicorn.Runtime_Allocation_Stats{}
 	host_allocations := alicorn.Runtime_Allocation_Stats{}
 	rt := alicorn.new_runtime(alicorn.Rect{0, 0, f32(w), f32(h)}, config=alicorn.Runtime_Config{allocation_stats=&allocations})
@@ -435,6 +499,11 @@ RunPresentationBoundaryValidation :: proc() {
 	pixel_count := int(w*h*4)
 	standalone_pixels := make([]u8, pixel_count)
 	host_pixels := make([]u8, pixel_count)
+	scaled_pixel_count := int(scaled_width*scaled_height*4)
+	scaled_standalone_pixels := make([]u8, scaled_pixel_count)
+	scaled_host_pixels := make([]u8, scaled_pixel_count)
+	empty_standalone_pixels := make([]u8, scaled_pixel_count)
+	empty_host_pixels := make([]u8, scaled_pixel_count)
 	// The host must cancel an encoded frame only after canceling its command
 	// buffer. Cancellation must leave the Runtime's display pending for retry.
 	cancel_command := sdl3.AcquireGPUCommandBuffer(device)
@@ -529,17 +598,18 @@ RunPresentationBoundaryValidation :: proc() {
 	if !after_ok || !host_after_ok || after.caret != host_after.caret || after.caret == before.caret { presentation_validation_fail("keyboard navigation differed or did not move the caret") }
 	change := alicorn.process_text_input(&rt, app.field, "-host")
 	host_change := alicorn.process_text_input(&host_rt, host_app.field, "-host")
-	presentation_validation_set_value(&app, change.text)
-	presentation_validation_set_value(&host_app, host_change.text)
 	alicorn.text_change_destroy(&rt, &change)
 	alicorn.text_change_destroy(&host_rt, &host_change)
 	if !presentation_validation_build(&rt, &app) || !presentation_validation_build(&host_rt, &host_app) { presentation_validation_fail("Runtime did not rebuild after committed text input") }
 	value, value_ok := alicorn.text_field_value(&rt, app.field)
 	host_value, host_value_ok := alicorn.text_field_value(&host_rt, host_app.field)
-	if !value_ok || value != "e-hostditable input" { presentation_validation_fail("text input was not preserved at the selected caret position") }
+	if !value_ok || value != "e-hostditable input" || presentation_validation_value(&app) != value {
+		presentation_validation_fail("controlled text input was not adopted at the selected caret position")
+	}
 	interaction, interaction_ok := alicorn.text_field_interaction(&rt, app.field)
 	host_interaction, host_interaction_ok := alicorn.text_field_interaction(&host_rt, host_app.field)
-	if !host_value_ok || value != host_value || !interaction_ok || !host_interaction_ok || interaction.caret != host_interaction.caret ||
+	if !host_value_ok || value != host_value || presentation_validation_value(&host_app) != host_value ||
+		!interaction_ok || !host_interaction_ok || interaction.caret != host_interaction.caret ||
 		interaction.caret != after.caret+len("-host") { presentation_validation_fail("text-input caret/source byte positions differed between hosts") }
 	fmt.println("issue_162_input", "button_activations", app.activations, "focused", "issue-162.field",
 		"caret_before_right", before.caret, "caret_after_right", after.caret,
@@ -552,6 +622,68 @@ RunPresentationBoundaryValidation :: proc() {
 	if different != 0 { presentation_validation_fail("post-input compositor pixels differ") }
 	fmt.println("issue_162_pixels", "state=post-input", "different_bytes", different, "max_delta", max_delta,
 		"standalone_hash", presentation_validation_hash(standalone_pixels), "hosted_hash", presentation_validation_hash(host_pixels))
+
+	// Exercise the controlled-field cache path that exposed the missing-glyph
+	// defect. Read both an empty field and the same field after a committed edit
+	// through SDL_GPU at 1.25x, then require visible glyph pixels in its bounds.
+	presentation_validation_set_value(&app, "")
+	presentation_validation_set_value(&host_app, "")
+	alicorn.invalidate_root(&rt, "controlled query empty-field pixel baseline")
+	alicorn.invalidate_root(&host_rt, "controlled query empty-field pixel baseline")
+	if !presentation_validation_build(&rt, &app) || !presentation_validation_build(&host_rt, &host_app) {
+		presentation_validation_fail("empty controlled-field baseline did not rebuild")
+	}
+	_ = alicorn.set_text_caret(&rt, app.field, 0)
+	_ = alicorn.set_text_caret(&host_rt, host_app.field, 0)
+	_, standalone_ok = presentation_validation_frame(
+		&rt, &renderers, nil, device, scaled_target, scaled_width, scaled_height,
+		download, empty_standalone_pixels, scale_x=1.25, scale_y=1.25,
+	)
+	_, hosted_ok = presentation_validation_frame(
+		&host_rt, nil, &presenter, device, scaled_host_target, scaled_width, scaled_height,
+		download, empty_host_pixels, scale_x=1.25, scale_y=1.25,
+	)
+	if !standalone_ok || !hosted_ok { presentation_validation_fail("fractional-scale empty-field readback failed") }
+	different, _ = presentation_validation_compare(empty_standalone_pixels, empty_host_pixels)
+	if different != 0 { presentation_validation_fail("fractional-scale empty-field host pixels differ") }
+	query_change := alicorn.process_text_input(&rt, app.field, "browse")
+	host_query_change := alicorn.process_text_input(&host_rt, host_app.field, "browse")
+	alicorn.text_change_destroy(&rt, &query_change)
+	alicorn.text_change_destroy(&host_rt, &host_query_change)
+	if !presentation_validation_build(&rt, &app) || !presentation_validation_build(&host_rt, &host_app) {
+		presentation_validation_fail("committed controlled query did not rebuild")
+	}
+	query_value, query_value_ok := alicorn.text_field_value(&rt, app.field)
+	host_query_value, host_query_value_ok := alicorn.text_field_value(&host_rt, host_app.field)
+	if !query_value_ok || !host_query_value_ok || query_value != "browse" || host_query_value != query_value ||
+	   presentation_validation_value(&app) != query_value || presentation_validation_value(&host_app) != query_value {
+		presentation_validation_fail("controlled query value was not adopted before pixel readback")
+	}
+	_, standalone_ok = presentation_validation_frame(
+		&rt, &renderers, nil, device, scaled_target, scaled_width, scaled_height,
+		download, scaled_standalone_pixels, scale_x=1.25, scale_y=1.25,
+	)
+	_, hosted_ok = presentation_validation_frame(
+		&host_rt, nil, &presenter, device, scaled_host_target, scaled_width, scaled_height,
+		download, scaled_host_pixels, scale_x=1.25, scale_y=1.25,
+	)
+	if !standalone_ok || !hosted_ok { presentation_validation_fail("fractional-scale edited-field readback failed") }
+	different, max_delta = presentation_validation_compare(scaled_standalone_pixels, scaled_host_pixels)
+	if different != 0 { presentation_validation_fail("fractional-scale edited-field host pixels differ") }
+	query_node, query_node_ok := alicorn.node_info(&rt, app.field)
+	visible_text_pixels := presentation_validation_bright_text_pixels(
+		scaled_standalone_pixels, int(scaled_width), int(scaled_height), query_node.bounds, 1.25,
+	)
+	changed_field_pixels := presentation_validation_changed_pixels_in_rect(
+		empty_standalone_pixels, scaled_standalone_pixels,
+		int(scaled_width), int(scaled_height), query_node.bounds, 1.25,
+	)
+	if !query_node_ok || visible_text_pixels < 40 || changed_field_pixels < 40 {
+		presentation_validation_fail("committed controlled query has no visible glyph pixels at 1.25x")
+	}
+	fmt.println("controlled_text_sdl_gpu_readback", "query", query_value, "scale", "1.25x",
+		"visible_text_pixels", visible_text_pixels, "changed_field_pixels", changed_field_pixels,
+		"standalone_host_byte_difference", different, "status", "PASS")
 
 	// Compare warmed encoding work and GPU submits with alternating path order.
 	standalone_allocations_before_samples := allocations.persistent_alloc_calls

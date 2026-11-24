@@ -19,7 +19,7 @@ CAPTURE_HEIGHT :: READBACK_HEIGHT - CAPTURE_ORIGIN_Y
 READBACK_BYTES_PER_PIXEL :: 4
 READBACK_BYTES_PER_ROW :: 256
 READBACK_BUFFER_BYTES :: READBACK_BYTES_PER_ROW * READBACK_HEIGHT
-READBACK_TARGET_COUNT :: 16
+READBACK_TARGET_COUNT :: 17
 READBACK_TOTAL_BYTES :: READBACK_BUFFER_BYTES * READBACK_TARGET_COUNT
 FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY :: #config(FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY, false)
 FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_EARLY :: #config(FEASIBILITY_TEST_EXPLICIT_DEVICE_DESTROY_EARLY, false)
@@ -59,6 +59,16 @@ Native_Hosted_Feasibility_App :: struct {
 	text_input_passed: bool,
 }
 
+Controlled_Text_Readback :: struct {
+	runtime: alicorn.Runtime,
+	renderer: webgpu_renderer.Text_Renderer,
+	query: alicorn.Text_Field_Buffer,
+	texture: wgpu.Texture,
+	view: wgpu.TextureView,
+	field: alicorn.Node_ID,
+	runtime_ready: bool,
+}
+
 state: struct {
 	ctx: runtime.Context,
 	os: OS,
@@ -94,6 +104,7 @@ state: struct {
 	text_runtime: alicorn.Runtime,
 	text_renderer: webgpu_renderer.Text_Renderer,
 	text_runtime_ready: bool,
+	controlled_text_readback: Controlled_Text_Readback,
 	compositor: webgpu_renderer.WebGPU_Compositor,
 	backdrop_compositor: webgpu_renderer.WebGPU_Compositor,
 	presenter: webgpu_renderer.WebGPU_Presenter,
@@ -590,6 +601,7 @@ on_device :: proc "c" (status: wgpu.RequestDeviceStatus, device: wgpu.Device, me
 	if !text_ok { fmt.panicf("Alicorn WebGPU text renderer initialization failed") }
 	state.text_renderer = text_renderer
 	build_text_runtime()
+	build_controlled_text_readback()
 	build_compositor_images()
 	compositor, compositor_ok := webgpu_renderer.Compositor_Create(state.device, state.queue, .RGBA8Unorm)
 	if !compositor_ok { fmt.panicf("Alicorn WebGPU compositor initialization failed") }
@@ -755,6 +767,7 @@ finish :: proc() {
 		}
 	}
 	webgpu_renderer.Text_Destroy(&state.text_renderer)
+	webgpu_renderer.Text_Destroy(&state.controlled_text_readback.renderer)
 	webgpu_renderer.Solid_Destroy(&state.solid_renderer)
 	if state.surface_runtime_ready {
 		if state.surface_output_registered {
@@ -770,6 +783,13 @@ finish :: proc() {
 		alicorn.destroy_runtime(&state.text_runtime)
 		state.text_runtime_ready = false
 	}
+	if state.controlled_text_readback.runtime_ready {
+		alicorn.destroy_runtime(&state.controlled_text_readback.runtime)
+		state.controlled_text_readback.runtime_ready = false
+	}
+	if state.controlled_text_readback.query.initialized {
+		alicorn.text_field_buffer_destroy(&state.controlled_text_readback.query)
+	}
 	if state.solid_runtime_ready {
 		alicorn.destroy_runtime(&state.solid_runtime)
 		state.solid_runtime_ready = false
@@ -783,6 +803,11 @@ finish :: proc() {
 	if state.solid_offscreen_texture != nil { wgpu.TextureDestroy(state.solid_offscreen_texture); wgpu.TextureRelease(state.solid_offscreen_texture) }
 	if state.text_offscreen_view != nil { wgpu.TextureViewRelease(state.text_offscreen_view) }
 	if state.text_offscreen_texture != nil { wgpu.TextureDestroy(state.text_offscreen_texture); wgpu.TextureRelease(state.text_offscreen_texture) }
+	if state.controlled_text_readback.view != nil { wgpu.TextureViewRelease(state.controlled_text_readback.view) }
+	if state.controlled_text_readback.texture != nil {
+		wgpu.TextureDestroy(state.controlled_text_readback.texture)
+		wgpu.TextureRelease(state.controlled_text_readback.texture)
+	}
 	if state.composite_offscreen_view != nil { wgpu.TextureViewRelease(state.composite_offscreen_view) }
 	if state.composite_offscreen_texture != nil { wgpu.TextureDestroy(state.composite_offscreen_texture); wgpu.TextureRelease(state.composite_offscreen_texture) }
 	if state.presenter_offscreen_view != nil { wgpu.TextureViewRelease(state.presenter_offscreen_view) }

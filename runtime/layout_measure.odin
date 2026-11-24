@@ -19,6 +19,23 @@ layout_measure_mark_dirty :: proc(rt: ^Runtime, node: ^Node) {
 	append(&rt.measure_queue, Measure_Queue_Entry{node.id, node.measure_queue_generation})
 }
 
+// Runtime text edits bypass the ordinary description comparison that advances
+// measurement input revisions. Keep the retained text field's measurement key
+// in step with its new value so a dirty measure cannot reuse geometry shaped
+// from the previous string.
+layout_measure_runtime_text_changed :: proc(rt: ^Runtime, node: ^Node) {
+	if rt == nil || node == nil || node.kind != .Text_Field { return }
+	description := Description{
+		kind=node.kind,
+		text=node.text,
+		style=node.style,
+		font=node.font,
+		text_style=node.text_style,
+		text_style_spans=node.text_style_spans[:],
+	}
+	_ = measure_input_observe(rt, node.id, measure_input_hash(description))
+}
+
 // The first geometry experiment uses 1/1024 logical units. This is not a
 // public ABI choice: f32 input precision dominates at large coordinates, so
 // the conformance tests compare coarser/finer scales and report round-trip
