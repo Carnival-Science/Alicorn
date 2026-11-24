@@ -6,12 +6,14 @@ import "core:mem"
 DEFAULT_TEXT_SIZE :: f32(16)
 
 // Node_Info is a read-only snapshot of stable node properties useful to
-// application interaction and layout logic. key strings borrow runtime-owned
+// application interaction and layout logic. parent identifies the immediate
+// retained layout parent, or zero for a top-level node. key strings borrow runtime-owned
 // storage and remain valid until the next runtime mutation, application
 // description, or runtime destruction. It intentionally excludes retained
 // products such as Text_Run.
 Node_Info :: struct {
 	id: Node_ID,
+	parent: Node_ID,
 	kind: Node_Kind,
 	semantic_id: Semantic_ID,
 	key: UI_Key,
@@ -132,6 +134,7 @@ node_info :: proc(rt: ^Runtime, id: Node_ID) -> (info: Node_Info, ok: bool) {
 	if !key_ok { key = UI_Unkeyed{} }
 	info = Node_Info{
 		id=node.id,
+		parent=node.parent,
 		kind=node.kind,
 		semantic_id=node.semantic_id,
 		key=key,

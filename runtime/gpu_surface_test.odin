@@ -202,6 +202,54 @@ test_gpu_surface_rectangle_updates_do_not_grow_persistent_allocations :: proc(t:
 }
 
 @(test)
+test_gpu_surface_stroke_path_is_owned_and_released_with_its_surface :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 160, 100})
+	defer destroy_runtime(&rt)
+	id := gpu_surface_retype_test_describe(&rt, .Custom_Surface)
+	if id == 0 { testing.expect(t, false, "initial custom surface should be retained"); return }
+
+	points := [3]GPU_Surface_Point{{10, 12}, {40, 18}, {80, 14}}
+	path := GPU_Surface_Stroke_Path{points=points[:], thickness=2, color={0.2, 0.8, 0.9, 1}}
+	testing.expect(t, gpu_surface_update_geometry_with_rectangles_and_stroke_path(
+		&rt, id, nil, nil, nil, path,
+	), "valid connected stroke paths should be accepted")
+	node := rt.nodes[id]
+	handle := paint_geometry_handle_for_node(node)
+	payload, payload_ok := gpu_surface_payload_resolve(&rt, handle)
+	testing.expect(t, payload_ok && len(payload.stroke_path.points) == 3 &&
+		payload.stroke_path.points[0] == GPU_Surface_Point{10, 12} &&
+		payload.stroke_path.thickness == 2 && payload.stroke_path.color == path.color,
+		"the borrowed payload should expose a complete retained stroke path")
+	if !payload_ok || len(payload.stroke_path.points) != 3 { return }
+	points[0].x = -1
+	testing.expect(t, payload.stroke_path.points[0].x == 10,
+		"the retained payload must own its points independently of the caller's slice")
+
+	invalid := GPU_Surface_Stroke_Path{points=points[:], thickness=0, color=path.color}
+	accepted_revision := payload.revision
+	testing.expect(t, !gpu_surface_update_geometry_with_rectangles_and_stroke_path(
+		&rt, id, nil, nil, nil, invalid,
+	), "invalid stroke replacements should be rejected")
+	retained, retained_ok := gpu_surface_payload_resolve(&rt, handle)
+	testing.expect(t, retained_ok && retained.revision == accepted_revision &&
+		len(retained.stroke_path.points) == 3 && retained.stroke_path.points[0].x == 10,
+		"rejected replacements must preserve the accepted stroke and payload revision")
+
+	testing.expect(t, gpu_surface_clear(&rt, id), "clearing a stroke path should succeed")
+	cleared, cleared_ok := gpu_surface_payload_resolve(&rt, handle)
+	testing.expect(t, cleared_ok && len(cleared.stroke_path.points) == 0,
+		"clearing a surface should release its retained stroke path")
+
+	testing.expect(t, gpu_surface_update_geometry_with_rectangles_and_stroke_path(
+		&rt, id, nil, nil, nil, path,
+	), "a cleared surface should accept a new stroke path")
+	text_id := gpu_surface_retype_test_describe(&rt, .Text)
+	_, retained_after_retype := rt.gpu_surface_stroke_paths[id]
+	testing.expect(t, text_id == id && !retained_after_retype,
+		"retyping away from a custom surface should release its stroke sidecar")
+}
+
+@(test)
 test_retyping_away_from_custom_surface_discards_image_layers :: proc(t: ^testing.T) {
 	rt := new_runtime(Rect{0, 0, 100, 80})
 	defer destroy_runtime(&rt)

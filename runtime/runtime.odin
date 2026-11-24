@@ -449,6 +449,15 @@ GPU_Surface_Stroke_Path :: struct {
 	color:     Color,
 }
 
+// GPU_Surface_Retained_Stroke_Path owns the copied path in sparse Runtime
+// storage. Stroke paths are optional payload state and should not increase the
+// size of every retained Node.
+GPU_Surface_Retained_Stroke_Path :: struct {
+	points:    [dynamic]GPU_Surface_Point,
+	thickness: f32,
+	color:     Color,
+}
+
 GPU_Surface_Filled_Circle :: struct {
 	center: GPU_Surface_Point,
 	radius: f32,
@@ -1584,9 +1593,6 @@ Node :: struct {
 	surface_samples: [dynamic]f32,
 	surface_geometry_active: bool,
 	surface_segments: [dynamic]GPU_Surface_Line_Segment,
-	surface_stroke_points: [dynamic]GPU_Surface_Point,
-	surface_stroke_thickness: f32,
-	surface_stroke_color: Color,
 	surface_circles: [dynamic]GPU_Surface_Filled_Circle,
 	surface_rectangles: [dynamic]GPU_Surface_Filled_Rectangle,
 	bounds:      Rect,
@@ -2343,6 +2349,7 @@ Runtime :: struct {
 	image_resource_sequence: u64,
 	gpu_surface_images: map[Node_ID][dynamic]GPU_Surface_Image,
 	gpu_surface_point_markers: map[Node_ID][dynamic]GPU_Surface_Point_Marker,
+	gpu_surface_stroke_paths: map[Node_ID]GPU_Surface_Retained_Stroke_Path,
 	text_engine: Text_Engine,
 	text_font_generation_seen: u64,
 	surface_frame_pending: bool,

@@ -76,6 +76,17 @@ as the native host without creating an SDL window or GPU device. Supplying both
 - `find` reads semantics published by the application/runtime. It never
   guesses accessible names from visible text. Name, role, and explicit key
   filters can be combined; results distinguish none, unique, and ambiguous.
+- Geometry assertions operate on current `Element` snapshots. They check
+  finalized logical bounds, so tolerances are logical pixels rather than
+  physical display pixels. `expect_no_overflow` checks an element against its
+  immediate retained parent; use `expect_inside` when the intended container
+  is a different ancestor.
+- `expect_visible_text` requires the expected bytes in a current shaped run,
+  a matching retained text-paint command, nontransparent glyph paint, and
+  matching glyph bounds intersecting both the node bounds and paint clip. This
+  catches missing or stale shaped output in headless tests, but does not prove
+  that a GPU rasterizer produced pixels. Keep native capture/readback tests for
+  font residency, shader, antialiasing, and platform-renderer failures.
 - Each returned `Element` owns its strings and remains a value snapshot. Call
   `destroy_element` or `destroy_find_result` when finished. After an input or
   description, query again before using its bounds to interact.
@@ -178,6 +189,36 @@ the roving configuration, and the negative-control recipe.
 
 The checks remain subject to the guarantee boundary below: no platform
 accessibility bridge, native IME candidate window, or pixel verification.
+
+## Layout and visible-text assertions
+
+These helpers turn common visual intentions into checks over the real
+finalized layout and text-paint stream:
+
+```odin
+panel := testui.find(&h, testui.Query{
+    role=.Dialog, name="Search", match_role=true, match_name=true,
+})
+query := testui.find(&h, testui.Query{
+    role=.Text_Field, name="Search commands", match_role=true, match_name=true,
+})
+defer testui.destroy_find_result(&panel)
+defer testui.destroy_find_result(&query)
+
+fills := testui.expect_fills_width(&h, &query.element, &panel.element)
+testing.expect(t, fills.ok, testui.layout_check_diagnostic(fills))
+
+contained := testui.expect_no_overflow(&h, &query.element)
+testing.expect(t, contained.ok, testui.layout_check_diagnostic(contained))
+
+visible := testui.expect_visible_text(&h, &query.element, "build")
+testing.expect(t, visible.ok, testui.visible_text_diagnostic(visible))
+```
+
+`expect_aligned` compares centers or edges (`.Center_X`, `.Center_Y`, `.Left`,
+`.Right`, `.Top`, `.Bottom`) of two elements. `expect_inside` checks one
+element against an explicitly selected container. Every check rejects stale
+element snapshots; query the elements again after an input or description.
 
 ## Invalidation-frontier checks
 

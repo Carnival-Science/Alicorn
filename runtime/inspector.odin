@@ -593,7 +593,8 @@ inspect :: proc(rt: ^Runtime) -> string {
 			fmt.sbprintf(&sb, "  region: revision=%d cached=%t\n", node.region_revision, node.region_cached)
 		}
 		if node.kind == .Custom_Surface {
-		fmt.sbprintf(&sb, "  surface: payload-revision=%d interaction=%v kind=%v samples=%d rectangles=%d segments=%d stroke-points=%d circles=%d point-markers=%d pixels=%dx%d dpi=%.2f clip=(%.1f,%.1f %.1fx%.1f)\n", u64(node.surface_payload_revision), node.surface_interaction, node.surface_geometry_active ? GPU_Surface_Kind.Geometry : GPU_Surface_Kind.Waveform, len(node.surface_samples), len(node.surface_rectangles), len(node.surface_segments), len(node.surface_stroke_points), len(node.surface_circles), len(gpu_surface_point_markers_resolve(rt, id)), node.surface_pixel_width, node.surface_pixel_height, node.surface_dpi_scale, node.clip.x, node.clip.y, node.clip.w, node.clip.h)
+		stroke_path := gpu_surface_stroke_path_resolve(rt, id)
+		fmt.sbprintf(&sb, "  surface: payload-revision=%d interaction=%v kind=%v samples=%d rectangles=%d segments=%d stroke-points=%d circles=%d point-markers=%d pixels=%dx%d dpi=%.2f clip=(%.1f,%.1f %.1fx%.1f)\n", u64(node.surface_payload_revision), node.surface_interaction, node.surface_geometry_active ? GPU_Surface_Kind.Geometry : GPU_Surface_Kind.Waveform, len(node.surface_samples), len(node.surface_rectangles), len(node.surface_segments), len(stroke_path.points), len(node.surface_circles), len(gpu_surface_point_markers_resolve(rt, id)), node.surface_pixel_width, node.surface_pixel_height, node.surface_dpi_scale, node.clip.x, node.clip.y, node.clip.w, node.clip.h)
 		}
 		if semantic_style, has_semantic_style := rt.semantic_surfaces[id]; has_semantic_style {
 			style_inspector_semantic_surface(&sb, rt, node, semantic_style)

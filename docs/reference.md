@@ -475,7 +475,9 @@ its own history navigation.
 implementation details and are not a supported application API. Use
 `node_info`, `text_field_value`, `focused_node`, `captured_node`,
 `viewport_bounds`, `runtime_scratch_allocator`, and retained text geometry
-procedures for read access. Borrowed strings remain valid until the next
+procedures for read access. `Node_Info.parent` identifies the immediate
+retained layout parent and is zero for top-level nodes. Borrowed strings
+remain valid until the next
 mutation of the referenced value, application description, or runtime
 destruction. Scratch allocations must not outlive the next runtime scratch
 reset.
