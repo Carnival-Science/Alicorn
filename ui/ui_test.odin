@@ -6,6 +6,18 @@ import "core:strings"
 import odin_runtime "base:runtime"
 import alicorn "alicorn:runtime"
 
+@(test)
+test_style_color_is_available_through_ui_facade :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 100, 80})
+	defer alicorn.destroy_runtime(&rt)
+	ctx, should_build := alicorn.begin_frame(&rt)
+	if !should_build { testing.expect(t, false, "style-role fixture should describe its initial frame"); return }
+	resolved := style_color(&ctx, .Window_Background)
+	expected := alicorn.style_color(&ctx, .Window_Background)
+	testing.expect_value(t, resolved, expected)
+	alicorn.end_frame(&ctx)
+}
+
 Run_Overlay_Test_App :: struct {
 	main_text: Node_ID,
 	modal: Node_ID,

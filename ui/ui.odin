@@ -209,6 +209,12 @@ DEFAULT_COLOR :: alicorn.DEFAULT_COLOR
 @(private)
 PANEL_THEME_FILL :: alicorn.NO_BACKGROUND_COLOR
 
+// style_color resolves one core theme role through the current application UI
+// context, keeping ordinary themed UI authoring on the high-level package.
+style_color :: proc(ctx: ^UI, role: Style_Color_Role) -> Color {
+	return alicorn.style_color(ctx, role)
+}
+
 red :: Color{1, 0, 0, 1}
 green :: Color{0, 1, 0, 1}
 blue :: Color{0, 0, 1, 1}
