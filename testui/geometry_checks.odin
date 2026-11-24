@@ -233,6 +233,21 @@ visible_rect_intersects :: proc(a, b: alicorn.Rect) -> bool {
 		a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y
 }
 
+visible_text_owner_bounds :: proc(
+	rt: ^alicorn.Runtime,
+	owner, root: alicorn.Node_ID,
+) -> (bounds: alicorn.Rect, found: bool) {
+	current := owner
+	for current != 0 {
+		info, ok := alicorn.node_info(rt, current)
+		if !ok { return {}, false }
+		if current == root { return info.bounds, true }
+		if info.parent == current { return {}, false }
+		current = info.parent
+	}
+	return {}, false
+}
+
 // expect_visible_text checks the current retained text product and finalized
 // paint stream. It is a headless visibility oracle, not pixel verification.
 // Keep native readback coverage for rasterization, glyph residency and shader
@@ -257,9 +272,12 @@ expect_visible_text :: proc(
 	text_paint_found := false
 	text_shaped := false
 	for command in display.commands {
-		if command.owner != element.visual_node { continue }
 		paint, is_text := command.payload.(alicorn.Text_Paint)
 		if !is_text { continue }
+		owner_bounds, owner_in_element := visible_text_owner_bounds(
+			handle.runtime, command.owner, element.visual_node,
+		)
+		if !owner_in_element { continue }
 		text_paint_found = true
 		run, run_ok := alicorn.paint_text_run_resolve(handle.runtime, paint.run)
 		if !run_ok || run == nil { continue }
@@ -283,6 +301,7 @@ expect_visible_text :: proc(
 				line.height,
 			}
 			if visible_rect_intersects(glyph_bounds, command.clip) &&
+				visible_rect_intersects(glyph_bounds, owner_bounds) &&
 				visible_rect_intersects(glyph_bounds, element.bounds) {
 				report.visible_glyphs += 1
 			}

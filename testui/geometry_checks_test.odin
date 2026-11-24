@@ -37,6 +37,8 @@ test_layout_assertions_check_width_alignment_and_overflow :: proc(t: ^testing.T)
 
 	inside := expect_inside(&h, &save.element, &panel.element)
 	testing.expect(t, inside.ok, layout_check_diagnostic(inside))
+	visible_save := expect_visible_text(&h, &save.element, "Save")
+	testing.expect(t, visible_save.ok, visible_text_diagnostic(visible_save))
 	no_overflow := expect_no_overflow(&h, &save.element)
 	testing.expect(t, no_overflow.ok, layout_check_diagnostic(no_overflow))
 

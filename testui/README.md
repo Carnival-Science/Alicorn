@@ -82,11 +82,12 @@ as the native host without creating an SDL window or GPU device. Supplying both
   immediate retained parent; use `expect_inside` when the intended container
   is a different ancestor.
 - `expect_visible_text` requires the expected bytes in a current shaped run,
-  a matching retained text-paint command, nontransparent glyph paint, and
-  matching glyph bounds intersecting both the node bounds and paint clip. This
-  catches missing or stale shaped output in headless tests, but does not prove
-  that a GPU rasterizer produced pixels. Keep native capture/readback tests for
-  font residency, shader, antialiasing, and platform-renderer failures.
+  a retained text-paint command owned by the element or one of its descendants,
+  nontransparent glyph paint, and matching glyph bounds intersecting the text
+  owner's bounds, the queried element bounds, and the paint clip. This catches
+  missing or stale shaped output in headless tests, but does not prove that a
+  GPU rasterizer produced pixels. Keep native capture/readback tests for font
+  residency, shader, antialiasing, and platform-renderer failures.
 - Each returned `Element` owns its strings and remains a value snapshot. Call
   `destroy_element` or `destroy_find_result` when finished. After an input or
   description, query again before using its bounds to interact.
