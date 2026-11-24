@@ -14,6 +14,7 @@ Node_ID :: alicorn.Node_ID
 Color :: alicorn.Color
 Paint_Stroke :: alicorn.Paint_Stroke
 Surface_Corner_Radii :: alicorn.Surface_Corner_Radii
+Surface_Shape :: alicorn.Surface_Shape
 Stroke_Placement :: alicorn.Paint_Stroke_Placement
 Align :: alicorn.Align
 Main_Axis_Distribution :: alicorn.Main_Axis_Distribution
@@ -213,6 +214,13 @@ PANEL_THEME_FILL :: alicorn.NO_BACKGROUND_COLOR
 // context, keeping ordinary themed UI authoring on the high-level package.
 style_color :: proc(ctx: ^UI, role: Style_Color_Role) -> Color {
 	return alicorn.style_color(ctx, role)
+}
+
+// surface_end closes a surface owner opened by a composable component part.
+// High-level callers can finish that authored subtree without importing the
+// runtime package just for the matching stack operation.
+surface_end :: proc(ctx: ^UI) {
+	alicorn.surface_end(ctx)
 }
 
 red :: Color{1, 0, 0, 1}
@@ -816,6 +824,22 @@ interaction_scope :: proc(
 ) -> bool {
 	return ctx != nil && ctx.runtime != nil &&
 		alicorn.interaction_scope_register(ctx.runtime, owner, state, options)
+}
+
+// interaction_scope_current registers a scope on the currently open layout
+// owner and returns that identity for components that consume its queued
+// events. This keeps ordinary scoped composition from reaching into Runtime's
+// container stack to discover the owner ID.
+interaction_scope_current :: proc(
+	ctx: ^UI,
+	state: rawptr,
+	options: Interaction_Scope_Options,
+) -> (owner: Node_ID, registered: bool) {
+	if ctx == nil || ctx.runtime == nil || len(ctx.runtime.stack) == 0 { return }
+	owner = ctx.runtime.stack[len(ctx.runtime.stack)-1]
+	if owner == 0 { return }
+	registered = alicorn.interaction_scope_register(ctx.runtime, owner, state, options)
+	return
 }
 
 interaction_event_next :: proc(ctx: ^UI, owner: Node_ID) -> (event: Interaction_Event, found: bool) {

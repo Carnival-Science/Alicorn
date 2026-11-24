@@ -18,6 +18,45 @@ test_style_color_is_available_through_ui_facade :: proc(t: ^testing.T) {
 	alicorn.end_frame(&ctx)
 }
 
+@(test)
+test_surface_part_can_close_through_ui_facade :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 100, 80})
+	defer alicorn.destroy_runtime(&rt)
+	ctx, should_build := alicorn.begin_frame(&rt)
+	if !should_build { testing.expect(t, false, "surface fixture should describe its initial frame"); return }
+	alicorn.container_begin(&ctx, .Root, key="surface-end-root", style=alicorn.layout_style(.Column))
+	owner := alicorn.surface_begin(&ctx, alicorn.surface_core_color_role(.Surface),
+		key="surface-end-owner", style=alicorn.layout_style(.Column, width=80, height=60))
+	depth := len(rt.stack)
+	surface_end(&ctx)
+	testing.expect(t, owner != 0 && len(rt.stack) == depth-1,
+		"the UI facade should close a component-owned surface and restore the parent stack")
+	alicorn.container_end(&ctx)
+	alicorn.end_frame(&ctx)
+}
+
+@(test)
+test_interaction_scope_current_uses_open_layout_owner :: proc(t: ^testing.T) {
+	rt := alicorn.new_runtime(alicorn.Rect{0, 0, 160, 100})
+	defer alicorn.destroy_runtime(&rt)
+	ctx, should_build := alicorn.begin_frame(&rt)
+	if !should_build { testing.expect(t, false, "scope fixture should describe its initial frame"); return }
+	application_state: u64
+	if column(&ctx, key=key_string("current-scope-owner")) {
+		owner, registered := interaction_scope_current(&ctx, rawptr(&application_state),
+			Interaction_Scope_Options{keys={.Down}})
+		testing.expect(t, registered && owner == rt.stack[len(rt.stack)-1],
+			"the facade should register against and return the current layout owner")
+		pending_owner_matches := false
+		for scope in rt.pending_interaction_scopes {
+			if scope.owner == owner { pending_owner_matches = true }
+		}
+		testing.expect(t, pending_owner_matches,
+			"the returned owner should identify the registered retained interaction scope")
+	}
+	alicorn.end_frame(&ctx)
+}
+
 Run_Overlay_Test_App :: struct {
 	main_text: Node_ID,
 	modal: Node_ID,
