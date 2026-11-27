@@ -58,10 +58,11 @@ values can be recomputed without laying out unrelated retained content. This
 is an equality token, not an ordered clock or a replacement for the application's
 own content revision.
 
-Recipe inheritance, typed fragments, and explicit style contexts remain a
-private Button prototype rather than part of the theme contract. Its current
-theme-snapshot adapter is useful evidence but does not yet provide an ergonomic
-runtime context scope or a second consumer. See the
+Recipe inheritance, typed fragments, and explicit style contexts remain
+outside the theme contract. A private Button prototype and an external AliKit
+selection example test explicit typed contexts through ordinary Odin; neither
+adds an Alicorn runtime context scope. A distinct non-selection consumer and
+clear authoring benefit are still needed before extraction. See the
 [#245 composition record](research/issue-245-composable-styles.md) for the
 precedence model and public-API decision.
 

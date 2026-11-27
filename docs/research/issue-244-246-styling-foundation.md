@@ -1,6 +1,6 @@
 # Styling foundation: typed properties and visual parts
 
-November 22, 2026 · Updated November 24 for [#232](https://github.com/Carnival-Science/Alicorn/issues/232), [#244](https://github.com/Carnival-Science/Alicorn/issues/244), and [#246](https://github.com/Carnival-Science/Alicorn/issues/246).
+November 22, 2026 · Updated November 27 for [#232](https://github.com/Carnival-Science/Alicorn/issues/232), [#244](https://github.com/Carnival-Science/Alicorn/issues/244), and [#246](https://github.com/Carnival-Science/Alicorn/issues/246).
 
 Radio Group and Segmented Control already share selection policy in AliKit.
 The experiment is whether ordinary Odin style values can change their anatomy
@@ -8,6 +8,30 @@ while the existing components keep ownership of input, layout boundaries,
 keys, accessible names, and semantics. Begin with a pair of AliKit consumers
 and the current Alicorn renderer. Keep the style values local to the pilot
 until evidence supports a public vocabulary. [Styling roadmap](https://github.com/Carnival-Science/Alicorn/issues/243) · [Component standard](../component-authoring.md)
+
+### November 27 follow-up
+
+The AliKit external consumer now composes a typed selection style from named
+Odin procedures and explicit `Toolbar` or `Dialog` context. The same resolver
+feeds Radio Group and Segmented Control while their owner nodes, input, focus,
+and semantics remain with those components. `style_explain` reports the typed
+origin of each resolved field. This adds no Alicorn runtime API and does not
+introduce a styling language. The evidence and limits are recorded in the
+[#245 composition study](issue-245-composable-styles.md).
+
+This reinforces the #244/#246 boundary: existing `Layout_Style`,
+`Text_Style`, `Surface_Shape`, paint, material, and named visual-part APIs can
+express the demonstrated treatments. Scratchpad's four-scale Metal captures
+and stage counters remain the native DPI/locality evidence; the AliKit
+headless check adds focus, semantic identity, interaction, treatment geometry,
+and idle assertions. Progress's distinct linear/ring anatomy is also covered
+with one semantic owner. No new cross-component style property container or
+runtime visual-part generator has demonstrated a net benefit so far.
+
+The remaining acceptance work is native capture and DPI/text-scale validation
+for the styled Progress consumer, plus broader legacy-theme and virtualized
+layout parity. Those limitations keep #244 and #246 open; they do not imply a
+missing renderer primitive.
 
 ## What is already available
 
@@ -211,9 +235,9 @@ at 150% text scale with Increased Contrast, Differentiate Without Color and
 Reduce Transparency. Named parts received the resolved ink on description.
 The same-ID paint-only replacement gap for cached application-owned values is
 now covered by the #232 snapshot work above. The Node size-budget failure
-remains separate. Progress now supplies independent anatomy evidence, though
-native visual acceptance and a second consumer of shared style composition
-remain open.
+remains separate. Progress supplies independent anatomy evidence. Native
+Progress capture remains open, as does composition evidence from a component
+outside the selection-control family.
 
 ## Typed properties and their effects
 
@@ -276,9 +300,10 @@ needed to start this experiment. [Control metrics and precedence](../themes.md#c
    chrome or a Punks control. Keep range, phase, and visual-part structure in
    Progress's typed component contract where they express behavior rather
    than generic appearance.
-5. Require a real second consumer of the same recipe fragments and explicit
-   context contract before extracting a public #245 API. The private Button
-   prototype and its current limitations are recorded in
+5. The selection-style example is the first external consumer of the same
+   recipe fragments and explicit contexts. Require a distinct non-selection
+   consumer before extracting a public #245 API. The private Button prototype
+   and current comparison are recorded in
    [`issue-245-composable-styles.md`](issue-245-composable-styles.md).
 
-Sources: [#106 fresh-runtime oracle](../validation/issue-106-invalidation-oracle.md) · [AliKit external consumer evidence](https://github.com/samanshaiza004/alicorn-kit/blob/fded57a94e6a2c5bf44d8b980befe5a260ff5ed5/docs/research/issue-006-phase-6-external-consumers.md) · [AliKit Progress revision](https://github.com/samanshaiza004/alicorn-kit/commit/4a15b5b7622c6a297fa92d6e70d707be5f50727c) · [#245 recipe composition](https://github.com/Carnival-Science/Alicorn/issues/245).
+Sources: [#106 fresh-runtime oracle](../validation/issue-106-invalidation-oracle.md) · [AliKit external consumer evidence](https://github.com/samanshaiza004/alicorn-kit/blob/fded57a94e6a2c5bf44d8b980befe5a260ff5ed5/docs/research/issue-006-phase-6-external-consumers.md) · [AliKit Progress revision](https://github.com/samanshaiza004/alicorn-kit/commit/4a15b5b7622c6a297fa92d6e70d707be5f50727c) · [AliKit style-composition pilot](https://github.com/samanshaiza004/alicorn-kit/commit/a482bbf3731fbe41512177392ab44be0db614439) · [#245 recipe composition](https://github.com/Carnival-Science/Alicorn/issues/245).

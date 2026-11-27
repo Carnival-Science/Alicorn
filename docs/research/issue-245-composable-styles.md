@@ -1,99 +1,129 @@
 # Composable styles: recipe, fragments, and explicit contexts
 
-November 24, 2026 · Private Button prototype; public runtime API is **NO-GO**
-pending a second consumer and authoring/performance evidence. See the
-[styling foundation record](issue-244-246-styling-foundation.md) for the
-preceding #232, #244, and #246 validation.
+Updated November 27, 2026 · External AliKit consumer and workload pilot complete.
+Decision: **NO-GO for a public Alicorn style-composition API**; keep the
+experiment in ordinary Odin and revisit only when another real consumer shows
+that the added authoring model removes work.
 
-## Design boundary
+This follows the [#244/#246 styling foundation](issue-244-246-styling-foundation.md)
+and the current [#245 issue requirements](https://github.com/Carnival-Science/Alicorn/issues/245).
 
-The useful target is typed composition, not a runtime stylesheet. An
-application should be able to define a reusable recipe, extend it with
-fragments, apply a named context to a subtree, and inspect the source of each
-resolved field. The runtime should not match selectors, parse strings during
-description, or create a second component tree.
+## Question and constraints
 
-The prototype uses distinct numeric IDs for recipes, fragments, and contexts.
-Its Button patch has a fixed field enum and typed value struct for a small
-cross-domain set: height and padding (`Layout_Style`), font size
-(`Text_Style`), and shape, color roles, surface visibility, selection marker,
-and focus policy (`Button_Recipe`). A fragment cannot contain an untyped
-property bag or assign a value with the wrong field type.
+Can named typed recipes and reusable fragments make a control easier to restyle
+in different contexts, while leaving application state, component identity,
+input, layout ownership, and accessibility with the existing components?
 
-## Deterministic precedence
+The experiment excludes selector matching, string-based properties, a second
+widget tree, and per-frame style lookup. Styling remains an authoring choice;
+layout, typography, and paint continue to use Alicorn's typed values.
 
-The experiment resolves one recipe at setup time, in this order:
+## Experiments
 
-1. Alicorn defaults and the selected typed theme variant.
-2. Recipe inheritance from the oldest parent to the leaf. Each recipe applies
-   its fragments in declaration order, then its own direct patch.
-3. Explicit context IDs in caller-provided outer-to-inner order. A context rule
-   targets one exact recipe ID; it does not inspect widget structure or match
-   a selector.
-4. Explicit instance patch.
-
-The result retains a provenance source for every field: core default, theme
-variant, recipe ID, fragment ID, context ID plus fragment ID, or instance
-override. Setup rejects duplicate IDs, missing references, inheritance
-cycles, duplicate context rules for one recipe, and repeated active context
-IDs. Runtime description uses only the already-resolved typed values.
-
-## Prototype and evidence
+### Private Alicorn Button prototype
 
 [`style_composition_prototype_test.odin`](../../runtime/style_composition_prototype_test.odin)
-contains the private setup compiler and its regression test. It deliberately
-does not export a runtime type or procedure. The test composes a shared
-Control → Compact → Primary recipe chain, resolves it in Toolbar and Dialog
-contexts, checks nested outer-to-inner precedence and per-field provenance,
-and verifies that an instance override wins. It also rejects an identity
-collision, cyclic inheritance, and an ambiguous context rule.
+keeps the first prototype private. It composes typed Button fields through a
+recipe inheritance chain, ordered fragments, explicit outer-to-inner
+Toolbar/Dialog contexts, and an instance override. It reports the winning
+source for each field and rejects duplicate identities, missing references,
+cycles, and ambiguous context rules. A shared Button helper is used in the two
+contexts, then each resolved paint recipe is adapted to an ordinary
+`Style_Theme` snapshot.
 
-For an integration check, the test materializes each resolved Button recipe
-into an ordinary `Style_Theme`, registers those snapshots once, then calls the
-same Button helper in both contexts with the resolved layout and text values.
-The retained Button geometry and paint differ as requested while both remain
-ordinary Button nodes with the same label. The current bridge therefore works,
-but each context requires its own registered theme snapshot and callers still
-pass layout and typography explicitly. There is no public context scope or
-runtime provenance inspector for these composed values.
+This is evidence that deterministic typed resolution is possible with the
+current theme contract. It is not a public runtime API. The adapter creates a
+registered theme copy per context, and the prototype does not automatically
+scope contexts through a subtree.
 
-The focused Windows test passes. The prototype is bounded to 64 definitions
-and checks catalogs during setup; it has no 100/1,000/3,000-node workload
-benchmark, native pixel comparison, or consumer outside this one Alicorn
-test fixture. AliKit Progress currently validates typed part composition and
-semantic preservation, but it does not consume the same recipe fragments or
-context contract. Progress-specific range and animation options also remain
-appropriately owned by that component.
+### External AliKit consumer
 
-## API decision
+AliKit commit [`a482bbf`](https://github.com/samanshaiza004/alicorn-kit/commit/a482bbf3731fbe41512177392ab44be0db614439)
+updates `examples/selection_styles` to compose a typed style in application
+code. Named Odin procedures provide metric, surface, typography, and indicator
+fragments. The caller passes an explicit `Toolbar` or `Dialog` context and can
+apply a typed instance height override. `style_explain` returns a typed source
+for each field.
 
-Do not extract the prototype as a public runtime API yet. The evidence shows
-that typed composition can resolve correctly and adapt to the current theme
-contract. It does not yet show that the API reduces real application code, how
-contexts should reach retained Button resolution without one theme copy per
-context, or how composition scales under the #245 workload.
+The same resolved `Item_Style` feeds AliKit Radio Group and Segmented Control.
+Their existing component owners continue to control focus, hit geometry,
+selection, semantic roles, and controlled values. Styles are resolved at
+initialization or when the selected treatment changes; the render procedure
+does not resolve them per frame. No new Alicorn API or AliKit style registry is
+used.
 
-The next GO review should require:
+The external consumer test passed. It checks field provenance, instance
+precedence, treatment paint and geometry, stable visual and semantic identity,
+focus, keyboard/pointer/semantic activation, disabled behavior, and idle
+descriptions.
 
-- A second package consuming the same recipes, fragments, and explicit
-  contexts, with a copyable example and a measured reduction in repeated style
-  declarations. The consumer must be an actual AliKit component using the
-  same composition definitions, not only a consumer of Alicorn's current
-  theme or visual-part APIs.
-- A context integration that keeps interaction, layout boundaries, component
-  identity, and focus semantics owned by the existing controls.
-- Unchanged built-in and legacy-theme defaults, fresh-runtime parity, and
-  deterministic interaction/accessibility state conflicts and theme
-  replacement.
-- Benchmarks at 100, 1,000, and 3,000 retained nodes, plus evidence of no
-  per-frame string lookup, allocation, or work during settled idle.
-- A public explain/provenance result that identifies the winning source for a
-  field and a reject-then-preserve behavior for invalid catalogs.
-- Fresh-runtime parity for layout, text, paint, and material values, along
-  with native visual checks for focus and high-contrast states.
+## Measurements
 
-This keeps the research moving without committing Alicorn to a property bag,
-selector engine, or generalized style framework before a second consumer
-shows which composition seams are genuinely shared.
+Environment: macOS arm64, Odin `dev-2026-11:9a6991685`, Alicorn `dbd862a`,
+and the pinned AccessKit binding. The optimized style-only microbenchmark uses
+25 samples of 200 passes per size. The retained workload uses seven fresh
+TestUI runtimes per size and creates that many styled Button nodes. It reports
+initial description timings and deterministic stage visits; it has no GPU and
+is not a native frame-latency measurement.
 
-Source: [Alicorn #245](https://github.com/Carnival-Science/Alicorn/issues/245).
+| Styled Buttons | Style resolver p50 per style | Initial description p50 | Max of 7 | Layout visits | Text shape requests | Paint visits | Settled idle |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | :--- |
+| 100 | 1.00 ns | 0.551 ms | 7.769 ms | 203 | 100 | 102 | zero work |
+| 1,000 | 1.01 ns | 5.485 ms | 6.733 ms | 2,003 | 1,000 | 1,002 | zero work |
+| 3,000 | 0.98 ns | 17.492 ms | 21.145 ms | 6,003 | 3,000 | 3,002 | zero work |
+
+The resolver-only values are below the precision needed to compare authoring
+strategies and should be read as “small in this microbenchmark,” not as a
+runtime performance claim. Runtime stage visits and text shaping scale with
+the described scene. After settling, the idle check found no descriptions,
+reconciliation, layout, shaping, paint, composition, or semantic work in the
+TestUI counters. TestUI has no native GPU submission path, so this pilot says
+nothing about GPU idleness. The resolver code contains no allocator, registry,
+or string lookup, but the benchmark does not instrument allocator calls.
+
+The runtime numbers have no matched direct-style baseline. Seven runs are also
+too few for a stable p95; the table reports the maximum observed instead. No
+native pixels, physical DPI behavior, high-contrast capture, or GPU work were
+measured in this pilot.
+
+## Validation
+
+At Alicorn `dbd862a`, the runtime suite passed 531/531 tests and the retained
+`Node` record measured 2,032 bytes, below its 2,048-byte budget. The AliKit
+focused selection-style test passed 1/1 against that runtime and its pinned
+AccessKit binding. The optimized `--bench` run completed for all three node
+counts and reported zero measured post-settle TestUI work. These checks
+establish headless behavior and the recorded CPU-pipeline workload only; they do not
+replace the native Progress captures and DPI/accessibility checks still listed
+below.
+
+## Decision
+
+The external consumer proves that the composition can work through ordinary
+typed Odin functions, with an explicit context and local field explanations.
+It does not prove that a generalized runtime API makes authoring clearer or
+less repetitive. The previous `style_for` preset was a single typed switch;
+the composition experiment adds provenance and benchmark code, and the complete
+example grew from 195 to 479 lines. That full-file change is not a clean
+authoring-only comparison, but it is enough to reject a claim that the current
+generic resolver is already simpler.
+
+Keep the demonstrated functions and component-specific style values in
+userland. Do not extract the ID catalog, context registry, theme-snapshot
+bridge, or field-patch system into Alicorn. Existing `Style_Environment`,
+`Style_Theme`, and component-owned typed values remain the supported contract.
+No stylesheet or style language is proposed.
+
+## Remaining evidence
+
+- A distinct AliKit component outside the selection-control family must show
+  that the same composition convention removes meaningful duplication before
+  shared package code is extracted.
+- Compare identical authoring tasks with direct typed values and function
+  composition, including source size and clarity; compare runtime allocations
+  and frame costs against a matched baseline.
+- Keep #244/#246's native Progress DPI, text-scale, contrast, and legacy-theme
+  checks tracked in the foundation record.
+
+These are research follow-ups, not prerequisites to use the existing typed
+theme, layout, paint, and visual-part APIs.
