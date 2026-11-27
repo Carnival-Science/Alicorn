@@ -288,4 +288,10 @@ main :: proc() {
 	benchmark_vector_shape_large("bezier-stroke", &rt, alicorn.paint_surface_command(62, {}, large_clip,
 		alicorn.Color{0, 0, 0, 0}, shape=bezier_shape,
 		stroke=alicorn.Paint_Stroke{color={0.95, 0.60, 0.20, 1}, width=5}, stroke_placement=.Centered))
+
+	// Issue #248 phase A: compare explicit direct layer composition with a
+	// benchmark-only ordered descriptor list lowered through the same existing
+	// surface mesh path. This is a renderer baseline, not retained-node or GPU
+	// evidence and does not introduce a runtime effect-stack API.
+	benchmark_effect_stack_prototype(&rt)
 }

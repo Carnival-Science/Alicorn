@@ -65,6 +65,8 @@ The same changelog contains the v0.1.0, v0.2.0, v0.2.1, and v0.2.2 history.
 
 - [#244 and #246 styling foundation](research/issue-244-246-styling-foundation.md) —
   typed properties and named visual parts in AliKit Radio Group and Segmented Control.
+- [#248 ordered visual effects](research/issue-248-effects.md) —
+  benchmark-only ordered fill/stroke prototype; no public effect API decision yet.
 - [#162 host-owned presentation](research/issue-162-host-owned-presentation.md) —
   the bounded SDL_GPU presenter boundary is complete; the WebGPU renderer
   consumes the same borrowed paint list and caller-owned submission rules.
