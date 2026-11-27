@@ -294,4 +294,9 @@ main :: proc() {
 	// surface mesh path. This is a renderer baseline, not retained-node or GPU
 	// evidence and does not introduce a runtime effect-stack API.
 	benchmark_effect_stack_prototype(&rt)
+
+	// Issue #248 phase B compares direct retained decoration nodes with a
+	// private sparse owner/cache sidecar. This remains benchmark-only until
+	// actual consumer dogfood and native renderer validation justify extraction.
+	benchmark_effect_retained_owners()
 }

@@ -51,7 +51,9 @@ Treat visual advantage as a requirement. A new representation that merely packag
 
 `benchmarks/native_material/effect_stack.odin` defines a private fixed-capacity descriptor list with only two initial kinds: inset fill and stroke. It lowers each descriptor to an ordinary surface command, preserving the existing paint union and native surface batch. The prototype is intentionally benchmark-only; it has no Runtime sidecar, per-node payload, public type, or production renderer branch. The [record-size tripwire](https://github.com/Carnival-Science/Alicorn/blob/b30accd/runtime/size_tripwire_test.odin#L7-L26) remains unchanged at 2,048-byte Nodes and 128-byte `Paint_Command`s.
 
-The current benchmark repeats each target shape 256 times and measures CPU mesh preparation at 1×, 1.25×, 1.5×, and 2×. It compares manually composed commands with commands lowered from the stack descriptors. For each shape/scale, both paths emit three surface commands and identical vertices; rounded mesh size and upload bytes are identical. The current solid renderer batches adjacent surface commands, so the prototype adds no effect-specific render pass. The benchmark constructs the descriptor output before timing mesh preparation, so its timings do not measure descriptor lowering, layout, retained-node count, persistent memory, GPU execution, or presentation.
+The geometry benchmark repeats each target shape 256 times and measures CPU mesh preparation at 1×, 1.25×, 1.5×, and 2×. It compares manually composed commands with commands lowered from the stack descriptors. For each shape/scale, both paths emit three surface commands and identical vertices; rounded mesh size and upload bytes are identical. The current solid renderer batches adjacent surface commands, so the prototype adds no effect-specific render pass. The geometry timings still exclude descriptor lowering, layout, retained-node count, persistent memory, GPU execution, and presentation.
+
+Descriptor lowering is measured separately after warm-up with 101 samples of 100 lowerings per sample. On this Apple Silicon host, both fixtures reported 100 ns p50, 110 ns p95/p99, zero context allocator operations, and zero persistent runtime allocations after warm-up. These small timings are near the clock-resolution floor and should be read as an allocation check and upper-bound indication, not as evidence of a meaningful speedup.
 
 Representative optimized run on the current development Mac:
 
@@ -64,14 +66,60 @@ Representative optimized run on the current development Mac:
 
 These are geometry-only throughput figures for the 256-surface fixture, not application-frame timings. The near-identical values are expected: both forms lower to the same command sequence, and no stack-specific lowering cost is included. This prototype demonstrates that a bounded ordered representation can reuse today's flat/analytic surface renderer, but it demonstrates no rendering performance advantage. It also does not yet quantify the node/layout work saved by retaining multiple layers under one surface owner.
 
-### Initial decision
+### Stage-one decision
 
 - **Inset fill + layered stroke research:** GO to the next consumer pilot. The representation preserves command order and existing CPU mesh output without a renderer pass, but its visual value and retained-work savings remain unproven.
 - **Analytic relief replacement or extension:** HOLD. The Punks fixture includes the current material as its base; no visual comparison or integrated-GPU measurement establishes that extra layers improve on relief.
 - **Multi-stop gradients, shadows, and backdrop composition:** HOLD. The current experiment does not justify their cost or settle their interpolation, bounds, accessibility, or compositor contracts.
-- **Public stack API:** NO-GO for now. The benchmark prototype is only an encoding of the current command stream and has not removed layout nodes, paint commands, allocations, or GPU work.
+- **Public stack API:** NO-GO at this stage. The geometry prototype only encodes the current command stream and provides no reduction in paint commands or GPU work.
 
-The next prototype should attach bounded layers to one real retained surface owner, then compare it with the same consumer built from ordinary positioned surfaces. That comparison must include actual node/command counts, layout and shaping visits, allocation/memory, static reuse, and native pixel readback. Only proceed if it removes demonstrated consumer work while preserving painter order and the flat path.
+## Retained-owner experiment
+
+The benchmark-only follow-up compares the same rounded surface, two ordered decoration layers, and unchanged text child in two forms: direct positioned surface children and a private sparse sidecar keyed by the retained surface owner. It runs 1, 100, 1,000, and 3,000 surfaces and checks the expanded surface command sequence, full retained corner radii, bounds, clips, paint fields, translation, and opacity after every operation. No production runtime type or public API was added.
+
+The exact output from the successful optimized run is preserved in [the raw benchmark capture](issue-248-retained-effects-macos-2026-11-27.txt). Scaling observations from that run:
+
+| Surfaces | Direct nodes | Sparse-owner nodes | Direct persistent bytes | Sparse-owner persistent bytes |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 5 | 3 | 459,458 B | 464,772 B |
+| 100 | 401 | 201 | 3,749,341 B | 2,639,717 B |
+| 1,000 | 4,001 | 2,001 | 30,606,401 B | 20,455,889 B |
+| 3,000 | 12,001 | 6,001 | 95,599,729 B | 59,395,489 B |
+
+At one surface, the sparse entry costs 5,314 B more than the two decorative retained nodes it replaces. In this fixture, the saved runtime storage outweighs that entry by 100 surfaces.
+
+Representative single-run operation observations at 3,000 surfaces:
+
+| Measure | Direct positioned children | Private sparse owner | Notes |
+| --- | ---: | ---: | --- |
+| Initial live nodes | 12,001 | 6,001 | Two decorative nodes removed per owner; root and text children remain. |
+| Initial runtime persistent requested bytes | 95,599,729 B | 59,395,489 B | Runtime accounting, not process RSS; includes the sparse cache on the sidecar path. |
+| Initial build + output-ready time | 84.83 ms | 60.56 ms | Sidecar timing includes lowering and expansion to the same 12,001 surface commands. |
+| Identical re-description | 13.55 ms | 7.57 ms | Zero layout, text shaping, or paint visits in both runtimes. |
+| Change one layer color | 13.38 ms | 7.34 ms | Direct path visits one paint node; sidecar lowers one entry and hits 2,999. |
+| Change one layer inset | 18.36 ms | 7.24 ms | Direct path revisits its decoration layout/paint nodes; sidecar lowers one entry and hits 2,999. |
+| Remove one layer | 23.25 ms | 7.47 ms | Direct path retires one decoration node; sidecar retains owner identity. |
+| Add one layer | 23.46 ms | 8.40 ms | Direct path creates one decoration node; sidecar lowers one entry. |
+| Resize one owner | 26.53 ms | 14.37 ms | In a flow column this also moves 1,500 following surfaces. |
+
+The observations support further research: the private representation cut the fixture's live node count in half, reduced runtime-accounted persistent storage by about 38%, and produced equivalent expanded paint commands. It did not reduce the total number of output surface commands. The timing rows are one invocation each rather than distributions; use them as a directional baseline, not published comparative performance claims.
+
+The resize case exposes a limitation in this prototype. Since the middle owner's height change moves the following 1,500 items, the sidecar's current key comparison treats their new absolute bounds as a reason to lower 1,500 entries again. A production design would need to separate owner-relative effect geometry from the owner's current bounds and translation. The sparse cache also stores per-owner command data; its memory is included above rather than treated as free.
+
+The runtime's paint-visit and finalization counters do not see sidecar display-list expansion. The reported elapsed time does include that expansion, and output parity is checked, but there is no renderer/GPU readback. This is a benchmark model of retained ownership, not an Alicorn implementation or a complete renderer comparison.
+
+### Consumer dogfood
+
+The AliKit Menu now uses a positioned accent highlight in the popup's top padding. The Punks Audition deck uses a positioned accent rim in its panel's top padding. Both use existing surface and positioned-child APIs; both preserve the existing menu/deck owners and put no decorative node into flow layout. Regression assertions cover menu highlight identity/placement and Punks deck-child geometry and identity across its existing loading, seeking, resize, and text-scale scenarios.
+
+These are code-level dogfoods, not validated native visual captures. AliKit's Menu check and Punks' Odin build/tests could not run in this environment: the pinned `accesskit:accesskit` checkout is absent, and Punks' Alicorn/Caliber submodules could not be cloned because `github.com` did not resolve. No native readback, physical DPI capture, or GPU cost was collected.
+
+### Updated decision
+
+- **Bounded inset-fill/layered-stroke research:** GO to visual and renderer validation. The sidecar pilot now demonstrates fewer retained nodes and lower runtime-requested memory for a 3,000-surface synthetic workload, with equivalent expanded CPU paint data.
+- **Public stack API:** NO-GO. Consumer dogfood uses ordinary positioned surfaces, the comparison sidecar is benchmark-only, and native pixels/GPU costs are still unverified.
+- **Flat fast path:** Preserve it. This experiment has no evidence that flat controls should pay effect-specific node, allocation, or pass costs.
+- **Multi-stop gradients:** Keep independent. The retained-owner result neither proves nor rejects CPU tessellation versus shader evaluation.
 
 Start with effects that can remain in ordinary surface rendering. Measure multi-stop gradients, multiple fills, layered strokes, and inset/outset treatments separately. Add shadow or backdrop passes only if a consumer shows a visible benefit over analytic relief or positioned surfaces. Preserve the flat fast path, painter order, clipping, opacity, and existing material presets.
 
@@ -83,11 +131,11 @@ Start with effects that can remain in ordinary surface rendering. Measure multi-
 - Verify local effect edits preserve surface identity and avoid unrelated layout or text shaping. Static unchanged effects should reuse retained output; flat scenes must incur no effect pass or effect allocation.
 - Make separate GO/NO-GO calls for each effect and for a public composition API. Do not infer that one successful effect justifies the entire stack.
 
-This initial prototype was built and run locally with `odin build benchmarks/native_material -o:speed -out:out/alicorn_material_benchmark`; the benchmark exited successfully and the stack contract/mesh-equality checks passed. `odin test runtime` passed 531/531 tests and `odin test renderer/cpu` passed 25/25. The documented `./tools/test.sh` could not start because its AccessKit binding check tried to fetch `odin-accesskit` and this environment could not resolve `github.com`; no dependency was installed or changed. Neither consumer app was built, no pixels were captured, and native GPU execution/integrated-GPU behavior were not measured. The earlier [two-stop gradient study](issue-119-two-stop-gradients.md) and [retained-effects study](../validation/issue-111-retained-effects.md) remain the detailed records for their respective implementation constraints.
+The updated benchmark was built with `odin build benchmarks/native_material -o:speed` and its full executable run exited successfully. The raw capture includes the earlier CPU geometry runs, 101-sample descriptor-lowering checks, and retained-owner workloads at all four sizes. The earlier `odin test runtime` result was 531/531 and `odin test renderer/cpu` was 25/25 at the first prototype stage; production runtime files remain unchanged in this follow-up. Consumer Odin tests/builds, native pixels, GPU execution, and integrated-GPU behavior remain unverified for the reasons above. The earlier [two-stop gradient study](issue-119-two-stop-gradients.md) and [retained-effects study](../validation/issue-111-retained-effects.md) remain the detailed records for their respective implementation constraints.
 
 ## Sources inspected
 
 - [Alicorn issue #248](https://github.com/Carnival-Science/Alicorn/issues/248), fetched November 27, 2026.
-- Alicorn `b30accd`: `runtime/paint_types.odin`, `runtime/style_surface.odin`, `runtime/material.odin`, `native/sdl_gpu/effects_compositor.odin`, `native/sdl_gpu/retained_effects.odin`, `renderer/webgpu/backdrop_effects.odin`, `docs/research/issue-105-lighting.md`, and `docs/validation/issue-111-retained-effects.md`.
-- AliKit `0afd8ac`: `menu/menu.odin`.
-- Punks `ee08a52` and `0296473`: `punks-standalone/odin/library_view.odin`, `appearance.odin`, and `library_view_test.odin`.
+- Alicorn baseline `f071810`: `runtime/paint_types.odin`, `runtime/style_surface.odin`, `runtime/material.odin`, `native/sdl_gpu/effects_compositor.odin`, `native/sdl_gpu/retained_effects.odin`, `renderer/webgpu/backdrop_effects.odin`, `docs/research/issue-105-lighting.md`, and `docs/validation/issue-111-retained-effects.md`.
+- AliKit baseline `baf2d0b`: `menu/menu.odin` and `menu/menu_test.odin`.
+- Punks baseline `0296473`: `punks-standalone/odin/library_view.odin`, `appearance.odin`, and `library_view_test.odin`.
