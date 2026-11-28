@@ -50,6 +50,7 @@ Style_Transition :: alicorn.Style_Transition
 Style_Transition_Easing :: alicorn.Style_Transition_Easing
 Positioned_Horizontal :: alicorn.Positioned_Horizontal
 Positioned_Vertical :: alicorn.Positioned_Vertical
+Positioned_Width_Mode :: alicorn.Positioned_Width_Mode
 Positioned_Placement :: alicorn.Positioned_Placement
 
 @(private)
@@ -571,6 +572,7 @@ positioned_text :: proc(
 	vertical: alicorn.Positioned_Vertical = .Top,
 	clip: bool = false,
 	opacity: f32 = 1,
+	width_mode: alicorn.Positioned_Width_Mode = .Authored,
 ) -> alicorn.Node_ID {
 	effective_text_style := text_style
 	if size > 0 { effective_text_style.font_size = size }
@@ -586,6 +588,7 @@ positioned_text :: proc(
 		y,
 		horizontal=horizontal,
 		vertical=vertical,
+		width_mode=width_mode,
 		clip=clip,
 		opacity=opacity,
 	)

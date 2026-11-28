@@ -1123,7 +1123,7 @@ update_paint :: proc(rt: ^Runtime) {
 				}
 				append(&node.paint, paint_surface_command(node.id, marker, node.clip, style_environment_color(rt, node.style_environment, .Accent)))
 			}
-			if node.placement.valid && node.placement.opacity != 1 {
+			if positioned_placement_is_valid(node.placement) && node.placement.opacity != 1 {
 				// Positioned opacity applies to every product the child emits,
 				// including span backgrounds and decorations. Renderers already
 				// consume Paint_Command.opacity for ordinary text commands.

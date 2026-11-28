@@ -167,9 +167,14 @@ effect_retention_stack_equal :: proc(a, b: Effect_Stack) -> bool {
 	return true
 }
 
-effect_retention_surface_equal :: proc(a, b: alicorn.Paint_Command) -> bool {
-	if a.owner != b.owner || a.bounds != b.bounds || a.clip != b.clip || a.opacity != b.opacity ||
-	   a.translation != b.translation || a.stroke_placement != b.stroke_placement {
+// Effect descriptors depend on the owner's local extent and surface inputs,
+// not its current placement, clip, opacity, or motion translation. Lowered
+// layers are rebased to the current command when the display list is built.
+effect_retention_surface_inputs_equal :: proc(a, b: alicorn.Paint_Command) -> bool {
+	if a.bounds.w != b.bounds.w || a.bounds.h != b.bounds.h ||
+	   a.stroke_placement != b.stroke_placement ||
+	   a.semantic_surface_gradient != b.semantic_surface_gradient ||
+	   a.semantic_surface_fill != b.semantic_surface_fill {
 		return false
 	}
 	left, left_ok := a.payload.(alicorn.Surface_Paint)
@@ -215,7 +220,7 @@ effect_retention_sync_sidecar :: proc(
 		if !base_ok || !shape_ok { fmt.eprintln("sparse effect base shape was not resolvable", index); os.exit(1) }
 		previous, found := entries^[owner]
 		if found && previous.defined && effect_retention_stack_equal(previous.stack, stack) &&
-			effect_retention_surface_equal(previous.base, base) && previous.base_shape == base_shape {
+			effect_retention_surface_inputs_equal(previous.base, base) && previous.base_shape == base_shape {
 			hits += 1
 			continue
 		}
@@ -250,6 +255,9 @@ effect_retention_build_display :: proc(
 			command := entry.commands[index]
 			if index == 0 { command = source }
 			else {
+				command.bounds.x += source.bounds.x-entry.base.bounds.x
+				command.bounds.y += source.bounds.y-entry.base.bounds.y
+				command.clip = effect_owner_clip(source)
 				command.translation = source.translation
 				command.opacity = source.opacity
 			}
@@ -259,33 +267,92 @@ effect_retention_build_display :: proc(
 	return true
 }
 
+effect_retention_text_runs_equal :: proc(
+	left_rt, right_rt: ^alicorn.Runtime,
+	left, right: alicorn.Text_Paint,
+) -> bool {
+	left_run, left_ok := alicorn.paint_text_run_resolve(left_rt, left.run)
+	right_run, right_ok := alicorn.paint_text_run_resolve(right_rt, right.run)
+	if !left_ok || !right_ok || left_run == nil || right_run == nil { return false }
+	if left_run.value != right_run.value || left_run.source_value != right_run.source_value ||
+	   left_run.source_value_override != right_run.source_value_override ||
+	   left_run.width != right_run.width || left_run.height != right_run.height ||
+	   left_run.size != right_run.size || left_run.max_width != right_run.max_width ||
+	   left_run.font_generation != right_run.font_generation || left_run.font != right_run.font ||
+	   left_run.font_source != right_run.font_source || left_run.font_weight != right_run.font_weight ||
+	   left_run.style_hash != right_run.style_hash || left_run.overflow != right_run.overflow ||
+	   left_run.ligatures_disabled != right_run.ligatures_disabled ||
+	   len(left_run.glyphs) != len(right_run.glyphs) || len(left_run.lines) != len(right_run.lines) ||
+	   left.color != right.color || len(left.spans) != len(right.spans) {
+		return false
+	}
+	for glyph, index in left_run.glyphs {
+		if glyph != right_run.glyphs[index] { return false }
+	}
+	for line, index in left_run.lines {
+		if line != right_run.lines[index] { return false }
+	}
+	for span, index in left.spans {
+		if span != right.spans[index] { return false }
+	}
+	return true
+}
+
+// Compare the complete ordered renderer command stream. Node/resource owners
+// are runtime-local. semantic_surface_fill is an owner-side animation hook:
+// direct decoration nodes carry it, while lowered layers already contain the
+// resolved fill. Compare that resolved payload instead. Paint order, geometry,
+// clipping, transforms, resolved shapes, and shaped text must all agree.
+effect_retention_commands_equal :: proc(
+	left_rt, right_rt: ^alicorn.Runtime,
+	left, right: alicorn.Paint_Command,
+) -> bool {
+	if left.bounds != right.bounds || left.clip != right.clip || left.opacity != right.opacity ||
+	   left.translation != right.translation || left.stroke_placement != right.stroke_placement ||
+	   left.semantic_surface_gradient != right.semantic_surface_gradient {
+		return false
+	}
+	switch left_payload in left.payload {
+	case alicorn.Surface_Paint:
+		right_payload, ok := right.payload.(alicorn.Surface_Paint)
+		if !ok || left_payload != right_payload { return false }
+		left_shape, left_ok := alicorn.surface_paint_shape_resolve(left_rt, left.owner, left_payload.shape)
+		right_shape, right_ok := alicorn.surface_paint_shape_resolve(right_rt, right.owner, right_payload.shape)
+		return left_ok && right_ok && left_shape == right_shape
+	case alicorn.Text_Paint:
+		right_payload, ok := right.payload.(alicorn.Text_Paint)
+		return ok && effect_retention_text_runs_equal(left_rt, right_rt, left_payload, right_payload)
+	case alicorn.Icon_Paint:
+		right_payload, ok := right.payload.(alicorn.Icon_Paint)
+		return ok && left_payload == right_payload
+	case alicorn.Image_Paint:
+		right_payload, ok := right.payload.(alicorn.Image_Paint)
+		return ok && left_payload == right_payload
+	case alicorn.Geometry_Paint:
+		right_payload, ok := right.payload.(alicorn.Geometry_Paint)
+		return ok && left_payload == right_payload
+	case alicorn.Backdrop_Effect_Paint:
+		right_payload, ok := right.payload.(alicorn.Backdrop_Effect_Paint)
+		return ok && left_payload == right_payload
+	case alicorn.Lighting_Group_Paint:
+		right_payload, ok := right.payload.(alicorn.Lighting_Group_Paint)
+		return ok && left_payload == right_payload
+	}
+	return false
+}
+
 effect_retention_outputs_equal :: proc(
 	left_rt, right_rt: ^alicorn.Runtime,
 	left, right: []alicorn.Paint_Command,
 ) -> bool {
-	left_index, right_index := 0, 0
-	for left_index < len(left) && right_index < len(right) {
-		for left_index < len(left) && !alicorn.paint_command_is_surface(left[left_index]) { left_index += 1 }
-		for right_index < len(right) && !alicorn.paint_command_is_surface(right[right_index]) { right_index += 1 }
-		if left_index >= len(left) || right_index >= len(right) { break }
-		left_command, right_command := left[left_index], right[right_index]
-		left_surface, left_ok := left_command.payload.(alicorn.Surface_Paint)
-		right_surface, right_ok := right_command.payload.(alicorn.Surface_Paint)
-		left_shape, left_shape_ok := alicorn.surface_paint_shape_resolve(left_rt, left_command.owner, left_surface.shape)
-		right_shape, right_shape_ok := alicorn.surface_paint_shape_resolve(right_rt, right_command.owner, right_surface.shape)
-		if !left_ok || !right_ok || !left_shape_ok || !right_shape_ok ||
-			left_command.bounds != right_command.bounds || left_command.clip != right_command.clip ||
-			left_command.opacity != right_command.opacity || left_command.translation != right_command.translation ||
-			left_command.stroke_placement != right_command.stroke_placement || left_surface != right_surface ||
-			left_shape != right_shape {
+	if len(left) != len(right) { return false }
+	for command, index in left {
+		if !effect_retention_commands_equal(left_rt, right_rt, command, right[index]) {
+			fmt.eprintln("paint command mismatch", index, "direct", command, "sparse", right[index])
 			return false
 		}
-		left_index += 1
-		right_index += 1
 	}
-	for left_index < len(left) && !alicorn.paint_command_is_surface(left[left_index]) { left_index += 1 }
-	for right_index < len(right) && !alicorn.paint_command_is_surface(right[right_index]) { right_index += 1 }
-	return left_index == len(left) && right_index == len(right)
+	return true
 }
 
 effect_retention_emit :: proc(
@@ -405,11 +472,14 @@ effect_retention_benchmark_case :: proc(count: int) {
 		"sidecar_core_commands", len(sidecar_rt.display),
 		"sidecar_expanded_commands", len(output),
 		"sidecar_entries", len(entries),
+		"sidecar_output_capacity_bytes", cap(output)*size_of(alicorn.Paint_Command),
 		"direct_initial_ns", direct_initial_ns,
 		"sidecar_initial_ns", sidecar_initial_ns,
 		"direct_live_bytes", allocation_direct.persistent_requested_bytes_live,
 		"sidecar_live_bytes", allocation_sidecar.persistent_requested_bytes_live,
-		"equivalent_surface_output", true)
+		"sidecar_total_live_plus_output_bytes", allocation_sidecar.persistent_requested_bytes_live+
+			i64(cap(output)*size_of(alicorn.Paint_Command)),
+		"equivalent_ordered_paint_output", true)
 
 	operations := [?]string{"identical_redescription", "one_layer_color", "one_layer_inset", "remove_layer", "add_layer", "resize_owner"}
 	for operation in operations {
@@ -464,17 +534,17 @@ effect_retention_benchmark_case :: proc(count: int) {
 		_ = alicorn.motion_tick(&sidecar_rt, at)
 		presentation_sidecar, ready_sidecar := alicorn.begin_presentation_frame(&sidecar_rt)
 		if ready_sidecar { alicorn.end_presentation_frame(&presentation_sidecar) }
+		sidecar_motion_ns := time.duration_nanoseconds(time.since(start))
 		if !effect_retention_build_display(&sidecar_rt, entries, &output) ||
 			!effect_retention_outputs_equal(&direct_rt, &sidecar_rt, direct_rt.display[:], output[:]) {
 			fmt.eprintln("animated owner effect output diverged", count, sample)
 			os.exit(1)
 		}
-		sidecar_motion_ns := time.duration_nanoseconds(time.since(start))
 		fmt.println("retained_effect_motion", "surfaces", count, "sample", sample+1,
 			"direct_ns", direct_motion_ns, "sidecar_ns", sidecar_motion_ns,
 			"direct_layout_delta", direct_rt.stats.layout_nodes_visited-before_direct.layout_nodes_visited,
 			"sidecar_layout_delta", sidecar_rt.stats.layout_nodes_visited-before_sidecar.layout_nodes_visited,
-			"surface_output_equal", true)
+			"ordered_output_equal", true)
 	}
 
 	// Fast-forward to a settled state, then prove that another frame opportunity

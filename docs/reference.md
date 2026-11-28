@@ -55,7 +55,7 @@ the caller's source location.
 | `ui.checkbox` | Takes `^bool` and adopts only a real activation into application state. |
 | `ui.slider_f32` | Takes `^f32` plus `minimum`, `maximum`, and optional `step`; adopts only user-produced values, not initial range normalization. |
 | `ui.icon`, `ui.icon_button` | Font-independent icon and named icon button helpers. |
-| `ui.positioned_text` | Places one Text label at explicit owner-local `x`, `y` coordinates with `horizontal`, `vertical`, `width`, `height`, `max_width`, `clip`, and `opacity`. Decorative by default; pass `decorative=false` for a Static_Text entity. See [Positioned labels](#positioned-labels). |
+| `ui.positioned_text` | Places one Text label at explicit owner-local `x`, `y` coordinates with `horizontal`, `vertical`, `width_mode`, `width`, `height`, `max_width`, `clip`, and `opacity`. Decorative by default; pass `decorative=false` for a Static_Text entity. See [Positioned labels](#positioned-labels). |
 
 Create persistent edit storage with `ui.text_buffer(initial)` and release it
 with `ui.text_buffer_destroy`. The buffer owns its text through an allocator
@@ -110,6 +110,11 @@ Placement options are independent of text shaping:
 
 - `horizontal` is `.Start`, `.Center`, or `.End`; it decides whether `x` is
   the label's leading edge, center, or trailing edge.
+- `width_mode` is `.Authored` by default. `.Fill_Available` fills from the
+  placement's `x` offset to the trailing edge of the owner's content box;
+  use `.Start` horizontal alignment with this mode. It supplies the measured
+  width instead of the child's authored width; child min/max width still
+  applies, and the mode is included in retained layout invalidation.
 - `vertical` is `.Top`, `.Middle`, `.Bottom`, or `.Baseline`. `.Baseline` uses
   the shaped text baseline; a child with no retained baseline product falls
   back to its bottom edge, matching Row baseline alignment for non-text
@@ -132,9 +137,12 @@ Give such an owner a definite width or height (or keep ordinary flow content in
 it); otherwise the owner measures its padding and flow content only.
 
 The lower-level runtime seam is `alicorn.position_child(ui, id,
-alicorn.positioned(x, y, ...))`, which can position any already-described
-direct child, not just text. `.Grid`, `.Split`, adaptive owners, and context
-menus keep their specialized layout policy and do not honor placement.
+`alicorn.positioned(x, y, width_mode=.Fill_Available))`, which can position
+any already-described direct child, not just text. This is useful for
+owner-relative decoration such as a full-width highlight; the default
+`.Authored` mode keeps existing intrinsic sizing. `.Grid`, `.Split`, adaptive
+owners, and context menus keep their specialized layout policy and do not
+honor placement.
 
 ### Typed lifecycle and worker wakes
 

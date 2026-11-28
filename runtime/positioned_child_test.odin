@@ -62,13 +62,15 @@ positioned_test_render_decoration :: proc(
 	width, height: f32,
 	shape: Surface_Shape,
 	stroke_width: f32 = 0,
+	width_mode: Positioned_Width_Mode = .Authored,
+	owner_width: f32 = 200,
 ) -> (owner, decoration: Node_ID) {
 	invalidate_root(rt, "positioned decoration extent fixture")
 	ui, build := begin_frame(rt)
 	if !build { return }
 	container_begin(&ui, .Root, key=key_string("positioned-decoration-root"), style=layout_style(.Column, width=400, height=200))
 	owner, _ = button_begin(&ui, "Owner", key=key_string("positioned-decoration-owner"),
-		style=layout_style(.Row, width=200, height=64), presentation=.Custom)
+		style=layout_style(.Row, width=owner_width, height=64), presentation=.Custom)
 	decoration = surface_begin(
 		&ui,
 		surface_core_color_role(.Accent),
@@ -80,13 +82,49 @@ positioned_test_render_decoration :: proc(
 		stroke_placement=.Inside,
 	)
 	surface_end(&ui)
-	_ = position_child(&ui, decoration, positioned(0, 0))
+	_ = position_child(&ui, decoration, positioned(0, 0, width_mode=width_mode))
 	_ = visual_part_attach(&ui, decoration, owner,
 		visual_part_extension_id("alicorn.test", "positioned-decoration"))
 	button_end(&ui)
 	container_end(&ui)
 	end_frame(&ui)
 	return
+}
+
+@(test)
+test_positioned_child_can_fill_owner_content_width :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 400, 200})
+	defer destroy_runtime(&rt)
+	owner, decoration := positioned_test_render_decoration(
+		&rt,
+		-1,
+		6,
+		surface_shape_uniform_corner_radius(2),
+		width_mode=.Fill_Available,
+	)
+	if !testing.expect(t, owner != 0 && decoration != 0, "the positioned surface should be retained") { return }
+	owner_bounds := rt.nodes[owner].bounds
+	decoration_bounds := rt.nodes[decoration].bounds
+	expected_width := maxf(owner_bounds.w-2*rt.nodes[owner].style.padding, 0)
+	command, _, command_ok := positioned_test_surface_command(&rt, decoration)
+	testing.expect(t, positioned_test_close(decoration_bounds.x, owner_bounds.x+rt.nodes[owner].style.padding) &&
+		positioned_test_close(decoration_bounds.w, expected_width) &&
+		command_ok && positioned_test_close(command.bounds.w, expected_width),
+		"Fill_Available should resolve a positioned visual to the owner's current content width")
+	before_measurements := rt.stats.measure_nodes_executed
+	owner_after, decoration_after := positioned_test_render_decoration(
+		&rt,
+		-1,
+		6,
+		surface_shape_uniform_corner_radius(2),
+		width_mode=.Fill_Available,
+		owner_width=240,
+	)
+	updated := rt.nodes[decoration_after]
+	testing.expect(t, owner_after == owner && decoration_after == decoration &&
+		positioned_test_close(updated.bounds.w, 240-2*rt.nodes[owner].style.padding) &&
+		rt.stats.measure_nodes_executed > before_measurements,
+		"Fill_Available should remeasure the same child when its owner's content width changes")
 }
 
 positioned_test_surface_command :: proc(rt: ^Runtime, node_id: Node_ID) -> (command: Paint_Command, surface: Surface_Paint, found: bool) {

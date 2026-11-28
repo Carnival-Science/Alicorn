@@ -900,7 +900,7 @@ layout_children :: proc(rt: ^Runtime, parent_id: Node_ID) {
 		defer delete(positioned)
 		for id in children {
 			child := rt.nodes[id]
-			if child != nil && child.placement.valid {
+			if child != nil && positioned_placement_is_valid(child.placement) {
 				append(&positioned, id)
 			} else {
 				append(&flow, id)

@@ -33,17 +33,28 @@ Positioned_Vertical :: enum u8 {
 	Baseline,
 }
 
+// Positioned_Width_Mode controls how a positioned child gets its horizontal
+// extent. Fill_Available uses the owner's current content width from the
+// placement x offset to the content box's trailing edge. Authored preserves
+// the child's ordinary width measurement.
+Positioned_Width_Mode :: enum u8 {
+	Unset,
+	Authored,
+	Fill_Available,
+}
+
 // Positioned_Placement is compact retained placement data. A child's own
-// Layout_Style still owns width, height, min/max sizing, and clipping inputs;
-// placement adds only the owner-local anchor and paint policy. opacity applies
+// Layout_Style owns height, min/max sizing, and clipping inputs; width_mode can
+// either preserve its authored width or fill the available owner content width.
+// Placement also adds the owner-local anchor and paint policy. opacity applies
 // to every paint command the child emits.
 Positioned_Placement :: struct {
 	x, y: f32,
 	opacity: f32,
 	horizontal: Positioned_Horizontal,
 	vertical: Positioned_Vertical,
+	width_mode: Positioned_Width_Mode,
 	clip: bool,
-	valid: bool,
 }
 
 // positioned is the authoring constructor for Positioned_Placement. The
@@ -55,6 +66,7 @@ positioned :: proc(
 	vertical := Positioned_Vertical.Top,
 	clip := false,
 	opacity: f32 = 1,
+	width_mode := Positioned_Width_Mode.Authored,
 ) -> Positioned_Placement {
 	return Positioned_Placement{
 		x=x,
@@ -62,13 +74,13 @@ positioned :: proc(
 		opacity=opacity,
 		horizontal=horizontal,
 		vertical=vertical,
+		width_mode=width_mode,
 		clip=clip,
-		valid=true,
 	}
 }
 
 positioned_placement_is_valid :: proc(placement: Positioned_Placement) -> bool {
-	if !placement.valid { return false }
+	if placement.width_mode != .Authored && placement.width_mode != .Fill_Available { return false }
 	if math.is_nan(placement.x) || math.is_inf(placement.x) ||
 	   math.is_nan(placement.y) || math.is_inf(placement.y) {
 		return false
@@ -78,6 +90,9 @@ positioned_placement_is_valid :: proc(placement: Positioned_Placement) -> bool {
 		return false
 	}
 	if placement.horizontal != .Start && placement.horizontal != .Center && placement.horizontal != .End {
+		return false
+	}
+	if placement.width_mode == .Fill_Available && placement.horizontal != .Start {
 		return false
 	}
 	if placement.vertical != .Top && placement.vertical != .Middle &&
@@ -135,12 +150,13 @@ position_child :: proc(
 }
 
 hash_positioned_layout :: proc(placement: Positioned_Placement) -> u64 {
-	if !placement.valid { return 0 }
+	if !positioned_placement_is_valid(placement) { return 0 }
 	h: u64 = 1469598103934665603
 	h = hash_mix(h, u64(transmute(u32)placement.x))
 	h = hash_mix(h, u64(transmute(u32)placement.y))
 	h = hash_mix(h, u64(placement.horizontal))
 	h = hash_mix(h, u64(placement.vertical))
+	h = hash_mix(h, u64(placement.width_mode))
 	h = hash_mix(h, u64(placement.clip ? 1 : 0))
 	return h
 }
@@ -148,7 +164,7 @@ hash_positioned_layout :: proc(placement: Positioned_Placement) -> u64 {
 // hash_positioned_placement adds paint-only placement inputs on top of the
 // layout fingerprint. Opacity changes repaint without invalidating placement.
 hash_positioned_placement :: proc(placement: Positioned_Placement) -> u64 {
-	if !placement.valid { return 0 }
+	if !positioned_placement_is_valid(placement) { return 0 }
 	h := hash_positioned_layout(placement)
 	h = hash_mix(h, u64(transmute(u32)placement.opacity))
 	return h
@@ -168,7 +184,7 @@ layout_parent_supports_positioned_children :: proc(parent: ^Node) -> bool {
 parent_has_positioned_children :: proc(rt: ^Runtime, children: []Node_ID) -> bool {
 	if rt == nil { return false }
 	for id in children {
-		if child, ok := rt.nodes[id]; ok && child != nil && child.placement.valid { return true }
+		if child, ok := rt.nodes[id]; ok && child != nil && positioned_placement_is_valid(child.placement) { return true }
 	}
 	return false
 }
@@ -180,7 +196,7 @@ layout_positioned_children :: proc(rt: ^Runtime, parent: ^Node, inner: Rect, chi
 	if rt == nil || parent == nil { return }
 	for id in children {
 		child, found := rt.nodes[id]
-		if !found || child == nil || !child.active || !child.placement.valid { continue }
+		if !found || child == nil || !child.active || !positioned_placement_is_valid(child.placement) { continue }
 		placement := child.placement
 		layout_note_node_visit(rt, child)
 
@@ -190,6 +206,10 @@ layout_positioned_children :: proc(rt: ^Runtime, parent: ^Node, inner: Rect, chi
 		// positioned extent. An unconstrained label still shapes naturally;
 		// explicit width and wrap limits are carried by these constraints.
 		constraints := layout_authored_child_constraints(rt, child)
+		if placement.width_mode == .Fill_Available {
+			fill_width := clampf(maxf(inner.w-placement.x, 0), child.style.min_width, child.style.max_width)
+			constraints.width = layout_axis_constraint_normalize(fill_width, fill_width)
+		}
 		// An unconstrained label must shape at its natural width even if an
 		// earlier explicit box produced a wrapped run.
 		measured := layout_measure_node(rt, child, constraints, force_unbounded_text_shape=true)
