@@ -80,6 +80,9 @@ presentation_output_node_in_root :: proc(rt: ^Runtime, node_id, root: Node_ID) -
 @(private)
 presentation_output_parent :: proc(rt: ^Runtime, id: Node_ID) -> Node_ID {
 	if rt == nil || id == 0 { return 0 }
+	if rt.issue248_surface_effects != nil {
+		if owner := issue248_surface_effect_command_parent(rt, id); owner != 0 { return owner }
+	}
 	// A root may be registered while it is being described for the first time,
 	// before reconciliation moves its pending description into the retained map.
 	for item in rt.pending {

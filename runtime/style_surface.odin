@@ -65,6 +65,11 @@ Semantic_Surface_Resolved_Style :: struct {
 // the style sidecar associated with its owner. A per-corner payload without a
 // retained owner is invalid; renderers should skip it rather than guess.
 surface_paint_shape_resolve :: proc(rt: ^Runtime, owner: Node_ID, shape: Surface_Paint_Shape) -> (resolved: Surface_Shape, ok: bool) {
+	if rt != nil && rt.issue248_surface_effects != nil && owner != 0 {
+		if effect_shape, found := issue248_surface_effect_command_shape(rt, owner, shape); found {
+			return effect_shape, true
+		}
+	}
 	if !surface_shape_uses_retained_geometry(shape.kind) {
 		return Surface_Shape{kind=shape.kind, corner_radius=shape.corner_radius}, true
 	}

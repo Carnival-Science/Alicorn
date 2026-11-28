@@ -241,6 +241,9 @@ drag_preview_source_label :: proc(
 drag_preview_owner_is_descendant :: proc(rt: ^Runtime, owner, ancestor: Node_ID) -> bool {
 	if rt == nil || owner == 0 || ancestor == 0 { return false }
 	current := owner
+	if rt.issue248_surface_effects != nil {
+		if parent := issue248_surface_effect_command_parent(rt, owner); parent != 0 { current = parent }
+	}
 	for current != 0 {
 		if current == ancestor { return true }
 		node, ok := rt.nodes[current]

@@ -1,10 +1,10 @@
 # Issue #248: ordered composable visual effects
 
-Research started November 27, 2026. This is an initial renderer prototype and baseline, not a shipping recommendation. The current issue asks whether a surface can retain an ordered effect stack without making flat scenes pay for unused effects or giving every widget a custom material implementation. [Alicorn #248](https://github.com/Carnival-Science/Alicorn/issues/248)
+Research started November 27, 2026. The latest retained-paint integration is a research-branch prototype, not a shipping recommendation or a stable API. The current issue asks whether a surface can retain ordered effects without making flat scenes pay for unused effects or giving every widget a custom material implementation. [Alicorn #248](https://github.com/Carnival-Science/Alicorn/issues/248)
 
 ## Current finding
 
-Alicorn already has useful surface ingredients, but they are separate typed features rather than an ordered stack on one surface. Applications can compose several ordinary surfaces, but that is a distinct retained/paint workload and must be the comparison baseline before adding a renderer abstraction. A benchmark-only bounded prototype now lowers ordered inset fills and strokes into the existing `Surface_Paint` command path. It confirms command ordering and exact CPU mesh parity at four scales; it does not establish lower retained work, pixel output, or GPU performance. No public API is recommended yet.
+Alicorn already has useful surface ingredients, but they are separate typed features rather than an ordered stack on one surface. Directly composed surfaces remain the comparison baseline. A bounded issue-specific sidecar now stores inset fills and strokes on a retained owner, inserts the resulting commands into that owner's existing paint range, and resolves per-corner shape data by sparse synthetic paint-owner IDs. It does not add per-node payload or a renderer branch. The public effect-stack API remains NO-GO pending native output and broader consumer evidence.
 
 ## Existing paint and effect facilities
 
@@ -47,9 +47,9 @@ Compare these concrete candidates before adding filtering:
 
 Treat visual advantage as a requirement. A new representation that merely packages the same ordinary surfaces does not earn renderer complexity.
 
-### 2. Benchmark-only ordered-stack prototype
+### 2. Benchmark-only ordered-stack prototype (historical stage)
 
-`benchmarks/native_material/effect_stack.odin` defines a private fixed-capacity descriptor list with only two initial kinds: inset fill and stroke. It lowers each descriptor to an ordinary surface command, preserving the existing paint union and native surface batch. The prototype is intentionally benchmark-only; it has no Runtime sidecar, per-node payload, public type, or production renderer branch. The [record-size tripwire](https://github.com/Carnival-Science/Alicorn/blob/b30accd/runtime/size_tripwire_test.odin#L7-L26) remains unchanged at 2,048-byte Nodes and 128-byte `Paint_Command`s.
+The first prototype in `benchmarks/native_material/effect_stack.odin` used a fixed-capacity descriptor list with two kinds: inset fill and stroke. It lowered each descriptor to an ordinary surface command and established exact CPU mesh parity. That stage had no Runtime sidecar or retained-pipeline integration. The later research-branch integration below now reuses the same descriptor types. The [record-size tripwire](https://github.com/Carnival-Science/Alicorn/blob/b30accd/runtime/size_tripwire_test.odin#L7-L26) remains unchanged at 2,048-byte Nodes and 128-byte `Paint_Command`s.
 
 The geometry benchmark repeats each target shape 256 times and measures CPU mesh preparation at 1×, 1.25×, 1.5×, and 2×. It compares manually composed commands with commands lowered from the stack descriptors. For each shape/scale, both paths emit three surface commands and identical vertices; rounded mesh size and upload bytes are identical. The current solid renderer batches adjacent surface commands, so the prototype adds no effect-specific render pass. The geometry timings still exclude descriptor lowering, layout, retained-node count, persistent memory, GPU execution, and presentation.
 
@@ -73,9 +73,9 @@ These are geometry-only throughput figures for the 256-surface fixture, not appl
 - **Multi-stop gradients, shadows, and backdrop composition:** HOLD. The current experiment does not justify their cost or settle their interpolation, bounds, accessibility, or compositor contracts.
 - **Public stack API:** NO-GO at this stage. The geometry prototype only encodes the current command stream and provides no reduction in paint commands or GPU work.
 
-## Retained-owner experiment
+## Retained-owner benchmark-only experiment (historical stage)
 
-The benchmark-only follow-up compares the same rounded surface, two ordered decoration layers, and unchanged text child in two forms: direct positioned surface children and a private sparse sidecar keyed by the retained surface owner. It runs 1, 100, 1,000, and 3,000 surfaces and checks the expanded surface command sequence, full retained corner radii, bounds, clips, paint fields, translation, and opacity after every operation. No production runtime type or public API was added.
+The benchmark-only follow-up compared the same rounded surface, two ordered decoration layers, and unchanged text child in two forms: direct positioned surface children and a harness-owned sparse sidecar keyed by the retained surface owner. It ran 1, 100, 1,000, and 3,000 surfaces and checked the expanded paint stream. That experiment motivated the retained-paint integration below; its memory totals include a harness-owned expanded-output buffer and are not the current comparison.
 
 The exact output from the successful optimized run is preserved in [the raw benchmark capture](issue-248-retained-effects-macos-2026-11-27.txt). Scaling observations from that run:
 
@@ -125,6 +125,44 @@ The retained-owner benchmark now compares the entire ordered paint stream, inclu
 The expanded sparse output buffer is allocated by the benchmark harness rather than the Runtime allocator, so the updated capture reports its capacity separately and adds it to the sidecar total: at 3,000 surfaces, 59,509,033 runtime-requested bytes plus a 2,304,000-byte output capacity equals 61,813,033 bytes, compared with 95,826,809 direct bytes. This is a 35.5% reduction including the external output buffer, with 12,001 to 6,001 retained nodes. It remains a synthetic one-process run; operation timings are single observations, not performance distributions or native GPU results. See [the follow-up raw capture](issue-248-retained-effects-macos-2026-11-27-followup.txt).
 
 Validation on the development Mac: Alicorn runtime 532/532, UI 63/63, CPU renderer 25/25, AliKit Menu 7/7, and Punks 11/11 passed. The complete `tools/test.sh` progressed through foundation/runtime/font checks but stopped when Odin's SDL3 host test imported its missing `libwgpu_native.dylib`; that library is absent from the installed Homebrew Odin toolchain. TestUI's 57-test suite has three unrelated existing failures (history Page Down and two roving-grid assertions), reproduced unchanged at baseline `e2e88dc`. The AliKit Menu and Punks executables build against this checkout; Punks used its already-built Caliber dylib because that vendored Cargo crate is incomplete. Fresh native pixel captures and GPU readback remain unverified.
+
+## Retained-paint integration prototype (research branch)
+
+The next experiment moved the effect descriptor/cache into Alicorn's existing paint stage on `research/issue-248-retained-paint`. It remains issue-specific research code in `runtime/issue248_effects.odin`; no `ui` effect API or generalized effect framework was added. The setter only accepts an existing retained owner or one being described in the current frame. Effect state and the synthetic-command-owner map are created lazily when a consumer opts in. Ordinary flat scenes leave the sidecar nil. The retained `Node` remains 2,032 bytes and `Paint_Command` remains 128 bytes.
+
+When an owner is painted, the runtime inserts its effect commands immediately after the first owned surface command and before the owner's later paint and descendants. The commands participate in the node's existing retained paint list, sparse display-range splice, clipping, opacity, presentation-output filtering, and shape resolution. Geometry is cached relative to the base surface size and shape; placement is read from the current command. Per-corner radii are retained in sparse metadata keyed by unique layer command owners. Removed owners stay mapped until their old display range is replaced, so count-changing layer removal cannot leave stale commands behind.
+
+The direct-child and integrated paths were compared at 1, 100, 1,000, and 3,000 surfaces. Each fixture includes two ordered decoration layers and unchanged text. The harness compares the complete ordered output, including surfaces, resolved per-corner shapes, clips, text runs, painter order, transforms, and opacity. All four sizes passed exact output parity. Both paths emit the same number of display commands; the integration reduces layout nodes and retained storage rather than GPU command count.
+
+| Surfaces | Direct nodes | Integrated nodes | Direct persistent bytes | Integrated persistent bytes |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 5 | 3 | 459,458 B | 464,020 B |
+| 100 | 401 | 201 | 3,749,341 B | 2,619,253 B |
+| 1,000 | 4,001 | 2,001 | 30,606,401 B | 20,292,065 B |
+| 3,000 | 12,001 | 6,001 | 95,599,729 B | 57,888,177 B |
+
+At 3,000 surfaces, the integrated path used 37,711,552 fewer runtime-requested persistent bytes (39.4%) while keeping all 12,001 display commands and exact output parity. This is runtime allocator accounting, not whole-process RSS. One surface still costs 4,562 more bytes because the sidecar has fixed/map overhead; the savings appear once enough owners share the mechanism.
+
+For one middle owner in the 3,000-surface fixture, the stage counters show:
+
+| Operation | Direct-child path | Integrated path |
+| --- | --- | --- |
+| Identical description | 12,001 reconcile visits; no measure, layout, shaping, paint, or finalization visits. | 6,001 reconcile visits; no measure, layout, shaping, paint, or finalization visits. |
+| Change layer color | One decorative paint node, one command finalized. | One owner paint visit, one geometry-cache hit, three commands finalized; no measurement, layout, or text shaping. |
+| Change layer inset | Two nodes measured, seven layout visits, two paint visits; full display finalization. | One geometry lowering and one owner paint visit; three commands finalized, with no measurement, layout, or text shaping. |
+| Remove one layer | Retires one decoration node. | Replaces the owning paint range and preserves the owner. |
+| Add one layer | Creates one decoration node. | Lowers one owner's geometry. |
+| Resize the owner | 7,502 layout visits and 6,000 paint visits. | 4,502 layout visits, 3,000 paint visits, one geometry lowering and 1,499 geometry-cache hits. |
+
+The executable emits elapsed nanoseconds for investigation, but each operation currently has a single observation. Those values are not reported as comparative performance results or distributions. The work counters provide the stronger result: changing an inset now updates only the owner's three paint commands without layout or shaping. The resize scenario is not viewport-bounded: changing the middle item's height moves following flow items, so normal layout and repaint work still scales with affected siblings.
+
+Settled idle requested no new description in either path and recorded zero new layout visits or text-shape requests. Motion samples preserved exact output and produced no layout visits. No native GPU submission, readback, pixel comparison, process RSS, or physical DPI capture was performed.
+
+Validation on this research branch: `odin test runtime` passed 535/535, including the retained-node size tripwire (`Node` 2,032 B; `Paint_Command` 128 B), and the optimized retained-effects benchmark completed all four sizes with exact ordered-output parity. The repository `sh tools/check.sh` passed its AccessKit ABI and smoke checks, then stopped in the Web UI package check: the installed Odin toolchain reports `core:os` unsupported for js/wasm and a missing `core:testing` logging symbol (`log.do_level_header`). The standalone `odin check runtime -target:js_wasm32 -no-entry-point` reaches the same toolchain errors. This leaves cross-target validation and all native GPU/pixel checks open.
+
+The benchmark's `--issue248-retention-only` argument skips unrelated material benchmarks. Run `sh tools/bench_material.sh --issue248-retention-only`. The full command captures remain in `/tmp/alicorn-issue248-retention-final.txt` for this run; that temporary capture is not checked in.
+
+The first integration run uncovered and fixed two correctness issues before this result was recorded: removed layer-owner metadata must survive until the old retained range is spliced, and the clipped-owner bounds guard must distinguish effect geometry from the owner's own bounds. Regression tests verify full display-command removal, color-only and inset-only paint locality, resize re-lowering, per-corner shape resolution, flat-path laziness, and owner retirement.
 
 ### Updated decision
 

@@ -2349,6 +2349,10 @@ Runtime :: struct {
 	submission_cause_mixed: bool,
 	display:     [dynamic]Paint_Command,
 	display_target: [dynamic]Paint_Command,
+	// Issue #248 retained effects are an opt-in research sidecar. Flat surfaces
+	// pay only this nil pointer; authored layer data and synthetic paint-owner
+	// metadata are allocated on first use and never stored on Node.
+	issue248_surface_effects: ^Issue248_Surface_Effect_State,
 	// Number of retained nodes whose paint list contains a backdrop-effect
 	// boundary. Sparse display range finalization is disabled while any live
 	// boundary exists; the effects compositor captures a prefix of the display

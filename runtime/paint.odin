@@ -346,10 +346,11 @@ compose_presentation_fields_match :: proc(a, b: Paint_Command) -> bool {
 		a.opacity == b.opacity && a.translation == b.translation
 }
 
-compose_owned_command_run :: proc(commands: []Paint_Command, start: int, owner: Node_ID) -> int {
+compose_owned_command_run :: proc(rt: ^Runtime, commands: []Paint_Command, start: int, owner: Node_ID) -> int {
 	count := 0
 	for index := start; index < len(commands); index += 1 {
-		if commands[index].owner != owner { break }
+		command_owner := commands[index].owner
+		if command_owner != owner && !issue248_surface_effect_command_belongs_to(rt, command_owner, owner) { break }
 		count += 1
 	}
 	return count
@@ -499,8 +500,8 @@ paint_sparse_finalize_range :: proc(rt: ^Runtime, node: ^Node) -> bool {
 		}
 	} else {
 		if start >= len(rt.display_target) { return false }
-		old_count = compose_owned_command_run(rt.display_target[:], start, node.id)
-		display_count := compose_owned_command_run(rt.display[:], start, node.id)
+		old_count = compose_owned_command_run(rt, rt.display_target[:], start, node.id)
+		display_count := compose_owned_command_run(rt, rt.display[:], start, node.id)
 		if old_count == 0 || display_count != old_count { return false }
 		if !part_visible {
 			// The node's own run disappears, and an untagged hidden part hides
@@ -528,8 +529,10 @@ paint_sparse_finalize_range :: proc(rt: ^Runtime, node: ^Node) -> bool {
 			composed := compose_paint_command_presentation(node.paint[offset], inherited.presentation,
 				inherited.clip_follow, inherited.stationary_clip, inherited.translated_clip)
 			existing := rt.display_target[start+offset]
+			effect_layer := rt.issue248_surface_effects != nil &&
+				issue248_surface_effect_command_parent(rt, composed.owner) != 0
 			if !compose_presentation_fields_match(composed, existing) ||
-				(node.style.clip && composed.bounds != existing.bounds) {
+				(node.style.clip && !effect_layer && composed.bounds != existing.bounds) {
 				return false
 			}
 		}
@@ -695,6 +698,7 @@ append_visual_row_background :: proc(rt: ^Runtime, row: ^Node) {
 
 update_paint :: proc(rt: ^Runtime) {
 	paint_mark := perf_mark_begin()
+	issue248_effects_enabled := rt.issue248_surface_effects != nil
 	semantic_surface_refresh_top_edge_gaps(rt)
 	// A sparse range splice walks the changed node's ancestor chain and
 	// validates its recomposition against the retained slots. When most of the
@@ -1123,6 +1127,10 @@ update_paint :: proc(rt: ^Runtime) {
 				}
 				append(&node.paint, paint_surface_command(node.id, marker, node.clip, style_environment_color(rt, node.style_environment, .Accent)))
 			}
+			// Issue #248 keeps optional decoration on the existing surface owner.
+			// It inserts retained paint commands after the owner's base surface,
+			// before text and descendants, without adding layout nodes.
+			if issue248_effects_enabled { issue248_surface_effect_apply(rt, node) }
 			if positioned_placement_is_valid(node.placement) && node.placement.opacity != 1 {
 				// Positioned opacity applies to every product the child emits,
 				// including span backgrounds and decorations. Renderers already
@@ -1174,6 +1182,7 @@ update_paint :: proc(rt: ^Runtime) {
 		rebuild_display(rt)
 		perf_add_mark(rt, .Composition, compose_mark)
 	}
+	if issue248_effects_enabled { issue248_surface_effect_finalize_paint(rt) }
 	// The optional lighting boundary is a paint-stream product: it is placed
 	// after this stage's display list is final. With no declaration (and no
 	// carried marker) this is one boolean test.

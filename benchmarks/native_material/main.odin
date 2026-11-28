@@ -1,6 +1,7 @@
 package main
 
 import "core:fmt"
+import "core:os"
 import "core:time"
 import alicorn "../../runtime"
 import cpu_renderer "../../renderer/cpu"
@@ -208,6 +209,14 @@ benchmark_vector_shape_large :: proc(name: string, rt: ^alicorn.Runtime, command
 }
 
 main :: proc() {
+	if len(os.args) > 1 {
+		if os.args[1] == "--issue248-retention-only" {
+			benchmark_effect_retained_owners()
+			return
+		}
+		fmt.eprintln("unknown benchmark argument:", os.args[1])
+		os.exit(2)
+	}
 	vertices := make([dynamic]cpu_renderer.Vertex, 0, SURFACE_COUNT*6, allocator=context.temp_allocator)
 	defer delete(vertices)
 
@@ -289,14 +298,12 @@ main :: proc() {
 		alicorn.Color{0, 0, 0, 0}, shape=bezier_shape,
 		stroke=alicorn.Paint_Stroke{color={0.95, 0.60, 0.20, 1}, width=5}, stroke_placement=.Centered))
 
-	// Issue #248 phase A: compare explicit direct layer composition with a
-	// benchmark-only ordered descriptor list lowered through the same existing
-	// surface mesh path. This is a renderer baseline, not retained-node or GPU
-	// evidence and does not introduce a runtime effect-stack API.
+	// Issue #248 phase A: compare explicit direct layer composition with an
+	// ordered descriptor list lowered through the same existing surface mesh
+	// path. This is a renderer baseline, not native GPU evidence.
 	benchmark_effect_stack_prototype(&rt)
 
-	// Issue #248 phase B compares direct retained decoration nodes with a
-	// private sparse owner/cache sidecar. This remains benchmark-only until
-	// actual consumer dogfood and native renderer validation justify extraction.
+	// Issue #248 phase B compares direct retained decoration nodes with the
+	// research-only sidecar integrated into retained paint.
 	benchmark_effect_retained_owners()
 }

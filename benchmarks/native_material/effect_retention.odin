@@ -19,15 +19,6 @@ Effect_Retention_State :: struct {
 	resize_variant: bool,
 }
 
-Effect_Retention_Entry :: struct {
-	defined: bool,
-	stack: Effect_Stack,
-	base: alicorn.Paint_Command,
-	base_shape: alicorn.Surface_Shape,
-	commands: [EFFECT_STACK_MAX_LAYERS+1]alicorn.Paint_Command,
-	command_count: int,
-}
-
 Effect_Retention_Metrics :: struct {
 	reconcile: u64,
 	measure: u64,
@@ -124,7 +115,12 @@ effect_retention_describe :: proc(
 			label="effect benchmark surface")
 		owners[index] = owner
 		stack := effect_retention_stack(state, index)
-		if mode == .Direct_Children {
+		if mode == .Sparse_Owner {
+			if !alicorn.issue248_surface_effect_stack_set(rt, owner, stack) {
+				fmt.eprintln("retained surface effect declaration failed", index)
+				os.exit(1)
+			}
+		} else if mode == .Direct_Children {
 			for layer_index in 0..<int(stack.count) {
 				layer := stack.layers[layer_index]
 				bounds_width := width-2*layer.inset
@@ -157,114 +153,6 @@ effect_retention_describe :: proc(
 	alicorn.container_end(&ui)
 	alicorn.end_frame(&ui)
 	return rt.diagnostic == ""
-}
-
-effect_retention_stack_equal :: proc(a, b: Effect_Stack) -> bool {
-	if a.count != b.count { return false }
-	for index in 0..<int(a.count) {
-		if a.layers[index] != b.layers[index] { return false }
-	}
-	return true
-}
-
-// Effect descriptors depend on the owner's local extent and surface inputs,
-// not its current placement, clip, opacity, or motion translation. Lowered
-// layers are rebased to the current command when the display list is built.
-effect_retention_surface_inputs_equal :: proc(a, b: alicorn.Paint_Command) -> bool {
-	if a.bounds.w != b.bounds.w || a.bounds.h != b.bounds.h ||
-	   a.stroke_placement != b.stroke_placement ||
-	   a.semantic_surface_gradient != b.semantic_surface_gradient ||
-	   a.semantic_surface_fill != b.semantic_surface_fill {
-		return false
-	}
-	left, left_ok := a.payload.(alicorn.Surface_Paint)
-	right, right_ok := b.payload.(alicorn.Surface_Paint)
-	return left_ok && right_ok && left == right
-}
-
-effect_retention_layer_owner :: proc(owner: alicorn.Node_ID, index: int) -> alicorn.Node_ID {
-	return alicorn.Node_ID((u64(owner)<<4) | (u64(index)+1) | 0x8000_0000_0000_0000)
-}
-
-effect_retention_forget_layer_shapes :: proc(rt: ^alicorn.Runtime, owner: alicorn.Node_ID, first_removed: int) {
-	for layer_index in first_removed..<EFFECT_STACK_MAX_LAYERS {
-	delete_key(&rt.semantic_surfaces, effect_retention_layer_owner(owner, layer_index))
-	}
-}
-
-effect_retention_sync_sidecar :: proc(
-	rt: ^alicorn.Runtime,
-	state: Effect_Retention_State,
-	owners: []alicorn.Node_ID,
-	entries: ^map[alicorn.Node_ID]Effect_Retention_Entry,
-) -> (lowerings, hits: u64) {
-	for index in 0..<len(owners) {
-		owner := owners[index]
-		stack := effect_retention_stack(state, index)
-		if stack.count == 0 {
-			if previous, found := entries^[owner]; found {
-				effect_retention_forget_layer_shapes(rt, owner, 0)
-				delete_key(entries, owner)
-				_ = previous
-			}
-			continue
-		}
-		node, node_found := rt.nodes[owner]
-		if !node_found || node == nil || len(node.paint) == 0 {
-			fmt.eprintln("sparse effect owner has no retained base surface", index)
-			os.exit(1)
-		}
-		base := node.paint[0]
-		base_surface, base_ok := base.payload.(alicorn.Surface_Paint)
-		base_shape, shape_ok := alicorn.surface_paint_shape_resolve(rt, owner, base_surface.shape)
-		if !base_ok || !shape_ok { fmt.eprintln("sparse effect base shape was not resolvable", index); os.exit(1) }
-		previous, found := entries^[owner]
-		if found && previous.defined && effect_retention_stack_equal(previous.stack, stack) &&
-			effect_retention_surface_inputs_equal(previous.base, base) && previous.base_shape == base_shape {
-			hits += 1
-			continue
-		}
-		commands, command_count, ok := effect_stack_lower(rt, base, stack)
-		if !ok { fmt.eprintln("sparse retained effect lowering failed", index); os.exit(1) }
-		if found && previous.stack.count > stack.count {
-			effect_retention_forget_layer_shapes(rt, owner, int(stack.count))
-		}
-		entries^[owner] = Effect_Retention_Entry{
-			defined=true, stack=stack, base=base, base_shape=base_shape,
-			commands=commands, command_count=command_count,
-		}
-		lowerings += 1
-	}
-	return
-}
-
-effect_retention_build_display :: proc(
-	rt: ^alicorn.Runtime,
-	entries: map[alicorn.Node_ID]Effect_Retention_Entry,
-	output: ^[dynamic]alicorn.Paint_Command,
-) -> (ok: bool) {
-	clear(output)
-	for source in rt.display {
-		entry, has_stack := entries[source.owner]
-		if !has_stack || !alicorn.paint_command_is_surface(source) {
-			append(output, source)
-			continue
-		}
-		if entry.command_count < 1 || entry.commands[0].owner != source.owner { return false }
-		for index in 0..<entry.command_count {
-			command := entry.commands[index]
-			if index == 0 { command = source }
-			else {
-				command.bounds.x += source.bounds.x-entry.base.bounds.x
-				command.bounds.y += source.bounds.y-entry.base.bounds.y
-				command.clip = effect_owner_clip(source)
-				command.translation = source.translation
-				command.opacity = source.opacity
-			}
-			append(output, command)
-		}
-	}
-	return true
 }
 
 effect_retention_text_runs_equal :: proc(
@@ -345,7 +233,10 @@ effect_retention_outputs_equal :: proc(
 	left_rt, right_rt: ^alicorn.Runtime,
 	left, right: []alicorn.Paint_Command,
 ) -> bool {
-	if len(left) != len(right) { return false }
+	if len(left) != len(right) {
+		fmt.eprintln("paint command count mismatch", "direct", len(left), "sparse", len(right))
+		return false
+	}
 	for command, index in left {
 		if !effect_retention_commands_equal(left_rt, right_rt, command, right[index]) {
 			fmt.eprintln("paint command mismatch", index, "direct", command, "sparse", right[index])
@@ -362,15 +253,16 @@ effect_retention_emit :: proc(
 	ns: i64,
 	rt: ^alicorn.Runtime,
 	metrics: Effect_Retention_Metrics,
-	entry_count, lowerings, cache_hits, command_count: int,
+	entry_count: int,
+	lowerings, cache_hits: u64,
 ) {
 	mode_name := "direct_children"
 	if mode == .Sparse_Owner { mode_name = "sparse_owner" }
 	fmt.println("retained_effect_workload",
 		"mode", mode_name, "surfaces", count, "operation", label,
 		"elapsed_ns", ns, "live_nodes", effect_retention_live_nodes(rt),
-		"entries", entry_count, "lowerings", lowerings, "cache_hits", cache_hits,
-		"core_commands", len(rt.display), "expanded_commands", command_count,
+		"entries", entry_count, "geometry_lowerings", lowerings, "geometry_cache_hits", cache_hits,
+		"retained_commands", len(rt.display),
 		"reconcile_visits", metrics.reconcile, "measure_exec", metrics.measure,
 		"layout_visits", metrics.layout, "text_shapes", metrics.shape,
 		"paint_visits", metrics.paint, "finalized_commands", metrics.finalized,
@@ -384,24 +276,19 @@ effect_retention_run_description :: proc(
 	state: Effect_Retention_State,
 	mode: Effect_Retention_Mode,
 	owners: []alicorn.Node_ID,
-	entries: ^map[alicorn.Node_ID]Effect_Retention_Entry,
-	output: ^[dynamic]alicorn.Paint_Command,
 	label: string,
 ) -> (elapsed_ns: i64, lowerings, hits: u64, metrics: Effect_Retention_Metrics) {
 	stats_before := rt.stats
 	alloc_before := rt.allocation_stats^
+	effects_before := alicorn.issue248_surface_effect_stats(rt)
 	started := time.now()
 	if !effect_retention_describe(rt, state, mode, owners) {
 		fmt.eprintln("effect retained workload description failed", label, "mode", mode, "surfaces", len(owners))
 		os.exit(1)
 	}
-	if mode == .Sparse_Owner {
-		lowerings, hits = effect_retention_sync_sidecar(rt, state, owners, entries)
-		if !effect_retention_build_display(rt, entries^, output) {
-			fmt.eprintln("effect retained display expansion failed", label)
-			os.exit(1)
-		}
-	}
+	effects_after := alicorn.issue248_surface_effect_stats(rt)
+	lowerings = effects_after.geometry_lowerings-effects_before.geometry_lowerings
+	hits = effects_after.geometry_cache_hits-effects_before.geometry_cache_hits
 	elapsed_ns = time.duration_nanoseconds(time.since(started))
 	metrics = effect_retention_metrics(rt, stats_before, alloc_before)
 	return
@@ -439,9 +326,6 @@ effect_retention_benchmark_case :: proc(count: int) {
 	owners_sidecar := make([]alicorn.Node_ID, count)
 	defer delete(owners_direct)
 	defer delete(owners_sidecar)
-	entries := make(map[alicorn.Node_ID]Effect_Retention_Entry, allocator=sidecar_rt.persistent_allocator)
-	output := make([dynamic]alicorn.Paint_Command, 0, count*6)
-	defer delete(output)
 	state := Effect_Retention_State{target=count/2, layer_count=2}
 	start := time.now()
 	if !effect_retention_describe(&direct_rt, state, .Direct_Children, owners_direct) {
@@ -454,31 +338,26 @@ effect_retention_benchmark_case :: proc(count: int) {
 		fmt.eprintln("sparse retained effect construction failed", count)
 		os.exit(1)
 	}
-	lowerings, hits := effect_retention_sync_sidecar(&sidecar_rt, state, owners_sidecar, &entries)
-	if !effect_retention_build_display(&sidecar_rt, entries, &output) {
-		fmt.eprintln("initial sparse display expansion failed", count)
-		os.exit(1)
-	}
 	sidecar_initial_ns := time.duration_nanoseconds(time.since(start))
-	if !effect_retention_outputs_equal(&direct_rt, &sidecar_rt, direct_rt.display[:], output[:]) {
+	if !effect_retention_outputs_equal(&direct_rt, &sidecar_rt, direct_rt.display[:], sidecar_rt.display[:]) {
 		fmt.eprintln("direct and sparse initial surface commands differ", count)
 		os.exit(1)
+	}
+	sidecar_entries := 0
+	if sidecar_rt.issue248_surface_effects != nil {
+		sidecar_entries = len(sidecar_rt.issue248_surface_effects.entries)
 	}
 	fmt.println("retained_effect_scene",
 		"surfaces", count,
 		"direct_nodes", effect_retention_live_nodes(&direct_rt),
 		"sidecar_nodes", effect_retention_live_nodes(&sidecar_rt),
 		"direct_commands", len(direct_rt.display),
-		"sidecar_core_commands", len(sidecar_rt.display),
-		"sidecar_expanded_commands", len(output),
-		"sidecar_entries", len(entries),
-		"sidecar_output_capacity_bytes", cap(output)*size_of(alicorn.Paint_Command),
+		"sidecar_commands", len(sidecar_rt.display),
+		"sidecar_entries", sidecar_entries,
 		"direct_initial_ns", direct_initial_ns,
 		"sidecar_initial_ns", sidecar_initial_ns,
 		"direct_live_bytes", allocation_direct.persistent_requested_bytes_live,
 		"sidecar_live_bytes", allocation_sidecar.persistent_requested_bytes_live,
-		"sidecar_total_live_plus_output_bytes", allocation_sidecar.persistent_requested_bytes_live+
-			i64(cap(output)*size_of(alicorn.Paint_Command)),
 		"equivalent_ordered_paint_output", true)
 
 	operations := [?]string{"identical_redescription", "one_layer_color", "one_layer_inset", "remove_layer", "add_layer", "resize_owner"}
@@ -498,25 +377,25 @@ effect_retention_benchmark_case :: proc(count: int) {
 		// the inset and size cases must not also reverse the prior color/layer
 		// change while their timing is being captured.
 		_, _, _, _ = effect_retention_run_description(
-			&direct_rt, restore, .Direct_Children, owners_direct, nil, nil, "restore_workload_baseline")
+			&direct_rt, restore, .Direct_Children, owners_direct, "restore_workload_baseline")
 		_, _, _, _ = effect_retention_run_description(
-			&sidecar_rt, restore, .Sparse_Owner, owners_sidecar, &entries, &output, "restore_workload_baseline")
-		if !effect_retention_outputs_equal(&direct_rt, &sidecar_rt, direct_rt.display[:], output[:]) {
+			&sidecar_rt, restore, .Sparse_Owner, owners_sidecar, "restore_workload_baseline")
+		if !effect_retention_outputs_equal(&direct_rt, &sidecar_rt, direct_rt.display[:], sidecar_rt.display[:]) {
 			fmt.eprintln("direct and sparse output differ after workload baseline restore", operation, "surfaces", count)
 			os.exit(1)
 		}
 		direct_ns, direct_lowerings, direct_hits, direct_metrics := effect_retention_run_description(
-			&direct_rt, state, .Direct_Children, owners_direct, nil, nil, operation)
+			&direct_rt, state, .Direct_Children, owners_direct, operation)
 		sidecar_ns, lowerings, hits, sidecar_metrics := effect_retention_run_description(
-			&sidecar_rt, state, .Sparse_Owner, owners_sidecar, &entries, &output, operation)
-		if !effect_retention_outputs_equal(&direct_rt, &sidecar_rt, direct_rt.display[:], output[:]) {
+			&sidecar_rt, state, .Sparse_Owner, owners_sidecar, operation)
+		if !effect_retention_outputs_equal(&direct_rt, &sidecar_rt, direct_rt.display[:], sidecar_rt.display[:]) {
 			fmt.eprintln("direct and sparse output diverged after", operation, "surfaces", count)
 			os.exit(1)
 		}
 		effect_retention_emit(.Direct_Children, count, operation, direct_ns, &direct_rt, direct_metrics,
-			0, int(direct_lowerings), int(direct_hits), len(direct_rt.display))
+			0, direct_lowerings, direct_hits)
 		effect_retention_emit(.Sparse_Owner, count, operation, sidecar_ns, &sidecar_rt, sidecar_metrics,
-			len(entries), int(lowerings), int(hits), len(output))
+			sidecar_entries, lowerings, hits)
 	}
 
 	// Exercise a moving retained owner independently of application descriptions.
@@ -535,8 +414,7 @@ effect_retention_benchmark_case :: proc(count: int) {
 		presentation_sidecar, ready_sidecar := alicorn.begin_presentation_frame(&sidecar_rt)
 		if ready_sidecar { alicorn.end_presentation_frame(&presentation_sidecar) }
 		sidecar_motion_ns := time.duration_nanoseconds(time.since(start))
-		if !effect_retention_build_display(&sidecar_rt, entries, &output) ||
-			!effect_retention_outputs_equal(&direct_rt, &sidecar_rt, direct_rt.display[:], output[:]) {
+		if !effect_retention_outputs_equal(&direct_rt, &sidecar_rt, direct_rt.display[:], sidecar_rt.display[:]) {
 			fmt.eprintln("animated owner effect output diverged", count, sample)
 			os.exit(1)
 		}
@@ -560,12 +438,11 @@ effect_retention_benchmark_case :: proc(count: int) {
 		"sidecar_layout_delta", sidecar_rt.stats.layout_nodes_visited-idle_before_sidecar.layout_nodes_visited,
 		"direct_shape_delta", direct_rt.stats.text_shape_requests-idle_before_direct.text_shape_requests,
 		"sidecar_shape_delta", sidecar_rt.stats.text_shape_requests-idle_before_sidecar.text_shape_requests,
-		"direct_display_commands", len(direct_rt.display), "sidecar_cached_entries", len(entries))
-	delete(entries)
+		"direct_display_commands", len(direct_rt.display), "sidecar_cached_entries", sidecar_entries)
 }
 
 benchmark_effect_retained_owners :: proc() {
-	fmt.println("Alicorn retained effect ownership prototype: direct positioned decoration nodes versus benchmark-only sparse owner/cache sidecar")
+	fmt.println("Alicorn retained effect ownership prototype: direct positioned decoration nodes versus integrated issue-248 retained paint sidecar")
 	fmt.println("Each surface also contains one unchanged text child; local visual edits are isolated to one middle surface. Output comparison ignores internal owner IDs but checks full resolved shapes and every surface paint field.")
 	for count in EFFECT_RETENTION_COUNTS { effect_retention_benchmark_case(count) }
 }

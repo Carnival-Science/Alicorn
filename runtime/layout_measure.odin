@@ -918,7 +918,9 @@ layout_finalize_display_range :: proc(
 		// Validate the unsnapped target and the replacement. The finalized
 		// display mirror is derived, and a count-changing splice publishes slots
 		// the mirror has not held before, so it is overwritten unconditionally.
-		if target.owner != owner || rt.display_target[slot].owner != owner {
+		if (target.owner != owner && !issue248_surface_effect_command_belongs_to(rt, target.owner, owner)) ||
+		   (rt.display_target[slot].owner != owner &&
+		    !issue248_surface_effect_command_belongs_to(rt, rt.display_target[slot].owner, owner)) {
 			return false
 		}
 	}

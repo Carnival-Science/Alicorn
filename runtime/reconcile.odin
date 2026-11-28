@@ -1095,6 +1095,7 @@ retire_subtree :: proc(rt: ^Runtime, id: Node_ID, desired: map[Node_ID]bool) {
 	if !ok { return }
 	if node.region { region_index_remove(rt, id, node.label) }
 	delete_key(&rt.region_appearance_revisions, id)
+	issue248_surface_effect_forget_owner(rt, id)
 	motion_retire_owner(rt, id)
 	if rt.style_transition_owners != nil { delete_key(&rt.style_transition_owners, id) }
 	restore_release_node(rt, id)
@@ -1623,6 +1624,7 @@ destroy_runtime :: proc(rt: ^Runtime) {
 	}
 	delete(rt.nodes)
 	delete(rt.region_appearance_revisions)
+	issue248_surface_effects_destroy(rt)
 	for _, entry in rt.region_nodes {
 		delete(entry.nodes)
 		if len(entry.label) > 0 { delete(entry.label, rt.persistent_allocator) }

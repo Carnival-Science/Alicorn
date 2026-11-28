@@ -7,11 +7,10 @@ import "core:time"
 import alicorn "../../runtime"
 import cpu_renderer "../../renderer/cpu"
 
-// This is a benchmark-only representation. It deliberately does not add a
-// runtime API or retain descriptors on Alicorn nodes. Lowering it to ordinary
-// surface commands tests whether an ordered vocabulary can use today's paint
-// and renderer paths before any production abstraction is considered.
-EFFECT_STACK_MAX_LAYERS :: 4
+// The standalone geometry comparison lowers the research descriptor
+// vocabulary directly to ordinary surface commands. Retained ownership and
+// update locality are measured separately in effect_retention.odin.
+EFFECT_STACK_MAX_LAYERS :: alicorn.ISSUE248_SURFACE_EFFECT_MAX_LAYERS
 EFFECT_STACK_BENCH_SURFACES :: 256
 EFFECT_STACK_BENCH_SAMPLES :: 101
 EFFECT_STACK_LOWER_ITERATIONS :: 100
@@ -41,24 +40,9 @@ effect_lowering_allocator_proc :: proc(
 	return result, err
 }
 
-Effect_Layer_Kind :: enum u8 {
-	Inset_Fill,
-	Stroke,
-}
-
-Effect_Layer :: struct {
-	kind: Effect_Layer_Kind,
-	inset: f32,
-	color: alicorn.Color,
-	stroke_fill: alicorn.Color,
-	stroke: alicorn.Paint_Stroke,
-	stroke_placement: alicorn.Paint_Stroke_Placement,
-}
-
-Effect_Stack :: struct {
-	count: u8,
-	layers: [EFFECT_STACK_MAX_LAYERS]Effect_Layer,
-}
+Effect_Layer_Kind :: alicorn.Issue248_Surface_Effect_Kind
+Effect_Layer :: alicorn.Issue248_Surface_Effect_Layer
+Effect_Stack :: alicorn.Issue248_Surface_Effect_Stack
 
 effect_layer_bounds :: proc(bounds: alicorn.Rect, inset: f32) -> (result: alicorn.Rect, ok: bool) {
 	if inset < 0 || inset != inset || bounds.w <= inset*2 || bounds.h <= inset*2 { return }
