@@ -214,6 +214,10 @@ main :: proc() {
 			benchmark_effect_retained_owners()
 			return
 		}
+		if os.args[1] == "--multi-stop-gradient-only" {
+			benchmark_multistop_gradients()
+			return
+		}
 		fmt.eprintln("unknown benchmark argument:", os.args[1])
 		os.exit(2)
 	}
@@ -306,4 +310,9 @@ main :: proc() {
 	// Issue #248 phase B compares direct retained decoration nodes with the
 	// research-only sidecar integrated into retained paint.
 	benchmark_effect_retained_owners()
+
+	// Issue #248 multi-stop gradients are an independent research prototype.
+	// The CPU band path is executable; the shader-side row models only its
+	// six-vertex input and stop-record footprint and does not execute a GPU shader.
+	benchmark_multistop_gradients()
 }

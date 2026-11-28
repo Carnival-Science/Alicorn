@@ -28,6 +28,7 @@ Effect_Retention_Metrics :: struct {
 	finalized: u64,
 	created: u64,
 	retired: u64,
+	pending_descriptions_examined: u64,
 	allocations: u64,
 	live_bytes: i64,
 }
@@ -42,6 +43,7 @@ effect_retention_metrics :: proc(rt: ^alicorn.Runtime, before: alicorn.Frame_Sta
 		finalized=rt.stats.display_commands_finalized-before.display_commands_finalized,
 		created=rt.stats.nodes_created-before.nodes_created,
 		retired=rt.stats.nodes_retired-before.nodes_retired,
+		pending_descriptions_examined=0,
 		allocations=rt.allocation_stats.persistent_alloc_calls-alloc_before.persistent_alloc_calls,
 		live_bytes=rt.allocation_stats.persistent_requested_bytes_live-alloc_before.persistent_requested_bytes_live,
 	}
@@ -267,6 +269,7 @@ effect_retention_emit :: proc(
 		"layout_visits", metrics.layout, "text_shapes", metrics.shape,
 		"paint_visits", metrics.paint, "finalized_commands", metrics.finalized,
 		"nodes_created", metrics.created, "nodes_retired", metrics.retired,
+		"pending_descriptions_examined", metrics.pending_descriptions_examined,
 		"persistent_allocations", metrics.allocations, "live_bytes_delta", metrics.live_bytes,
 		"persistent_live_bytes", rt.allocation_stats.persistent_requested_bytes_live)
 }
@@ -291,6 +294,7 @@ effect_retention_run_description :: proc(
 	hits = effects_after.geometry_cache_hits-effects_before.geometry_cache_hits
 	elapsed_ns = time.duration_nanoseconds(time.since(started))
 	metrics = effect_retention_metrics(rt, stats_before, alloc_before)
+	metrics.pending_descriptions_examined = effects_after.pending_descriptions_examined-effects_before.pending_descriptions_examined
 	return
 }
 
@@ -358,6 +362,7 @@ effect_retention_benchmark_case :: proc(count: int) {
 		"sidecar_initial_ns", sidecar_initial_ns,
 		"direct_live_bytes", allocation_direct.persistent_requested_bytes_live,
 		"sidecar_live_bytes", allocation_sidecar.persistent_requested_bytes_live,
+		"sidecar_pending_descriptions_examined", alicorn.issue248_surface_effect_stats(&sidecar_rt).pending_descriptions_examined,
 		"equivalent_ordered_paint_output", true)
 
 	operations := [?]string{"identical_redescription", "one_layer_color", "one_layer_inset", "remove_layer", "add_layer", "resize_owner"}

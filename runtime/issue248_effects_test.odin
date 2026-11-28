@@ -113,6 +113,8 @@ test_issue248_retained_effects_are_sparse_and_stay_in_owner_paint :: proc(t: ^te
 
 	before_frame := rt.stats
 	before_effects := issue248_surface_effect_stats(&rt)
+	testing.expect(t, before_effects.pending_descriptions_examined == 1,
+		"declaring an effect immediately after a new owner should examine only the newest pending description")
 	stack := issue248_effect_test_stack(color_variant=true)
 	set_ok := issue248_surface_effect_stack_set(&rt, owner, stack)
 	update_paint(&rt)
@@ -175,6 +177,67 @@ test_issue248_retained_effects_are_sparse_and_stay_in_owner_paint :: proc(t: ^te
 	testing.expect(t, removed && issue248_effect_test_owned_commands(&rt, owner) == 1 && !effect_entry_remains &&
 		len(rt.display_target) == commands_before_remove_all-1,
 		"removing effects should splice only their commands from the retained owner range")
+}
+
+@(test)
+test_issue248_initial_owner_lookup_scales_with_immediate_declarations :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 1280, 900})
+	defer destroy_runtime(&rt)
+	OWNER_COUNT :: 128
+
+	ui, build := begin_frame(&rt)
+	if !build {
+		testing.expect(t, false, "initial effect-owner fixture should begin its frame")
+		return
+	}
+	container_begin(&ui, .Root, key=key_string("issue248-many-owner-root"),
+		style=layout_style(.Column, width=-1, height=-1))
+	stack := issue248_effect_test_stack()
+	all_declarations_succeeded := true
+	for index in 0..<OWNER_COUNT {
+		owner := surface_begin(&ui, surface_core_color_role(.Surface),
+			key=key_u64(u64(index+1)),
+			style=layout_style(.Column, width=240, height=40),
+			fill=Color{0.1, 0.1, 0.1, 1})
+		if owner == 0 || !issue248_surface_effect_stack_set(&rt, owner, stack) {
+			all_declarations_succeeded = false
+		}
+		surface_end(&ui)
+	}
+	container_end(&ui)
+	end_frame(&ui)
+
+	state := issue248_surface_effect_state(&rt)
+	testing.expect(t, all_declarations_succeeded && state != nil && len(state.entries) == OWNER_COUNT,
+		"every immediately declared owner should retain its sparse effect descriptor")
+	if state != nil {
+		testing.expect(t, state.stats.pending_descriptions_examined == OWNER_COUNT,
+			"initial construction should examine one pending description per owner, not rescan earlier descriptions")
+	}
+}
+
+@(test)
+test_issue248_new_owner_must_declare_effects_before_children :: proc(t: ^testing.T) {
+	rt := new_runtime(Rect{0, 0, 640, 480})
+	defer destroy_runtime(&rt)
+	ui, build := begin_frame(&rt)
+	if !build {
+		testing.expect(t, false, "late declaration fixture should begin its frame")
+		return
+	}
+	container_begin(&ui, .Root, key=key_string("issue248-late-owner-root"),
+		style=layout_style(.Column, width=-1, height=-1))
+	owner := surface_begin(&ui, surface_core_color_role(.Surface), key=key_u64(1),
+		style=layout_style(.Column, width=240, height=48), fill=Color{0.1, 0.1, 0.1, 1})
+	child := surface_begin(&ui, surface_core_color_role(.Surface), key=key_u64(2),
+		style=layout_style(.Column, width=120, height=24), fill=Color{0.2, 0.2, 0.2, 1})
+	accepted := issue248_surface_effect_stack_set(&rt, owner, issue248_effect_test_stack())
+	testing.expect(t, owner != 0 && child != 0 && !accepted && rt.issue248_surface_effects == nil,
+		"a newly described owner must declare its effects before describing children, without allocating sidecar state on rejection")
+	surface_end(&ui)
+	surface_end(&ui)
+	container_end(&ui)
+	end_frame(&ui)
 }
 
 @(test)

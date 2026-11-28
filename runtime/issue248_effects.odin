@@ -29,6 +29,7 @@ Issue248_Surface_Effect_Stats :: struct {
 	geometry_cache_hits: u64,
 	paint_rebuilds: u64,
 	unsupported_owners: u64,
+	pending_descriptions_examined: u64,
 }
 
 Issue248_Surface_Effect_Geometry :: struct {
@@ -102,31 +103,34 @@ issue248_surface_effect_stack_equal :: proc(a, b: Issue248_Surface_Effect_Stack)
 	return true
 }
 
-issue248_surface_effect_owner_is_described :: proc(rt: ^Runtime, owner: Node_ID) -> bool {
-	if rt == nil || owner == 0 { return false }
-	if node, found := rt.nodes[owner]; found && node != nil && node.active { return true }
-	for item in rt.pending {
-		if item.kind == .Description && item.description.id == owner { return true }
-	}
-	return false
+issue248_surface_effect_owner_is_described :: proc(rt: ^Runtime, owner: Node_ID) -> (described: bool, examined: u64) {
+	if rt == nil || owner == 0 { return }
+	if node, found := rt.nodes[owner]; found && node != nil && node.active { return true, 0 }
+	// New owners must declare effects immediately after their description. This
+	// keeps initial construction O(1) per owner and avoids scanning the pending
+	// tree for an ID that has not entered the retained-node map yet.
+	if len(rt.pending) == 0 { return false, 0 }
+	examined = 1
+	item := rt.pending[len(rt.pending)-1]
+	return item.kind == .Description && item.description.id == owner, examined
 }
 
 // issue248_surface_effect_stack_set is an issue-specific runtime research hook
 // used by the benchmark and dogfood consumers. It is intentionally absent
 // from ui and carries no stable API compatibility promise.
-// The owner must be an existing retained node or one being described in the
-// currently open frame. A zero-layer stack removes an earlier declaration.
+// The owner must be an existing retained node or the most recently described
+// item in the currently open frame. A zero-layer stack removes a declaration.
 issue248_surface_effect_stack_set :: proc(
 	rt: ^Runtime,
 	owner: Node_ID,
 	stack: Issue248_Surface_Effect_Stack,
 ) -> bool {
-	if rt == nil || owner == 0 || !issue248_surface_effect_stack_is_valid(stack) ||
-	   !issue248_surface_effect_owner_is_described(rt, owner) {
-		return false
-	}
+	if rt == nil || owner == 0 || !issue248_surface_effect_stack_is_valid(stack) { return false }
+	described, examined := issue248_surface_effect_owner_is_described(rt, owner)
+	if !described { return false }
 	state := issue248_surface_effect_state(rt, stack.count > 0)
 	if state == nil { return true }
+	state.stats.pending_descriptions_examined += examined
 	previous, found := state.entries[owner]
 	previous_count := previous.stack.count
 	if stack.count == 0 {

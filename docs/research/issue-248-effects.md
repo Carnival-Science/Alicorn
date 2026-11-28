@@ -4,7 +4,7 @@ Research started November 27, 2026. The latest retained-paint integration is a r
 
 ## Current finding
 
-Alicorn already has useful surface ingredients, but they are separate typed features rather than an ordered stack on one surface. Directly composed surfaces remain the comparison baseline. A bounded issue-specific sidecar now stores inset fills and strokes on a retained owner, inserts the resulting commands into that owner's existing paint range, and resolves per-corner shape data by sparse synthetic paint-owner IDs. It does not add per-node payload or a renderer branch. The public effect-stack API remains NO-GO pending native output and broader consumer evidence.
+Alicorn already has useful surface ingredients, but they are separate typed features rather than an ordered stack on one surface. Directly composed surfaces remain the comparison baseline. A bounded issue-specific sidecar now stores inset fills and strokes on a retained owner, inserts the resulting commands into that owner's existing paint range, and resolves per-corner shape data by sparse synthetic paint-owner IDs. It does not add per-node payload or a renderer branch. The retained-paint architecture has a provisional GO for further validation; merge to `master` and a public effect-stack API remain on hold pending native output and broader consumer evidence.
 
 ## Existing paint and effect facilities
 
@@ -132,16 +132,20 @@ The next experiment moved the effect descriptor/cache into Alicorn's existing pa
 
 When an owner is painted, the runtime inserts its effect commands immediately after the first owned surface command and before the owner's later paint and descendants. The commands participate in the node's existing retained paint list, sparse display-range splice, clipping, opacity, presentation-output filtering, and shape resolution. Geometry is cached relative to the base surface size and shape; placement is read from the current command. Per-corner radii are retained in sparse metadata keyed by unique layer command owners. Removed owners stay mapped until their old display range is replaced, so count-changing layer removal cannot leave stale commands behind.
 
+One design concern remains: layer paint products currently receive synthetic `Node_ID` values and must be recognized specially in code that normally treats command owners as retained nodes. This prototype has explicit routing for the affected paint and presentation paths, but it has not established a general ownership contract for non-node paint products. Keep this boundary issue-specific; decide whether paint-product identity needs a distinct type before expanding the feature or publishing an API.
+
 The direct-child and integrated paths were compared at 1, 100, 1,000, and 3,000 surfaces. Each fixture includes two ordered decoration layers and unchanged text. The harness compares the complete ordered output, including surfaces, resolved per-corner shapes, clips, text runs, painter order, transforms, and opacity. All four sizes passed exact output parity. Both paths emit the same number of display commands; the integration reduces layout nodes and retained storage rather than GPU command count.
 
 | Surfaces | Direct nodes | Integrated nodes | Direct persistent bytes | Integrated persistent bytes |
 | ---: | ---: | ---: | ---: | ---: |
-| 1 | 5 | 3 | 459,458 B | 464,020 B |
-| 100 | 401 | 201 | 3,749,341 B | 2,619,253 B |
-| 1,000 | 4,001 | 2,001 | 30,606,401 B | 20,292,065 B |
-| 3,000 | 12,001 | 6,001 | 95,599,729 B | 57,888,177 B |
+| 1 | 5 | 3 | 459,458 B | 464,028 B |
+| 100 | 401 | 201 | 3,749,341 B | 2,619,261 B |
+| 1,000 | 4,001 | 2,001 | 30,606,401 B | 20,292,073 B |
+| 3,000 | 12,001 | 6,001 | 95,599,729 B | 57,888,185 B |
 
-At 3,000 surfaces, the integrated path used 37,711,552 fewer runtime-requested persistent bytes (39.4%) while keeping all 12,001 display commands and exact output parity. This is runtime allocator accounting, not whole-process RSS. One surface still costs 4,562 more bytes because the sidecar has fixed/map overhead; the savings appear once enough owners share the mechanism.
+At 3,000 surfaces, the integrated path used 37,711,544 fewer runtime-requested persistent bytes (39.4%) while keeping all 12,001 display commands and exact output parity. This is runtime allocator accounting, not whole-process RSS. One surface costs 4,570 more bytes because the sidecar has fixed/map overhead; the savings appear once enough owners share the mechanism.
+
+Initial construction was also checked for accidental quadratic owner lookup. A new owner may declare its stack only immediately after its own description, while it is the last pending description; the lookup examines exactly one pending item per new owner. The 1/100/1,000/3,000-owner captures record 1/100/1,000/3,000 examined descriptions respectively. Existing retained owners may be updated at any point in the open frame. A late declaration for a new owner is rejected without creating sidecar state. The research hook is imperative: omitting a prior declaration does not remove it; passing a valid zero-layer stack does. This lifecycle is explicit for the prototype and must be reconsidered before any public API.
 
 For one middle owner in the 3,000-surface fixture, the stage counters show:
 
@@ -160,16 +164,46 @@ Settled idle requested no new description in either path and recorded zero new l
 
 Validation on this research branch: `odin test runtime` passed 535/535, including the retained-node size tripwire (`Node` 2,032 B; `Paint_Command` 128 B), and the optimized retained-effects benchmark completed all four sizes with exact ordered-output parity. The repository `sh tools/check.sh` passed its AccessKit ABI and smoke checks, then stopped in the Web UI package check: the installed Odin toolchain reports `core:os` unsupported for js/wasm and a missing `core:testing` logging symbol (`log.do_level_header`). The standalone `odin check runtime -target:js_wasm32 -no-entry-point` reaches the same toolchain errors. This leaves cross-target validation and all native GPU/pixel checks open.
 
-The benchmark's `--issue248-retention-only` argument skips unrelated material benchmarks. Run `sh tools/bench_material.sh --issue248-retention-only`. The full command captures remain in `/tmp/alicorn-issue248-retention-final.txt` for this run; that temporary capture is not checked in.
+The WASM diagnostics were reproduced against an unchanged detached checkout of `origin/master` at `83e64c0819fa32bb1e8a37498ef00f54d864b302` with the same installed Odin compiler, so they are not evidence of a regression from this branch. The native build remains incomplete: `sh tools/test.sh` reached the native renderer build but Odin could not load its absent Homebrew `libwgpu_native.dylib`. Runtime tests and the CPU renderer tests pass locally; SDL_GPU/WebGPU execution, native readback and physical DPI validation remain open. The full `odin test runtime` run now passes 537/537, and `odin test renderer/cpu` passes 25/25. `odin check benchmarks/native_material -collection:alicorn=/private/tmp/alicorn-style-244-246` passes.
+
+The benchmark's `--issue248-retention-only` argument skips unrelated material benchmarks. Run `sh tools/bench_material.sh --issue248-retention-only`. The tracked [integration raw capture](issue-248-retained-effects-macos-2026-11-27-integration.txt) records the latest one-process run, including the pending-description lookup counter.
+
+### Flat, mixed, and fully decorated runtime overhead
+
+To check whether the integration imposes measurable core-runtime work on non-consumers, the same standalone benchmark source was built once against `origin/master` (`83e64c0`) and once against this candidate (`9655320` plus the O(1) declaration-check change). Five fresh process pairs alternated revision order. Each process measured 21 repeated descriptions and motion ticks over 3,000 surfaces. The workloads used ordinary flat surfaces, 150 direct decorative surfaces (5%), and 3,000 direct decorative surfaces. They do not invoke the effects setter, so this isolates unconditional runtime integration overhead. The timed boundary excludes native GPU submission and display presentation; memory is runtime-requested persistent bytes, not RSS.
+
+| Workload / metric | `master` median | Candidate median |
+| --- | ---: | ---: |
+| Flat: initial construction | 14.423 ms | 13.865 ms |
+| Flat: identical description p50 / p95 | 2.326 / 2.473 ms | 2.343 / 2.519 ms |
+| Flat: local change / motion p50 / p95 | 2.319 ms / 0.442 / 0.497 ms | 2.347 ms / 0.442 / 0.479 ms |
+| Flat: persistent live bytes | 21,908,399 B | 21,908,399 B |
+| 5% decorated: initial construction | 13.538 ms | 13.904 ms |
+| 5%: identical description p50 / p95 | 2.587 / 3.040 ms | 2.604 / 2.969 ms |
+| 5%: local change / motion p50 / p95 | 2.608 ms / 0.479 / 0.585 ms | 2.688 ms / 0.477 / 0.510 ms |
+| 5%: persistent live bytes | 27,817,395 B | 27,817,395 B |
+| Fully decorated: initial construction | 52.589 ms | 52.508 ms |
+| Fully decorated: identical description p50 / p95 | 9.381 / 10.323 ms | 9.395 / 10.456 ms |
+| Fully decorated: local change / motion p50 / p95 | 9.353 ms / 2.075 / 2.255 ms | 9.568 ms / 2.179 / 2.540 ms |
+| Fully decorated: persistent live bytes | 76,971,891 B | 76,971,891 B |
+
+The observed timing ranges overlap and there is no clear material overhead signal in these CPU-only runs. The sample is small (five processes); it does not prove equivalence on native rendering workloads. Full captures and machine/compiler metadata are in [the paired raw record](issue-248-overhead-master-comparison-macos-2026-11-27.txt).
 
 The first integration run uncovered and fixed two correctness issues before this result was recorded: removed layer-owner metadata must survive until the old retained range is spliced, and the clipped-owner bounds guard must distinguish effect geometry from the owner's own bounds. Regression tests verify full display-command removal, color-only and inset-only paint locality, resize re-lowering, per-corner shape resolution, flat-path laziness, and owner retirement.
 
 ### Updated decision
 
-- **Bounded inset-fill/layered-stroke research:** GO to visual and renderer validation. The sidecar pilot now demonstrates fewer retained nodes and lower runtime-requested memory for a 3,000-surface synthetic workload, with equivalent expanded CPU paint data.
+- **Retained-paint architecture:** Provisional GO for continued engineering and validation, not yet a merge-to-`master` decision. The sidecar pilot demonstrates fewer retained nodes and lower runtime-requested memory for a 3,000-surface synthetic workload, with equivalent expanded CPU paint data. The synthetic paint-owner identity boundary and native validation remain unresolved.
+- **Bounded inset-fill/layered-stroke research:** GO to visual and renderer validation.
 - **Public stack API:** NO-GO. Consumer dogfood uses ordinary positioned surfaces, the comparison sidecar is benchmark-only, and native pixels/GPU costs are still unverified.
 - **Flat fast path:** Preserve it. This experiment has no evidence that flat controls should pay effect-specific node, allocation, or pass costs.
-- **Multi-stop gradients:** Keep independent. The retained-owner result neither proves nor rejects CPU tessellation versus shader evaluation.
+- **Multi-stop gradients:** Continue as an independent capability experiment; the retained-owner result neither proves nor rejects CPU tessellation versus shader evaluation.
+
+### Independent multi-stop gradient prototype
+
+The independent CPU prototype splits a rectangular surface at each stop boundary and lowers each interval through Alicorn's existing two-stop CPU mesh path. It preserves that existing two-stop path unchanged. For 256 surfaces, CPU geometry grows from 1,536 vertices (55,296 B) at two stops to 10,752 vertices (387,072 B) at eight stops; the latest optimized 101-sample run measured p50 batch construction from 11 µs to 81 µs over those endpoints. The prototype verifies exact stop colors at each band boundary.
+
+The alternative is currently only a shader-evaluated topology/payload model: six vertices per surface remain constant (55,296 B for 256 surfaces), with 20 bytes per stop per surface in the modeled stop records. Its measured CPU number is only mesh-model construction; no fragment shader, backend upload, GPU execution, interpolation parity, or readback exists yet. These figures do not establish that shader evaluation is faster overall. The tracked [raw capture](issue-248-multistop-gradient-macos-2026-11-27.txt) records this boundary explicitly. Continue independently of the effect-stack API, and do not add a public gradient API until actual SDL_GPU and WebGPU implementations demonstrate visual and performance parity.
 
 Start with effects that can remain in ordinary surface rendering. Measure multi-stop gradients, multiple fills, layered strokes, and inset/outset treatments separately. Add shadow or backdrop passes only if a consumer shows a visible benefit over analytic relief or positioned surfaces. Preserve the flat fast path, painter order, clipping, opacity, and existing material presets.
 
@@ -181,7 +215,7 @@ Start with effects that can remain in ordinary surface rendering. Measure multi-
 - Verify local effect edits preserve surface identity and avoid unrelated layout or text shaping. Static unchanged effects should reuse retained output; flat scenes must incur no effect pass or effect allocation.
 - Make separate GO/NO-GO calls for each effect and for a public composition API. Do not infer that one successful effect justifies the entire stack.
 
-The updated benchmark was built with `odin build benchmarks/native_material -o:speed` and its full executable run exited successfully. The raw capture includes the earlier CPU geometry runs, 101-sample descriptor-lowering checks, and retained-owner workloads at all four sizes. The earlier `odin test runtime` result was 531/531 and `odin test renderer/cpu` was 25/25 at the first prototype stage; production runtime files remain unchanged in this follow-up. Consumer Odin tests/builds, native pixels, GPU execution, and integrated-GPU behavior remain unverified for the reasons above. The earlier [two-stop gradient study](issue-119-two-stop-gradients.md) and [retained-effects study](../validation/issue-111-retained-effects.md) remain the detailed records for their respective implementation constraints.
+The updated `benchmarks/native_material` executable and `benchmarks/issue248_overhead` comparison both build optimized. The multi-stop mode completed after adding checks that the generated CPU mesh contains each exact stop boundary. The native test script is blocked by the missing installed `libwgpu_native.dylib`; WASM checks fail identically on the unchanged `master` baseline. Consumer screenshots, native pixels, GPU execution, and integrated-GPU behavior remain unverified. The earlier [two-stop gradient study](issue-119-two-stop-gradients.md) and [retained-effects study](../validation/issue-111-retained-effects.md) remain the detailed records for their respective implementation constraints.
 
 ## Sources inspected
 

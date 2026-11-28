@@ -1,0 +1,12 @@
+capture_local_date 2026-11-27 America/Chicago
+benchmark issue248-multistop-gradient
+odin /opt/homebrew/bin/odin version dev-2026-11:9a6991685
+machine Apple Silicon macOS; optimized build (-o:speed); 256 surfaces; 101 paired samples per stop count
+command odin build benchmarks/native_material -o:speed; executable --multi-stop-gradient-only
+boundary CPU mesh construction and a shader-evaluated topology/payload model; no GPU shader execution or upload measurement
+fresh_process 1
+Alicorn multi-stop gradient research prototype; CPU band tessellation versus shader-evaluation mesh model; not production rendering
+multistop_gradient_prototype surfaces 256 stops 2 cpu_vertices 1536 cpu_vertex_bytes 55296 cpu_build_p50_ns 11000 cpu_build_p95_ns 11000 shader_model_vertices 1536 shader_model_vertex_bytes 55296 shader_stop_record_bytes_per_surface 40 shader_model_build_p50_ns 6000 shader_model_build_p95_ns 6000 exact_stop_samples true gpu_execution not_measured
+multistop_gradient_prototype surfaces 256 stops 3 cpu_vertices 3072 cpu_vertex_bytes 110592 cpu_build_p50_ns 21000 cpu_build_p95_ns 43000 shader_model_vertices 1536 shader_model_vertex_bytes 55296 shader_stop_record_bytes_per_surface 60 shader_model_build_p50_ns 7000 shader_model_build_p95_ns 8000 exact_stop_samples true gpu_execution not_measured
+multistop_gradient_prototype surfaces 256 stops 4 cpu_vertices 4608 cpu_vertex_bytes 165888 cpu_build_p50_ns 31000 cpu_build_p95_ns 33000 shader_model_vertices 1536 shader_model_vertex_bytes 55296 shader_stop_record_bytes_per_surface 80 shader_model_build_p50_ns 9000 shader_model_build_p95_ns 9000 exact_stop_samples true gpu_execution not_measured
+multistop_gradient_prototype surfaces 256 stops 8 cpu_vertices 10752 cpu_vertex_bytes 387072 cpu_build_p50_ns 81000 cpu_build_p95_ns 88000 shader_model_vertices 1536 shader_model_vertex_bytes 55296 shader_stop_record_bytes_per_surface 160 shader_model_build_p50_ns 15000 shader_model_build_p95_ns 17000 exact_stop_samples true gpu_execution not_measured
